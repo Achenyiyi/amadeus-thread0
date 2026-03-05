@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.py[cod]
+
+data/*.sqlite
+data/*audit.jsonl
+data/tmp_*.json
+data/tts_out/
+data/tts_voice_cache.json
+data/diary.txt
+data/copy_wav/
