@@ -1,0 +1,876 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+import io
+
+from dotenv import load_dotenv
+from langchain_core.messages import SystemMessage
+from langchain_deepseek import ChatDeepSeek
+from langgraph.types import Command
+
+from .config import TOOL_CALLS_MAX, TOOLSET_UPGRADE_TTL_S
+from .graph import build_graph
+from .memory_store import MemoryStore
+from .settings import get_settings
+from .tts_io import create_dashscope_realtime_session, get_tts_config
+
+
+def main():
+    # 优先从当前工作目录加载 .env（你用 `python -m amadeus_thread0.cli` 运行时最符合直觉）
+    # 再回退到包根目录（避免以模块/安装形式运行时找不到配置）。
+    dotenv_candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+    ]
+    loaded_path: Path | None = None
+    for p in dotenv_candidates:
+        if p.exists():
+            # Keep shell-exported env vars higher priority than .env defaults.
+            load_dotenv(dotenv_path=p, override=False)
+            loaded_path = p
+            break
+
+    # 关闭 DashScope/websocket 的“正常断开(1000 Bye)”类提示，避免打断输入行。
+    # （这些提示通常来自底层 websocket logger，而不是异常。）
+    for name in ["websocket", "websockets", "dashscope"]:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.ERROR)
+        lg.propagate = False
+
+    print(
+        "[env] cwd="
+        + str(Path.cwd())
+        + " | loaded="
+        + (str(loaded_path) if loaded_path else "(none)")
+    )
+    print(
+        "[env] AMADEUS_TTS_ENABLED="
+        + str(os.getenv("AMADEUS_TTS_ENABLED"))
+        + " | AMADEUS_TTS_BACKEND="
+        + str(os.getenv("AMADEUS_TTS_BACKEND"))
+        + " | AMADEUS_TTS_REF_AUDIO="
+        + str(os.getenv("AMADEUS_TTS_REF_AUDIO"))
+        + " | DASHSCOPE_API_KEY="
+        + ("(set)" if str(os.getenv("DASHSCOPE_API_KEY") or "").strip() else "(empty)")
+    )
+
+    s = get_settings()
+    graph = build_graph()
+    memory_store = MemoryStore(s.memory_db_path)
+
+    config = {
+        "configurable": {
+            # LangGraph persistence 通过 thread_id 把 checkpoint 归到同一条“世界线”
+            "thread_id": s.thread_id,
+            "user_id": s.user_id,
+        }
+    }
+
+    # 用于 time travel：下一次对话从指定 checkpoint 分叉继续（用一次即清空）
+    pending_checkpoint_id: str | None = None
+
+    # TTS（DashScope Realtime；从 env 读取）
+    tts_cfg = get_tts_config()
+    tts_enabled = bool(tts_cfg.enabled)
+    tts_ref_audio = str(tts_cfg.ref_audio or "").strip()
+    tts_ref_text = str(tts_cfg.ref_text or "").strip()
+
+    print(
+        "Amadeus-K CLI 已启动。输入 /exit 退出；输入 /newthread 开新世界线；"
+        "输入 /history 查看checkpoint；输入 /rewind <checkpoint_id> 回到某个点继续聊；"
+        "输入 /correct key=value 纠正记忆；输入 /undo key 撤销最近一次纠错；"
+        "输入 /worldline /bond /sources /persona 查看世界线与角色状态。"
+    )
+    print(
+        "[TTS] "
+        + ("on" if tts_enabled else "off")
+        + " | backend=dashscope_realtime"
+        + "\n      ref_audio="
+        + (tts_ref_audio or "(empty)")
+    )
+    while True:
+        user = input("\nYou> ").strip()
+        if not user:
+            continue
+        if user.lower() in {"/exit", "exit", "quit"}:
+            break
+        if user.lower() == "/newthread":
+            # 简单起见：让你手动输入新 thread_id（后续我可以做自动命名/列出历史线程）
+            new_id = input("new thread_id> ").strip()
+            if new_id:
+                config["configurable"]["thread_id"] = new_id
+                # 切线程后清空 time travel 目标
+                pending_checkpoint_id = None
+                print(f"已切换到 thread_id={new_id}")
+            continue
+        if user.lower() == "/threads":
+            # 从 checkpoints.sqlite 里尽量枚举 thread_id（不同版本表名可能不同，这里做容错）
+            conn = sqlite3.connect(str(s.checkpoint_db_path), check_same_thread=False)
+            try:
+                tables = [
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+                    ).fetchall()
+                ]
+                thread_ids: set[str] = set()
+                for t in tables:
+                    cols = [
+                        c[1] for c in conn.execute(f"PRAGMA table_info({t})").fetchall()
+                    ]
+                    if "thread_id" not in cols:
+                        continue
+                    try:
+                        rows = conn.execute(f"SELECT DISTINCT thread_id FROM {t}").fetchall()
+                        for (tid,) in rows:
+                            if tid:
+                                thread_ids.add(str(tid))
+                    except Exception:
+                        continue
+                if not thread_ids:
+                    print("\n未在 checkpoint 数据库中找到 thread_id（可能还没有生成checkpoint）。")
+                else:
+                    print("\n[threads]")
+                    for tid in sorted(thread_ids):
+                        mark = "*" if tid == config["configurable"]["thread_id"] else " "
+                        print(f"{mark} {tid}")
+            finally:
+                conn.close()
+            continue
+        if user.lower().startswith("/history"):
+            # /history 或 /history 10
+            parts = user.split()
+            limit = 10
+            if len(parts) >= 2:
+                try:
+                    limit = int(parts[1])
+                except Exception:
+                    limit = 10
+            hist = list(
+                graph.get_state_history(
+                    {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+                )
+            )
+            print(
+                f"\n[checkpoint history] (latest first, showing {min(limit, len(hist))}/{len(hist)})"
+            )
+            for sshot in hist[:limit]:
+                cid = sshot.config.get("configurable", {}).get("checkpoint_id")
+                nxt = sshot.next
+                print(f"- checkpoint_id={cid} next={nxt}")
+            continue
+        if user.lower().startswith("/rewind "):
+            # /rewind <checkpoint_id>
+            cid = user[len("/rewind ") :].strip()
+            if not cid:
+                print("用法：/rewind <checkpoint_id>")
+                continue
+            pending_checkpoint_id = cid
+            print(f"已设置：下一次对话将从 checkpoint_id={cid} 分叉继续")
+            continue
+        if user.lower() == "/where":
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            cid = cur.config.get("configurable", {}).get("checkpoint_id")
+            print(
+                f"\n[current] thread_id={config['configurable']['thread_id']} checkpoint_id={cid}"
+            )
+            continue
+        if user.lower() == "/env":
+            print(
+                "\n[env] cwd="
+                + str(Path.cwd())
+                + "\n  AMADEUS_TTS_ENABLED="
+                + str(os.getenv("AMADEUS_TTS_ENABLED"))
+                + "\n  AMADEUS_TTS_BACKEND="
+                + str(os.getenv("AMADEUS_TTS_BACKEND"))
+                + "\n  AMADEUS_TTS_REF_AUDIO="
+                + str(os.getenv("AMADEUS_TTS_REF_AUDIO"))
+                + "\n  AMADEUS_TTS_DASHSCOPE_MODEL="
+                + str(os.getenv("AMADEUS_TTS_DASHSCOPE_MODEL"))
+                + "\n  DASHSCOPE_API_KEY="
+                + ("(set)" if str(os.getenv("DASHSCOPE_API_KEY") or "").strip() else "(empty)")
+            )
+            continue
+        if user.lower() == "/mem":
+            snap = memory_store.snapshot()
+            print("\n[PROFILE]\n" + json.dumps(snap["profile"], ensure_ascii=False, indent=2))
+            print("\n[RELATIONSHIP]\n" + json.dumps(snap["relationship"], ensure_ascii=False, indent=2))
+            print("\n[MOMENTS(latest)]\n" + json.dumps(snap["moments"], ensure_ascii=False, indent=2))
+            continue
+        if user.lower() == "/worldline":
+            snap = memory_store.snapshot()
+            print("\n[WORLDLINE_EVENTS]\n" + json.dumps(snap.get("worldline_events", []), ensure_ascii=False, indent=2))
+            print("\n[COMMITMENTS]\n" + json.dumps(snap.get("commitments", []), ensure_ascii=False, indent=2))
+            continue
+        if user.lower() == "/bond":
+            rs = list(reversed(memory_store.list_relationship_timeline(limit=30)))
+            print("\n[RELATIONSHIP_TIMELINE]")
+            if not rs:
+                print("- (empty)")
+            for it in rs:
+                print(
+                    f"- #{it.get('id')} {it.get('summary')} "
+                    f"(aff={it.get('affinity_delta')}, trust={it.get('trust_delta')})"
+                )
+            continue
+        if user.lower() == "/sources":
+            refs = list(reversed(memory_store.list_source_refs(limit=30)))
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if not isinstance(vals, dict):
+                vals = {}
+            claim_links = vals.get("claim_links") if isinstance(vals.get("claim_links"), list) else []
+            print("\n[SOURCES]")
+            if not refs:
+                print("- (empty)")
+            for it in refs:
+                print(
+                    f"- #{it.get('id')} [{it.get('tool_name')}] {it.get('title') or '(no title)'}\n"
+                    f"  url={it.get('url')} query={it.get('query')}"
+                )
+            print("\n[CLAIM->SOURCES]")
+            if not claim_links:
+                print("- (empty)")
+            for row in claim_links:
+                if not isinstance(row, dict):
+                    continue
+                print(
+                    f"- claim={str(row.get('claim_excerpt') or '')[:120]}\n"
+                    f"  source_ids={row.get('source_ids') or []}"
+                )
+            continue
+        if user.lower() == "/persona":
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if not isinstance(vals, dict):
+                vals = {}
+            print("\n[PERSONA_STATE]\n" + json.dumps(vals.get("persona_state", {}), ensure_ascii=False, indent=2))
+            print("\n[EMOTION_STATE]\n" + json.dumps(vals.get("emotion_state", {}), ensure_ascii=False, indent=2))
+            print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
+            print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
+            print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
+            continue
+
+        if user.lower().startswith("/tts"):
+            # /tts on|off|status
+            parts = user.split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) >= 2 else "status"
+            if arg in {"on", "1", "true"}:
+                tts_enabled = True
+                print("\n[TTS] 已开启")
+            elif arg in {"off", "0", "false"}:
+                tts_enabled = False
+                print("\n[TTS] 已关闭")
+            else:
+                print(
+                    "\n[TTS] status="
+                    + ("on" if tts_enabled else "off")
+                    + "\n  backend=dashscope_realtime"
+                    + "\n  ref_audio="
+                    + (tts_ref_audio or "(empty)")
+                    + "\n  ref_text="
+                    + ((tts_ref_text[:60] + "...") if len(tts_ref_text) > 60 else (tts_ref_text or "(empty)"))
+                )
+            continue
+
+        if user.lower().startswith("/tts_ref "):
+            # /tts_ref path.wav
+            p = user[len("/tts_ref ") :].strip().strip('"')
+            if not p:
+                print("用法：/tts_ref <path.wav>")
+                continue
+            tts_ref_audio = p
+            print("\n[TTS] ref_audio 已设置")
+            continue
+
+        if user.lower().startswith("/tts_ref_text "):
+            # /tts_ref_text <日本語の文字起こし>
+            t = user[len("/tts_ref_text ") :].strip()
+            if not t:
+                print("用法：/tts_ref_text <ref_text>")
+                continue
+            tts_ref_text = t
+            print("\n[TTS] ref_text 已设置")
+            continue
+
+        if user.lower().startswith("/correct "):
+            # /correct key=value [| reason]
+            # 目的：提供一个“记忆纠错协议”入口；比 /forget + /set 更像“她记错了->你纠正->她改”。
+            raw = user[len("/correct ") :].strip()
+            if "|" in raw:
+                kv, reason = raw.split("|", 1)
+                reason = reason.strip()
+            else:
+                kv, reason = raw, ""
+            if "=" not in kv:
+                print("用法：/correct key=value [| reason]")
+                continue
+            k, v = kv.split("=", 1)
+            k = k.strip()
+            v = v.strip()
+            if not k:
+                print("用法：/correct key=value [| reason]")
+                continue
+
+            old = memory_store.get_profile().get(k)
+            print("\n[memory correction]")
+            print("- key=" + str(k))
+            print("- old=" + json.dumps(old, ensure_ascii=False))
+            print("- new=" + json.dumps(v, ensure_ascii=False))
+            if reason:
+                print("- reason=" + reason)
+
+            ans = input("  确认覆盖并写入 meta? (y/N) > ").strip().lower()
+            if ans != "y":
+                print("已取消")
+                continue
+
+            try:
+                memory_store.set_profile(k, v)
+                memory_store.set_profile_meta(
+                    k,
+                    {
+                        "source": "user_correction",
+                        "old_value": old,
+                        "new_value": v,
+                        "reason": reason,
+                        "corrected_at": int(time.time()),
+                        "confirmed_by": "user",
+                    },
+                )
+                print(f"已纠正 profile.{k}")
+            except Exception as e:
+                print("写入失败：" + str(e))
+            continue
+
+        if user.lower().startswith("/undo "):
+            # /undo key [| reason]
+            raw = user[len("/undo ") :].strip()
+            if "|" in raw:
+                k, reason = raw.split("|", 1)
+                k = k.strip()
+                reason = reason.strip()
+            else:
+                k, reason = raw.strip(), ""
+
+            if not k:
+                print("用法：/undo key [| reason]")
+                continue
+            if not reason:
+                reason = "user requested undo"
+
+            meta = (memory_store.get_profile_meta() or {}).get(k)
+            if not isinstance(meta, dict):
+                print("未找到该 key 的 meta，无法自动撤销。")
+                continue
+            if ("old_value" not in meta) or ("new_value" not in meta):
+                print("meta 缺少 old_value/new_value，无法自动撤销。")
+                continue
+
+            cur = memory_store.get_profile().get(k)
+            if cur != meta.get("new_value"):
+                print("当前值与 meta.new_value 不一致，拒绝自动撤销（避免误操作）。")
+                print("- current=" + json.dumps(cur, ensure_ascii=False))
+                print("- meta.new_value=" + json.dumps(meta.get("new_value"), ensure_ascii=False))
+                continue
+
+            old_v = meta.get("old_value")
+            print("\n[undo correction]")
+            print("- key=" + str(k))
+            print("- revert_to(old_value)=" + json.dumps(old_v, ensure_ascii=False))
+            print("- reason=" + reason)
+            ans = input("  确认撤销? (y/N) > ").strip().lower()
+            if ans != "y":
+                print("已取消")
+                continue
+
+            try:
+                memory_store.set_profile(k, old_v)
+                memory_store.set_profile_meta(
+                    k,
+                    {
+                        "source": "undo_correction",
+                        "undone_at": int(time.time()),
+                        "reason": reason,
+                        "reverted_from": meta.get("new_value"),
+                        "reverted_to": old_v,
+                        "prev_meta": meta,
+                        "confirmed_by": "user",
+                    },
+                )
+                print(f"已撤销 profile.{k} 的上一次纠错")
+            except Exception as e:
+                print("撤销失败：" + str(e))
+            continue
+
+        if user.lower().startswith("/set "):
+            # /set key=value  （profile默认）
+            kv = user[5:].strip()
+            if "=" not in kv:
+                print("用法：/set key=value")
+                continue
+            k, v = kv.split("=", 1)
+            memory_store.set_profile(k.strip(), v.strip())
+            print(f"已写入 profile.{k.strip()}")
+            continue
+        if user.lower().startswith("/forget "):
+            # /forget key （profile默认）
+            k = user[8:].strip()
+            if not k:
+                print("用法：/forget key")
+                continue
+            ok = memory_store.delete_profile(k)
+            print("已删除" if ok else "未找到")
+            continue
+        if user.lower() == "/moments":
+            ms = list(reversed(memory_store.list_moments(limit=20)))
+            for m in ms:
+                print(f"- #{m['id']} {m['summary']}")
+            continue
+        if user.lower().startswith("/forget_moment "):
+            raw_id = user[len("/forget_moment "):].strip()
+            try:
+                mid = int(raw_id)
+            except Exception:
+                print("用法：/forget_moment <id>")
+                continue
+            ok = memory_store.delete_moment(mid)
+            print("已删除" if ok else "未找到")
+            continue
+        if user.lower() == "/reflections":
+            rs = list(reversed(memory_store.list_reflections(limit=20)))
+            for r in rs:
+                print(f"- @{r['id']}({r.get('importance')}) {r['text']}")
+            continue
+        if user.lower().startswith("/forget_reflection "):
+            raw_id = user[len("/forget_reflection "):].strip()
+            try:
+                rid = int(raw_id)
+            except Exception:
+                print("用法：/forget_reflection <id>")
+                continue
+            ok = memory_store.delete_reflection(rid)
+            print("已删除" if ok else "未找到")
+            continue
+        if user.lower().startswith("/reflect"):
+            # /reflect 或 /reflect 20
+            parts = user.split()
+            n = 20
+            if len(parts) >= 2:
+                try:
+                    n = int(parts[1])
+                except Exception:
+                    n = 20
+            n = max(5, min(200, n))
+
+            recent = list(reversed(memory_store.list_moments(limit=n)))
+            if not recent:
+                print("\n没有 moments，无法生成反思。")
+                continue
+
+            llm = ChatDeepSeek(model=s.deepseek_model, temperature=0.2)
+
+            prompt = (
+                "你是记忆反思器(reflection generator)。给定一组按时间排序的 moments，请总结出 1~6 条‘长期规律/稳定结论’。\n"
+                "要求：\n"
+                "- 反思应尽量稳定：偏好、禁忌、沟通方式、关系边界、长期目标等；不要总结一次性事件细节。\n"
+                "- 每条反思尽量短（10~40字），可作为长期记忆注入。\n"
+                "- 给出 derived_from：支撑该反思的 moment id 列表（1~10个）。\n"
+                "- 给出 importance：0~1。越重要越高。\n"
+                "- 只输出严格 JSON 数组，不要任何多余文字。\n"
+                "输出格式：[{\"text\": str, \"derived_from\": [int,...], \"importance\": 0~1}, ...]\n"
+                f"moments：{json.dumps([{ 'id': m['id'], 'summary': m['summary'] } for m in recent], ensure_ascii=False)}\n"
+            )
+
+            raw = llm.invoke([SystemMessage(content=prompt)])
+            data = None
+            for attempt in (1, 2):
+                try:
+                    data = json.loads(getattr(raw, "content", "") or "")
+                    break
+                except Exception:
+                    if attempt == 1:
+                        raw = llm.invoke(
+                            [
+                                SystemMessage(
+                                    content=prompt
+                                    + "\n【重试】只输出 JSON 数组，不得包含 Markdown 代码块/解释文字。"
+                                )
+                            ]
+                        )
+                        continue
+                    data = None
+
+            if not isinstance(data, list) or not data:
+                print("\n反思生成失败（未得到合法 JSON 数组）。")
+                continue
+
+            print("\n[reflect proposals]")
+            wrote = 0
+            for it in data[:6]:
+                if not isinstance(it, dict):
+                    continue
+                text = str(it.get("text") or "").strip()
+                if not text:
+                    continue
+                derived_from = it.get("derived_from") or []
+                importance = it.get("importance")
+                print(
+                    "- text="
+                    + text
+                    + "\n  derived_from="
+                    + json.dumps(derived_from, ensure_ascii=False)
+                    + " importance="
+                    + str(importance)
+                )
+                ans = input("  写入这条 reflection? (y/N) > ").strip().lower()
+                if ans != "y":
+                    continue
+                try:
+                    rid = memory_store.add_reflection(text=text, derived_from=derived_from, importance=importance)
+                    wrote += 1
+                except Exception as e:
+                    print("  写入失败：" + str(e))
+                    continue
+
+                # 可选：写回 profile.user_model_rules，形成 L3 -> L1 的闭环
+                ans2 = input("  同时写入 profile.user_model_rules? (y/N) > ").strip().lower()
+                if ans2 == "y":
+                    try:
+                        rule = {
+                            "text": text,
+                            "importance": importance,
+                            "derived_from": derived_from,
+                            "reflection_id": rid,
+                            "created_at": int(time.time()),
+                        }
+                        old = memory_store.get_profile().get("user_model_rules")
+                        merged = []
+                        if isinstance(old, list):
+                            merged = [*old]
+                        merged.append(rule)
+                        # 轻量去重：按 text 去重
+                        seen = set()
+                        uniq = []
+                        for it2 in merged:
+                            t2 = str((it2 or {}).get("text") if isinstance(it2, dict) else it2).strip()
+                            if not t2 or t2 in seen:
+                                continue
+                            seen.add(t2)
+                            uniq.append(it2)
+                        memory_store.set_profile("user_model_rules", uniq[:50])
+                        memory_store.set_profile_meta(
+                            "user_model_rules",
+                            {
+                                "source": "reflect_batch",
+                                "last_confirmed_at": int(time.time()),
+                                "note": "derived from reflections",
+                            },
+                        )
+                    except Exception as e:
+                        print("  写回 profile 失败：" + str(e))
+
+            print(f"\n已写入 {wrote} 条 reflections。")
+            continue
+
+        run_config = config
+        if pending_checkpoint_id:
+            run_config = {
+                "configurable": {
+                    "thread_id": config["configurable"]["thread_id"],
+                    "user_id": config["configurable"].get("user_id"),
+                    "checkpoint_id": pending_checkpoint_id,
+                }
+            }
+            # 只对下一次生效，避免一直从同一个checkpoint反复分叉
+            pending_checkpoint_id = None
+
+        def _invoke_stream(payload, cfg, on_text=None):
+            """基于 LangGraph streaming 的最小流式输出：只流式打印 call_model 节点产出的 AIMessageChunk。
+
+            同时提供 on_text 回调：每个 token chunk 到来时回调，便于做“边生成边TTS”。
+            """
+            last_values = None
+            buf = ""
+            for mode, chunk in graph.stream(payload, config=cfg, stream_mode=["messages", "values"]):
+                if mode == "values":
+                    last_values = chunk
+                    continue
+                if mode != "messages":
+                    continue
+
+                msg, meta = chunk
+                if (meta or {}).get("langgraph_node") != "call_model":
+                    continue
+
+                # 只打印 token chunk，避免最终完整消息重复输出
+                if not type(msg).__name__.endswith("Chunk"):
+                    continue
+                text = getattr(msg, "content", "") or ""
+                if not text:
+                    continue
+
+                buf += text
+                if callable(on_text):
+                    try:
+                        on_text(text)
+                    except Exception:
+                        pass
+
+            # Console output is rendered from the final message only.
+            # This avoids showing draft + rewritten text mixed together.
+            return last_values or {}, False, buf
+
+        # 按官方示例：使用 DashScope Realtime，把文本 append_text 给服务端，服务端流式返回 audio.delta。
+        tts_out_dir = (get_settings().data_dir / "tts_out")
+        backend = str(os.getenv("AMADEUS_TTS_BACKEND", "dashscope_realtime") or "dashscope_realtime").strip().strip('"').lower()
+
+        rt = None
+        # 情绪参数映射（多模态一致性）：用于控制 TTS 片段大小与发送节奏。
+        def _tts_profile_from_emotion(label: str) -> dict[str, float]:
+            l = str(label or "neutral").strip().lower()
+            if l == "logic":
+                return {"min_chunk": 28.0, "min_interval": 0.16, "post_sleep": 0.04}
+            if l == "care":
+                return {"min_chunk": 18.0, "min_interval": 0.10, "post_sleep": 0.06}
+            if l == "tease":
+                return {"min_chunk": 20.0, "min_interval": 0.11, "post_sleep": 0.05}
+            if l == "stress":
+                return {"min_chunk": 16.0, "min_interval": 0.09, "post_sleep": 0.05}
+            return {"min_chunk": 22.0, "min_interval": 0.12, "post_sleep": 0.05}
+
+        emotion_label = "neutral"
+        try:
+            cur = graph.get_state(
+                {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if isinstance(vals, dict) and isinstance(vals.get("emotion_state"), dict):
+                emotion_label = str((vals.get("emotion_state") or {}).get("label") or "neutral")
+        except Exception:
+            emotion_label = "neutral"
+        tts_profile = _tts_profile_from_emotion(emotion_label)
+
+        if tts_enabled:
+            if backend not in {"dashscope_realtime", "dashscope"}:
+                raise RuntimeError("TTS backend must be dashscope_realtime")
+
+            if not tts_ref_audio:
+                raise RuntimeError("AMADEUS_TTS_REF_AUDIO is required for dashscope enrollment")
+
+            # 关闭底层 SDK/websocket 在 stdout/stderr 的噪音输出（例如 1000 Bye），避免打断 CLI 输入行。
+            # 注意：这里不是吞异常；真正错误仍会通过抛错中断。
+            _noise = io.StringIO()
+            with redirect_stdout(_noise), redirect_stderr(_noise):
+                rt = create_dashscope_realtime_session(
+                    ref_audio=tts_ref_audio,
+                    out_dir=tts_out_dir,
+                    play_audio=True,
+                )
+
+        # 官方示例在 append_text 之间会 sleep 一小段时间；
+        # 这里如果按 token 粒度“毫秒级狂发”，容易导致服务端来不及产出音频或连接不稳定。
+        out, streamed, streamed_text = _invoke_stream(
+            {"messages": [{"role": "user", "content": user}]},
+            cfg=run_config,
+            on_text=None,
+        )
+
+        # 工具调用 HITL：一个回合里可能出现多次 interrupt（例如：先审批记忆写入，再审批对话工具）
+        while out.get("__interrupt__"):
+            intr = out["__interrupt__"][0]
+            payload = getattr(intr, "value", None)
+            if payload is None and isinstance(intr, dict):
+                payload = intr.get("value")
+            payload = payload or {}
+            if payload.get("kind") != "tool_approval":
+                break
+
+            tool_calls = payload.get("tool_calls", [])
+            # 防线：避免一次 interrupt 里出现过多调用导致刷屏/误批。
+            max_calls = int(TOOL_CALLS_MAX)
+            if max_calls <= 0:
+                max_calls = 12
+            if isinstance(tool_calls, list) and len(tool_calls) > max_calls:
+                print(f"\n[warn] tool_calls too many ({len(tool_calls)}), only showing first {max_calls}")
+                tool_calls = tool_calls[:max_calls]
+            decisions = []
+            print("\n[需要审批的工具调用]")
+
+            payload_source = str(payload.get("source") or "").strip().lower()
+            risky_profile_keys = {
+                "nickname",
+                "timezone",
+                "likes",
+                "dislikes",
+                "persona_rules",
+                "user_model_rules",
+            }
+
+            for tc in tool_calls:
+                name = str(tc.get("name") or "")
+                args = tc.get("args") or {}
+
+                # 更可读的审批信息：把证据链(meta)单独打印出来
+                print("- tool=" + str(name))
+                if name == "request_toolset_upgrade" and isinstance(args, dict):
+                    try:
+                        req_tools = args.get("requested_tools")
+                        rsn = args.get("reason")
+                        if isinstance(req_tools, list):
+                            print("  requested_tools=" + json.dumps(req_tools, ensure_ascii=False))
+                        if isinstance(rsn, str) and rsn.strip():
+                            print("  reason=" + rsn.strip())
+                        print(
+                            "  note=approve 将临时解锁上述工具，预计有效期约 "
+                            + str(int(TOOLSET_UPGRADE_TTL_S))
+                            + "s"
+                        )
+                    except Exception:
+                        pass
+                try:
+                    if isinstance(args, dict) and isinstance(args.get("meta"), dict):
+                        meta = args.get("meta") or {}
+                        meta_preview = {
+                            "source_text": meta.get("source_text"),
+                            "confidence": meta.get("confidence"),
+                            "extracted_at": meta.get("extracted_at"),
+                            "confirmed_by": meta.get("confirmed_by"),
+                        }
+                        # 避免 meta 过长刷屏
+                        if isinstance(meta_preview.get("source_text"), str) and len(meta_preview["source_text"]) > 200:
+                            meta_preview["source_text"] = meta_preview["source_text"][:200] + "..."
+                        print("  meta=" + json.dumps(meta_preview, ensure_ascii=False))
+                except Exception:
+                    pass
+                print("  args=" + json.dumps(args, ensure_ascii=False))
+
+                action = input("  选择 a=approve / e=edit / r=reject > ").strip().lower() or "r"
+
+                # 记忆写入二次确认：
+                # - 仅针对 memory 提案（source=memory）
+                # - set_profile：高风险字段 or overwrite 才二次确认
+                # - correct_profile：纠错/覆盖写本身就高风险，默认一律二次确认
+                need_second_confirm = False
+                try:
+                    if payload_source == "memory" and name in {"set_profile", "correct_profile", "undo_profile_correction"} and isinstance(args, dict):
+                        k = str(args.get("key") or "").strip()
+                        if name in {"correct_profile", "undo_profile_correction"}:
+                            need_second_confirm = True
+                        else:
+                            mode = str(args.get("mode") or "merge").strip().lower()
+                            if (k in risky_profile_keys) or (mode == "overwrite"):
+                                need_second_confirm = True
+                except Exception:
+                    need_second_confirm = False
+
+                if action == "a":
+                    if need_second_confirm:
+                        ans2 = input("  二次确认：输入 y 才会写入长期记忆 > ").strip().lower()
+                        if ans2 != "y":
+                            decisions.append({"action": "reject", "reason": "second confirm failed"})
+                            continue
+                    decisions.append({"action": "approve"})
+                elif action == "e":
+                    raw = input("  输入新的 args(JSON) > ").strip()
+                    try:
+                        new_args = json.loads(raw)
+                    except Exception:
+                        print("  JSON 解析失败，按 reject 处理")
+                        decisions.append({"action": "reject", "reason": "bad json"})
+                        continue
+                    # edit 也可能涉及高风险覆盖，仍要求二次确认（以 new_args 为准）
+                    try:
+                        if payload_source == "memory" and name in {"set_profile", "correct_profile", "undo_profile_correction"} and isinstance(new_args, dict):
+                            k = str(new_args.get("key") or "").strip()
+                            need_second = False
+                            if name in {"correct_profile", "undo_profile_correction"}:
+                                need_second = True
+                            else:
+                                mode = str(new_args.get("mode") or "merge").strip().lower()
+                                if (k in risky_profile_keys) or (mode == "overwrite"):
+                                    need_second = True
+                            if need_second:
+                                ans2 = input("  二次确认(edit)：输入 y 才会写入长期记忆 > ").strip().lower()
+                                if ans2 != "y":
+                                    decisions.append({"action": "reject", "reason": "second confirm failed"})
+                                    continue
+                    except Exception:
+                        pass
+                    decisions.append({"action": "edit", "args": new_args})
+                else:
+                    reason = input("  reject 原因(可空) > ").strip() or "rejected"
+                    decisions.append({"action": "reject", "reason": reason})
+
+            out, streamed, streamed_text = _invoke_stream(
+                Command(resume={"decisions": decisions}),
+                cfg={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+                on_text=None,
+            )
+
+        # out["messages"] 是完整消息列表，最后一条是刚生成的 AIMessage/ToolMessage
+        final_text = ""
+        try:
+            msgs = out.get("messages") if isinstance(out, dict) else None
+            if isinstance(msgs, list) and msgs:
+                last_msg = msgs[-1]
+                final_text = str(getattr(last_msg, "content", "") or "")
+        except Exception:
+            final_text = ""
+
+        if (not final_text.strip()) and streamed:
+            final_text = (streamed_text or "").strip()
+
+        if not streamed:
+            print(f"\nAmadeus> {final_text}")
+
+        # TTS 收尾：必须等“工具审批/执行结束后的最终回复”出来再 finish，否则有工具调用时会没声音。
+        if tts_enabled and rt is not None:
+            try:
+                # 若整轮没有流式 token（常见于发生工具调用：final 在服务端一次性返回），
+                # 则把最终文本一次性送去合成。
+                if final_text.strip():
+                    rt.append_text(final_text.strip())
+            except Exception:
+                pass
+
+            _noise = io.StringIO()
+            with redirect_stdout(_noise), redirect_stderr(_noise):
+                rt.finish_and_wait()
+            if rt.total_audio_bytes <= 0:
+                print("[TTS-RT][warn] received 0 audio bytes (check API key/model/ws url & callback logs)")
+            if rt.first_audio_delay is not None:
+                print(f"\n[TTS-RT] first_audio_delay={rt.first_audio_delay:.2f}s")
+            print("[TTS-RT] saved: " + str(rt.out_path))
+
+        # 恢复 stdout/stderr（仅过滤本轮 TTS 期间的噪音）。
+        try:
+            if tts_enabled and rt is not None:
+                sys.stdout = _orig_stdout
+                sys.stderr = _orig_stderr
+        except Exception:
+            pass
+
+        # 旧的“整段回复后再 TTS”路径已被“流式异步 TTS”替代（更低首包出声 + 更连贯）。
+        # 回退：设 AMADEUS_TTS_STREAM=0。
+
+        # 记忆写入已统一通过工具调用 + interrupt 审批执行，这里不再在 CLI 直接写库。
+
+
+if __name__ == "__main__":
+    main()
