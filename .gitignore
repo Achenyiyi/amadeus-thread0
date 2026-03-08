@@ -1,4 +1,4 @@
-.env
+﻿.env
 __pycache__/
 *.py[cod]
 
@@ -9,3 +9,8 @@ data/tts_out/
 data/tts_voice_cache.json
 data/diary.txt
 data/copy_wav/
+evals/_tmp/
+evals/reports/
+user_study/raw/
+user_study/results/
+user_study/packets/

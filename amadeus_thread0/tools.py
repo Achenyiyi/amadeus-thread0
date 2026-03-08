@@ -61,6 +61,10 @@ def _get_store() -> MemoryStore:
     return MemoryStore(s.memory_db_path)
 
 
+def reset_tool_runtime_caches() -> None:
+    _get_store.cache_clear()
+
+
 def _tool_reliability(tool_name: str, fallback: float | None = None) -> float:
     try:
         v = TOOL_RELIABILITY_WEIGHTS.get(str(tool_name or "").strip())
@@ -107,6 +111,148 @@ def _run_async(coro):
             return loop.run_until_complete(coro)
         finally:
             loop.close()
+
+
+def _text_units(text: str) -> set[str]:
+    raw = str(text or "").strip().lower()
+    if not raw:
+        return set()
+    units = set(re.findall(r"[a-z0-9_]{2,}", raw))
+    for chunk in re.findall(r"[\u4e00-\u9fff]+", raw):
+        if len(chunk) == 1:
+            units.add(chunk)
+            continue
+        for i in range(len(chunk) - 1):
+            units.add(chunk[i : i + 2])
+    return units
+
+
+def _overlap_score(a: str, b: str) -> float:
+    au = _text_units(a)
+    bu = _text_units(b)
+    if not au or not bu:
+        return 0.0
+    overlap = len(au & bu)
+    denom = max(1, min(len(au), 8))
+    return max(0.0, min(1.0, float(overlap) / float(denom)))
+
+
+def _langchain_requested_topics(query: str) -> set[str]:
+    q = str(query or "").strip().lower()
+    topics: set[str] = set()
+    if any(tok in q for tok in {"persistence", "持久化", "checkpoint", "checkpointer", "thread"}):
+        topics.add("persistence")
+    if any(tok in q for tok in {"human-in-the-loop", "human in the loop", "hitl", "人工审批", "人工审核", "人工监督"}):
+        topics.add("human_in_the_loop")
+    return topics
+
+
+def _normalize_langchain_docs_query(query: str) -> str:
+    q = str(query or "").strip()
+    if not q:
+        return ""
+    q = re.sub(r"请调用\s*search_langchain_docs(?:\s*工具)?", " ", q, flags=re.I)
+    q = re.sub(r"请(?:帮我)?(?:查|检索|搜|看一下|看下|查一下)", " ", q)
+    q = re.sub(r"(给我|分别|各自|各给我|各给一句|一句结论|一句判断|简洁结论|先给我一句|再补一句)", " ", q)
+    q = re.sub(r"[，。！？、,:：；;（）()\"'“”‘’]", " ", q)
+    q = re.sub(r"\s+", " ", q).strip()
+    return q
+
+
+def _langchain_search_queries(query: str) -> list[str]:
+    base = _normalize_langchain_docs_query(query)
+    topics = _langchain_requested_topics(base or query)
+    queries: list[str] = []
+    if "persistence" in topics:
+        queries.append("LangGraph persistence checkpointer thread")
+    if "human_in_the_loop" in topics:
+        queries.append("LangChain human-in-the-loop middleware tool call approval interrupt")
+    if not queries:
+        queries.append(base or str(query or "").strip())
+    return list(dict.fromkeys([q for q in queries if q]))
+
+
+def _score_langchain_doc_item(item: dict[str, str], *, query: str, topics: set[str]) -> float:
+    title = str(item.get("title") or "").strip()
+    url = str(item.get("url") or "").strip().lower()
+    snippet = str(item.get("snippet") or "").strip()
+    score = 0.10
+    score += 0.32 * _overlap_score(query, title)
+    score += 0.28 * _overlap_score(query, snippet)
+    if "/oss/python/" in url:
+        score += 0.08
+    elif "/oss/javascript/" in url:
+        score += 0.02
+
+    if "persistence" in topics:
+        if "/langgraph/persistence" in url:
+            score += 0.40
+        elif "persistence" in title.lower():
+            score += 0.26
+        elif any(tok in url for tok in {"/langgraph/overview", "/releases/", "/contributing/", "/cli", "/test"}):
+            score -= 0.18
+    if "human_in_the_loop" in topics:
+        if "/human-in-the-loop" in url:
+            score += 0.40
+        elif "human-in-the-loop" in title.lower():
+            score += 0.26
+        elif any(tok in url for tok in {"/middleware/built-in", "/guardrails"}):
+            score += 0.08
+        elif any(tok in url for tok in {"/langgraph/overview", "/releases/", "/contributing/", "/cli", "/test"}):
+            score -= 0.12
+
+    if any(tok in url for tok in {"/overview", "/releases/", "/contributing/code", "/langsmith/cli", "/test"}):
+        score -= 0.10
+    return score
+
+
+def _rerank_langchain_doc_items(items: list[dict[str, str]], *, query: str, k: int) -> list[dict[str, str]]:
+    topics = _langchain_requested_topics(query)
+    dedup: dict[str, dict[str, str]] = {}
+    for item in items:
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        prev = dedup.get(url)
+        if prev is None or len(str(item.get("snippet") or "")) > len(str(prev.get("snippet") or "")):
+            dedup[url] = dict(item)
+
+    scored: list[tuple[float, dict[str, str]]] = []
+    for item in dedup.values():
+        scored.append((_score_langchain_doc_item(item, query=query, topics=topics), item))
+    scored.sort(key=lambda row: row[0], reverse=True)
+
+    if not topics:
+        return [item for _, item in scored[:k]]
+
+    selected: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+
+    def _pick_topic(topic: str, matchers: set[str]) -> None:
+        for _, item in scored:
+            url = str(item.get("url") or "").strip()
+            if not url or url in seen_urls:
+                continue
+            hay = f"{item.get('title') or ''} {url} {item.get('snippet') or ''}".lower()
+            if any(m in hay for m in matchers):
+                selected.append(item)
+                seen_urls.add(url)
+                return
+
+    if "persistence" in topics:
+        _pick_topic("persistence", {"persistence", "checkpointer", "thread"})
+    if "human_in_the_loop" in topics:
+        _pick_topic("human_in_the_loop", {"human-in-the-loop", "hitl", "interrupt", "approval"})
+
+    for _, item in scored:
+        url = str(item.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        selected.append(item)
+        seen_urls.add(url)
+        if len(selected) >= k:
+            break
+    return selected[:k]
 
 
 @tool
@@ -967,7 +1113,7 @@ def add_skill(name: str, description: str, steps: list[str] | None = None) -> di
 
 @tool
 def get_worldline_snapshot(limit: int = 20) -> dict[str, Any]:
-    """读取世界线相关快照（只读）：worldline_events / relationship_timeline / commitments / canon_facts。"""
+    """读取世界线相关快照（只读）：worldline / tensions / self narratives / revision traces。"""
 
     tool_name = "get_worldline_snapshot"
     try:
@@ -982,6 +1128,9 @@ def get_worldline_snapshot(limit: int = 20) -> dict[str, Any]:
                 "conflict_repair": store.list_conflict_repairs(limit=lim),
                 "relationship_timeline": store.list_relationship_timeline(limit=lim),
                 "commitments": store.list_commitments(limit=lim),
+                "unresolved_tensions": store.list_unresolved_tensions(limit=lim),
+                "semantic_self_narratives": store.list_semantic_self_narratives(limit=lim),
+                "revision_traces": store.list_revision_traces(limit=min(lim, 50)),
                 "canon_facts": store.list_canon_facts(),
                 "memory_quarantine": store.list_memory_quarantine(limit=min(lim, 50)),
             },
@@ -1134,7 +1283,155 @@ def resolve_commitment(commitment_id: int, resolution: str) -> dict[str, Any]:
                 reason="resolve_commitment",
                 source=tool_name,
             )
+            try:
+                store.add_revision_trace(
+                    namespace="commitments",
+                    target_id=int(commitment_id),
+                    before_summary=str((before or {}).get("text") or ""),
+                    after_summary=str((after or {}).get("resolution") or ""),
+                    reason="resolved",
+                    operator="tool",
+                    source=tool_name,
+                )
+            except Exception:
+                pass
         return _ok(tool_name, {"id": int(commitment_id), "resolved": bool(ok)})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def add_unresolved_tension(
+    summary: str,
+    severity: float = 0.5,
+    status: str = "open",
+    confidence: float = 0.8,
+    source_refs: list[int] | None = None,
+) -> dict[str, Any]:
+    """记录尚未彻底说开的张力/遗留问题（写操作：需要审批）。"""
+
+    tool_name = "add_unresolved_tension"
+    try:
+        store = _get_store()
+        rec = store.add_unresolved_tension(
+            summary=summary,
+            severity=float(severity),
+            status=status,
+            confidence=float(confidence),
+            source_refs=source_refs,
+        )
+        _record_ledger(
+            record_type="add_unresolved_tension",
+            namespace="unresolved_tensions",
+            key_name=str(rec.get("id") or ""),
+            before=None,
+            after=rec,
+            reason="add_unresolved_tension",
+            source=tool_name,
+        )
+        return _ok(tool_name, rec)
+    except ValueError as e:
+        return _err(tool_name, "BAD_INPUT", str(e))
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def resolve_unresolved_tension(tension_id: int, resolution: str) -> dict[str, Any]:
+    """标记某个未解决张力已经说开或处理完成（写操作：需要审批）。"""
+
+    tool_name = "resolve_unresolved_tension"
+    try:
+        store = _get_store()
+        before = None
+        for it in store.list_unresolved_tensions(limit=200):
+            try:
+                if int(it.get("id") or 0) == int(tension_id):
+                    before = it
+                    break
+            except Exception:
+                continue
+        ok = store.resolve_unresolved_tension(int(tension_id), str(resolution or ""))
+        after = None
+        if ok:
+            for it in store.list_unresolved_tensions(limit=200):
+                try:
+                    if int(it.get("id") or 0) == int(tension_id):
+                        after = it
+                        break
+                except Exception:
+                    continue
+            _record_ledger(
+                record_type="resolve_unresolved_tension",
+                namespace="unresolved_tensions",
+                key_name=str(int(tension_id)),
+                before=before,
+                after=after,
+                reason="resolve_unresolved_tension",
+                source=tool_name,
+            )
+            try:
+                store.add_revision_trace(
+                    namespace="unresolved_tensions",
+                    target_id=int(tension_id),
+                    before_summary=str((before or {}).get("summary") or ""),
+                    after_summary=str((after or {}).get("resolution") or ""),
+                    reason="resolved",
+                    operator="tool",
+                    source=tool_name,
+                )
+            except Exception:
+                pass
+        return _ok(tool_name, {"id": int(tension_id), "resolved": bool(ok)})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def add_semantic_self_narrative(
+    text: str,
+    category: str = "self_narrative",
+    stability: float = 0.6,
+    confidence: float = 0.78,
+    source_refs: list[int] | None = None,
+) -> dict[str, Any]:
+    """写入角色长期沉淀出的语义自我叙事（写操作：需要审批）。"""
+
+    tool_name = "add_semantic_self_narrative"
+    try:
+        store = _get_store()
+        rec = store.add_semantic_self_narrative(
+            text=text,
+            category=category,
+            stability=float(stability),
+            confidence=float(confidence),
+            source_refs=source_refs,
+        )
+        _record_ledger(
+            record_type="add_semantic_self_narrative",
+            namespace="semantic_self_narratives",
+            key_name=str(rec.get("id") or ""),
+            before=None,
+            after=rec,
+            reason="add_semantic_self_narrative",
+            source=tool_name,
+        )
+        return _ok(tool_name, rec)
+    except ValueError as e:
+        return _err(tool_name, "BAD_INPUT", str(e))
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def list_revision_traces(limit: int = 20) -> dict[str, Any]:
+    """查看最近记忆修订痕迹（只读）。"""
+
+    tool_name = "list_revision_traces"
+    try:
+        store = _get_store()
+        lim = max(1, min(100, int(limit)))
+        return _ok(tool_name, store.list_revision_traces(limit=lim))
     except Exception as e:
         return _err(tool_name, "INTERNAL", str(e))
 
@@ -1255,92 +1552,32 @@ def search_langchain_docs(query: str, max_results: int = 3) -> dict[str, Any]:
     except Exception:
         k = 3
 
-    async def _do_search():
+    async def _do_search(search_query: str):
         client = _langchain_docs_mcp_client()
         tools = await client.get_tools(server_name="langchainDocs")
         if not tools:
             raise RuntimeError("MCP_NO_TOOLS: no tools from langchainDocs MCP")
         t = tools[0]
-        return await t.ainvoke({"query": q})
+        return await t.ainvoke({"query": search_query})
 
     try:
-        raw = _run_async(_do_search())
         items: list[dict[str, str]] = []
-
-        if isinstance(raw, list):
-            for it in raw:
-                if isinstance(it, dict) and isinstance(it.get("text"), str):
-                    items.extend(_extract_title_link_blocks(it.get("text") or ""))
-                elif isinstance(it, str):
-                    items.extend(_extract_title_link_blocks(it))
-        elif isinstance(raw, str):
-            items.extend(_extract_title_link_blocks(raw))
+        queries = _langchain_search_queries(q)
+        for search_query in queries[:3]:
+            raw = _run_async(_do_search(search_query))
+            if isinstance(raw, list):
+                for it in raw:
+                    if isinstance(it, dict) and isinstance(it.get("text"), str):
+                        items.extend(_extract_title_link_blocks(it.get("text") or ""))
+                    elif isinstance(it, str):
+                        items.extend(_extract_title_link_blocks(it))
+            elif isinstance(raw, str):
+                items.extend(_extract_title_link_blocks(raw))
 
         if not items:
             return _ok(tool_name, {"query": q, "items": []})
 
-        items = items[:k]
-
-        # 来源追溯：将外部文档引用写入 source_refs。
-        try:
-            store = _get_store()
-            for rec in items:
-                if not rec.get("url"):
-                    continue
-                store.add_source_ref(
-                    url=str(rec.get("url") or ""),
-                    title=str(rec.get("title") or ""),
-                    query=q,
-                    tool_name=tool_name,
-                    snippet=str(rec.get("snippet") or ""),
-                )
-        except Exception:
-            pass
-
-        return _ok(tool_name, {"query": q, "items": items})
-    except Exception as e:
-        return _err(tool_name, "INTERNAL", str(e), {"query": q, "max_results": k})
-
-
-@tool
-def search_langchain_docs(query: str, max_results: int = 3) -> dict[str, Any]:
-    """通过 LangChain Docs MCP 检索文档（只读，自动写入 source_refs 追溯）。"""
-
-    tool_name = "search_langchain_docs"
-    q = str(query or "").strip()
-    if not q:
-        return _ok(tool_name, {"query": "", "items": []})
-
-    try:
-        k = max(1, min(10, int(max_results)))
-    except Exception:
-        k = 3
-
-    async def _do_search():
-        client = _langchain_docs_mcp_client()
-        tools = await client.get_tools(server_name="langchainDocs")
-        if not tools:
-            raise RuntimeError("MCP_NO_TOOLS: no tools from langchainDocs MCP")
-        t = tools[0]
-        return await t.ainvoke({"query": q})
-
-    try:
-        raw = _run_async(_do_search())
-        items: list[dict[str, str]] = []
-
-        if isinstance(raw, list):
-            for it in raw:
-                if isinstance(it, dict) and isinstance(it.get("text"), str):
-                    items.extend(_extract_title_link_blocks(it.get("text") or ""))
-                elif isinstance(it, str):
-                    items.extend(_extract_title_link_blocks(it))
-        elif isinstance(raw, str):
-            items.extend(_extract_title_link_blocks(raw))
-
-        if not items:
-            return _ok(tool_name, {"query": q, "items": []})
-
-        items = items[:k]
+        items = _rerank_langchain_doc_items(items, query=q, k=k)
         source_ref_ids: list[int] = []
 
         try:
@@ -1355,6 +1592,7 @@ def search_langchain_docs(query: str, max_results: int = 3) -> dict[str, Any]:
                     tool_name=tool_name,
                     snippet=str(rec.get("snippet") or ""),
                     reliability_score=_tool_reliability(tool_name),
+                    span_hint="langchain_docs_exact" if "/persistence" in str(rec.get("url") or "").lower() or "/human-in-the-loop" in str(rec.get("url") or "").lower() else "",
                 )
                 try:
                     sid = int(saved.get("id") or 0)
