@@ -111,6 +111,10 @@ def _iter_builtin_tools() -> Iterable[BaseTool]:
         builtin_tools.add_relationship_event,
         builtin_tools.add_commitment,
         builtin_tools.resolve_commitment,
+        builtin_tools.add_unresolved_tension,
+        builtin_tools.resolve_unresolved_tension,
+        builtin_tools.add_semantic_self_narrative,
+        builtin_tools.list_revision_traces,
         builtin_tools.rollback_memory_change,
         # escalation request
         getattr(builtin_tools, "request_toolset_upgrade"),

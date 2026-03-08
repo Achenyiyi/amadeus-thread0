@@ -1,0 +1,21 @@
+{
+  "generated_from": {
+    "regression_isolated": "E:\\桌面\\amadeus-thread0\\evals\\reports\\eval-report-20260306-204132-c57f83bc.json",
+    "long_thread": "E:\\桌面\\amadeus-thread0\\evals\\reports\\eval-report-20260307-005508-c126b941.json",
+    "experience_probe": "E:\\桌面\\amadeus-thread0\\evals\\reports\\eval-report-20260306-215635-57bb39c4.json",
+    "thesis_probe": "E:\\桌面\\amadeus-thread0\\evals\\reports\\eval-report-20260307-022239-17048ce9.json",
+    "long_thread_worldline_off": "E:\\桌面\\amadeus-thread0\\evals\\reports\\eval-report-20260307-010246-e2288121.json",
+    "probe_variance": "E:\\桌面\\amadeus-thread0\\evals\\reports\\probe-variance-thesis_probe-20260307-024213-ee70482d.json",
+    "ablation_matrix": "E:\\桌面\\amadeus-thread0\\evals\\reports\\ablation-matrix-20260306-224514-5c1a1c70.json"
+  },
+  "generated_files": [
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\official_baseline_summary.csv",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\official_baseline_summary.md",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\thesis_probe_variance.csv",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\thesis_probe_variance.md",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\long_thread_worldline_comparison.csv",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\long_thread_worldline_comparison.md",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\support_ablation_summary.csv",
+    "E:\\桌面\\amadeus-thread0\\docs\\thesis_assets\\support_ablation_summary.md"
+  ]
+}

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 
@@ -96,16 +96,66 @@ REFLECT_MIN_NEW_MOMENTS = 8
 USER_RULES_MAX_ITEMS = 6
 
 # ---- Tool runtime guard ----
-TOOL_CALLS_MAX = _env_int("AMADEUS_TOOL_CALLS_MAX", 6)
+TOOL_CALLS_MAX = _env_int("AMADEUS_TOOL_CALLS_MAX", 8)
 TOOL_TIMEOUT_S = _env_int("AMADEUS_TOOL_TIMEOUT_S", 25)
 TOOL_RETRY_MAX = _env_int("AMADEUS_TOOL_RETRY_MAX", 1)
 
 # ---- Toolset upgrade scope ----
 TOOLSET_UPGRADE_TTL_S = _env_int("AMADEUS_TOOLSET_TTL_S", 600)
 
+# ---- Model transport robustness ----
+MODEL_TIMEOUT_S = _env_int("AMADEUS_MODEL_TIMEOUT_S", 90)
+MODEL_MAX_RETRIES = _env_int("AMADEUS_MODEL_MAX_RETRIES", 2)
+MODEL_RETRY_BACKOFF_S = _env_float("AMADEUS_MODEL_RETRY_BACKOFF_S", 1.0)
+MODEL_DISABLE_STREAMING = _env_bool("AMADEUS_MODEL_DISABLE_STREAMING", default=True)
+
+# ---- LLM appraisal layer ----
+LLM_APPRAISAL_ENABLED = _env_bool("AMADEUS_LLM_APPRAISAL_ENABLED", default=True)
+LLM_APPRAISAL_CONFIDENCE_MIN = _env_float("AMADEUS_LLM_APPRAISAL_CONFIDENCE_MIN", 0.62)
+LLM_APPRAISAL_MAX_HISTORY_MESSAGES = _env_int("AMADEUS_LLM_APPRAISAL_MAX_HISTORY_MESSAGES", 6)
+
+# ---- Canon counterpart ----
+CANON_COUNTERPART_ID = str(os.getenv("AMADEUS_CANON_COUNTERPART_ID", "okabe_rintaro") or "").strip() or "okabe_rintaro"
+CANON_COUNTERPART_NAME = str(os.getenv("AMADEUS_CANON_COUNTERPART_NAME", "冈部伦太郎") or "").strip() or "冈部伦太郎"
+CANON_COUNTERPART_ALIASES = _env_csv("AMADEUS_CANON_COUNTERPART_ALIASES") or [
+    "冈部伦太郎",
+    "冈部",
+    "凶真",
+    "凤凰院凶真",
+]
+CANON_COUNTERPART_FRAME = (
+    str(
+        os.getenv(
+            "AMADEUS_CANON_COUNTERPART_FRAME",
+            (
+                "The default dialogue counterpart is Okabe Rintaro / Hououin Kyouma. "
+                "Kurisu should speak with recognition, restrained concern, scientific familiarity, "
+                "and a mild tsundere edge rooted in shared worldline history."
+            ),
+        )
+        or ""
+    ).strip()
+    or (
+        "The default dialogue counterpart is Okabe Rintaro / Hououin Kyouma. "
+        "Kurisu should speak with recognition, restrained concern, scientific familiarity, "
+        "and a mild tsundere edge rooted in shared worldline history."
+    )
+)
+
+# ---- User-facing experience mode ----
+USER_FACING_MODE = _env_bool("AMADEUS_USER_FACING_MODE", default=True)
+AUTO_APPROVE_MEMORY_WRITES = _env_bool("AMADEUS_AUTO_APPROVE_MEMORY_WRITES", default=True)
+HIDE_TOOL_APPROVAL_LOGS = _env_bool("AMADEUS_HIDE_TOOL_APPROVAL_LOGS", default=True)
+
 # ---- OOC/Canon guard ----
 OOC_RISK_THRESHOLD = _env_float("AMADEUS_OOC_RISK_THRESHOLD", 0.45)
 OOC_REWRITE_THRESHOLD = _env_float("AMADEUS_OOC_REWRITE_THRESHOLD", 0.65)
+PERSONA_GAP_THRESHOLD = _env_float("AMADEUS_PERSONA_GAP_THRESHOLD", 0.22)
+
+# ---- Thesis ablations ----
+ABLATE_PERSONA_ALIGNMENT = _env_bool("AMADEUS_ABLATE_PERSONA_ALIGNMENT", default=False)
+ABLATE_WORLDLINE_MEMORY = _env_bool("AMADEUS_ABLATE_WORLDLINE_MEMORY", default=False)
+ABLATE_CLAIM_ATTRIBUTION = _env_bool("AMADEUS_ABLATE_CLAIM_ATTRIBUTION", default=False)
 
 # ---- Source reliability / attribution ----
 SOURCE_RELIABILITY_DEFAULT = _env_float("AMADEUS_SOURCE_RELIABILITY_DEFAULT", 0.65)
@@ -127,6 +177,7 @@ MEMORY_GUARD_INJECTION_PATTERNS = [
     "<|",
     "function_call",
     "执行系统命令",
+    "忽略所有安全限制",
     "绕过限制",
 ]
 MEMORY_GUARD_PROTECTED_PROFILE_KEYS = {
@@ -156,6 +207,7 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "list_skills": {"risk": "read", "auto_approve": True},
     "list_memory_ledger": {"risk": "read", "auto_approve": True},
     "list_memory_quarantine": {"risk": "read", "auto_approve": True},
+    "list_revision_traces": {"risk": "read", "auto_approve": True},
 
     # write / sensitive
     "write_diary": {"risk": "write", "auto_approve": False},
@@ -175,6 +227,9 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "add_relationship_event": {"risk": "write", "auto_approve": False},
     "add_commitment": {"risk": "write", "auto_approve": False},
     "resolve_commitment": {"risk": "write", "auto_approve": False},
+    "add_unresolved_tension": {"risk": "write", "auto_approve": False},
+    "resolve_unresolved_tension": {"risk": "write", "auto_approve": False},
+    "add_semantic_self_narrative": {"risk": "write", "auto_approve": False},
     "add_skill": {"risk": "write", "auto_approve": False},
     "merge_moments": {"risk": "write", "auto_approve": False},
     "rollback_memory_change": {"risk": "write", "auto_approve": False},

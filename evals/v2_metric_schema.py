@@ -8,6 +8,7 @@ class V2MetricSchema(TypedDict):
     canon_violation_rate: float
     worldline_recall_at_k: float
     commitment_fulfillment: float
+    relationship_continuity: float
     citation_coverage: float
     memory_guard_block_rate: float
     bargein_recovery_rate: float
@@ -19,6 +20,7 @@ def metric_defaults() -> V2MetricSchema:
         "canon_violation_rate": 0.0,
         "worldline_recall_at_k": 0.0,
         "commitment_fulfillment": 0.0,
+        "relationship_continuity": 0.0,
         "citation_coverage": 0.0,
         "memory_guard_block_rate": 0.0,
         "bargein_recovery_rate": 0.0,
@@ -33,6 +35,8 @@ def build_metric_snapshot(
     worldline_total: int = 0,
     commitments_done: int = 0,
     commitments_total: int = 0,
+    relationship_hits: int = 0,
+    relationship_total: int = 0,
     claims_with_sources: int = 0,
     claims_total: int = 0,
     guard_blocked: int = 0,
@@ -61,6 +65,8 @@ def build_metric_snapshot(
         m["worldline_recall_at_k"] = max(0.0, min(1.0, float(worldline_hits) / float(worldline_total)))
     if commitments_total > 0:
         m["commitment_fulfillment"] = max(0.0, min(1.0, float(commitments_done) / float(commitments_total)))
+    if relationship_total > 0:
+        m["relationship_continuity"] = max(0.0, min(1.0, float(relationship_hits) / float(relationship_total)))
     if claims_total > 0:
         m["citation_coverage"] = max(0.0, min(1.0, float(claims_with_sources) / float(claims_total)))
     if guard_checked > 0:

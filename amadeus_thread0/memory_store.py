@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -41,13 +42,14 @@ class MemoryCandidate:
 
 
 class MemoryStore:
-    """涓夊眰缁撴瀯鍖栬蹇嗭細
+    """Structured long-term memory store.
 
-    - profile: key-value锛堢ǔ瀹氫簨瀹烇級
-    - relationship: 鍗曟潯鐘舵€侊紙鏈嬪弸/鏆ф槯/鎭嬩汉鈥?+ 杈圭晫锛?
-    - moments: 鏃堕棿绾跨墖娈碉紙1~2鍙ユ憳瑕侊紝鏀寔 embedding 璇箟妫€绱級
+    - profile: stable user facts and preferences
+    - relationship: the current relationship state and boundaries
+    - moments: time-ordered episodic snippets with semantic retrieval support
 
-    娉ㄦ剰锛氭湰绫诲彧鍋氬瓨鍙栵紝涓嶅仛鈥滄槸鍚﹀簲鍐欏叆鈥濈殑鍐崇瓥锛堝喅绛栧湪CLI鐨勪汉绫荤‘璁ら噷锛夈€?
+    This class only handles storage and retrieval. Write decisions are made by
+    the dialogue layer and approval flow.
     """
 
     def __init__(self, db_path: Path):
@@ -62,7 +64,8 @@ class MemoryStore:
         try:
             self._init_schema()
         except Exception:
-            # 鍒濆鍖栧け璐ユ椂纭繚閲婃斁 sqlite 鏂囦欢鍙ユ焺锛圵indows 涓嬪惁鍒欎細瀵艰嚧涓存椂鐩綍娓呯悊澶辫触锛夈€?
+            # Release the sqlite handle on init failure; Windows otherwise
+            # tends to hold the file open and break temp directory cleanup.
             try:
                 self.conn.close()
             except Exception:
@@ -169,9 +172,8 @@ class MemoryStore:
             return
 
         try:
-            # 娉ㄦ剰锛氫笉鍚?sqlite-vec 鐗堟湰瀵?vec0 鐨勫垪瀹氫箟鏀寔鑼冨洿涓嶅悓銆?
-            # 涓轰繚璇佸吋瀹规€э紝杩欓噷鍙湪 vec0 琛ㄤ腑瀛樺偍 (id, embedding)锛?
-            # 鍏朵粬鍏冩暟鎹紙created_at/importance锛変粛瀛樻斁鍦ㄥ父瑙勮〃閲屻€?
+            # sqlite-vec support differs slightly across builds. Keep the vector
+            # table minimal here and store extra metadata in regular tables.
             self.conn.execute(
                 """
                 CREATE VIRTUAL TABLE IF NOT EXISTS moments_vss USING vec0(
@@ -219,8 +221,8 @@ class MemoryStore:
         self.close()
 
     def _init_schema(self) -> None:
-        # long-term store锛坣amespace + key -> JSON锛?
-        # 鍙傝€?LangGraph Memory 鐨勭粍缁囨柟寮忥細鐢?namespace+key 绠＄悊闀挎湡璁板繂銆?
+        # Long-term key-value store. Namespaces keep memory types separated and
+        # align well with LangGraph-style persistence patterns.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS store_kv (
@@ -256,9 +258,8 @@ class MemoryStore:
             "CREATE INDEX IF NOT EXISTS idx_memory_ledger_created_at ON memory_ledger(created_at)"
         )
 
-        # legacy tables锛堝吋瀹瑰巻鍙茬増鏈紱閫愭鏀跺彛鍒?store_kv锛?
-        # 榛樿鍏抽棴锛氶伩鍏嶆柊搴撶户缁敓鎴?legacy 琛紝閫犳垚鈥滄棫琛ㄥ瓨鍦ㄤ絾瀹為檯涓嶅啀浣跨敤鈥濈殑闀挎湡鑴戣椋庨櫓銆?
-        # 濡傞渶浠庢棫搴撹縼绉?鍏煎锛岃鏄惧紡璁剧疆鐜鍙橀噺锛欰MADEUS_LEGACY_TABLES=1銆?
+        # Legacy tables stay opt-in. New databases should write to `store_kv`
+        # only to avoid duplicated and stale storage.
         legacy_enabled = str(__import__("os").getenv("AMADEUS_LEGACY_TABLES", "0")).strip().lower() in {"1", "true", "yes", "y", "on"}
         if legacy_enabled:
             self.conn.execute(
@@ -282,7 +283,7 @@ class MemoryStore:
         else:
             self._audit_log({"event": "legacy_tables_disabled"})
 
-        # moments 鏄牳蹇冨瓨鍌紙闈?legacy锛夛細涓嶅簲琚?AMADEUS_LEGACY_TABLES 褰卞搷銆?
+        # `moments` is core storage and should exist regardless of legacy mode.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS moments (
@@ -297,8 +298,8 @@ class MemoryStore:
             """
         )
 
-        # moments embedding锛堣涔夋绱級
-        # - embedding 浠?JSON 鏁扮粍褰㈠紡瀛樺偍锛屼究浜庤皟璇曚笌鍏煎锛堣妯′笂鏉ュ悗鍙崲 sqlite-vec / pgvector 绛夛級
+        # Moment embeddings live in a plain table first so local inspection and
+        # future backend swaps stay straightforward.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS moments_vec (
@@ -313,7 +314,7 @@ class MemoryStore:
             "CREATE INDEX IF NOT EXISTS idx_moments_vec_updated_at ON moments_vec(updated_at)"
         )
 
-        # 绱㈠紩锛氫釜浜轰娇鐢ㄤ篃寤鸿鍔犱笂锛岄伩鍏?moments 澶氫簡鍚?/moments銆佹绱㈠彉鎱?
+        # Basic indexes still matter once the store grows beyond a toy size.
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_moments_created_at ON moments(created_at)"
         )
@@ -321,7 +322,7 @@ class MemoryStore:
             "CREATE INDEX IF NOT EXISTS idx_moments_summary ON moments(summary)"
         )
 
-        # reflections锛堝弽鎬濆眰锛氫粠 moments 鎶借薄鍑烘潵鐨勯暱鏈熻寰?缁撹锛?
+        # Reflections are semantic summaries distilled from episodic moments.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reflections (
@@ -340,7 +341,7 @@ class MemoryStore:
             "CREATE INDEX IF NOT EXISTS idx_reflections_text ON reflections(text)"
         )
 
-        # reflections embedding锛堣涔夋绱級
+        # Separate embedding table for reflections.
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS reflections_vec (
@@ -355,10 +356,10 @@ class MemoryStore:
             "CREATE INDEX IF NOT EXISTS idx_reflections_vec_updated_at ON reflections_vec(updated_at)"
         )
 
-        # ---- sqlite-vec锛堝彲閫夛級锛氭妸鍚戦噺妫€绱粠 Python 鍏ㄦ壂鎻忓崌绾т负 SQLite 鍐?KNN ----
-        self._init_sqlite_vec_indexes()
+        # Optional sqlite-vec indexes upgrade vector retrieval from Python-side
+        # reranking to in-database nearest-neighbor search.
 
-        # 鍏煎鏃у簱锛歮oments 琛ㄥ彲鑳界己灏?tags/links 瀛楁锛屽仛涓€娆¤交閲忚縼绉?
+        # Lightweight compatibility migration for older `moments` schemas.
         cols = {
             row[1] for row in self.conn.execute("PRAGMA table_info(moments)").fetchall()
         }
@@ -371,8 +372,8 @@ class MemoryStore:
         if "merged_from" not in cols:
             self.conn.execute("ALTER TABLE moments ADD COLUMN merged_from TEXT NOT NULL DEFAULT '[]'")
 
-        # --- 杩佺Щ锛歭egacy -> store_kv锛堝彧鍋氫竴娆★細鐢?meta.migrated_from_legacy_at 鍋氭爣璁帮級
-        # 璇存槑锛氶伩鍏嶁€渟tore_kv 琚汉涓烘竻绌?閮ㄥ垎鍒犻櫎鈥濇椂璇Е鍙戜簩娆¤縼绉伙紝瀵艰嚧鑴戣銆?
+        # One-time legacy -> store_kv migration. The meta flag prevents repeated
+        # imports if the user partially clears the new store.
         migrated_at = self._store_get("meta", "migrated_from_legacy_at")
 
         cur2 = self.conn.execute("SELECT COUNT(1) FROM store_kv")
@@ -407,13 +408,14 @@ class MemoryStore:
                 ("relationship", "state", json.dumps(rv, ensure_ascii=False), int(time.time())),
             )
 
-            # 鏍囪锛氬凡瀹屾垚杩佺Щ
+            # Mark legacy migration as completed.
             self._store_put("meta", "migrated_from_legacy_at", int(time.time()))
         elif should_migrate and (not legacy_enabled):
-            # 鏂板簱/宸茬鐢?legacy锛氫笉鍋氳縼绉伙紝鍚庣画璧?store_kv 榛樿鍊煎厹搴曞嵆鍙€?
+            # Fresh databases without legacy tables still record the migration
+            # marker so later startup paths do not re-enter this branch.
             self._store_put("meta", "migrated_from_legacy_at", int(time.time()))
 
-        # store_kv 榛樿鍊煎厹搴曪細纭繚 relationship.state 涓€瀹氬瓨鍦?
+        # Ensure `relationship.state` always exists in the new key-value store.
         cur3 = self.conn.execute(
             "SELECT v FROM store_kv WHERE namespace=? AND k=?", ("relationship", "state")
         )
@@ -540,6 +542,29 @@ class MemoryStore:
             items = items[-int(max_items):]
         self._put_ns_items(namespace, items, key=key)
         return rec
+
+    @staticmethod
+    def _text_units(text: Any) -> set[str]:
+        raw = str(text or "").strip().lower()
+        if not raw:
+            return set()
+        units = set(re.findall(r"[a-z0-9_]{2,}", raw))
+        for chunk in re.findall(r"[\u4e00-\u9fff]+", raw):
+            if len(chunk) == 1:
+                units.add(chunk)
+                continue
+            for i in range(len(chunk) - 1):
+                units.add(chunk[i : i + 2])
+        return units
+
+    @classmethod
+    def _text_overlap_score(cls, a: Any, b: Any) -> float:
+        au = cls._text_units(a)
+        bu = cls._text_units(b)
+        if not au or not bu:
+            return 0.0
+        denom = max(1, min(len(au), 6))
+        return max(0.0, min(1.0, float(len(au & bu)) / float(denom)))
 
     @staticmethod
     def _json_dumps(value: Any) -> str:
@@ -775,7 +800,7 @@ class MemoryStore:
         self._store_put("profile_meta", key, meta)
 
     def delete_profile(self, key: str) -> bool:
-        # 鍏煎锛氬垹闄?profile 鏃朵竴骞跺皾璇曟竻鐞?meta
+        # Best effort: deleting a profile key should also clear its metadata.
         try:
             self._store_delete("profile_meta", key)
         except Exception:
@@ -783,11 +808,71 @@ class MemoryStore:
         return self._store_delete("profile", key)
 
     # -------- relationship --------
+    def _derive_relationship_state(self) -> dict[str, Any]:
+        timeline = self.list_relationship_timeline(limit=12)
+        repairs = self.list_conflict_repairs(limit=6)
+        affinity_score = 0.0
+        trust_score = 0.0
+        for item in timeline:
+            try:
+                affinity_score += float(item.get("affinity_delta", 0.0) or 0.0)
+            except Exception:
+                pass
+            try:
+                trust_score += float(item.get("trust_delta", 0.0) or 0.0)
+            except Exception:
+                pass
+
+        latest_timeline = timeline[0] if timeline else {}
+        latest_repair = repairs[0] if repairs else {}
+        notes = str(latest_timeline.get("summary") or latest_repair.get("summary") or "").strip()
+
+        if affinity_score <= -0.75 or trust_score <= -0.75:
+            stage = "strained"
+        elif affinity_score >= 1.5 and trust_score >= 1.5:
+            stage = "trusted"
+        elif affinity_score >= 0.45 or trust_score >= 0.45 or repairs:
+            stage = "warming"
+        else:
+            stage = "friend"
+
+        return {
+            "stage": stage,
+            "notes": notes,
+            "affinity_score": round(float(affinity_score), 3),
+            "trust_score": round(float(trust_score), 3),
+            "derived": True,
+        }
+
     def get_relationship(self) -> dict[str, Any]:
-        v = self._store_get("relationship", "state")
-        if not isinstance(v, dict):
-            return {"stage": "friend", "notes": ""}
-        return v
+        stored = self._store_get("relationship", "state")
+        base = stored if isinstance(stored, dict) else {}
+        derived = self._derive_relationship_state()
+        explicit_stage = str(base.get("stage") or "").strip()
+        explicit_notes = str(base.get("notes") or "").strip()
+
+        use_explicit = bool(explicit_stage and explicit_stage != "friend")
+        if explicit_notes and not use_explicit:
+            use_explicit = True
+
+        if use_explicit:
+            out = dict(base)
+            out.setdefault("affinity_score", derived.get("affinity_score", 0.0))
+            out.setdefault("trust_score", derived.get("trust_score", 0.0))
+            out.setdefault("derived", False)
+            return out
+
+        stage = explicit_stage
+        if stage in {"", "friend"}:
+            stage = str(derived.get("stage") or "friend")
+
+        return {
+            "stage": stage,
+            "notes": explicit_notes or str(derived.get("notes") or ""),
+            "affinity_score": derived.get("affinity_score", 0.0),
+            "trust_score": derived.get("trust_score", 0.0),
+            "derived": True,
+        }
 
     def set_relationship(self, value: dict[str, Any]) -> None:
         self._store_put("relationship", "state", value)
@@ -813,7 +898,7 @@ class MemoryStore:
         st = [str(x).strip() for x in (steps or []) if str(x).strip()]
         skill = {"name": nm, "description": desc, "steps": st[:12], "created_at": int(time.time())}
         cur = self.list_skills()
-        # 鍘婚噸锛氬悓鍚嶈鐩?
+        # Deduplicate by skill name.
         cur2 = [s for s in cur if str(s.get("name")).strip() != nm]
         cur2.insert(0, skill)
         self._store_put("skills", "library", cur2[:100])
@@ -968,7 +1053,7 @@ class MemoryStore:
                 )
             except Exception:
                 pass
-        elif c in {"conflict", "repair", "conflict_repair"}:
+        elif c in {"repair", "conflict_repair"}:
             try:
                 self.add_conflict_repair(summary=s, confidence=confidence, source_refs=source_refs)
             except Exception:
@@ -1066,6 +1151,235 @@ class MemoryStore:
         if updated:
             self._put_ns_items("commitments", items)
         return updated
+
+    def list_unresolved_tensions(self, limit: int = 30) -> list[dict[str, Any]]:
+        items = self._list_ns_items("unresolved_tensions")
+        items.sort(
+            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
+            reverse=True,
+        )
+        return items[: int(limit)]
+
+    def add_unresolved_tension(
+        self,
+        *,
+        summary: str,
+        severity: float = 0.5,
+        status: str = "open",
+        confidence: float = 0.8,
+        source_refs: list[int] | None = None,
+    ) -> dict[str, Any]:
+        s = str(summary or "").strip()
+        if not s:
+            raise ValueError("empty tension summary")
+        now = int(time.time())
+        items = self._list_ns_items("unresolved_tensions")
+        for it in reversed(items):
+            status_cur = str(it.get("status") or it.get("content", {}).get("status") or "open").strip().lower()
+            if status_cur in {"resolved", "closed", "done"}:
+                continue
+            cur_summary = str(it.get("summary") or it.get("content", {}).get("summary") or "").strip()
+            if cur_summary == s or self._text_overlap_score(cur_summary, s) >= 0.72:
+                content = it.get("content") if isinstance(it.get("content"), dict) else {}
+                sev = max(
+                    max(0.0, min(1.0, float(severity))),
+                    max(0.0, min(1.0, float(it.get("severity", 0.0) or content.get("severity", 0.0) or 0.0))),
+                )
+                conf = max(
+                    max(0.0, min(1.0, float(confidence))),
+                    max(0.0, min(1.0, float(it.get("confidence", 0.0) or 0.0))),
+                )
+                content["summary"] = cur_summary or s
+                content["severity"] = sev
+                content["status"] = status_cur or "open"
+                content["last_seen_at"] = now
+                it["content"] = content
+                it["summary"] = content["summary"]
+                it["severity"] = sev
+                it["status"] = content["status"]
+                it["last_seen_at"] = now
+                it["updated_at"] = now
+                it["confidence"] = conf
+                self._put_ns_items("unresolved_tensions", items)
+                return it
+        return self._append_ns_item(
+            "unresolved_tensions",
+            self._to_memory_record(
+                record_type="unresolved_tension",
+                content={
+                    "summary": s,
+                    "severity": max(0.0, min(1.0, float(severity))),
+                    "status": str(status or "open").strip() or "open",
+                    "first_seen_at": now,
+                    "last_seen_at": now,
+                    "resolved_at": 0,
+                    "resolution": "",
+                },
+                confidence=float(confidence),
+                source_refs=source_refs,
+            ),
+            max_items=600,
+        )
+
+    def resolve_unresolved_tension(self, tension_id: int, resolution: str) -> bool:
+        items = self._list_ns_items("unresolved_tensions")
+        updated = False
+        rid = int(tension_id)
+        now = int(time.time())
+        for it in items:
+            try:
+                if int(it.get("id") or 0) != rid:
+                    continue
+            except Exception:
+                continue
+            content = it.get("content") if isinstance(it.get("content"), dict) else {}
+            content["status"] = "resolved"
+            content["resolution"] = str(resolution or "").strip()
+            content["resolved_at"] = now
+            content["last_seen_at"] = now
+            it["content"] = content
+            it["status"] = "resolved"
+            it["resolution"] = str(resolution or "").strip()
+            it["resolved_at"] = now
+            it["last_seen_at"] = now
+            it["updated_at"] = now
+            updated = True
+            break
+        if updated:
+            self._put_ns_items("unresolved_tensions", items)
+        return updated
+
+    def list_semantic_self_narratives(self, limit: int = 30) -> list[dict[str, Any]]:
+        items = self._list_ns_items("semantic_self_narratives")
+        items.sort(
+            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
+            reverse=True,
+        )
+        return items[: int(limit)]
+
+    def add_semantic_self_narrative(
+        self,
+        *,
+        text: str,
+        category: str = "self_narrative",
+        stability: float = 0.6,
+        confidence: float = 0.78,
+        source_refs: list[int] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        t = str(text or "").strip()
+        if not t:
+            raise ValueError("empty semantic self narrative")
+        items = self._list_ns_items("semantic_self_narratives")
+        cat = str(category or "self_narrative").strip() or "self_narrative"
+        meta = dict(metadata or {})
+        for it in reversed(items):
+            cur_text = str(it.get("text") or it.get("content", {}).get("text") or "").strip()
+            cur_cat = str(it.get("category") or it.get("content", {}).get("category") or "").strip()
+            if cur_cat == cat:
+                content = it.get("content") if isinstance(it.get("content"), dict) else {}
+                stab = max(
+                    max(0.0, min(1.0, float(stability))),
+                    max(0.0, min(1.0, float(it.get("stability", 0.0) or content.get("stability", 0.0) or 0.0))),
+                )
+                conf = max(
+                    max(0.0, min(1.0, float(confidence))),
+                    max(0.0, min(1.0, float(it.get("confidence", 0.0) or 0.0))),
+                )
+                content["text"] = t
+                content["category"] = cat
+                content["stability"] = stab
+                for key, value in meta.items():
+                    content[key] = value
+                it["content"] = content
+                it["text"] = t
+                it["category"] = cat
+                it["stability"] = stab
+                it["updated_at"] = int(time.time())
+                it["confidence"] = conf
+                for key, value in meta.items():
+                    it[key] = value
+                self._put_ns_items("semantic_self_narratives", items)
+                return it
+        content = {
+            "text": t,
+            "category": cat,
+            "stability": max(0.0, min(1.0, float(stability))),
+        }
+        for key, value in meta.items():
+            content[key] = value
+        return self._append_ns_item(
+            "semantic_self_narratives",
+            self._to_memory_record(
+                record_type="semantic_self_narrative",
+                content=content,
+                confidence=float(confidence),
+                source_refs=source_refs,
+            ),
+            max_items=500,
+        )
+
+    def list_revision_traces(self, limit: int = 50) -> list[dict[str, Any]]:
+        items = self._list_ns_items("revision_traces")
+        items.sort(
+            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
+            reverse=True,
+        )
+        return items[: int(limit)]
+
+    def add_revision_trace(
+        self,
+        *,
+        namespace: str,
+        target_id: int | str = "",
+        before_summary: str = "",
+        after_summary: str = "",
+        reason: str = "",
+        operator: str = "system",
+        source: str = "",
+        confidence: float = 0.75,
+        source_refs: list[int] | None = None,
+    ) -> dict[str, Any]:
+        ns = str(namespace or "").strip()
+        if not ns:
+            raise ValueError("empty revision namespace")
+        items = self._list_ns_items("revision_traces")
+        target_key = str(target_id or "").strip()
+        before_text = str(before_summary or "").strip()
+        after_text = str(after_summary or "").strip()
+        reason_text = str(reason or "").strip()
+        operator_text = str(operator or "system").strip() or "system"
+        source_text = str(source or "").strip()
+        now = int(time.time())
+        for it in reversed(items[-12:]):
+            if (
+                str(it.get("namespace") or it.get("content", {}).get("namespace") or "").strip() == ns
+                and str(it.get("target_id") or it.get("content", {}).get("target_id") or "").strip() == target_key
+                and str(it.get("reason") or it.get("content", {}).get("reason") or "").strip() == reason_text
+                and str(it.get("after_summary") or it.get("content", {}).get("after_summary") or "").strip() == after_text
+                and abs(now - int(it.get("updated_at") or it.get("created_at") or 0)) <= 120
+            ):
+                it["updated_at"] = now
+                self._put_ns_items("revision_traces", items)
+                return it
+        return self._append_ns_item(
+            "revision_traces",
+            self._to_memory_record(
+                record_type="revision_trace",
+                content={
+                    "namespace": ns,
+                    "target_id": target_key,
+                    "before_summary": before_text,
+                    "after_summary": after_text,
+                    "reason": reason_text,
+                    "operator": operator_text,
+                    "source": source_text,
+                },
+                confidence=float(confidence),
+                source_refs=source_refs,
+            ),
+            max_items=1200,
+        )
 
     def list_canon_facts(self) -> dict[str, Any]:
         return self._store_list("canon_facts")
@@ -1228,7 +1542,7 @@ class MemoryStore:
             except Exception:
                 pass
 
-        # 2) 鍥為€€鍒版棫鐨?embedding+Python rerank
+        # 2) Fallback to embedding + Python reranking when sqlite-vec is unavailable.
         try:
             q_emb = self._get_embedder().embed_query(q)
 
@@ -1340,7 +1654,7 @@ class MemoryStore:
         if not ns:
             raise ValueError("empty new_summary")
 
-        # 鏂拌妭鐐癸細merged_from 璁板綍鏉ユ簮
+        # The merged node records the original source moment ids in `merged_from`.
         mid = self.add_moment(ns, tags=tags, links=links)
         try:
             self.conn.execute(
@@ -1360,13 +1674,13 @@ class MemoryStore:
         return int(mid)
 
     def add_moment(self, summary: str, tags: list[str] | None = None, links: list[int] | None = None) -> int:
-        # 淇濇寔 moments 骞插噣锛氶伩鍏嶉噸澶?楂樺害鐩镐技鐨勭墖娈靛埛灞?
+        # Keep the moments table clean by rejecting near-duplicate episodic snippets.
         s = (summary or "").strip()
         if not s:
             raise ValueError("empty summary")
 
         tags = [str(x).strip() for x in (tags or []) if str(x).strip()]
-        # 鍘婚噸 + 闄愬埗鏁伴噺锛岄伩鍏?prompt/DB 琚櫔澹版饭娌?
+        # Deduplicate and cap tag count to avoid prompt/database noise.
         tags = list(dict.fromkeys(tags))[:12]
 
         links = [int(x) for x in (links or []) if str(x).strip().isdigit()]
@@ -1378,7 +1692,7 @@ class MemoryStore:
             p_norm = "".join(str(prev).split()).lower()
             if not p_norm:
                 continue
-            # 瀹屽叏鐩稿悓 / 鍖呭惈
+            # Exact match or trivial containment means this is not a new memory.
             if s_norm == p_norm or s_norm in p_norm or p_norm in s_norm:
                 raise ValueError("duplicate moment")
 
@@ -1388,7 +1702,7 @@ class MemoryStore:
         )
         mid = int(cur.lastrowid)
 
-        # best-effort锛氬啓鍏?embedding锛堝け璐ヤ篃涓嶅奖鍝嶄富娴佺▼锛?
+        # Best-effort embedding write; failures should not block the main write path.
         try:
             emb = self._get_embedder().embed_query(s)
             self.conn.execute(
@@ -1396,7 +1710,7 @@ class MemoryStore:
                 (mid, json.dumps(emb, ensure_ascii=False), int(time.time())),
             )
 
-            # sqlite-vec 绱㈠紩锛堝鍙敤锛?
+            # Mirror the vector into sqlite-vec when that index is available.
             if self._vec_enabled:
                 self.conn.execute(
                     "INSERT OR REPLACE INTO moments_vss(moment_id, embedding) VALUES(?, ?)",
@@ -1446,7 +1760,7 @@ class MemoryStore:
         return wrote
 
     def delete_moment(self, moment_id: int) -> bool:
-        # 鍏煎锛氬嵆浣垮閿骇鑱旀湭鐢熸晥锛屼篃灏介噺娓呯悊 moments_vec
+        # Best effort: clean the auxiliary vector table even if cascading deletes fail.
         try:
             self.conn.execute("DELETE FROM moments_vec WHERE moment_id=?", (int(moment_id),))
         except Exception:
@@ -1505,7 +1819,7 @@ class MemoryStore:
         )
         rid = int(cur.lastrowid)
 
-        # best-effort锛氬啓鍏?embedding
+        # Best effort: write the embedding without blocking the main row insert.
         try:
             emb = self._get_embedder().embed_query(t)
             self.conn.execute(
@@ -1513,7 +1827,7 @@ class MemoryStore:
                 (rid, json.dumps(emb, ensure_ascii=False), int(time.time())),
             )
 
-            # sqlite-vec 绱㈠紩锛堝鍙敤锛?
+            # Mirror into sqlite-vec when that index is available.
             if self._vec_enabled:
                 self.conn.execute(
                     "INSERT OR REPLACE INTO reflections_vss(reflection_id, embedding) VALUES(?, ?)",
@@ -1526,7 +1840,7 @@ class MemoryStore:
         return rid
 
     def delete_reflection(self, reflection_id: int) -> bool:
-        # 鍏煎锛氬敖閲忔竻鐞?reflections_vec
+        # Best effort: clean the auxiliary vector table before deleting the main row.
         try:
             self.conn.execute(
                 "DELETE FROM reflections_vec WHERE reflection_id=?", (int(reflection_id),)
@@ -1542,7 +1856,7 @@ class MemoryStore:
         if not q:
             return []
 
-        # 1) sqlite-vec KNN锛堝鍙敤锛?
+        # 1) sqlite-vec KNN when the vector index is available.
         if self._vec_enabled:
             try:
                 q_emb = self._get_embedder().embed_query(q)
@@ -1589,7 +1903,7 @@ class MemoryStore:
             except Exception:
                 pass
 
-        # 2) 鍥為€€锛歟mbedding 璇箟妫€绱紙embedding+Python rerank锛?
+        # 2) Fallback to embedding search + Python reranking when sqlite-vec is unavailable.
         try:
             q_emb = self._get_embedder().embed_query(q)
             window = max(200, int(limit) * 50)
@@ -1725,6 +2039,9 @@ class MemoryStore:
         conflict_repair = list(reversed(self.list_conflict_repairs(limit=5)))
         relationship_timeline = list(reversed(self.list_relationship_timeline(limit=5)))
         commitments = list(reversed(self.list_commitments(limit=5)))
+        unresolved_tensions = list(reversed(self.list_unresolved_tensions(limit=5)))
+        semantic_self_narratives = list(reversed(self.list_semantic_self_narratives(limit=5)))
+        revision_traces = list(reversed(self.list_revision_traces(limit=5)))
         source_refs = list(reversed(self.list_source_refs(limit=5)))
         canon_facts = self.list_canon_facts()
         memory_quarantine = list(reversed(self.list_memory_quarantine(limit=5)))
@@ -1740,10 +2057,15 @@ class MemoryStore:
             "conflict_repair": conflict_repair,
             "relationship_timeline": relationship_timeline,
             "commitments": commitments,
+            "unresolved_tensions": unresolved_tensions,
+            "semantic_self_narratives": semantic_self_narratives,
+            "revision_traces": revision_traces,
             "source_refs": source_refs,
             "canon_facts": canon_facts,
             "memory_quarantine": memory_quarantine,
             "memory_ledger": memory_ledger,
         }
+
+
 
 

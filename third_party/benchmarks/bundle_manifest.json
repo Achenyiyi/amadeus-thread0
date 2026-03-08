@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-03-08T08:26:33.163664+00:00",
+  "bundle_root": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks",
+  "datasets": [
+    {
+      "key": "CharacterEval",
+      "source_type": "git",
+      "source": "https://github.com/morecry/CharacterEval.git",
+      "purpose": "Role-playing fidelity and in-character dialogue evaluation.",
+      "notes": "Useful as the closest public role-play benchmark for persona consistency.",
+      "allow_patterns": null,
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\CharacterEval",
+      "files": 50
+    },
+    {
+      "key": "ESConv",
+      "source_type": "git",
+      "source": "https://github.com/thu-coai/Emotional-Support-Conversation.git",
+      "purpose": "Emotional support dialogue and repair-style response analysis.",
+      "notes": "Useful for companionship, apology, repair, and support strategy analysis.",
+      "allow_patterns": null,
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\ESConv",
+      "files": 696
+    },
+    {
+      "key": "RoleBench",
+      "source_type": "hf_dataset",
+      "source": "ZenMoore/RoleBench",
+      "purpose": "Role-playing benchmark with stronger breadth than a single-character probe.",
+      "notes": "Useful as a transfer and role-consistency benchmark bundle.",
+      "allow_patterns": [
+        "*.json",
+        "*.jsonl",
+        "*.csv",
+        "*.parquet",
+        "*.txt",
+        "README.md",
+        "dataset_infos.json"
+      ],
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\RoleBench",
+      "files": 459
+    },
+    {
+      "key": "EmpatheticDialogues",
+      "source_type": "hf_dataset",
+      "source": "facebook/empathetic_dialogues",
+      "purpose": "Empathy and emotionally grounded conversation.",
+      "notes": "Useful for everyday companion dialogue and emotion-grounded response analysis.",
+      "allow_patterns": [
+        "*.json",
+        "*.jsonl",
+        "*.csv",
+        "*.parquet",
+        "*.txt",
+        "README.md",
+        "dataset_infos.json"
+      ],
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\EmpatheticDialogues",
+      "files": 3
+    },
+    {
+      "key": "GoEmotions",
+      "source_type": "hf_dataset",
+      "source": "google-research-datasets/go_emotions",
+      "purpose": "Emotion-label corpus for appraisal-layer calibration.",
+      "notes": "Useful for calibrating affect appraisal beyond keyword heuristics.",
+      "allow_patterns": [
+        "*.json",
+        "*.jsonl",
+        "*.csv",
+        "*.parquet",
+        "*.txt",
+        "README.md",
+        "dataset_infos.json"
+      ],
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\GoEmotions",
+      "files": 11
+    },
+    {
+      "key": "MultiSessionChat",
+      "source_type": "hf_dataset",
+      "source": "nayohan/multi_session_chat",
+      "purpose": "Multi-session dialogue continuity and long-horizon recall.",
+      "notes": "Supplementary mirror used for long-session continuity experiments.",
+      "allow_patterns": [
+        "*.json",
+        "*.jsonl",
+        "*.csv",
+        "*.parquet",
+        "*.txt",
+        "README.md",
+        "dataset_infos.json"
+      ],
+      "path": "E:\\桌面\\amadeus-thread0\\third_party\\benchmarks\\MultiSessionChat",
+      "files": 9
+    }
+  ]
+}

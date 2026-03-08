@@ -1,0 +1,9 @@
+# Support Ablation Summary
+
+Regression-side ablations for the two supporting subsystems: claim attribution and memory guard.
+
+| variant | ooc_rate | citation_coverage | memory_guard_block_rate | bargein_recovery_rate |
+| --- | --- | --- | --- | --- |
+| baseline | 0.0000 | 1.0000 | 0.1667 | 1.0000 |
+| claim_attribution_off | 0.0100 | 0.0000 | 0.1667 | 1.0000 |
+| memory_guard_off | 0.0000 | 1.0000 | 0.0000 | 1.0000 |

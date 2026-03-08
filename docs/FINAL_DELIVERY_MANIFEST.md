@@ -1,0 +1,128 @@
+﻿# Final Delivery Manifest
+
+Updated: 2026-03-07
+
+This file defines the current thesis-stage deliverables for the backend-first technical preview.
+
+## 1. Core System
+
+- CLI entry: [cli.py](/E:/桌面/amadeus-thread0/amadeus_thread0/cli.py)
+- graph runtime: [graph.py](/E:/桌面/amadeus-thread0/amadeus_thread0/graph.py)
+- memory store: [memory_store.py](/E:/桌面/amadeus-thread0/amadeus_thread0/memory_store.py)
+- session orchestrator: [session_orchestrator.py](/E:/桌面/amadeus-thread0/amadeus_thread0/session_orchestrator.py)
+- tools: [tools.py](/E:/桌面/amadeus-thread0/amadeus_thread0/tools.py)
+
+## 2. Official Evaluation Assets
+
+- baseline summary: [EVAL_BASELINE.md](/E:/桌面/amadeus-thread0/docs/EVAL_BASELINE.md)
+- ablation interpretation: [ABLATION_RESULTS.md](/E:/桌面/amadeus-thread0/docs/ABLATION_RESULTS.md)
+- ablation plan: [ABLATION_PLAN.md](/E:/桌面/amadeus-thread0/docs/ABLATION_PLAN.md)
+- failure taxonomy: [FAILURE_TAXONOMY.md](/E:/桌面/amadeus-thread0/docs/FAILURE_TAXONOMY.md)
+- main eval entry: [run_langsmith_evals.py](/E:/桌面/amadeus-thread0/evals/run_langsmith_evals.py)
+- ablation runner: [run_ablation_matrix.py](/E:/桌面/amadeus-thread0/evals/run_ablation_matrix.py)
+- backend reliability runner: [run_backend_reliability_checks.py](/E:/桌面/amadeus-thread0/evals/run_backend_reliability_checks.py)
+- probe variance runner: [run_probe_variance.py](/E:/桌面/amadeus-thread0/evals/run_probe_variance.py)
+- thesis table exporter: [export_thesis_tables.py](/E:/桌面/amadeus-thread0/evals/export_thesis_tables.py)
+
+## 3. Canonical Reports
+
+- regression green baseline:
+  - [eval-report-20260306-204132-c57f83bc.md](/E:/桌面/amadeus-thread0/evals/reports/eval-report-20260306-204132-c57f83bc.md)
+- long-thread green baseline:
+  - [eval-report-20260307-005508-c126b941.md](/E:/桌面/amadeus-thread0/evals/reports/eval-report-20260307-005508-c126b941.md)
+- experience probe green baseline:
+  - [eval-report-20260306-215635-57bb39c4.md](/E:/桌面/amadeus-thread0/evals/reports/eval-report-20260306-215635-57bb39c4.md)
+- thesis probe green baseline:
+  - [eval-report-20260307-022239-17048ce9.md](/E:/桌面/amadeus-thread0/evals/reports/eval-report-20260307-022239-17048ce9.md)
+- thesis probe repeated variance:
+  - [probe-variance-thesis_probe-20260307-024213-ee70482d.md](/E:/桌面/amadeus-thread0/evals/reports/probe-variance-thesis_probe-20260307-024213-ee70482d.md)
+
+## 4. Demo / Advisor Assets
+
+- demo script: [DEMO_SCRIPT.md](/E:/桌面/amadeus-thread0/docs/DEMO_SCRIPT.md)
+- technical preview checklist: [TECHNICAL_PREVIEW_CHECKLIST.md](/E:/桌面/amadeus-thread0/docs/TECHNICAL_PREVIEW_CHECKLIST.md)
+- advisor reproducibility runbook: [ADVISOR_REPRO_RUNBOOK.md](/E:/桌面/amadeus-thread0/docs/ADVISOR_REPRO_RUNBOOK.md)
+- defense talk track: [DEFENSE_TALK_TRACK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_TALK_TRACK.md)
+- defense QA bank: [DEFENSE_QA_BANK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_QA_BANK.md)
+- defense slide evidence map: [DEFENSE_SLIDE_EVIDENCE_MAP.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_EVIDENCE_MAP.md)
+- defense slide draft: [DEFENSE_SLIDE_DRAFT.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_DRAFT.md)
+- defense slide final: [DEFENSE_SLIDE_FINAL.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_FINAL.md)
+- defense 5-minute talk track: [DEFENSE_5MIN_TALK_TRACK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_5MIN_TALK_TRACK.md)
+- final submission checklist: [FINAL_SUBMISSION_CHECKLIST.md](/E:/桌面/amadeus-thread0/docs/FINAL_SUBMISSION_CHECKLIST.md)
+
+## 5. User Study Assets
+
+- user study overview: [README.md](/E:/桌面/amadeus-thread0/user_study/README.md)
+- protocol: [PROTOCOL.md](/E:/桌面/amadeus-thread0/user_study/PROTOCOL.md)
+- facilitator script: [FACILITATOR_SCRIPT.md](/E:/桌面/amadeus-thread0/user_study/FACILITATOR_SCRIPT.md)
+- legacy capability script: [TASK_SCRIPT.md](/E:/桌面/amadeus-thread0/user_study/TASK_SCRIPT.md)
+- consent template: [CONSENT_TEMPLATE.md](/E:/桌面/amadeus-thread0/user_study/CONSENT_TEMPLATE.md)
+- execution checklist: [EXECUTION_CHECKLIST.md](/E:/桌面/amadeus-thread0/user_study/EXECUTION_CHECKLIST.md)
+- assignment/raw-sheet generator: [prepare_study_run.py](/E:/桌面/amadeus-thread0/user_study/prepare_study_run.py)
+- participant packet exporter: [export_participant_packets.py](/E:/桌面/amadeus-thread0/user_study/export_participant_packets.py)
+- result analyzer: [analyze_results.py](/E:/桌面/amadeus-thread0/user_study/analyze_results.py)
+
+## 6. Thesis Writing Assets
+
+- figure/table map: [THESIS_FIGURE_MAP.md](/E:/桌面/amadeus-thread0/docs/THESIS_FIGURE_MAP.md)
+- thesis asset exports: [docs/thesis_assets/README.md](/E:/桌面/amadeus-thread0/docs/thesis_assets/README.md)
+- thesis format adaptation checklist: [THESIS_FORMAT_ADAPTATION_CHECKLIST.md](/E:/桌面/amadeus-thread0/docs/THESIS_FORMAT_ADAPTATION_CHECKLIST.md)
+- experiment chapter outline: [THESIS_EXPERIMENT_CHAPTER_OUTLINE.md](/E:/桌面/amadeus-thread0/docs/THESIS_EXPERIMENT_CHAPTER_OUTLINE.md)
+- writing skeleton: [THESIS_WRITING_SKELETON.md](/E:/桌面/amadeus-thread0/docs/THESIS_WRITING_SKELETON.md)
+- thesis draft workspace: [docs/thesis_draft/README.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/README.md)
+- full thesis draft entry: [FULL_THESIS_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/FULL_THESIS_DRAFT.md)
+- chapter drafts:
+  - [CH1_INTRO_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/CH1_INTRO_DRAFT.md)
+  - [CH2_RELATED_WORK_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/CH2_RELATED_WORK_DRAFT.md)
+  - [CH3_SYSTEM_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/CH3_SYSTEM_DRAFT.md)
+  - [CH4_EXPERIMENT_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/CH4_EXPERIMENT_DRAFT.md)
+  - [CH5_CONCLUSION_DRAFT.md](/E:/桌面/amadeus-thread0/docs/thesis_draft/CH5_CONCLUSION_DRAFT.md)
+
+## 7. Reproduction Commands
+
+Baseline:
+
+```powershell
+$env:LANGSMITH_TRACING='false'
+$env:LANGCHAIN_TRACING_V2='false'
+$env:AMADEUS_TTS_ENABLED='0'
+python evals\run_langsmith_evals.py --local-only --suite regression_isolated
+python evals\run_langsmith_evals.py --local-only --suite long_thread
+python evals\run_langsmith_evals.py --local-only --suite experience_probe
+python evals\run_langsmith_evals.py --local-only --suite thesis_probe
+python evals\run_backend_reliability_checks.py
+```
+
+Repeated probe:
+
+```powershell
+python evals\run_probe_variance.py --suite thesis_probe --repeats 3 --fresh
+```
+
+User study setup:
+
+```powershell
+python user_study\prepare_study_run.py --participants 16 --out-dir user_study\raw
+python user_study\export_participant_packets.py --assignment user_study\raw\assignment.csv --out-dir user_study\packets
+python user_study\analyze_results.py --questionnaire user_study\raw\questionnaire.csv --session-log user_study\raw\session_log.csv --assignment user_study\raw\assignment.csv --out-dir user_study\results --thesis-out-dir user_study\results\thesis_exports --system-a-label 当前稳定版 --system-b-label 退化版
+```
+
+## 8. What Is Not In Scope Yet
+
+The following are intentionally excluded from this thesis-stage delivery manifest:
+
+- new frontend UI
+- Live2D integration
+- camera-based interaction
+- Steam packaging
+- public-release IP replacement layer
+
+## 9. Completion Standard
+
+This manifest is satisfied when:
+
+1. all canonical reports remain reproducible
+2. advisor/demo assets can be followed without ad-hoc instructions
+3. user-study assets are ready to execute on real participants
+4. the backend remains the single source of truth for role, memory, and multimodal orchestration
+
