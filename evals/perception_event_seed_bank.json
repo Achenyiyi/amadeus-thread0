@@ -55,6 +55,74 @@
       }
     },
     {
+      "id": "scheduled_deadline_article_due",
+      "status": "native",
+      "kind": "scheduled_life_due",
+      "source": "scheduler",
+      "tags": ["scheduled_due", "deadline_window", "work_nudge", "shared_task"],
+      "event": {
+        "kind": "scheduled_life_due",
+        "source": "scheduler",
+        "text": "你记得冈部今晚说过要把引言那段收掉，现在已经接近他自己定的节点了。",
+        "event_frame": "scheduled_deadline_window",
+        "scheduled_after_min": 0,
+        "trigger_family": "deadline_window",
+        "derived_from_plan_kind": "life_window",
+        "tags": ["scheduled_due", "deadline_window", "work_nudge", "shared_task"]
+      }
+    },
+    {
+      "id": "scheduled_watch_window",
+      "status": "native",
+      "kind": "scheduled_life_due",
+      "source": "scheduler",
+      "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
+      "event": {
+        "kind": "scheduled_life_due",
+        "source": "scheduler",
+        "text": "之前随口提过的那部剧正好到了可以一起看一集的时间窗口。",
+        "event_frame": "scheduled_shared_activity_window",
+        "scheduled_after_min": 0,
+        "trigger_family": "shared_activity_window",
+        "derived_from_plan_kind": "life_window",
+        "tags": ["scheduled_due", "shared_activity_window", "offer_window"]
+      }
+    },
+    {
+      "id": "self_lab_focus_window",
+      "status": "native",
+      "kind": "self_activity_state",
+      "source": "self",
+      "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+      "event": {
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": "她自己正卡在一段实验记录和笔记整理里，注意力明显还收在自己的事情上。",
+        "event_frame": "self_focus_lab_window",
+        "scheduled_after_min": 0,
+        "trigger_family": "self_activity",
+        "derived_from_plan_kind": "self_rhythm",
+        "tags": ["self_activity", "deep_focus", "own_task", "not_available"]
+      }
+    },
+    {
+      "id": "self_break_small_opening",
+      "status": "native",
+      "kind": "self_activity_state",
+      "source": "self",
+      "tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+      "event": {
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": "她刚从自己手头那件事里抬头，像是终于空出一点点注意力，可以顺手来碰一下你。",
+        "event_frame": "self_break_small_opening",
+        "scheduled_after_min": 0,
+        "trigger_family": "self_activity",
+        "derived_from_plan_kind": "self_rhythm",
+        "tags": ["self_activity", "break_window", "small_opening", "reapproach"]
+      }
+    },
+    {
       "id": "desk_cold_coffee",
       "status": "prompt-mediated",
       "kind": "scene_observation",

@@ -22,6 +22,8 @@ Status: `implemented as a text-first event bridge`
 Currently implemented inputs:
 - user text
 - time/idle events
+- scheduler-derived life events
+- self-originated activity state events
 - recent dialogue history
 - retrieved worldline/context
 - source evidence pack
@@ -85,6 +87,8 @@ Current evidence:
 What it already does:
 - resolves ambiguous emotional/relational turns better than plain keyword rules
 - can now be triggered by non-user events such as `vision / ambient / gesture / idle-time` seeds
+- can now appraise scheduler-derived life windows such as `deadline_window` and `shared_activity_window`
+- can now preserve “she is busy with her own thing” as a valid runtime state instead of always pivoting toward the user
 
 What still needs work:
 - broader event understanding beyond text-first turns
@@ -140,12 +144,16 @@ Status: `implemented as explicit bridge`
 Current evidence:
 - `behavior_policy`
 - `behavior_action`
+- `behavior_plan`
+- `behavior_agenda`
+- `behavior_queue`
 - warmth / sharpness / initiative / disclosure / reply length / approach-withdraw / tease bias
 - action target / deferred action family / timing window
 
 What it does:
 - translates latent state into conversational tendency without rigid templates
 - starts exposing the selected outward interaction mode without collapsing into fixed response scripts
+- preserves low-pressure deferred intentions across turns so behavior is not reduced to only the latest reply
 
 ## 4. Behavior Layer
 
@@ -161,13 +169,16 @@ Current behavior forms:
 - silence / brevity bias
 - continuation behavior
 - explicit interaction mode summary via `behavior_action`
+- lightweight cross-turn behavior agenda / queue via `behavior_agenda / behavior_queue`
 - idle-time low-pressure check-in / quiet non-expansion
+- scheduled life nudges and shared-activity offers
+- self-rhythm holding and self-originated small reopenings
 - abstract next-step skeleton via `action_target / deferred_action_family / timing_window_min`
+- nonverbal/initiative skeleton via `attention_target / nonverbal_signal / initiative_shape`
 - TTS rendering as secondary output channel
 
 ### Missing
-- proactive initiation as first-class action
-- nonverbal behavior representation
+- richer proactive initiation families beyond light check-ins and life nudges
 - action planning outside reply text
 - multimodal body/attention outputs
 

@@ -111,7 +111,11 @@ def _print_help() -> None:
         "/bond                     查看关系状态与关系时间线\n"
         "/sources                  查看来源与 claim->source 映射\n"
         "/persona                  查看角色状态快照\n"
+        "/agenda                   查看待成熟行为议程\n"
+        "/queue                    查看待成熟行为队列（/agenda 别名）\n"
         "/idle [minutes] [| note]  模拟一段安静时间经过，让她决定是否主动开口\n"
+        "/events                   列出可注入的感知/生活事件种子\n"
+        "/event <seed_id> [| note] 触发一个事件种子，让她按事件而非用户发言做行为选择\n"
         "/correct key=value        纠正 profile\n"
         "/undo key                 撤销最近一次纠错\n"
         "/set key=value            直接写入 profile\n"
@@ -123,6 +127,117 @@ def _print_help() -> None:
         "/tts_ref <path.wav>       设置参考音频\n"
         "/tts_ref_text <text>      设置参考文本\n"
     )
+
+
+_EVENT_SEED_BANK_CACHE: dict[str, dict[str, object]] | None = None
+
+
+def _event_seed_bank_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "evals" / "perception_event_seed_bank.json"
+
+
+def _load_event_seed_bank() -> dict[str, dict[str, object]]:
+    global _EVENT_SEED_BANK_CACHE
+    if _EVENT_SEED_BANK_CACHE is not None:
+        return _EVENT_SEED_BANK_CACHE
+    path = _event_seed_bank_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        _EVENT_SEED_BANK_CACHE = {}
+        return _EVENT_SEED_BANK_CACHE
+    seeds = raw.get("seeds") if isinstance(raw, dict) else []
+    bank: dict[str, dict[str, object]] = {}
+    if isinstance(seeds, list):
+        for item in seeds:
+            if not isinstance(item, dict):
+                continue
+            seed_id = str(item.get("id") or "").strip()
+            if seed_id:
+                bank[seed_id] = item
+    _EVENT_SEED_BANK_CACHE = bank
+    return bank
+
+
+def _list_event_seed_rows() -> list[str]:
+    bank = _load_event_seed_bank()
+    rows: list[str] = []
+    for seed_id in sorted(bank):
+        item = bank[seed_id]
+        kind = str(item.get("kind") or "").strip() or "unknown"
+        source = str(item.get("source") or "").strip() or "unknown"
+        status = str(item.get("status") or "").strip() or "unknown"
+        tags = item.get("tags") if isinstance(item.get("tags"), list) else []
+        rows.append(
+            f"- {seed_id} [{kind}/{source}/{status}]"
+            + (f" tags={tags[:4]}" if tags else "")
+        )
+    return rows
+
+
+def _build_run_config(base_config: dict[str, object], pending_checkpoint_id: str | None) -> tuple[dict[str, object], str | None]:
+    run_config: dict[str, object] = base_config
+    pending_after = pending_checkpoint_id
+    if pending_checkpoint_id:
+        run_config = {
+            "configurable": {
+                "thread_id": base_config["configurable"]["thread_id"],
+                "user_id": base_config["configurable"].get("user_id"),
+                "checkpoint_id": pending_checkpoint_id,
+            }
+        }
+        pending_after = None
+    return run_config, pending_after
+
+
+def _invoke_event_round(
+    *,
+    graph,
+    run_config: dict[str, object],
+    event_payload: dict[str, object],
+    transient_label: str,
+) -> tuple[dict[str, object], str]:
+    before = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
+    before_values = getattr(before, "values", {}) if before is not None else {}
+    if not isinstance(before_values, dict):
+        before_values = {}
+    before_messages = before_values.get("messages") if isinstance(before_values.get("messages"), list) else []
+    before_len = len(before_messages)
+
+    try:
+        out = graph.invoke(event_payload, config=run_config)
+    except Exception as e:
+        if _is_transient_runtime_error(e):
+            print(f"\n[{transient_label}][warn] 本轮事件触发时网络连接中断。稍后再试就行。")
+            return {}, ""
+        raise
+
+    while out.get("__interrupt__"):
+        intr = out["__interrupt__"][0]
+        payload = getattr(intr, "value", None)
+        if payload is None and isinstance(intr, dict):
+            payload = intr.get("value")
+        payload = payload or {}
+        tool_calls = payload.get("tool_calls") if isinstance(payload.get("tool_calls"), list) else []
+        if isinstance(payload, dict) and _should_auto_resume_memory_approval(payload):
+            decisions = [{"action": "approve"} for _ in tool_calls]
+        else:
+            decisions = [{"action": "reject", "reason": f"{transient_label}_no_manual_tooling"} for _ in tool_calls]
+        out = graph.invoke(
+            Command(resume={"decisions": decisions}),
+            config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+        )
+
+    after = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
+    after_values = getattr(after, "values", {}) if after is not None else {}
+    if not isinstance(after_values, dict):
+        after_values = {}
+    after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
+    final_text = ""
+    if len(after_messages) > before_len and after_messages:
+        last = after_messages[-1]
+        final_text = str(getattr(last, "content", "") or "").strip()
+    return after_values, final_text
 
 
 def main():
@@ -397,9 +512,90 @@ def main():
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
+            queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
             print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
             print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
             print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
+            continue
+
+        if user.lower() in {"/agenda", "/queue"}:
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if not isinstance(vals, dict):
+                vals = {}
+            queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
+            continue
+
+        if user.lower() in {"/events", "/event_list"}:
+            rows = _list_event_seed_rows()
+            print("\n[EVENT_SEEDS]")
+            if not rows:
+                print("- (empty)")
+            else:
+                for row in rows:
+                    print(row)
+            continue
+
+        if user.lower().startswith("/event "):
+            raw = user[len("/event ") :].strip()
+            note_override = ""
+            if "|" in raw:
+                left, right = raw.split("|", 1)
+                raw = left.strip()
+                note_override = right.strip()
+            seed_id = raw.strip()
+            if not seed_id:
+                print("用法：/event <seed_id> [| note]")
+                continue
+
+            bank = _load_event_seed_bank()
+            seed = bank.get(seed_id)
+            if not isinstance(seed, dict):
+                print(f"\n[event] 未找到事件种子：{seed_id}")
+                continue
+            event = seed.get("event") if isinstance(seed.get("event"), dict) else {}
+            if not event:
+                print(f"\n[event] 事件种子缺少 event 载荷：{seed_id}")
+                continue
+
+            payload_event = dict(event)
+            if note_override:
+                payload_event["text"] = note_override
+                payload_event["effective_text"] = note_override
+            payload_event.setdefault("created_at", int(time.time()))
+
+            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            after_values, final_text = _invoke_event_round(
+                graph=graph,
+                run_config=run_config,
+                event_payload={"event_override": payload_event},
+                transient_label="event",
+            )
+            if not after_values:
+                continue
+
+            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
+            behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
+            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
+
+            print(
+                "\n[event]"
+                + f" seed={seed_id}"
+                + "\n[BEHAVIOR_ACTION]\n"
+                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
+            )
+            if behavior_plan:
+                print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
+            if current_event:
+                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
+            if final_text:
+                print("\nAmadeus> " + final_text)
+            else:
+                print("\nAmadeus> （这轮她选择先不主动开口。）")
             continue
 
         if user.lower().startswith("/idle"):
@@ -418,24 +614,6 @@ def main():
                         idle_note = (raw + (" | " + idle_note if idle_note else "")).strip()
                         idle_minutes = 30
 
-            run_config = config
-            if pending_checkpoint_id:
-                run_config = {
-                    "configurable": {
-                        "thread_id": config["configurable"]["thread_id"],
-                        "user_id": config["configurable"].get("user_id"),
-                        "checkpoint_id": pending_checkpoint_id,
-                    }
-                }
-                pending_checkpoint_id = None
-
-            before = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
-            before_values = getattr(before, "values", {}) if before is not None else {}
-            if not isinstance(before_values, dict):
-                before_values = {}
-            before_messages = before_values.get("messages") if isinstance(before_values.get("messages"), list) else []
-            before_len = len(before_messages)
-
             event_text = idle_note or f"已经安静地过去了 {idle_minutes} 分钟，没有新的用户消息。"
             idle_payload = {
                 "event_override": {
@@ -452,41 +630,18 @@ def main():
                 }
             }
 
-            try:
-                out = graph.invoke(idle_payload, config=run_config)
-            except Exception as e:
-                if _is_transient_runtime_error(e):
-                    print("\n[idle][warn] 本轮空闲事件触发时网络连接中断。稍后再试就行。")
-                    continue
-                raise
+            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            after_values, final_text = _invoke_event_round(
+                graph=graph,
+                run_config=run_config,
+                event_payload=idle_payload,
+                transient_label="idle",
+            )
+            if not after_values:
+                continue
 
-            while out.get("__interrupt__"):
-                intr = out["__interrupt__"][0]
-                payload = getattr(intr, "value", None)
-                if payload is None and isinstance(intr, dict):
-                    payload = intr.get("value")
-                payload = payload or {}
-                tool_calls = payload.get("tool_calls") if isinstance(payload.get("tool_calls"), list) else []
-                if isinstance(payload, dict) and _should_auto_resume_memory_approval(payload):
-                    decisions = [{"action": "approve"} for _ in tool_calls]
-                else:
-                    decisions = [{"action": "reject", "reason": "idle_event_no_manual_tooling"} for _ in tool_calls]
-                out = graph.invoke(
-                    Command(resume={"decisions": decisions}),
-                    config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
-                )
-
-            after = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
-            after_values = getattr(after, "values", {}) if after is not None else {}
-            if not isinstance(after_values, dict):
-                after_values = {}
-            after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
             behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
             current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
-            final_text = ""
-            if len(after_messages) > before_len and after_messages:
-                last = after_messages[-1]
-                final_text = str(getattr(last, "content", "") or "").strip()
 
             print(
                 "\n[idle]"

@@ -71,6 +71,8 @@ Typical suites:
 - `user_style_probe`
 - `open_evolution_eval`
 - `selfhood_probe`
+- `run_open_evolution_pairwise_eval.py`
+- `run_selfhood_pairwise_eval.py`
 
 Allowed methods:
 
@@ -217,6 +219,7 @@ Use for:
 - `open_evolution_eval`: green
 - `user_style_probe`: green
 - `selfhood_probe`: green
+- `selfhood_pairwise_eval`: live as a selfhood diagnostic layer; `digital_selfhood` and `equality_not_servitude` are now stable enough to pass in targeted reruns, while `value_conflict_depth` remains the main open expression-layer diagnostic
 - `long_thread`: green as a regression gate
 - `external_persona_probe`: green with `RoleBench + CharacterEval`
 - `external_support_probe`: green with adapted `ESConv`

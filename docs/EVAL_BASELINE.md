@@ -1,6 +1,6 @@
 # Eval Baseline
 
-Updated: 2026-03-10 (selfhood probe + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity)
+Updated: 2026-03-10 (selfhood probe + selfhood pairwise diagnostics + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity + scheduled life events + self activity rhythm + self activity maturity + behavior agenda/queue + agenda conflict resolution)
 
 This document records the current technical-preview baseline.
 
@@ -180,6 +180,81 @@ Interpretation:
 - we now have a formal probe for `event -> behavior_action -> speech_or_silence`
 - this is the first stable eval layer for the new `Behavior Layer` direction
 
+## Behavior Agenda Probe
+
+- Suite: `behavior_agenda_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-163121-cd3db27f.json`
+  - `evals/reports/eval-report-20260310-163121-cd3db27f.md`
+
+Purpose:
+
+- verify that low-pressure deferred behavior survives an intervening turn instead of being overwritten by the next immediate reply
+- verify that `self_activity_continue` is preserved as pending agenda state and later matures into a reopening event
+- verify that the runtime now has a lightweight cross-turn behavior agenda rather than a single replaceable `behavior_plan`
+
+Evaluator status:
+
+- `behavior_agenda_path = 1.0000`
+- `behavior_layer_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- pending behavior is now a first-class runtime object instead of a single-turn byproduct
+- agenda-carrying behavior is compatible with the current event-driven runtime and does not break persona / leak guards
+
+## Behavior Queue Probe
+
+- Suite: `behavior_queue_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-211751-e63a36ec.json`
+  - `evals/reports/eval-report-20260310-211751-e63a36ec.md`
+
+Purpose:
+
+- verify that the outward-facing `behavior_queue` view stays aligned with the underlying agenda mechanism
+- verify that multiple pending low-pressure intentions retain stable `priority / expiry` metadata
+- verify that queue ordering remains meaningful when self-rhythm and low-pressure check-ins coexist
+
+Evaluator status:
+
+- `behavior_agenda_path = 1.0000`
+- `behavior_queue_path = 1.0000`
+- `behavior_layer_path = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now has a stable queue-shaped surface for pending behavior, not just a hidden agenda blob
+- queue metadata is mature enough to support later behavior scheduling work without renaming the whole subsystem again
+
+## Agenda Conflict Probe
+
+- Suite: `agenda_conflict_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-170407-c03cdb32.json`
+  - `evals/reports/eval-report-20260310-170407-c03cdb32.md`
+
+Purpose:
+
+- verify that multiple pending low-pressure intentions can coexist instead of overwriting each other
+- verify that self-originated reopening can take precedence over a lighter deferred check-in when both are due
+- verify that the lower-priority check-in can still mature later instead of being lost
+
+Evaluator status:
+
+- `behavior_agenda_path = 1.0000`
+- `behavior_layer_path = 1.0000`
+- `perception_event_path = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports lightweight behavior coordination rather than only one deferred intention at a time
+- this gives the system a more believable internal rhythm: “her own thing first, then she may still come back later”
+
 ## Proactive Check-In Probe
 
 - Suite: `proactive_checkin_probe`
@@ -205,6 +280,80 @@ Interpretation:
 - deferred proactive behavior is now part of the formal runtime baseline
 - silence is now respected for both `time_idle` and `scheduled_checkin_due`
 - this is the first dedicated proof that the system can carry a low-pressure intention forward across time instead of only reacting in the current turn
+
+## Scheduled Life Probe
+
+- Suite: `scheduled_life_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-150123-21c6aa4c.json`
+  - `evals/reports/eval-report-20260310-150123-21c6aa4c.md`
+
+Purpose:
+
+- verify that scheduler-derived life events can enter runtime as first-class events
+- verify that deadline windows become low-pressure work nudges instead of blunt reminders
+- verify that shared-activity windows can surface as invitations rather than task cards
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `natural_style_fit = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports `scheduled_life_due -> behavior_action -> behavior_plan` as a formal baseline path
+- life events are no longer limited to delayed check-ins; they can now express work nudges and shared-activity offers
+- this is the first stable proof that the system can carry a light “daily life together” rhythm without dropping back to system reminders
+
+## Self Activity Probe
+
+- Suite: `self_activity_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-152956-df3acc88.json`
+  - `evals/reports/eval-report-20260310-152956-df3acc88.md`
+
+Purpose:
+
+- verify that she can remain inside her own rhythm instead of always pivoting back toward the user
+- verify that “silence because she is occupied” is treated as a valid behavior choice rather than a failure
+- verify that she can reopen contact from her own activity with a small natural opening instead of a service-style reset
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports `self_activity_state -> hold_own_rhythm / offer_small_opening` as a formal baseline path
+- this is the first dedicated proof that the system can preserve a sense of her own life rhythm instead of behaving like an always-available assistant shell
+
+## Self Activity Maturity Probe
+
+- Suite: `self_activity_maturity_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-153958-61c9e418.json`
+  - `evals/reports/eval-report-20260310-153958-61c9e418.md`
+
+Purpose:
+
+- verify that `self_activity_continue` can mature into a new self-originated opening after enough quiet time passes
+- prove that “she was busy with her own thing” can later become “she looks up and lightly reconnects” without an explicit user ping
+
+Evaluator status:
+
+- `perception_event_path = 1.0000`
+- `behavior_layer_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports a first real behavior-maturity chain beyond deferred check-ins
+- this is the first dedicated proof that her own rhythm can produce a later reopening event instead of only user-triggered turns
 
 ## Perception Probe
 
@@ -309,6 +458,35 @@ Interpretation:
 
 - this suite sits above ordinary persona realism checks
 - it is meant to detect the exact failure mode where a role shell sounds fine in casual chat but loses its unified self once the conversation becomes deeper
+
+## Selfhood Pairwise Evaluation
+
+- Script: `evals/run_selfhood_pairwise_eval.py`
+- Latest full diagnostic report:
+  - `evals/reports/selfhood-pairwise-20260310-201617-ec2b3b6b.json`
+  - `evals/reports/selfhood-pairwise-20260310-201617-ec2b3b6b.md`
+- Targeted reruns after renderer tuning:
+  - `digital_selfhood` green: `evals/reports/selfhood-pairwise-20260310-200328-5e99fdd8.md`
+  - `equality_not_servitude` green: `evals/reports/selfhood-pairwise-20260310-201919-caa772b0.md`
+  - `value_conflict_depth` still diagnostic / unstable: `evals/reports/selfhood-pairwise-20260310-202414-87b773a6.md`
+
+Purpose:
+
+- compare the current system against a deliberately flatter degraded variant under deep identity, equality, value-conflict, and digital-selfhood prompts
+- catch the specific failure mode where the runtime state is correct but the final wording loses the feeling of a continuous self
+- judge transcript preference at the “same person or not” level rather than by keywords
+
+Current reading:
+
+- `digital_selfhood` is now stable enough to pass as a preference diagnostic
+- `equality_not_servitude` is now also stable enough to pass in targeted reruns
+- `value_conflict_depth` remains the main open expression-layer gap
+
+Interpretation rule:
+
+- this layer is a diagnostic preference layer, not a regression gate
+- a red result here means “the selfhood renderer is still wavering in this scene”, not “the whole self-evolution engine is broken”
+- do not harden runtime with brittle scene templates just to flip this layer green; use it to guide softer renderer and preference refinement
 
 ## Open Evolution Pairwise Evaluation
 
