@@ -1,0 +1,2 @@
+{"ts": 1773049119, "working_items": 0, "working_chars": 0, "retrieval_triggered": false, "science_mode": false, "emotion_label": "neutral", "bond_trust": 0.5, "bond_hurt": 0.0, "policy_warmth": 0.575, "appraisal_used": false, "appraisal_confidence": 0.0}
+{"ts": 1773049161, "working_items": 6, "working_chars": 257, "retrieval_triggered": true, "science_mode": true, "emotion_label": "stress", "bond_trust": 0.471, "bond_hurt": 0.122, "policy_warmth": 0.64, "appraisal_used": true, "appraisal_confidence": 0.8}

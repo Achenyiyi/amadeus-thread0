@@ -114,6 +114,10 @@ LLM_APPRAISAL_ENABLED = _env_bool("AMADEUS_LLM_APPRAISAL_ENABLED", default=True)
 LLM_APPRAISAL_CONFIDENCE_MIN = _env_float("AMADEUS_LLM_APPRAISAL_CONFIDENCE_MIN", 0.62)
 LLM_APPRAISAL_MAX_HISTORY_MESSAGES = _env_int("AMADEUS_LLM_APPRAISAL_MAX_HISTORY_MESSAGES", 6)
 
+# ---- Eval mode stability ----
+EVAL_MODE = _env_bool("AMADEUS_EVAL_MODE", default=False)
+EVAL_GENERATION_TEMPERATURE = _env_float("AMADEUS_EVAL_GENERATION_TEMPERATURE", 0.12)
+
 # ---- Canon counterpart ----
 CANON_COUNTERPART_ID = str(os.getenv("AMADEUS_CANON_COUNTERPART_ID", "okabe_rintaro") or "").strip() or "okabe_rintaro"
 CANON_COUNTERPART_NAME = str(os.getenv("AMADEUS_CANON_COUNTERPART_NAME", "冈部伦太郎") or "").strip() or "冈部伦太郎"

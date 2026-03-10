@@ -1,0 +1,3 @@
+{"ts": 1772929818, "tool": "search_moments", "tool_call_id": "call_00_8frHX5zdqiUTvWdqFZWE9IbE", "action": "approve", "args": {"query": "压力 拖延 最后一刻", "limit": 5}, "result": {"ok": true, "data": []}}
+{"ts": 1772929826, "tool": "search_moments", "tool_call_id": "call_00_lg7NGxLUARdyZgHsY54oO78N", "action": "approve", "args": {"query": "昨天 说过 压力", "limit": 5}, "result": {"ok": true, "data": []}}
+{"ts": 1772929828, "tool": "get_memory_snapshot", "tool_call_id": "call_00_kZQzHqStcC1lkwMjuAhGjIFp", "action": "approve", "args": {"include_core": false}, "result": {"ok": true, "data": {"moments": []}}}

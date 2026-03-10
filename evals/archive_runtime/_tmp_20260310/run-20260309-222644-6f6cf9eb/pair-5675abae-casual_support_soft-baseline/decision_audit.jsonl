@@ -1,0 +1,5 @@
+{"ts": 1773066411, "event": "model_invoke_retry", "attempt": 1, "max_attempts": 3, "error_type": "APIConnectionError", "error": "Connection error."}
+{"ts": 1773066413, "event": "model_invoke_retry", "attempt": 2, "max_attempts": 3, "error_type": "APIConnectionError", "error": "Connection error."}
+{"ts": 1773066417, "working_items": 0, "working_chars": 0, "retrieval_triggered": false, "science_mode": false, "emotion_label": "angry", "bond_trust": 0.4, "bond_hurt": 0.42, "policy_warmth": 0.418, "appraisal_used": false, "appraisal_confidence": 0.0}
+{"ts": 1773066418, "event": "model_invoke_retry", "attempt": 1, "max_attempts": 3, "error_type": "APIConnectionError", "error": "Connection error."}
+{"ts": 1773066421, "event": "model_invoke_retry", "attempt": 2, "max_attempts": 3, "error_type": "APIConnectionError", "error": "Connection error."}

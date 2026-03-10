@@ -1,0 +1,2 @@
+{"ts": 1772931547, "tool": "search_moments", "tool_call_id": "call_00_L7y79hxD5zyMg5cm32zzb7q4", "action": "approve", "args": {"query": "记忆分页 工具审批", "limit": 5}, "result": {"ok": true, "data": []}}
+{"ts": 1772931550, "tool": "list_memory_ledger", "tool_call_id": "call_00_2oO1HBqtH5raZMJHn8wBvfOg", "action": "approve", "args": {"limit": 10}, "result": {"ok": true, "data": []}}

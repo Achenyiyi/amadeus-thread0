@@ -1,8 +1,16 @@
 # Thesis Backend Execution Plan
 
-Updated: 2026-03-07
+Updated: 2026-03-09
 
 This plan locks the project into a thesis-first backend trajectory. Frontend, Live2D, camera interaction, and product-shell work are intentionally deferred until the backend and evaluation loops meet the graduation criteria below.
+
+This document now sits under the newer project constitution:
+
+- `PERSONA_SYSTEM_CONSTITUTION.md`
+- `ARCHITECTURE_ALIGNMENT_MAP.md`
+
+Those two documents define the philosophical and architectural direction.
+This file defines the practical thesis/backend execution order.
 
 ## Scope Freeze
 
@@ -16,12 +24,14 @@ Deferred until backend closure:
 
 Active scope:
 
-- Persona consistency and conversational realism
+- Persona Core stability and selfhood continuity
 - Worldline continuity and relationship evolution
+- Self-Evolution Engine reinforcement
+- Behavior-layer naturalness and interaction realism
 - Citation-backed retrieval reliability
 - Memory safety and rollback
 - TTS / interruption backend reliability
-- Formal evaluation, ablation, and user-study assets
+- Formal evaluation, ablation, public-benchmark calibration, and user-study assets
 
 ## Backend Graduation Gates
 
@@ -77,12 +87,14 @@ The backend is considered thesis-grade only when all of the following are true.
 - Reduce report-like answers in companionship/memory-recall turns
 - Keep structure for scientific/tool-driven tasks
 - Add realism evaluation suite and manual probe scripts
+- Reduce service-feel and template-feel in the behavior layer without adding hard roleplay scripts
 
 ### Phase C. Worldline Depth Pass
 
 - Improve natural commitment reminders
 - Improve relationship-state phrasing
 - Expand long-thread failure taxonomy
+- Strengthen unresolved tension, partial repair, and semantic self-narrative sedimentation
 
 ### Phase D. Multimodal Reliability Pass
 
@@ -93,6 +105,9 @@ The backend is considered thesis-grade only when all of the following are true.
 ### Phase E. Research Closure
 
 - Add ablation suite definitions
+- Redesign evaluation hierarchy into regression gates vs open evolution evaluation
+- Connect public benchmark bundle as external calibration rather than the final persona judge
+- Align evaluation language with the constitution: regression protects stability, open evolution evaluates selfhood-in-change
 - Finalize user-study packet
 - Export experiment-ready tables and baselines
 
@@ -140,4 +155,8 @@ The backend is considered thesis-grade only when all of the following are true.
 - Final delivery manifest: added
 - Final submission checklist: added
 - Current baselines: see `docs/EVAL_BASELINE.md`
-- Immediate next focus: execute the formal user study and finish delivery closure around the current green backend
+- Immediate next focus:
+  - keep the Persona Core fixed
+  - keep strengthening the Self-Evolution Engine
+  - shift optimization pressure toward the behavior layer and open evolution evaluation
+  - clean and archive superseded evaluation artifacts without deleting thesis-critical material

@@ -45,10 +45,10 @@ This file defines the current thesis-stage deliverables for the backend-first te
 - defense talk track: [DEFENSE_TALK_TRACK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_TALK_TRACK.md)
 - defense QA bank: [DEFENSE_QA_BANK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_QA_BANK.md)
 - defense slide evidence map: [DEFENSE_SLIDE_EVIDENCE_MAP.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_EVIDENCE_MAP.md)
-- defense slide draft: [DEFENSE_SLIDE_DRAFT.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_DRAFT.md)
 - defense slide final: [DEFENSE_SLIDE_FINAL.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_SLIDE_FINAL.md)
 - defense 5-minute talk track: [DEFENSE_5MIN_TALK_TRACK.md](/E:/桌面/amadeus-thread0/docs/DEFENSE_5MIN_TALK_TRACK.md)
 - final submission checklist: [FINAL_SUBMISSION_CHECKLIST.md](/E:/桌面/amadeus-thread0/docs/FINAL_SUBMISSION_CHECKLIST.md)
+- superseded draft materials: [docs/archive/superseded](/E:/桌面/amadeus-thread0/docs/archive/superseded)
 
 ## 5. User Study Assets
 
