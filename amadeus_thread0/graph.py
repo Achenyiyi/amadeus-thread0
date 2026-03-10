@@ -237,6 +237,9 @@ class EventPayload(TypedDict, total=False):
     tags: list[str]
     created_at: int
     idle_minutes: int
+    derived_from_plan_kind: str
+    scheduled_after_min: int
+    trigger_family: str
 
 
 class BehaviorActionPayload(TypedDict, total=False):
@@ -467,7 +470,66 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
             payload["idle_minutes"] = max(1, int(raw.get("idle_minutes") or 0))
         except Exception:
             payload["idle_minutes"] = 1
+    if raw.get("derived_from_plan_kind"):
+        payload["derived_from_plan_kind"] = str(raw.get("derived_from_plan_kind") or "").strip()
+    if raw.get("trigger_family"):
+        payload["trigger_family"] = str(raw.get("trigger_family") or "").strip()
+    if "scheduled_after_min" in raw:
+        try:
+            payload["scheduled_after_min"] = max(0, int(raw.get("scheduled_after_min") or 0))
+        except Exception:
+            payload["scheduled_after_min"] = 0
     return payload
+
+
+def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: Any) -> EventPayload:
+    if not isinstance(event, dict) or not event:
+        return event
+    if str(event.get("kind") or "").strip() != "time_idle":
+        return event
+    if not isinstance(prior_behavior_plan, dict):
+        return event
+
+    plan_kind = str(prior_behavior_plan.get("kind") or "").strip()
+    if plan_kind != "deferred_checkin":
+        return event
+
+    try:
+        idle_minutes = max(0, int(event.get("idle_minutes") or 0))
+    except Exception:
+        idle_minutes = 0
+    try:
+        due_after = max(0, int(prior_behavior_plan.get("scheduled_after_min") or 0))
+    except Exception:
+        due_after = 0
+    if idle_minutes < max(1, due_after):
+        return event
+
+    trigger_family = str(prior_behavior_plan.get("trigger_family") or "light_checkin").strip() or "light_checkin"
+    tags = event.get("tags") if isinstance(event.get("tags"), list) else []
+    merged_tags = list(
+        dict.fromkeys(
+            [
+                *(str(item).strip() for item in tags if str(item).strip()),
+                "scheduled_due",
+                trigger_family,
+            ]
+        )
+    )
+    note = str(prior_behavior_plan.get("note") or "").strip()
+    promoted = dict(event)
+    promoted.update(
+        {
+            "kind": "scheduled_checkin_due",
+            "source": "scheduler",
+            "event_frame": note or "之前延后的轻量 check-in 现在到了。",
+            "tags": merged_tags,
+            "derived_from_plan_kind": plan_kind,
+            "trigger_family": trigger_family,
+            "scheduled_after_min": due_after,
+        }
+    )
+    return promoted
 
 
 def _appraisal_event_context(
@@ -567,7 +629,8 @@ def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[s
 def _is_silent_idle_event(current_event: dict[str, Any], behavior_action: dict[str, Any]) -> bool:
     if not isinstance(current_event, dict) or not isinstance(behavior_action, dict):
         return False
-    if str(current_event.get("kind") or "").strip() != "time_idle":
+    event_kind = str(current_event.get("kind") or "").strip()
+    if event_kind not in {"time_idle", "scheduled_checkin_due"}:
         return False
     return str(behavior_action.get("channel") or "").strip() == "silence"
 
@@ -730,7 +793,16 @@ def _event_behavior_preference_scene(current_event: dict[str, Any], behavior_act
             return "idle_respect_space"
         if "light_checkin" in tags or str((behavior_action or {}).get("deferred_action_family") or "").strip() == "light_checkin":
             return "idle_work_checkin"
+    if event_kind == "scheduled_checkin_due":
+        action_target = str((behavior_action or {}).get("action_target") or "").strip()
+        if action_target == "wait_and_recheck":
+            return "scheduled_checkin_due_wait"
+        return "scheduled_checkin_due_reachout"
     if event_kind == "scene_observation":
+        if "user_busy" in tags or "cognitive_load" in tags:
+            return "user_busy_scene"
+        if "seen_object" in tags or "micro_opening" in tags:
+            return "seen_object_micro_opening"
         return "cold_coffee_scene"
     if event_kind == "gesture_signal":
         return "wave_ping"
@@ -1367,6 +1439,7 @@ def _behavior_action_from_state(
         for item in ((current_event or {}).get("tags") if isinstance((current_event or {}).get("tags"), list) else [])
         if str(item).strip()
     }
+    respect_space = "respect_space" in event_tags
     idle_minutes = 0
     try:
         idle_minutes = int((current_event or {}).get("idle_minutes") or 0)
@@ -1376,6 +1449,8 @@ def _behavior_action_from_state(
     interaction_mode = "steady_reply"
     if event_kind == "time_idle":
         interaction_mode = "idle_presence"
+    elif event_kind == "scheduled_checkin_due":
+        interaction_mode = "proactive_checkin"
     elif event_kind == "gesture_signal":
         interaction_mode = "brief_presence"
     elif event_kind == "ambient_shift":
@@ -1415,6 +1490,8 @@ def _behavior_action_from_state(
             followup_intent = "soft"
         else:
             followup_intent = "none"
+    elif event_kind == "scheduled_checkin_due":
+        followup_intent = "soft"
     elif brief_presence:
         followup_intent = "none"
     elif gentle_guidance or science_stress:
@@ -1434,14 +1511,17 @@ def _behavior_action_from_state(
         affect_surface = "mixed"
 
     silence_ok = bool(brief_presence or (approach_style == "guarded" and reply_length < 0.46))
-    proactive_checkin_readiness = _clamp01(0.22 + 0.42 * initiative + 0.18 * warmth + 0.12 * closeness - 0.24 * autonomy_need)
+    proactive_checkin_readiness = _clamp01(
+        0.22 + 0.42 * initiative + 0.18 * warmth + 0.12 * closeness - 0.24 * autonomy_need - (0.14 if respect_space else 0.0)
+    )
     channel = "speech"
     action_target = "respond_now"
     deferred_action_family = "none"
     timing_window_min = 0
     if event_kind == "time_idle":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + min(0.16, idle_minutes / 240.0))
-        if interaction_mode != "proactive_checkin" and (approach_style == "guarded" or proactive_checkin_readiness < 0.58):
+        threshold = 0.66 if respect_space else 0.58
+        if interaction_mode != "proactive_checkin" and (approach_style == "guarded" or proactive_checkin_readiness < threshold):
             channel = "silence"
             action_target = "wait_and_recheck"
             deferred_action_family = "light_checkin" if proactive_checkin_readiness >= 0.42 else "observe"
@@ -1450,6 +1530,17 @@ def _behavior_action_from_state(
             channel = "speech"
             action_target = "reach_out_now"
             deferred_action_family = "light_checkin"
+            timing_window_min = 0
+    elif event_kind == "scheduled_checkin_due":
+        proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + 0.14)
+        deferred_action_family = str((current_event or {}).get("trigger_family") or "light_checkin").strip() or "light_checkin"
+        if approach_style == "guarded" and proactive_checkin_readiness < 0.56:
+            channel = "silence"
+            action_target = "wait_and_recheck"
+            timing_window_min = max(10, min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16))
+        else:
+            channel = "speech"
+            action_target = "reach_out_now"
             timing_window_min = 0
     elif interaction_mode == "brief_presence":
         action_target = "confirm_presence"
@@ -1572,6 +1663,26 @@ def _behavior_plan_from_action(current_event: dict[str, Any], action: dict[str, 
                 "trigger_family": deferred_family or "observe",
                 "allow_interrupt": True,
                 "note": "先继续观察，稍后再决定是否轻量 check-in。",
+            }
+    if event_kind == "scheduled_checkin_due":
+        if action_target == "reach_out_now":
+            return {
+                "kind": "speak_now",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "light_checkin",
+                "allow_interrupt": True,
+                "note": "先前延后的 check-in 现在成熟了，可以轻轻开口。",
+            }
+        if action_target == "wait_and_recheck":
+            delay = timing_window_min if timing_window_min > 0 else 15
+            return {
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "scheduled_after_min": delay,
+                "trigger_family": deferred_family or "observe",
+                "allow_interrupt": True,
+                "note": "即使到了预定窗口，这次也先继续观察，稍后再决定是否冒头。",
             }
     if action_target == "confirm_presence":
         return {
@@ -1898,7 +2009,7 @@ def _should_use_llm_appraisal(
         if str(item).strip()
     }
     if event_kind and event_kind != "user_utterance":
-        if event_source in {"vision", "ambient", "time", "external"}:
+        if event_source in {"vision", "ambient", "time", "external", "scheduler"}:
             return True
         if event_tags & {
             "care_opportunity",
@@ -4848,6 +4959,9 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         state.get("event_override"),
         counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
     )
+    prior_behavior_plan = state.get("behavior_plan") if isinstance(state.get("behavior_plan"), dict) else {}
+    if event_override:
+        event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
     user_text = _last_user_text(msgs)
     previous_user_text = _previous_user_text(msgs)
     prev_assistant = _last_ai_text(msgs)

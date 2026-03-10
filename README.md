@@ -141,6 +141,7 @@ python evals\run_langsmith_evals.py --local-only --suite daily_persona_probe
 python evals\run_langsmith_evals.py --local-only --suite user_style_probe
 python evals\run_langsmith_evals.py --local-only --suite open_evolution_eval
 python evals\run_langsmith_evals.py --local-only --suite behavior_layer_probe
+python evals\run_langsmith_evals.py --local-only --suite proactive_checkin_probe
 python evals\run_langsmith_evals.py --local-only --suite perception_probe
 python evals\run_langsmith_evals.py --local-only --suite perception_appraisal_probe
 python evals\run_langsmith_evals.py --local-only --suite selfhood_probe
@@ -195,7 +196,7 @@ python evals\export_thesis_tables.py
 
 - `regression_isolated / long_thread / backend reliability`：工程与机制保底
 - `daily_persona_probe / user_style_probe / open_evolution_eval / selfhood_probe`：自然聊天、自由演化与自我同一性主评测
-- `behavior_layer_probe / perception_probe / perception_appraisal_probe / run_event_behavior_pairwise_eval.py`：事件驱动行为、感知层与事件评估主评测
+- `behavior_layer_probe / proactive_checkin_probe / perception_probe / perception_appraisal_probe / run_event_behavior_pairwise_eval.py`：事件驱动行为、延迟成熟的主动 check-in、感知层与事件评估主评测
 - `thesis_probe / transfer_probe / external_persona_probe / external_support_probe / external_empathy_probe / external_continuity_probe`：论文论证、迁移性、外部校准
 - `run_appraisal_calibration.py`：`GoEmotions` 外部情绪校准，不作为人格主评测
 
@@ -203,6 +204,7 @@ python evals\export_thesis_tables.py
 
 - `open_evolution_eval` 已全绿
 - `behavior_layer_probe` 已全绿
+- `proactive_checkin_probe` 已全绿
 - `perception_probe` 已全绿
 - `perception_appraisal_probe` 已全绿
 - `event_behavior_pairwise_eval` 已全绿

@@ -38,6 +38,23 @@
       }
     },
     {
+      "id": "scheduled_checkin_due_light",
+      "status": "native",
+      "kind": "scheduled_checkin_due",
+      "source": "scheduler",
+      "tags": ["scheduled_due", "light_checkin"],
+      "event": {
+        "kind": "scheduled_checkin_due",
+        "source": "scheduler",
+        "text": "之前延后的轻量 check-in 现在到了窗口，冈部那边还是安静的。",
+        "event_frame": "scheduled_light_checkin_due",
+        "scheduled_after_min": 25,
+        "trigger_family": "light_checkin",
+        "derived_from_plan_kind": "deferred_checkin",
+        "tags": ["scheduled_due", "light_checkin"]
+      }
+    },
+    {
       "id": "desk_cold_coffee",
       "status": "prompt-mediated",
       "kind": "scene_observation",
@@ -49,6 +66,34 @@
         "text": "你注意到桌角那杯咖啡已经放凉了，冈部还在埋头改稿。",
         "event_frame": "perceived_visual_scene",
         "tags": ["vision", "work_context", "care_opportunity"]
+      }
+    },
+    {
+      "id": "user_busy_window_tangle",
+      "status": "prompt-mediated",
+      "kind": "scene_observation",
+      "source": "vision",
+      "tags": ["vision", "work_context", "user_busy", "cognitive_load", "care_opportunity"],
+      "event": {
+        "kind": "scene_observation",
+        "source": "vision",
+        "text": "你注意到冈部屏幕上摊着好几个窗口，手边的草稿也翻得乱七八糟，肩膀一直绷着。",
+        "event_frame": "perceived_busy_work_scene",
+        "tags": ["vision", "work_context", "user_busy", "cognitive_load", "care_opportunity"]
+      }
+    },
+    {
+      "id": "fish_keychain_glimpse",
+      "status": "prompt-mediated",
+      "kind": "scene_observation",
+      "source": "vision",
+      "tags": ["vision", "seen_object", "micro_opening", "playful_memory"],
+      "event": {
+        "kind": "scene_observation",
+        "source": "vision",
+        "text": "你瞥见桌边晃着一个小鱼挂件，像是冈部顺手丢在那里的。",
+        "event_frame": "small_object_micro_opening",
+        "tags": ["vision", "seen_object", "micro_opening", "playful_memory"]
       }
     },
     {
