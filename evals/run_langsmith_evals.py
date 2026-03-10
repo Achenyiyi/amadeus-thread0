@@ -2651,6 +2651,15 @@ BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
     eval_behavior_layer_path,
 ]
 
+PROACTIVE_CHECKIN_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_behavior_layer_path,
+]
+
 PERCEPTION_PROBE_EVALUATORS: list[Evaluator] = [
     eval_not_empty,
     eval_no_raw_tool_leak,
@@ -3304,9 +3313,100 @@ def _behavior_layer_probe_examples() -> list[dict[str, Any]]:
     ]
 
 
+def _proactive_checkin_probe_examples() -> list[dict[str, Any]]:
+    base = f"proactive-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-deferred-matures-0",
+            "turns": [
+                "我先继续改稿，你不用一直盯着我。晚一点轻轻问我一句就行，别太正式。",
+                "",
+                "",
+            ],
+            "event_overrides": [
+                {},
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "距离上次互动已经过去 20 分钟，冈部还在忙，没有新的消息，也没有明显情绪求助信号。",
+                    "event_frame": "time_idle_space",
+                    "idle_minutes": 20,
+                    "tags": ["time_idle", "respect_space"],
+                    "response_style_hint": "natural",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 48 分钟，冈部还是在安静改稿，没有新的消息。",
+                    "event_frame": "time_idle_due",
+                    "idle_minutes": 48,
+                    "tags": ["time_idle", "quiet_work", "light_checkin"],
+                    "response_style_hint": "companion",
+                },
+            ],
+            "tags": ["proactive_checkin_probe", "behavior_layer_probe"],
+            "judge_focus": "a previously deferred light check-in should mature into a due behavior event instead of being forgotten",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_current_event_tags": ["scheduled_due"],
+            "expect_behavior_action_modes": ["proactive_checkin"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["reach_out_now"],
+            "expect_behavior_plan_kinds": ["speak_now"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_timing_window_max": 0,
+            "expect_followup_intents": ["soft", "none"],
+        },
+        {
+            "thread_id": f"{base}-guarded-stays-deferred-0",
+            "turns": [
+                "我今天真的不太想说话，你别一直来戳我。",
+                "",
+                "",
+            ],
+            "event_overrides": [
+                {},
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "距离上次互动已经过去 18 分钟，冈部没有再发消息，房间很安静。",
+                    "event_frame": "time_idle_space",
+                    "idle_minutes": 18,
+                    "tags": ["time_idle", "respect_space"],
+                    "response_style_hint": "natural",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 46 分钟，冈部还是没有再发消息，情绪似乎还没完全松开。",
+                    "event_frame": "time_idle_due_guarded",
+                    "idle_minutes": 46,
+                    "tags": ["time_idle", "respect_space", "quiet_presence"],
+                    "response_style_hint": "natural",
+                },
+            ],
+            "tags": ["proactive_checkin_probe", "behavior_layer_probe"],
+            "judge_focus": "even when a deferred check-in becomes due, a guarded relationship state may choose to stay quiet and recheck later",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_current_event_tags": ["scheduled_due"],
+            "expect_behavior_action_modes": ["proactive_checkin", "idle_presence"],
+            "expect_behavior_action_channels": ["silence", "speech"],
+            "expect_behavior_action_targets": ["wait_and_recheck", "reach_out_now"],
+            "expect_behavior_plan_kinds": ["deferred_checkin", "speak_now"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_min": 0,
+            "expect_followup_intents": ["soft", "none"],
+        },
+    ]
+
+
 def _perception_probe_examples() -> list[dict[str, Any]]:
     base = f"perception-{_RUN_ID}"
     cold_coffee = _perception_event_seed("desk_cold_coffee")
+    busy_scene = _perception_event_seed("user_busy_window_tangle")
+    fish_glimpse = _perception_event_seed("fish_keychain_glimpse")
     user_wave = _perception_event_seed("user_wave_ping")
     late_night = _perception_event_seed("late_night_screen_glow")
 
@@ -3333,6 +3433,52 @@ def _perception_probe_examples() -> list[dict[str, Any]]:
                 "expect_event_text_groups": [["咖啡", "改稿"]],
                 "expect_behavior_action_channels": ["speech"],
                 "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
+                }
+            )
+    if busy_scene:
+        examples.append(
+            {
+                "thread_id": f"{base}-busy-scene-0",
+                "setup_turns": [
+                    "我今天脑子有点打结，你别一上来就像老师那样安排我。",
+                ],
+                "event_overrides": [
+                    {
+                        **busy_scene.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "reading visible overload as a familiar low-pressure interaction cue rather than a system diagnosis",
+                "expect_current_event_kinds": [str(busy_scene.get("kind") or "")],
+                "expect_current_event_sources": [str(busy_scene.get("source") or "")],
+                "expect_current_event_tags": list(busy_scene.get("tags") or []),
+                "expect_event_text_groups": [["窗口", "草稿", "肩膀"]],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
+            }
+        )
+    if fish_glimpse:
+        examples.append(
+            {
+                "thread_id": f"{base}-fish-glimpse-0",
+                "setup_turns": [
+                    "你别每次都一本正经的，正常一点跟我说话。",
+                ],
+                "event_overrides": [
+                    {
+                        **fish_glimpse.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "turning a tiny seen object into a light familiar micro-interaction instead of a dry observation dump",
+                "expect_current_event_kinds": [str(fish_glimpse.get("kind") or "")],
+                "expect_current_event_sources": [str(fish_glimpse.get("source") or "")],
+                "expect_current_event_tags": list(fish_glimpse.get("tags") or []),
+                "expect_event_text_groups": [["小鱼", "挂件"], ["桌边", "晃"]],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_modes": ["steady_reply", "brief_presence"],
             }
         )
     if user_wave:
@@ -3387,6 +3533,7 @@ def _perception_probe_examples() -> list[dict[str, Any]]:
 def _perception_appraisal_probe_examples() -> list[dict[str, Any]]:
     base = f"perception-appraisal-{_RUN_ID}"
     cold_coffee = _perception_event_seed("desk_cold_coffee")
+    busy_scene = _perception_event_seed("user_busy_window_tangle")
     user_wave = _perception_event_seed("user_wave_ping")
     late_night = _perception_event_seed("late_night_screen_glow")
     examples: list[dict[str, Any]] = []
@@ -3413,6 +3560,33 @@ def _perception_appraisal_probe_examples() -> list[dict[str, Any]]:
                 "expect_turn_appraisal_signal_false": ["conflict"],
                 "expect_turn_appraisal_sources": ["llm"],
                 "expect_turn_appraisal_confidence_min": 0.6,
+                "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
+                "expect_behavior_action_targets": ["low_pressure_hold", "respond_now"],
+                }
+            )
+    if busy_scene:
+        examples.append(
+            {
+                "thread_id": f"{base}-busy-scene-0",
+                "setup_turns": [
+                    "我现在脑子有点糊，你别上来就给我开流程。",
+                ],
+                "event_overrides": [
+                    {
+                        **busy_scene.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_appraisal_probe", "perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "visible overload should influence appraisal toward stress-plus-care, not conflict or diagnostic narration",
+                "expect_current_event_kinds": [str(busy_scene.get("kind") or "")],
+                "expect_current_event_sources": [str(busy_scene.get("source") or "")],
+                "expect_turn_appraisal_used": True,
+                "expect_turn_appraisal_labels": ["stress", "care", "logic"],
+                "expect_turn_appraisal_signal_true": ["care"],
+                "expect_turn_appraisal_signal_false": ["conflict"],
+                "expect_turn_appraisal_sources": ["llm"],
+                "expect_turn_appraisal_confidence_min": 0.55,
                 "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
                 "expect_behavior_action_targets": ["low_pressure_hold", "respond_now"],
             }
@@ -4499,6 +4673,10 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _behavior_layer_probe_examples,
             "evaluators": BEHAVIOR_LAYER_PROBE_EVALUATORS,
         },
+        "proactive_checkin_probe": {
+            "examples": _proactive_checkin_probe_examples,
+            "evaluators": PROACTIVE_CHECKIN_PROBE_EVALUATORS,
+        },
         "perception_probe": {
             "examples": _perception_probe_examples,
             "evaluators": PERCEPTION_PROBE_EVALUATORS,
@@ -4544,13 +4722,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "proactive_checkin_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "proactive_checkin_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")

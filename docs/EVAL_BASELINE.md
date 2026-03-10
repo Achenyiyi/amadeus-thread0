@@ -1,6 +1,6 @@
 # Eval Baseline
 
-Updated: 2026-03-10 (selfhood probe + event-oriented runtime bridge + behavior/perception/appraisal probes)
+Updated: 2026-03-10 (selfhood probe + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity)
 
 This document records the current technical-preview baseline.
 
@@ -180,12 +180,38 @@ Interpretation:
 - we now have a formal probe for `event -> behavior_action -> speech_or_silence`
 - this is the first stable eval layer for the new `Behavior Layer` direction
 
+## Proactive Check-In Probe
+
+- Suite: `proactive_checkin_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260310-142624-0f0f02cf.json`
+  - `evals/reports/eval-report-20260310-142624-0f0f02cf.md`
+
+Purpose:
+
+- verify that a previously deferred light check-in can mature into a scheduler-derived event instead of being forgotten
+- verify that `scheduled_checkin_due` can still respect guarded distance and remain silent when the behavior layer says `wait_and_recheck`
+- validate that the runtime now supports `defer -> schedule maturity -> speak or stay quiet` without leaking internal staging
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `perception_event_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- deferred proactive behavior is now part of the formal runtime baseline
+- silence is now respected for both `time_idle` and `scheduled_checkin_due`
+- this is the first dedicated proof that the system can carry a low-pressure intention forward across time instead of only reacting in the current turn
+
 ## Perception Probe
 
 - Suite: `perception_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-031444-29ebb929.json`
-  - `evals/reports/eval-report-20260310-031444-29ebb929.md`
+  - `evals/reports/eval-report-20260310-144414-24fa9205.json`
+  - `evals/reports/eval-report-20260310-144414-24fa9205.md`
 
 Purpose:
 
@@ -205,13 +231,14 @@ Interpretation:
 
 - the system now has a usable first `Perception Layer` eval entry, not just a concept in architecture docs
 - event seeds can already drive natural outputs in text-first runtime
+- the current green set now covers concrete care cues, visible overload, micro-object openings, gesture pings, and late-night ambient shifts
 
 ## Perception Appraisal Probe
 
 - Suite: `perception_appraisal_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-031432-5210df3a.json`
-  - `evals/reports/eval-report-20260310-031432-5210df3a.md`
+  - `evals/reports/eval-report-20260310-144314-e8ad808a.json`
+  - `evals/reports/eval-report-20260310-144314-e8ad808a.md`
 
 Purpose:
 
@@ -230,6 +257,7 @@ Interpretation:
 
 - the runtime now supports `event -> appraisal -> self-evolution -> behavior`
 - this is the first explicit validation layer showing that perception can change internal state, not only final wording
+- the current green set now includes visual overload as an appraisal target, not only care cues, presence pings, and ambient context
 
 ## Event Behavior Pairwise Evaluation
 

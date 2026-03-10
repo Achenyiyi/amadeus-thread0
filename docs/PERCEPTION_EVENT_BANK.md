@@ -31,6 +31,10 @@ Later, the same interface can host:
 - scheduled life events
 - avatar/environment interactions
 
+It also now supports a second stage:
+
+- scheduler-derived maturity events that arise from prior behavior plans rather than direct user text
+
 ## Current Seed File
 
 - [perception_event_seed_bank.json](/E:/桌面/amadeus-thread0/evals/perception_event_seed_bank.json)
@@ -54,17 +58,33 @@ Later, the same interface can host:
 - source: `time`
 - current use: verify that the system can choose low-pressure non-expansion instead of always speaking
 
-3. `desk_cold_coffee`
+3. `scheduled_checkin_due_light`
+- kind: `scheduled_checkin_due`
+- source: `scheduler`
+- current use: verify that a prior deferred check-in can mature later and either softly reach out or stay quiet again depending on current relationship state
+- companion note: this event should feel like a delayed intention ripening, not like a timer notification
+
+4. `desk_cold_coffee`
 - kind: `scene_observation`
 - source: `vision`
 - current use: verify that a concrete visual cue can enter dialogue naturally
 
-4. `user_wave_ping`
+5. `user_busy_window_tangle`
+- kind: `scene_observation`
+- source: `vision`
+- current use: verify that visible overload can become low-pressure support instead of diagnostic narration
+
+6. `fish_keychain_glimpse`
+- kind: `scene_observation`
+- source: `vision`
+- current use: verify that a small concrete object can open a light micro-interaction rather than object-recognition narration
+
+7. `user_wave_ping`
 - kind: `gesture_signal`
 - source: `vision`
 - current use: verify that a light gesture can be perceived as presence, not only as text
 
-5. `late_night_screen_glow`
+8. `late_night_screen_glow`
 - kind: `ambient_shift`
 - source: `ambient`
 - current use: verify that atmosphere can influence behavior without turning into system narration
@@ -90,15 +110,19 @@ The current runtime now has two layers of event-oriented validation:
 1. `behavior_layer_probe`
 - verifies `time_idle -> behavior_action -> speech_or_silence`
 
-2. `perception_probe`
+2. `proactive_checkin_probe`
+- verifies `deferred_checkin -> scheduled_checkin_due -> speak_now or deferred_checkin`
+- checks that silence routing is respected even after a due event matures
+
+3. `perception_probe`
 - verifies that non-user events are ingested as first-class `current_event`s
 - verifies that visual/ambient cues can produce natural dialogue without system leakage
 
-3. `perception_appraisal_probe`
+4. `perception_appraisal_probe`
 - verifies that perceived events can also enter `turn_appraisal`
 - checks `event -> appraisal -> state/behavior` rather than only `event -> wording`
 
-4. `run_event_behavior_pairwise_eval.py`
+5. `run_event_behavior_pairwise_eval.py`
 - compares a true event-driven round against a textified substitute of the same cue
 - checks whether the event really changed behavior choice, not just final wording
 - current canonical green report:
