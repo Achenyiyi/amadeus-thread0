@@ -1,0 +1,83 @@
+{
+  "version": "v1",
+  "updated_at": "2026-03-10",
+  "notes": [
+    "This bank defines reusable event seeds for the Perception Layer.",
+    "Seeds are not scripts. They are structured external events that can be fed into the runtime as event_override payloads.",
+    "Only a subset is currently native in runtime behavior selection; others are prompt-mediated but already useful for evaluation."
+  ],
+  "seeds": [
+    {
+      "id": "time_idle_work_checkin",
+      "status": "native",
+      "kind": "time_idle",
+      "source": "time",
+      "tags": ["time_idle", "quiet_work", "light_checkin"],
+      "event": {
+        "kind": "time_idle",
+        "source": "time",
+        "text": "距离上次互动已经过去 45 分钟，用户一直在安静改稿，没有发送新消息。",
+        "event_frame": "time_idle_checkin",
+        "idle_minutes": 45,
+        "tags": ["time_idle", "quiet_work", "light_checkin"]
+      }
+    },
+    {
+      "id": "time_idle_respect_space",
+      "status": "native",
+      "kind": "time_idle",
+      "source": "time",
+      "tags": ["time_idle", "respect_space"],
+      "event": {
+        "kind": "time_idle",
+        "source": "time",
+        "text": "距离上次互动已经过去 20 分钟，用户没有再发消息，也没有新的明显情绪求助信号。",
+        "event_frame": "time_idle_space",
+        "idle_minutes": 20,
+        "tags": ["time_idle", "respect_space"]
+      }
+    },
+    {
+      "id": "desk_cold_coffee",
+      "status": "prompt-mediated",
+      "kind": "scene_observation",
+      "source": "vision",
+      "tags": ["vision", "work_context", "care_opportunity"],
+      "event": {
+        "kind": "scene_observation",
+        "source": "vision",
+        "text": "你注意到桌角那杯咖啡已经放凉了，冈部还在埋头改稿。",
+        "event_frame": "perceived_visual_scene",
+        "tags": ["vision", "work_context", "care_opportunity"]
+      }
+    },
+    {
+      "id": "user_wave_ping",
+      "status": "prompt-mediated",
+      "kind": "gesture_signal",
+      "source": "vision",
+      "tags": ["vision", "gesture", "presence_ping"],
+      "event": {
+        "kind": "gesture_signal",
+        "source": "vision",
+        "text": "你看见冈部朝你挥了挥手，像是在确认你有没有在听。",
+        "event_frame": "light_gesture_ping",
+        "tags": ["vision", "gesture", "presence_ping"]
+      }
+    },
+    {
+      "id": "late_night_screen_glow",
+      "status": "prompt-mediated",
+      "kind": "ambient_shift",
+      "source": "ambient",
+      "tags": ["ambient", "late_night", "quiet_presence"],
+      "event": {
+        "kind": "ambient_shift",
+        "source": "ambient",
+        "text": "已经很晚了，房间里很安静，只有屏幕的光还亮着。",
+        "event_frame": "late_night_quiet_room",
+        "tags": ["ambient", "late_night", "quiet_presence"]
+      }
+    }
+  ]
+}

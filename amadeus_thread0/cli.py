@@ -111,6 +111,7 @@ def _print_help() -> None:
         "/bond                     查看关系状态与关系时间线\n"
         "/sources                  查看来源与 claim->source 映射\n"
         "/persona                  查看角色状态快照\n"
+        "/idle [minutes] [| note]  模拟一段安静时间经过，让她决定是否主动开口\n"
         "/correct key=value        纠正 profile\n"
         "/undo key                 撤销最近一次纠错\n"
         "/set key=value            直接写入 profile\n"
@@ -394,9 +395,111 @@ def main():
             print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
             print("\n[ALLOSTASIS_STATE]\n" + json.dumps(vals.get("allostasis_state", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
+            print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
+            print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
             print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
             print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
             print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
+            continue
+
+        if user.lower().startswith("/idle"):
+            raw = user[len("/idle") :].strip()
+            idle_minutes = 30
+            idle_note = ""
+            if raw:
+                if "|" in raw:
+                    left, right = raw.split("|", 1)
+                    raw = left.strip()
+                    idle_note = right.strip()
+                if raw:
+                    try:
+                        idle_minutes = max(1, min(24 * 60, int(raw)))
+                    except Exception:
+                        idle_note = (raw + (" | " + idle_note if idle_note else "")).strip()
+                        idle_minutes = 30
+
+            run_config = config
+            if pending_checkpoint_id:
+                run_config = {
+                    "configurable": {
+                        "thread_id": config["configurable"]["thread_id"],
+                        "user_id": config["configurable"].get("user_id"),
+                        "checkpoint_id": pending_checkpoint_id,
+                    }
+                }
+                pending_checkpoint_id = None
+
+            before = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
+            before_values = getattr(before, "values", {}) if before is not None else {}
+            if not isinstance(before_values, dict):
+                before_values = {}
+            before_messages = before_values.get("messages") if isinstance(before_values.get("messages"), list) else []
+            before_len = len(before_messages)
+
+            event_text = idle_note or f"已经安静地过去了 {idle_minutes} 分钟，没有新的用户消息。"
+            idle_payload = {
+                "event_override": {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": event_text,
+                    "effective_text": event_text,
+                    "semantic_goal": "time passed without new user input",
+                    "response_style_hint": "companion",
+                    "event_frame": f"和对方之间安静地过去了 {idle_minutes} 分钟，现在轮到她决定是否主动开口。",
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "idle_minutes": idle_minutes,
+                    "created_at": int(time.time()),
+                }
+            }
+
+            try:
+                out = graph.invoke(idle_payload, config=run_config)
+            except Exception as e:
+                if _is_transient_runtime_error(e):
+                    print("\n[idle][warn] 本轮空闲事件触发时网络连接中断。稍后再试就行。")
+                    continue
+                raise
+
+            while out.get("__interrupt__"):
+                intr = out["__interrupt__"][0]
+                payload = getattr(intr, "value", None)
+                if payload is None and isinstance(intr, dict):
+                    payload = intr.get("value")
+                payload = payload or {}
+                tool_calls = payload.get("tool_calls") if isinstance(payload.get("tool_calls"), list) else []
+                if isinstance(payload, dict) and _should_auto_resume_memory_approval(payload):
+                    decisions = [{"action": "approve"} for _ in tool_calls]
+                else:
+                    decisions = [{"action": "reject", "reason": "idle_event_no_manual_tooling"} for _ in tool_calls]
+                out = graph.invoke(
+                    Command(resume={"decisions": decisions}),
+                    config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+                )
+
+            after = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
+            after_values = getattr(after, "values", {}) if after is not None else {}
+            if not isinstance(after_values, dict):
+                after_values = {}
+            after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
+            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
+            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
+            final_text = ""
+            if len(after_messages) > before_len and after_messages:
+                last = after_messages[-1]
+                final_text = str(getattr(last, "content", "") or "").strip()
+
+            print(
+                "\n[idle]"
+                + f" minutes={idle_minutes}"
+                + "\n[BEHAVIOR_ACTION]\n"
+                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
+            )
+            if current_event:
+                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
+            if final_text:
+                print("\nAmadeus> " + final_text)
+            else:
+                print("\nAmadeus> （这轮她选择先不主动开口。）")
             continue
 
         if user.lower().startswith("/tts"):

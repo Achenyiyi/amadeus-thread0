@@ -142,14 +142,17 @@ def derive_pending_fragment(
     text = str(user_text or "").strip()
     prev = str(previous_excerpt or "").strip()
     pending = str(pending_fragment or "").strip()
+    has_continue = any(marker in text for marker in _CONTINUE_MARKERS)
+    has_clear = any(marker in text for marker in _CLEAR_MARKERS)
 
-    if any(marker in text for marker in _CLEAR_MARKERS):
-        return ""
-    if any(marker in text for marker in _CONTINUE_MARKERS):
+    if has_continue:
         if prev and not _looks_like_clarification_request(prev):
             return prev[:240]
         if pending:
             return pending[:240]
+        return ""
+    if has_clear:
+        return ""
     return ""
 
 
@@ -194,16 +197,20 @@ def derive_pending_user_goal(
     text = str(user_text or "").strip()
     prev_user = str(previous_user_text or "").strip()
     pending = str(pending_user_goal or "").strip()
+    has_continue = is_continuation_request(text)
+    has_clear = any(marker in text for marker in _CLEAR_MARKERS)
 
-    if any(marker in text for marker in _CLEAR_MARKERS):
-        return ""
-    if is_continuation_request(text):
+    if has_continue:
         if pending:
             return pending[:280]
         if prev_user and not is_continuation_request(prev_user):
             return prev_user[:280]
         return ""
+    if has_clear:
+        return ""
     if _looks_like_resume_goal_reference(text):
+        if _looks_like_substantive_goal(text):
+            return text[:280]
         if pending:
             return pending[:280]
         if prev_user and not is_continuation_request(prev_user):

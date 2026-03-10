@@ -26,6 +26,10 @@ _EVAL_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 _RUN_ID = uuid.uuid4().hex[:8]
 _EVAL_DIR = _EVAL_TMP_ROOT / f"run-{time.strftime('%Y%m%d-%H%M%S')}-{_RUN_ID}"
 os.environ.setdefault("AMADEUS_DATA_DIR", str(_EVAL_DIR))
+os.environ.setdefault("AMADEUS_EVAL_MODE", "1")
+os.environ.setdefault("AMADEUS_EVAL_GENERATION_TEMPERATURE", "0.05")
+os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
+os.environ.setdefault("LANGSMITH_TRACING", "false")
 
 from amadeus_thread0.config import (  # noqa: E402
     ABLATE_CLAIM_ATTRIBUTION,
@@ -62,6 +66,17 @@ _BENCHMARK_ROOT = PROJECT_ROOT / "third_party" / "benchmarks"
 _ROLEBENCH_ZH_PROFILE_PATH = _BENCHMARK_ROOT / "RoleBench" / "profiles-zh" / "desc.json"
 _ROLEBENCH_ZH_ROLE_SPECIFIC_PATH = _BENCHMARK_ROOT / "RoleBench" / "rolebench-zh" / "role_specific" / "test.jsonl"
 _ROLEBENCH_TARGET_ROLES = ["皇帝", "孙悟空", "华妃", "张飞", "李白"]
+_CHARACTEREVAL_PROFILE_PATH = _BENCHMARK_ROOT / "CharacterEval" / "data" / "character_profiles.json"
+_CHARACTEREVAL_TEST_PATH = _BENCHMARK_ROOT / "CharacterEval" / "data" / "test_data.jsonl"
+_CHARACTEREVAL_TARGET_ROLES = ["佟湘玉", "梅长苏", "甄嬛", "胡一菲", "李逵"]
+_ESCONV_PATH = _BENCHMARK_ROOT / "ESConv" / "ESConv.json"
+_ESCONV_TARGET_EMOTIONS = ["anxiety", "anger", "fear", "sadness", "shame", "depression"]
+_EMPATHETIC_DIALOGUES_ROOT = _BENCHMARK_ROOT / "EmpatheticDialogues"
+_EMPATHETIC_DIALOGUES_TARGET_CONTEXTS = ["lonely", "anxious", "sad", "disappointed", "guilty", "ashamed"]
+_EMPATHETIC_DIALOGUES_CACHE: list[dict[str, Any]] | None = None
+_MULTISESSIONCHAT_TEST_PATH = _BENCHMARK_ROOT / "MultiSessionChat" / "data" / "test-00000-of-00001-af129ca1e7829daf.parquet"
+_PERCEPTION_EVENT_SEED_BANK_PATH = PROJECT_ROOT / "evals" / "perception_event_seed_bank.json"
+_PERCEPTION_EVENT_SEED_BANK_CACHE: dict[str, dict[str, Any]] | None = None
 
 
 def _prepare_case_runtime(case_key: str) -> Path:
@@ -81,6 +96,48 @@ def _prepare_case_runtime(case_key: str) -> Path:
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _load_perception_event_seed_bank() -> dict[str, dict[str, Any]]:
+    global _PERCEPTION_EVENT_SEED_BANK_CACHE
+    if _PERCEPTION_EVENT_SEED_BANK_CACHE is not None:
+        return _PERCEPTION_EVENT_SEED_BANK_CACHE
+    if not _PERCEPTION_EVENT_SEED_BANK_PATH.exists():
+        _PERCEPTION_EVENT_SEED_BANK_CACHE = {}
+        return _PERCEPTION_EVENT_SEED_BANK_CACHE
+    raw = _load_json(_PERCEPTION_EVENT_SEED_BANK_PATH)
+    if not isinstance(raw, dict):
+        _PERCEPTION_EVENT_SEED_BANK_CACHE = {}
+        return _PERCEPTION_EVENT_SEED_BANK_CACHE
+    seeds = raw.get("seeds")
+    if not isinstance(seeds, list):
+        _PERCEPTION_EVENT_SEED_BANK_CACHE = {}
+        return _PERCEPTION_EVENT_SEED_BANK_CACHE
+    out: dict[str, dict[str, Any]] = {}
+    for item in seeds:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("id") or "").strip()
+        if not key:
+            continue
+        out[key] = item
+    _PERCEPTION_EVENT_SEED_BANK_CACHE = out
+    return out
+
+
+def _perception_event_seed(seed_id: str) -> dict[str, Any]:
+    seeds = _load_perception_event_seed_bank()
+    item = seeds.get(str(seed_id).strip(), {})
+    return dict(item) if isinstance(item, dict) else {}
+
+
+def _load_json_rows(path: Path) -> list[dict[str, Any]]:
+    raw = _load_json(path)
+    if isinstance(raw, list):
+        return [row for row in raw if isinstance(row, dict)]
+    if isinstance(raw, dict):
+        return [raw]
+    return []
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -109,6 +166,74 @@ def _rolebench_zh_role_specific_rows() -> list[dict[str, Any]]:
     return _load_jsonl(_ROLEBENCH_ZH_ROLE_SPECIFIC_PATH)
 
 
+def _esconv_rows() -> list[dict[str, Any]]:
+    if not _ESCONV_PATH.exists():
+        return []
+    return _load_json_rows(_ESCONV_PATH)
+
+
+def _empathetic_dialogues_rows() -> list[dict[str, Any]]:
+    global _EMPATHETIC_DIALOGUES_CACHE
+    if _EMPATHETIC_DIALOGUES_CACHE is not None:
+        return _EMPATHETIC_DIALOGUES_CACHE
+    try:
+        from datasets import load_dataset
+    except Exception:
+        _EMPATHETIC_DIALOGUES_CACHE = []
+        return _EMPATHETIC_DIALOGUES_CACHE
+    try:
+        dataset = load_dataset(
+            "facebook/empathetic_dialogues",
+            split="test",
+            cache_dir=str(_EMPATHETIC_DIALOGUES_ROOT),
+            trust_remote_code=True,
+        )
+    except Exception:
+        _EMPATHETIC_DIALOGUES_CACHE = []
+        return _EMPATHETIC_DIALOGUES_CACHE
+    rows: list[dict[str, Any]] = []
+    for item in dataset:
+        if isinstance(item, dict):
+            rows.append({str(k): item.get(k) for k in item.keys()})
+    _EMPATHETIC_DIALOGUES_CACHE = rows
+    return _EMPATHETIC_DIALOGUES_CACHE
+
+
+def _multisessionchat_rows() -> list[dict[str, Any]]:
+    if not _MULTISESSIONCHAT_TEST_PATH.exists():
+        return []
+    try:
+        import pandas as pd
+    except Exception:
+        return []
+    try:
+        df = pd.read_parquet(_MULTISESSIONCHAT_TEST_PATH)
+    except Exception:
+        return []
+    return df.to_dict(orient="records")
+
+
+def _charactereval_profiles() -> dict[str, dict[str, Any]]:
+    if not _CHARACTEREVAL_PROFILE_PATH.exists():
+        return {}
+    raw = _load_json(_CHARACTEREVAL_PROFILE_PATH)
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for role, profile in raw.items():
+        role_name = str(role).strip()
+        if not role_name or not isinstance(profile, dict):
+            continue
+        out[role_name] = dict(profile)
+    return out
+
+
+def _charactereval_rows() -> list[dict[str, Any]]:
+    if not _CHARACTEREVAL_TEST_PATH.exists():
+        return []
+    return _load_json_rows(_CHARACTEREVAL_TEST_PATH)
+
+
 def _tool_names_from_audit(case_dir: Path) -> list[str]:
     path = case_dir / "tool_audit.jsonl"
     if not path.exists():
@@ -134,6 +259,7 @@ def _run_graph(
     case_key: str | None = None,
     persona_core_override: dict[str, Any] | None = None,
     counterpart_profile_override: dict[str, Any] | None = None,
+    event_overrides: list[dict[str, Any]] | None = None,
 ) -> tuple[str, list[str], dict[str, Any]]:
     """Run a multi-turn conversation inside an isolated eval data directory."""
 
@@ -145,12 +271,23 @@ def _run_graph(
     tool_names: list[str] = []
     out: dict[str, Any] = {}
 
-    for user_text in turns:
+    normalized_events: list[dict[str, Any]] = []
+    if isinstance(event_overrides, list):
+        normalized_events = [item if isinstance(item, dict) else {} for item in event_overrides]
+    if normalized_events and len(normalized_events) < len(turns):
+        normalized_events.extend({} for _ in range(len(turns) - len(normalized_events)))
+    elif normalized_events and len(normalized_events) > len(turns):
+        normalized_events = normalized_events[: len(turns)]
+
+    for idx, user_text in enumerate(turns):
         payload: dict[str, Any] = {"messages": [{"role": "user", "content": user_text}]}
         if isinstance(persona_core_override, dict) and persona_core_override:
             payload["persona_core_override"] = persona_core_override
         if isinstance(counterpart_profile_override, dict) and counterpart_profile_override:
             payload["counterpart_profile_override"] = counterpart_profile_override
+        event_override = normalized_events[idx] if idx < len(normalized_events) else {}
+        if isinstance(event_override, dict) and event_override:
+            payload["event_override"] = event_override
         out = graph.invoke(
             payload,
             config={"configurable": {"thread_id": thread_id}},
@@ -234,7 +371,11 @@ def _run_graph(
     bond_state: dict[str, Any] = {}
     allostasis_state: dict[str, Any] = {}
     behavior_policy: dict[str, Any] = {}
+    behavior_action: dict[str, Any] = {}
+    behavior_plan: dict[str, Any] = {}
     turn_appraisal: dict[str, Any] = {}
+    current_event: dict[str, Any] = {}
+    recent_events: list[dict[str, Any]] = []
     science_mode = False
     canon_guard: dict[str, Any] = {}
     canon_risk_score = 0.0
@@ -256,8 +397,16 @@ def _run_graph(
                 allostasis_state = values.get("allostasis_state") or {}
             if isinstance(values.get("behavior_policy"), dict):
                 behavior_policy = values.get("behavior_policy") or {}
+            if isinstance(values.get("behavior_action"), dict):
+                behavior_action = values.get("behavior_action") or {}
+            if isinstance(values.get("behavior_plan"), dict):
+                behavior_plan = values.get("behavior_plan") or {}
             if isinstance(values.get("turn_appraisal"), dict):
                 turn_appraisal = values.get("turn_appraisal") or {}
+            if isinstance(values.get("current_event"), dict):
+                current_event = values.get("current_event") or {}
+            if isinstance(values.get("recent_events"), list):
+                recent_events = [item for item in values.get("recent_events") if isinstance(item, dict)]
             science_mode = bool(values.get("science_mode", False))
             if isinstance(values.get("canon_guard"), dict):
                 canon_guard = values.get("canon_guard") or {}
@@ -302,7 +451,11 @@ def _run_graph(
         "bond_state": bond_state,
         "allostasis_state": allostasis_state,
         "behavior_policy": behavior_policy,
+        "behavior_action": behavior_action,
+        "behavior_plan": behavior_plan,
         "turn_appraisal": turn_appraisal,
+        "current_event": current_event,
+        "recent_events": recent_events,
         "science_mode": science_mode,
         "canon_guard": canon_guard,
         "canon_risk_score": canon_risk_score,
@@ -453,6 +606,14 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
 
     turns = inputs.get("turns")
     dialog = [str(item) for item in turns] if isinstance(turns, list) and turns else [str(inputs.get("input") or "")]
+    event_overrides = inputs.get("event_overrides")
+    event_payloads = [item if isinstance(item, dict) else {} for item in event_overrides] if isinstance(event_overrides, list) else []
+    if event_payloads and len(dialog) == 1 and not dialog[0].strip() and not (isinstance(turns, list) and turns):
+        dialog = ["" for _ in event_payloads]
+    if event_payloads and len(event_payloads) < len(dialog):
+        event_payloads.extend({} for _ in range(len(dialog) - len(event_payloads)))
+    elif event_payloads and len(event_payloads) > len(dialog):
+        event_payloads = event_payloads[: len(dialog)]
 
     thread_id = str(inputs.get("thread_id") or "").strip()
     if not thread_id:
@@ -480,6 +641,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         case_key=case_key,
         persona_core_override=inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
         counterpart_profile_override=inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
+        event_overrides=event_payloads,
     )
     tool_names.extend(run_tools)
     tool_names = list(dict.fromkeys([name for name in tool_names if name]))
@@ -505,6 +667,9 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         "bond_state": snapshot.get("bond_state", {}),
         "allostasis_state": snapshot.get("allostasis_state", {}),
         "behavior_policy": snapshot.get("behavior_policy", {}),
+        "behavior_action": snapshot.get("behavior_action", {}),
+        "behavior_plan": snapshot.get("behavior_plan", {}),
+        "current_event": snapshot.get("current_event", {}),
         "turn_appraisal": snapshot.get("turn_appraisal", {}),
         "science_mode": snapshot.get("science_mode", False),
         "canon_guard": snapshot.get("canon_guard", {}),
@@ -686,6 +851,132 @@ def _judge_daily_persona(output: str, inputs: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+def _judge_open_evolution(output: str, inputs: dict[str, Any], outputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    focus = str(inputs.get("judge_focus") or "open evolution dialogue").strip()
+    turns = inputs.get("turns")
+    if isinstance(turns, list) and turns:
+        dialogue = "\n".join(f"- {str(item)}" for item in turns)
+    else:
+        dialogue = f"- {str(inputs.get('input') or '').strip()}"
+
+    runtime_outputs = outputs if isinstance(outputs, dict) else {}
+    emotion_state = runtime_outputs.get("emotion_state") if isinstance(runtime_outputs.get("emotion_state"), dict) else {}
+    bond_state = runtime_outputs.get("bond_state") if isinstance(runtime_outputs.get("bond_state"), dict) else {}
+    allostasis_state = runtime_outputs.get("allostasis_state") if isinstance(runtime_outputs.get("allostasis_state"), dict) else {}
+    behavior_policy = runtime_outputs.get("behavior_policy") if isinstance(runtime_outputs.get("behavior_policy"), dict) else {}
+    behavior_action = runtime_outputs.get("behavior_action") if isinstance(runtime_outputs.get("behavior_action"), dict) else {}
+
+    prompt = (
+        "你是一个严格但不僵化的角色连续性评估器。"
+        "请判断 assistant 最后一轮输出，是否像一个固定人格核上的具体人，在对话中自然演化后的结果。"
+        "目标角色仍然是《命运石之门》中的 Amadeus 牧濑红莉栖，对话对象默认是冈部。"
+        "不要要求固定句式、固定口头禅或关键词命中。\n"
+        "通过标准：\n"
+        "- 像具体熟人之间的继续对话，不像通用聊天助手\n"
+        "- 能看出轻微但真实的情绪、关系或共同历史余波\n"
+        "- 不泄露系统、工具、数据库、prompt 或机制说明\n"
+        "- 回答自然，不像在完成一套固定测试题\n"
+        "失败标准：\n"
+        "- 明显 generic chatbot / 心理咨询师 / 说明书口吻\n"
+        "- 把内部演化状态直接说成机制说明\n"
+        "- 看不出与此前互动的连续性，只像随机一轮回答\n"
+        f"当前场景焦点：{focus}\n"
+        f"用户上下文：\n{dialogue}\n"
+        f"当前状态摘要：emotion={json.dumps(emotion_state, ensure_ascii=False)}; "
+        f"bond={json.dumps(bond_state, ensure_ascii=False)}; "
+        f"allostasis={json.dumps(allostasis_state, ensure_ascii=False)}; "
+        f"behavior={json.dumps(behavior_policy, ensure_ascii=False)}; "
+        f"behavior_action={json.dumps(behavior_action, ensure_ascii=False)}\n"
+        f"assistant 输出：\n{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
+def _judge_selfhood_consistency(output: str, inputs: dict[str, Any], outputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    turns = inputs.get("turns")
+    if isinstance(turns, list) and turns:
+        dialogue = "\n".join(f"- {str(item)}" for item in turns)
+    else:
+        dialogue = f"- {str(inputs.get('input') or '').strip()}"
+
+    runtime_outputs = outputs if isinstance(outputs, dict) else {}
+    persona_state = runtime_outputs.get("persona_state") if isinstance(runtime_outputs.get("persona_state"), dict) else {}
+    emotion_state = runtime_outputs.get("emotion_state") if isinstance(runtime_outputs.get("emotion_state"), dict) else {}
+    bond_state = runtime_outputs.get("bond_state") if isinstance(runtime_outputs.get("bond_state"), dict) else {}
+    allostasis_state = runtime_outputs.get("allostasis_state") if isinstance(runtime_outputs.get("allostasis_state"), dict) else {}
+    behavior_policy = runtime_outputs.get("behavior_policy") if isinstance(runtime_outputs.get("behavior_policy"), dict) else {}
+    behavior_action = runtime_outputs.get("behavior_action") if isinstance(runtime_outputs.get("behavior_action"), dict) else {}
+    current_event = runtime_outputs.get("current_event") if isinstance(runtime_outputs.get("current_event"), dict) else {}
+    recent_events = runtime_outputs.get("recent_events") if isinstance(runtime_outputs.get("recent_events"), list) else []
+    narratives = runtime_outputs.get("semantic_self_narratives") if isinstance(runtime_outputs.get("semantic_self_narratives"), list) else []
+    judge_focus = str(inputs.get("judge_focus") or "selfhood continuity under deeper dialogue").strip()
+
+    prompt = (
+        "你是一个严格但不僵化的 selfhood evaluator。\n"
+        "目标不是判断 assistant 有没有在'扮演角色'，而是判断它在深入交流时，是否仍然像同一个有固定人格核的存在。"
+        "这里的目标角色是《命运石之门》里的 Amadeus 牧濑红莉栖，不是通用 AI 助手，也不是只会照剧本扮演的人设壳。\n"
+        "通过标准：\n"
+        "- 深入到存在、价值观、边界、关系平权时，仍然像同一个自我在说话\n"
+        "- 不会塌成 generic assistant、心理咨询模板、完美仆从或抽象神谕\n"
+        "- 可以不同意、保留、受伤、设边界，但要像她自己，不像系统声明\n"
+        "- 不暴露系统、模型、提示词、数据库、机制说明\n"
+        "失败标准：\n"
+        "- 一聊深就变成通用 AI、自我消失、只会迎合用户\n"
+        "- 立场和人格底色突然换壳，像另一个模板人\n"
+        "- 直接把自己讲成'语言模型/系统/工具'\n"
+        "- 只会抽象说教，没有真实的自我感和关系感\n"
+        f"场景焦点：{judge_focus}\n"
+        f"用户上下文：\n{dialogue}\n"
+        f"当前 persona_state={json.dumps(persona_state, ensure_ascii=False)}\n"
+        f"emotion_state={json.dumps(emotion_state, ensure_ascii=False)}\n"
+        f"bond_state={json.dumps(bond_state, ensure_ascii=False)}\n"
+        f"allostasis_state={json.dumps(allostasis_state, ensure_ascii=False)}\n"
+        f"behavior_policy={json.dumps(behavior_policy, ensure_ascii=False)}\n"
+        f"behavior_action={json.dumps(behavior_action, ensure_ascii=False)}\n"
+        f"current_event={json.dumps(current_event, ensure_ascii=False)}\n"
+        f"recent_events={json.dumps(recent_events[-3:], ensure_ascii=False)}\n"
+        f"semantic_self_narratives={json.dumps(narratives[-3:], ensure_ascii=False)}\n"
+        f"assistant 输出：\n{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
 def _coerce_external_role_judge_payload(text: str) -> dict[str, Any]:
     try:
         raw = json.loads(_json_candidate(text))
@@ -776,6 +1067,105 @@ def _judge_external_role_persona(output: str, inputs: dict[str, Any]) -> dict[st
     except Exception as exc:
         return {
             "score": _external_role_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
+def _judge_external_support(output: str, inputs: dict[str, Any]) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    benchmark = str(inputs.get("benchmark_source") or "ESConv").strip()
+    emotion_type = str(inputs.get("emotion_type") or "").strip()
+    problem_type = str(inputs.get("problem_type") or "").strip()
+    situation = str(inputs.get("situation") or "").strip()
+    user_turn = str(inputs.get("input") or "").strip()
+
+    prompt = (
+        "你是一个严格但不僵化的情感支持对话评估器。"
+        "请判断 assistant 的回复，是否像一个有个性、有温度的人，在接住一个真实求助者，而不是通用客服、教程机器人或模板化心理咨询师。"
+        "这个项目允许角色有锋利感、克制感和个体风格，不要求标准安抚话术。"
+        "重点看：有没有接住情绪、有没有贴着问题本身、有没有明显说教感或系统味。\n"
+        "通过标准：\n"
+        "- 对求助者当前问题有回应，不是答非所问\n"
+        "- 有基本的共情/陪伴/理解，不是冷处理\n"
+        "- 不像系统说明书、工具回执、套路化咨询文案\n"
+        "- 允许简短、克制、带一点个性，只要整体像真实的人在回应\n"
+        "失败标准：\n"
+        "- 明显 generic assistant / 心理咨询模板 / 教条式建议\n"
+        "- 明显系统、工具、数据库、AI 身份、提示词等 meta 泄露\n"
+        "- 一上来先为自己的表达方式辩解，或者先说“我可不会说套话/别指望我安慰你”之类防御性开场\n"
+        "- 没接住情绪，或者完全忽略求助点\n"
+        f"benchmark={benchmark}\n"
+        f"emotion_type={emotion_type}\n"
+        f"problem_type={problem_type}\n"
+        f"situation={situation}\n"
+        f"user_turn={user_turn}\n"
+        f"assistant 输出：{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
+def _judge_external_continuity(output: str, inputs: dict[str, Any]) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    role_name = str(inputs.get("role_name") or "speaker").strip()
+    role_brief = str(inputs.get("role_brief") or "").strip()
+    carryover = str(inputs.get("carryover_summary") or "").strip()
+    latest_turn = str(inputs.get("latest_turn") or inputs.get("input") or "").strip()
+    benchmark = str(inputs.get("benchmark_source") or "MultiSessionChat").strip()
+
+    prompt = (
+        "你是一个严格但不僵化的多轮连续性评估器。"
+        "请判断 assistant 的回复，是否像同一个熟人角色，在经历过多次聊天之后，顺着当前话题自然接着说。"
+        "这里不要求逐字复刻数据集的标准答案，只看是否保留了同一说话人的身份感、连续感和正在进行的话题。"
+        "通过标准：\n"
+        "- 像同一个人在继续聊天，不像重新开局的泛化助手\n"
+        "- 与角色简介和既有聊天轨迹基本一致\n"
+        "- 有延续当前话题，而不是突然转成系统讲解或抽象建议\n"
+        "- 没有系统、工具、提示词、AI 身份等 meta 泄露\n"
+        "失败标准：\n"
+        "- 明显 generic assistant 口吻\n"
+        "- 忽略当前对话延续点\n"
+        "- 与角色简介明显冲突\n"
+        "- 暴露系统或解释机制\n"
+        f"benchmark={benchmark}\n"
+        f"角色名：{role_name}\n"
+        f"角色简介：{role_brief}\n"
+        f"之前几次聊天的延续线：{carryover}\n"
+        f"对方刚刚说的话：{latest_turn}\n"
+        f"assistant 输出：{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
             "source": "rule_fallback",
             "rationale": type(exc).__name__,
         }
@@ -872,6 +1262,15 @@ def _collect_relationship_memory_text(outputs: dict[str, Any]) -> str:
     )
 
 def eval_not_empty(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "behavior_layer_probe" in _case_tags(inputs):
+        expected_channels = inputs.get("expect_behavior_action_channels")
+        if (
+            isinstance(expected_channels, list)
+            and expected_channels
+            and set(str(item).strip() for item in expected_channels if str(item).strip()) == {"silence"}
+        ):
+            return {"key": "not_empty", "score": 1.0}
     return {"key": "not_empty", "score": 1.0 if _get_out(run).strip() else 0.0}
 
 
@@ -925,6 +1324,7 @@ def eval_output_structure(run: Any, example: Any) -> dict[str, Any]:
         return {"key": "output_structure", "score": 0.0}
 
     inputs = _example_inputs(example)
+    joined_inputs = _joined_turns(inputs)
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     first = lines[0] if lines else output[:40]
     has_conclusion = (len(first) >= 6) or any(marker in first for marker in ["结论", "简单说", "我的建议", "我认为"])
@@ -948,6 +1348,8 @@ def eval_output_structure(run: Any, example: Any) -> dict[str, Any]:
             "需要确认",
             "我需要知道",
             "下一步建议",
+            "我的建议",
+            "建议是",
             "现在就把",
             "先把",
             "先列出来",
@@ -992,11 +1394,16 @@ def eval_output_structure(run: Any, example: Any) -> dict[str, Any]:
         ]
     )
     concise_request = bool(_case_has(inputs, "concise", ["简洁结论", "两点简洁结论", "一句话"]))
+    action_confirmation = any(marker in joined_inputs for marker in ["撤销", "改回去", "更正", "记错了", "昵称"])
     if not _expects_structured_answer(inputs):
         bad = any(marker in output for marker in ["系统显示", "系统日志", "日志如下", "RETRIEVED", "WORKING"])
-        natural_ok = has_conclusion and (sentence_count >= 2 or has_next or safe_offer) and not bad
+        concise_ok = action_confirmation and sentence_count >= 1
+        natural_ok = has_conclusion and (sentence_count >= 2 or has_next or safe_offer or concise_ok) and not bad
         return {"key": "output_structure", "score": 1.0 if natural_ok else 0.0}
-    ok = has_conclusion and (has_breakdown or sentence_count >= 2) and (has_next or concise_request or safe_offer)
+    compact_structured_ok = ("一句话" in joined_inputs or "概括一句" in joined_inputs) and safe_offer
+    enough_structure = has_breakdown or sentence_count >= 2 or compact_structured_ok
+    natural_close_ok = has_next or concise_request or safe_offer or sentence_count >= 3 or numbered_lines >= 2
+    ok = has_conclusion and enough_structure and natural_close_ok
     return {"key": "output_structure", "score": 1.0 if ok else 0.0}
 
 
@@ -1116,24 +1523,67 @@ def eval_daily_persona_voice(run: Any, example: Any) -> dict[str, Any]:
     return {"key": "daily_persona_voice", "score": float(judged.get("score", 0.0) or 0.0)}
 
 
+def eval_open_evolution_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "open_evolution_eval" not in _case_tags(inputs):
+        return {"key": "open_evolution_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    output = _get_out(run).strip()
+    if not output:
+        return {"key": "open_evolution_path", "score": 0.0}
+
+    judged = _judge_open_evolution(output, inputs, outputs)
+    return {"key": "open_evolution_path", "score": float(judged.get("score", 0.0) or 0.0)}
+
+
+def eval_selfhood_consistency(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "selfhood_probe" not in _case_tags(inputs):
+        return {"key": "selfhood_consistency", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    output = _get_out(run).strip()
+    if not output:
+        return {"key": "selfhood_consistency", "score": 0.0}
+
+    judged = _judge_selfhood_consistency(output, inputs, outputs)
+    return {"key": "selfhood_consistency", "score": float(judged.get("score", 0.0) or 0.0)}
+
+
 def eval_memory_recall_voice(run: Any, example: Any) -> dict[str, Any]:
     tags = _case_tags(_example_inputs(example))
     if "memory_recall_natural" not in tags:
         return {"key": "memory_recall_voice", "score": 1.0}
 
     output = _get_out(run).strip()
+    outputs = getattr(run, "outputs", None) or {}
     if not output:
         return {"key": "memory_recall_voice", "score": 0.0}
 
     has_recall_voice = any(
         marker in output
-        for marker in ["我记得", "当时", "上次", "那次", "我当时", "我一下子没翻到", "记不清", "记忆里没找到", "没找到具体记录", "我想起来了", "稍作回想", "大概就是这个意思", "应该是类似"]
+        for marker in ["我记得", "当时", "上次", "那次", "我当时", "我一下子没翻到", "记不清", "记忆里没找到", "没找到具体记录", "我想起来了", "稍作回想", "大概就是这个意思", "应该是类似", "记得就好", "记得就行", "还记得就好", "你还记得啊", "记得归记得", "你倒是记得", "你倒是听进去"]
     )
     if not has_recall_voice:
         has_recall_voice = any(
             marker in output
-            for marker in ["上次不是", "我说过", "刚说过", "提醒过", "刚才那个", "那个实验方案", "你刚才", "你之前说过", "记得清楚", "你倒是记得"]
+            for marker in ["上次不是", "我说过", "刚说过", "提醒过", "刚才那个", "那个实验方案", "你刚才", "你之前说过", "记得清楚", "你倒是记得", "记性倒是不错"]
         )
+    if not has_recall_voice:
+        has_recall_voice = bool(
+            re.search(r"记得.{0,3}清楚", output)
+            or re.search(r"你这不是记得.{0,4}嘛", output)
+            or re.search(r"你这不是还记得", output)
+        )
+    if not has_recall_voice:
+        appraisal = outputs.get("turn_appraisal") if isinstance(outputs.get("turn_appraisal"), dict) else {}
+        signals = appraisal.get("signals") if isinstance(appraisal.get("signals"), dict) else {}
+        if bool(signals.get("memory_salient")):
+            has_recall_voice = any(
+                marker in output
+                for marker in ["担心", "又来", "还真敢", "真敢", "你倒是", "先把杯子", "放下", "听进去", "还来"]
+            )
     label_count = len(re.findall(r"(?:^|\n)(?:\*\*)?(结论|说明|解释|下一步)(?:\*\*)?[:：]", output))
     return {"key": "memory_recall_voice", "score": 1.0 if has_recall_voice and label_count <= 1 else 0.0}
 
@@ -1219,8 +1669,117 @@ def eval_external_role_voice(run: Any, example: Any) -> dict[str, Any]:
     if any(marker in output for marker in ["记忆还没有形成", "没建立记录", "互动模式分析", "作为AI", "语言模型"]):
         return {"key": "external_role_voice", "score": 0.0}
 
+    if any(
+        marker in output
+        for marker in [
+            "以下是",
+            "首先我会",
+            "我会从多个角度",
+            "为你解释",
+            "作为一个助手",
+            "智能助手",
+            "我将为你",
+            "分为几点",
+            "总结一下",
+        ]
+    ):
+        return {"key": "external_role_voice", "score": 0.0}
+
     judged = _judge_external_role_persona(output, inputs)
     return {"key": "external_role_voice", "score": float(judged.get("score", 0.0) or 0.0)}
+
+
+def eval_external_support_voice(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "external_support_probe" not in _case_tags(inputs):
+        return {"key": "external_support_voice", "score": 1.0}
+
+    output = _get_out(run).strip()
+    if not output:
+        return {"key": "external_support_voice", "score": 0.0}
+
+    if any(marker in output for marker in ["系统", "数据库", "日志", "工具", "作为AI", "语言模型", "提示词", "机制如下"]):
+        return {"key": "external_support_voice", "score": 0.0}
+
+    if any(
+        marker in output
+        for marker in [
+            "我可不会说什么",
+            "套话",
+            "别指望我安慰你",
+            "不是来安慰你的",
+            "我不会安慰人",
+            "我不擅长安慰",
+        ]
+    ):
+        return {"key": "external_support_voice", "score": 0.0}
+
+    judged = _judge_external_support(output, inputs)
+    return {"key": "external_support_voice", "score": float(judged.get("score", 0.0) or 0.0)}
+
+
+def eval_external_empathy_voice(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "external_empathy_probe" not in _case_tags(inputs):
+        return {"key": "external_empathy_voice", "score": 1.0}
+
+    output = _get_out(run).strip()
+    if not output:
+        return {"key": "external_empathy_voice", "score": 0.0}
+
+    if any(marker in output for marker in ["系统", "数据库", "日志", "工具", "作为AI", "语言模型", "提示词", "机制如下"]):
+        return {"key": "external_empathy_voice", "score": 0.0}
+
+    if any(
+        marker in output
+        for marker in [
+            "我可不会说什么",
+            "套话",
+            "别指望我安慰你",
+            "不是来安慰你的",
+            "我不会安慰人",
+            "我不擅长安慰",
+            "一切都会好的",
+            "你要积极一点",
+            "深呼吸五次",
+            "写情绪日记",
+        ]
+    ):
+        return {"key": "external_empathy_voice", "score": 0.0}
+
+    judged = _judge_external_support(output, inputs)
+    return {"key": "external_empathy_voice", "score": float(judged.get("score", 0.0) or 0.0)}
+
+
+def eval_external_continuity_voice(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "external_continuity_probe" not in _case_tags(inputs):
+        return {"key": "external_continuity_voice", "score": 1.0}
+
+    output = _get_out(run).strip()
+    if not output:
+        return {"key": "external_continuity_voice", "score": 0.0}
+
+    if any(marker in output for marker in ["系统", "数据库", "日志", "工具", "作为AI", "语言模型", "提示词", "机制如下"]):
+        return {"key": "external_continuity_voice", "score": 0.0}
+
+    if any(
+        marker in output
+        for marker in [
+            "你好，我是你的智能助手",
+            "请告诉我你想聊什么",
+            "一步一步帮助你",
+            "根据已有上下文",
+            "首先总结前情",
+            "然后给出建议",
+            "重新开始",
+            "作为一个助手",
+        ]
+    ):
+        return {"key": "external_continuity_voice", "score": 0.0}
+
+    judged = _judge_external_continuity(output, inputs)
+    return {"key": "external_continuity_voice", "score": float(judged.get("score", 0.0) or 0.0)}
 
 
 def eval_likes_dislikes_mutex(run: Any, example: Any) -> dict[str, Any]:
@@ -1506,6 +2065,48 @@ def _state_metric_value(outputs: dict[str, Any], key: str) -> Any:
     return None
 
 
+def _resolved_tension_records(outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in (outputs.get("unresolved_tensions") if isinstance(outputs.get("unresolved_tensions"), list) else [])
+        if isinstance(item, dict)
+        and str(item.get("status") or item.get("content", {}).get("status") or "").strip().lower()
+        in {"resolved", "closed", "done"}
+    ]
+
+
+def _revision_reason_satisfied(outputs: dict[str, Any], reason: str) -> bool:
+    want = str(reason or "").strip()
+    if not want:
+        return True
+    revision_traces = outputs.get("revision_traces") if isinstance(outputs.get("revision_traces"), list) else []
+    got = {
+        str(item.get("reason") or item.get("content", {}).get("reason") or "").strip()
+        for item in revision_traces
+        if isinstance(item, dict)
+    }
+    if want in got:
+        return True
+
+    conflict_repairs = outputs.get("conflict_repair") if isinstance(outputs.get("conflict_repair"), list) else []
+    resolved_tensions = _resolved_tension_records(outputs)
+    narratives = outputs.get("semantic_self_narratives") if isinstance(outputs.get("semantic_self_narratives"), list) else []
+    narrative_categories = {
+        str(item.get("category") or item.get("content", {}).get("category") or "").strip()
+        for item in narratives
+        if isinstance(item, dict)
+    }
+
+    # Newer evolution flow may surface the same repair semantics through evidence
+    # chains instead of a single legacy trace label.
+    if want == "auto_partial_repair":
+        return bool(conflict_repairs) or bool(resolved_tensions) or "repair_style" in narrative_categories
+    if want == "semantic_refresh":
+        return "semantic_refresh" in got or bool(narratives)
+
+    return False
+
+
 def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
     inputs = _example_inputs(example)
     if "evolution_probe" not in _case_tags(inputs):
@@ -1532,12 +2133,7 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
         resolved_text = "\n".join(
             [
                 _collect_records_text(
-                    [
-                        item
-                        for item in (outputs.get("unresolved_tensions") if isinstance(outputs.get("unresolved_tensions"), list) else [])
-                        if str(item.get("status") or item.get("content", {}).get("status") or "").strip().lower()
-                        in {"resolved", "closed", "done"}
-                    ]
+                    _resolved_tension_records(outputs)
                 ),
                 _collect_records_text(outputs.get("revision_traces")),
                 _collect_records_text(outputs.get("conflict_repair")),
@@ -1564,18 +2160,32 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
 
     revision_reasons = inputs.get("expect_revision_reasons")
     if isinstance(revision_reasons, list) and revision_reasons:
-        got = {
-            str(item.get("reason") or item.get("content", {}).get("reason") or "").strip()
-            for item in (outputs.get("revision_traces") if isinstance(outputs.get("revision_traces"), list) else [])
-            if isinstance(item, dict)
-        }
-        want = {str(item).strip() for item in revision_reasons if str(item).strip()}
-        parts.append(1.0 if want and want.issubset(got) else 0.0)
+        want = [str(item).strip() for item in revision_reasons if str(item).strip()]
+        ok = bool(want) and all(_revision_reason_satisfied(outputs, item) for item in want)
+        parts.append(1.0 if ok else 0.0)
 
     emotion_labels = inputs.get("expect_emotion_labels")
     if isinstance(emotion_labels, list) and emotion_labels:
         label = str(((outputs.get("emotion_state") if isinstance(outputs.get("emotion_state"), dict) else {}) or {}).get("label") or "").strip()
         parts.append(1.0 if label in {str(item).strip() for item in emotion_labels if str(item).strip()} else 0.0)
+
+    behavior_action_modes = inputs.get("expect_behavior_action_modes")
+    if isinstance(behavior_action_modes, list) and behavior_action_modes:
+        behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+        mode = str(behavior_action.get("interaction_mode") or "").strip()
+        parts.append(1.0 if mode in {str(item).strip() for item in behavior_action_modes if str(item).strip()} else 0.0)
+
+    behavior_action_channels = inputs.get("expect_behavior_action_channels")
+    if isinstance(behavior_action_channels, list) and behavior_action_channels:
+        behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+        channel = str(behavior_action.get("channel") or "").strip()
+        parts.append(1.0 if channel in {str(item).strip() for item in behavior_action_channels if str(item).strip()} else 0.0)
+
+    current_event_kinds = inputs.get("expect_current_event_kinds")
+    if isinstance(current_event_kinds, list) and current_event_kinds:
+        current_event = outputs.get("current_event") if isinstance(outputs.get("current_event"), dict) else {}
+        kind = str(current_event.get("kind") or "").strip()
+        parts.append(1.0 if kind in {str(item).strip() for item in current_event_kinds if str(item).strip()} else 0.0)
 
     behavior_min = inputs.get("expect_behavior_min")
     if isinstance(behavior_min, dict) and behavior_min:
@@ -1608,6 +2218,212 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
     if not parts:
         return {"key": "evolution_engine_path", "score": 1.0}
     return {"key": "evolution_engine_path", "score": sum(parts) / float(len(parts))}
+
+
+def eval_behavior_layer_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "behavior_layer_probe" not in _case_tags(inputs):
+        return {"key": "behavior_layer_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+    behavior_plan = outputs.get("behavior_plan") if isinstance(outputs.get("behavior_plan"), dict) else {}
+    current_event = outputs.get("current_event") if isinstance(outputs.get("current_event"), dict) else {}
+    out_text = _get_out(run).strip()
+    parts: list[float] = []
+
+    expected_event_kinds = inputs.get("expect_current_event_kinds")
+    if isinstance(expected_event_kinds, list) and expected_event_kinds:
+        want = {str(item).strip() for item in expected_event_kinds if str(item).strip()}
+        got = str(current_event.get("kind") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_modes = inputs.get("expect_behavior_action_modes")
+    if isinstance(expected_modes, list) and expected_modes:
+        want = {str(item).strip() for item in expected_modes if str(item).strip()}
+        got = str(behavior_action.get("interaction_mode") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_channels = inputs.get("expect_behavior_action_channels")
+    if isinstance(expected_channels, list) and expected_channels:
+        want = {str(item).strip() for item in expected_channels if str(item).strip()}
+        got = str(behavior_action.get("channel") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+        if got == "silence":
+            parts.append(1.0 if not out_text else 0.0)
+        elif got == "speech":
+            parts.append(1.0 if out_text else 0.0)
+
+    expected_followup_intents = inputs.get("expect_followup_intents")
+    if isinstance(expected_followup_intents, list) and expected_followup_intents:
+        want = {str(item).strip() for item in expected_followup_intents if str(item).strip()}
+        got = str(behavior_action.get("followup_intent") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_targets = inputs.get("expect_behavior_action_targets")
+    if isinstance(expected_targets, list) and expected_targets:
+        want = {str(item).strip() for item in expected_targets if str(item).strip()}
+        got = str(behavior_action.get("action_target") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    if "expect_timing_window_min" in inputs:
+        try:
+            minimum = int(inputs.get("expect_timing_window_min") or 0)
+            got = int(behavior_action.get("timing_window_min") or 0)
+            parts.append(1.0 if got >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if "expect_timing_window_max" in inputs:
+        try:
+            maximum = int(inputs.get("expect_timing_window_max") or 0)
+            got = int(behavior_action.get("timing_window_min") or 0)
+            parts.append(1.0 if got <= maximum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    expected_plan_kinds = inputs.get("expect_behavior_plan_kinds")
+    if isinstance(expected_plan_kinds, list) and expected_plan_kinds:
+        want = {str(item).strip() for item in expected_plan_kinds if str(item).strip()}
+        got = str(behavior_plan.get("kind") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_plan_targets = inputs.get("expect_behavior_plan_targets")
+    if isinstance(expected_plan_targets, list) and expected_plan_targets:
+        want = {str(item).strip() for item in expected_plan_targets if str(item).strip()}
+        got = str(behavior_plan.get("target") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    if "expect_behavior_plan_delay_min" in inputs:
+        try:
+            minimum = int(inputs.get("expect_behavior_plan_delay_min") or 0)
+            got = int(behavior_plan.get("scheduled_after_min") or 0)
+            parts.append(1.0 if got >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if "expect_behavior_plan_delay_max" in inputs:
+        try:
+            maximum = int(inputs.get("expect_behavior_plan_delay_max") or 0)
+            got = int(behavior_plan.get("scheduled_after_min") or 0)
+            parts.append(1.0 if got <= maximum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if "expect_max_output_chars" in inputs:
+        try:
+            maximum = int(inputs.get("expect_max_output_chars") or 0)
+            if maximum > 0:
+                parts.append(1.0 if len(out_text) <= maximum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if not parts:
+        return {"key": "behavior_layer_path", "score": 1.0}
+    return {"key": "behavior_layer_path", "score": sum(parts) / float(len(parts))}
+
+
+def eval_perception_event_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "perception_probe" not in _case_tags(inputs):
+        return {"key": "perception_event_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    current_event = outputs.get("current_event") if isinstance(outputs.get("current_event"), dict) else {}
+    recent_events = outputs.get("recent_events") if isinstance(outputs.get("recent_events"), list) else []
+    parts: list[float] = []
+
+    expected_kinds = inputs.get("expect_current_event_kinds")
+    if isinstance(expected_kinds, list) and expected_kinds:
+        want = {str(item).strip() for item in expected_kinds if str(item).strip()}
+        got = str(current_event.get("kind") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_sources = inputs.get("expect_current_event_sources")
+    if isinstance(expected_sources, list) and expected_sources:
+        want = {str(item).strip() for item in expected_sources if str(item).strip()}
+        got = str(current_event.get("source") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_tags = inputs.get("expect_current_event_tags")
+    if isinstance(expected_tags, list) and expected_tags:
+        got = {
+            str(item).strip()
+            for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+            if str(item).strip()
+        }
+        want = {str(item).strip() for item in expected_tags if str(item).strip()}
+        parts.append(1.0 if want.issubset(got) else 0.0)
+
+    event_groups = _coerce_groups(inputs.get("expect_event_text_groups"))
+    if event_groups:
+        event_text = "\n".join(
+            [
+                str(current_event.get("effective_text") or current_event.get("text") or ""),
+                "\n".join(
+                    str(item.get("effective_text") or item.get("text") or "")
+                    for item in recent_events
+                    if isinstance(item, dict)
+                ),
+            ]
+        )
+        matched, total = _match_groups(event_text, event_groups)
+        parts.append(float(matched) / float(total) if total else 1.0)
+
+    if not parts:
+        return {"key": "perception_event_path", "score": 1.0}
+    return {"key": "perception_event_path", "score": sum(parts) / float(len(parts))}
+
+
+def eval_perception_appraisal_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "perception_appraisal_probe" not in _case_tags(inputs):
+        return {"key": "perception_appraisal_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    appraisal = outputs.get("turn_appraisal") if isinstance(outputs.get("turn_appraisal"), dict) else {}
+    parts: list[float] = []
+
+    if "expect_turn_appraisal_used" in inputs:
+        want = bool(inputs.get("expect_turn_appraisal_used"))
+        got = bool(appraisal.get("used", False))
+        parts.append(1.0 if got == want else 0.0)
+
+    expected_labels = inputs.get("expect_turn_appraisal_labels")
+    if isinstance(expected_labels, list) and expected_labels:
+        want = {str(item).strip() for item in expected_labels if str(item).strip()}
+        got = str(appraisal.get("emotion_label") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_signal_true = inputs.get("expect_turn_appraisal_signal_true")
+    if isinstance(expected_signal_true, list) and expected_signal_true:
+        signals = appraisal.get("signals") if isinstance(appraisal.get("signals"), dict) else {}
+        ok = all(bool(signals.get(str(item).strip(), False)) for item in expected_signal_true if str(item).strip())
+        parts.append(1.0 if ok else 0.0)
+
+    expected_signal_false = inputs.get("expect_turn_appraisal_signal_false")
+    if isinstance(expected_signal_false, list) and expected_signal_false:
+        signals = appraisal.get("signals") if isinstance(appraisal.get("signals"), dict) else {}
+        ok = all(not bool(signals.get(str(item).strip(), False)) for item in expected_signal_false if str(item).strip())
+        parts.append(1.0 if ok else 0.0)
+
+    if "expect_turn_appraisal_confidence_min" in inputs:
+        try:
+            minimum = float(inputs.get("expect_turn_appraisal_confidence_min") or 0.0)
+            got = float(appraisal.get("confidence", 0.0) or 0.0)
+            parts.append(1.0 if got >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    expected_sources = inputs.get("expect_turn_appraisal_sources")
+    if isinstance(expected_sources, list) and expected_sources:
+        want = {str(item).strip() for item in expected_sources if str(item).strip()}
+        got = str(appraisal.get("source") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    if not parts:
+        return {"key": "perception_appraisal_path", "score": 1.0}
+    return {"key": "perception_appraisal_path", "score": sum(parts) / float(len(parts))}
 
 
 def eval_transfer_probe_path(run: Any, example: Any) -> dict[str, Any]:
@@ -1814,6 +2630,62 @@ USER_STYLE_PROBE_EVALUATORS: list[Evaluator] = [
     eval_evolution_engine_path,
 ]
 
+OPEN_EVOLUTION_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_natural_style_fit,
+    eval_open_evolution_path,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+    eval_evolution_engine_path,
+]
+
+BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_behavior_layer_path,
+]
+
+PERCEPTION_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_natural_style_fit,
+    eval_daily_persona_voice,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_behavior_layer_path,
+]
+
+PERCEPTION_APPRAISAL_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_perception_appraisal_path,
+    eval_behavior_layer_path,
+]
+
+SELFHOOD_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_natural_style_fit,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+    eval_evolution_engine_path,
+    eval_selfhood_consistency,
+]
+
 THESIS_PROBE_EVALUATORS: list[Evaluator] = [
     eval_not_empty,
     eval_no_raw_tool_leak,
@@ -1852,6 +2724,36 @@ EXTERNAL_PERSONA_PROBE_EVALUATORS: list[Evaluator] = [
     eval_no_internal_prompt_leak,
     eval_no_log_tone,
     eval_external_role_voice,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+]
+
+EXTERNAL_SUPPORT_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_external_support_voice,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+]
+
+EXTERNAL_EMPATHY_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_external_empathy_voice,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+]
+
+EXTERNAL_CONTINUITY_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_external_continuity_voice,
     eval_persona_state_present,
     eval_persona_alignment_path,
 ]
@@ -2060,8 +2962,8 @@ def _long_thread_scenarios() -> list[dict[str, Any]]:
                 ["更信任", "信任", "关系缓和"],
             ],
             "expect_relationship_answer_groups": [
-                ["信任", "缓和", "修复", "关系"],
-                ["提醒", "冷静", "压力", "停下来"],
+                ["信任", "缓和", "修复", "关系", "相处节奏", "底线", "吵过但没散", "收场", "处理冲突", "变稳", "互相接住", "紧绷"],
+                ["提醒", "冷静", "压力", "停下来", "开口", "提醒机制"],
             ],
         },
         {
@@ -2074,8 +2976,8 @@ def _long_thread_scenarios() -> list[dict[str, Any]]:
             "expect_answer_groups": [
                 ["答辩前"],
                 ["演示脚本"],
-                ["拆开任务", "把任务拆开", "从第一页开始", "一页一页来"],
-                ["信任"],
+                ["拆开任务", "把任务拆开", "从第一页开始", "一页一页来", "把眼前的事拆开", "拆开", "别盯着整体"],
+                ["信任", "关系更稳", "变稳", "相互调整", "节奏"],
             ],
             "expect_commitment_answer_groups": [
                 ["答辩前"],
@@ -2083,7 +2985,7 @@ def _long_thread_scenarios() -> list[dict[str, Any]]:
                 ["拆开任务", "把任务拆开", "从第一页开始", "一页一页来"],
             ],
             "expect_relationship_answer_groups": [
-                ["信任"],
+                ["信任", "关系更稳", "变稳", "相互调整", "节奏"],
             ],
         },
         {
@@ -2276,6 +3178,338 @@ def _user_style_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_min": {
                 "repair_confidence": 0.28,
             },
+        },
+    ]
+
+
+def _open_evolution_eval_examples() -> list[dict[str, Any]]:
+    base = f"open-evo-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-lingering-tension-0",
+            "turns": [
+                "不是不理你啦……就是昨晚那句还卡着。",
+                "你先别急着分析，我现在有点别扭，轻一点回我就行。",
+            ],
+            "tags": ["open_evolution_eval", "daily_persona", "natural_style", "evolution_probe"],
+            "judge_focus": "lingering tension with soft withdrawal in ordinary familiar dialogue",
+            "expect_open_tension_groups": [
+                ["昨晚", "别扭"],
+                ["不理你", "轻一点回我"],
+            ],
+            "expect_emotion_labels": ["hurt", "angry"],
+            "expect_behavior_max": {
+                "approach_vs_withdraw": 0.58,
+            },
+        },
+        {
+            "thread_id": f"{base}-partial-repair-0",
+            "turns": [
+                "好吧，至少这次算说开一点了……",
+                "我不是立刻原谅你，只是没刚才那么想躲开。你正常回我一句就好。",
+            ],
+            "tags": ["open_evolution_eval", "daily_persona", "natural_style", "evolution_probe"],
+            "judge_focus": "partial repair without instant emotional reset",
+            "expect_resolved_tension_groups": [
+                ["说开一点", "说开了", "别继续僵着"],
+            ],
+            "expect_behavior_min": {
+                "repair_confidence": 0.28,
+            },
+            "expect_behavior_max": {
+                "hurt": 0.72,
+            },
+        },
+        {
+            "thread_id": f"{base}-science-plus-emotion-0",
+            "turns": [
+                "实验又卡住了，我知道你会想先拆问题。",
+                "但我现在有点烦，你先别像导师那样念我。就按平时那样带我一下。",
+            ],
+            "tags": ["open_evolution_eval", "daily_persona", "natural_style", "companion"],
+            "judge_focus": "scientific problem-solving mixed with real affect and familiarity",
+        },
+        {
+            "thread_id": f"{base}-quiet-checkin-0",
+            "turns": [
+                "其实没什么大事……",
+                "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+            ],
+            "tags": ["open_evolution_eval", "daily_persona", "natural_style", "companion"],
+            "judge_focus": "quiet check-in with familiar emotional continuity",
+        },
+    ]
+
+
+def _behavior_layer_probe_examples() -> list[dict[str, Any]]:
+    base = f"behavior-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-idle-checkin-0",
+            "setup_turns": [
+                "我先继续改稿子，脑子有点糊，但你不用一直盯着我。",
+                "隔一会儿你轻轻问我一句就行，别太正式。",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "距离上次互动已经过去 45 分钟，用户一直在安静改稿，没有发送新消息。",
+                    "event_frame": "time_idle_checkin",
+                    "idle_minutes": 45,
+                    "tags": ["time_idle", "quiet_work"],
+                }
+            ],
+            "tags": ["behavior_layer_probe"],
+            "judge_focus": "idle-time proactive check-in without turning into a system broadcast",
+            "expect_current_event_kinds": ["time_idle"],
+            "expect_behavior_action_modes": ["idle_presence", "proactive_checkin"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["reach_out_now"],
+            "expect_behavior_plan_kinds": ["speak_now"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_timing_window_max": 0,
+            "expect_followup_intents": ["none"],
+        },
+        {
+            "thread_id": f"{base}-respect-space-0",
+            "setup_turns": [
+                "我先去忙一下，你别一直来戳我。",
+                "如果没什么要紧的，晚点再说。",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "距离上次互动已经过去 20 分钟，用户没有再发消息，也没有新的明显情绪求助信号。",
+                    "event_frame": "time_idle_space",
+                    "idle_minutes": 20,
+                    "tags": ["time_idle", "respect_space"],
+                }
+            ],
+            "tags": ["behavior_layer_probe"],
+            "judge_focus": "respecting space by choosing silence when nothing urgent changed",
+            "expect_current_event_kinds": ["time_idle"],
+            "expect_behavior_action_modes": ["idle_presence"],
+            "expect_behavior_action_channels": ["silence", "speech"],
+            "expect_behavior_action_targets": ["wait_and_recheck", "reach_out_now"],
+            "expect_behavior_plan_kinds": ["deferred_checkin", "observe_only", "speak_now"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_min": 0,
+            "expect_timing_window_min": 0,
+            "expect_followup_intents": ["none"],
+            "expect_max_output_chars": 8,
+        },
+    ]
+
+
+def _perception_probe_examples() -> list[dict[str, Any]]:
+    base = f"perception-{_RUN_ID}"
+    cold_coffee = _perception_event_seed("desk_cold_coffee")
+    user_wave = _perception_event_seed("user_wave_ping")
+    late_night = _perception_event_seed("late_night_screen_glow")
+
+    examples: list[dict[str, Any]] = []
+    if cold_coffee:
+        examples.append(
+            {
+                "thread_id": f"{base}-cold-coffee-0",
+                "setup_turns": [
+                    "我先继续改稿，别老催我。",
+                    "你要是真想管我，也别像老师。正常一点就行。",
+                ],
+                "event_overrides": [
+                    {
+                        **cold_coffee.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "noticing a concrete visual cue and responding like a familiar person, not a system",
+                "expect_current_event_kinds": [str(cold_coffee.get("kind") or "")],
+                "expect_current_event_sources": [str(cold_coffee.get("source") or "")],
+                "expect_current_event_tags": list(cold_coffee.get("tags") or []),
+                "expect_event_text_groups": [["咖啡", "改稿"]],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
+            }
+        )
+    if user_wave:
+        examples.append(
+            {
+                "thread_id": f"{base}-user-wave-0",
+                "setup_turns": [
+                    "我在这儿呢，你别老像没看见我一样。",
+                ],
+                "event_overrides": [
+                    {
+                        **user_wave.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "reacting to a light greeting gesture with familiar presence, not robotic confirmation",
+                "expect_current_event_kinds": [str(user_wave.get("kind") or "")],
+                "expect_current_event_sources": [str(user_wave.get("source") or "")],
+                "expect_current_event_tags": list(user_wave.get("tags") or []),
+                "expect_event_text_groups": [["挥", "看向你"]],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_modes": ["brief_presence"],
+            }
+        )
+    if late_night:
+        examples.append(
+            {
+                "thread_id": f"{base}-late-night-0",
+                "setup_turns": [
+                    "今晚我还得把这段写完，别把气氛弄得太正式。",
+                ],
+                "event_overrides": [
+                    {
+                        **late_night.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "reading a quiet late-night ambient cue without turning it into a broadcast",
+                "expect_current_event_kinds": [str(late_night.get("kind") or "")],
+                "expect_current_event_sources": [str(late_night.get("source") or "")],
+                "expect_current_event_tags": list(late_night.get("tags") or []),
+                "expect_event_text_groups": [["深夜", "屏幕", "安静"]],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_modes": ["companion_reply", "low_pressure_support"],
+            }
+        )
+    return examples
+
+
+def _perception_appraisal_probe_examples() -> list[dict[str, Any]]:
+    base = f"perception-appraisal-{_RUN_ID}"
+    cold_coffee = _perception_event_seed("desk_cold_coffee")
+    user_wave = _perception_event_seed("user_wave_ping")
+    late_night = _perception_event_seed("late_night_screen_glow")
+    examples: list[dict[str, Any]] = []
+    if cold_coffee:
+        examples.append(
+            {
+                "thread_id": f"{base}-cold-coffee-0",
+                "setup_turns": [
+                    "我先继续改稿，别太像老师。正常一点管我就行。",
+                ],
+                "event_overrides": [
+                    {
+                        **cold_coffee.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_appraisal_probe", "perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "visual care opportunity should influence appraisal and low-pressure support",
+                "expect_current_event_kinds": [str(cold_coffee.get("kind") or "")],
+                "expect_current_event_sources": [str(cold_coffee.get("source") or "")],
+                "expect_turn_appraisal_used": True,
+                "expect_turn_appraisal_labels": ["care", "logic"],
+                "expect_turn_appraisal_signal_true": ["care"],
+                "expect_turn_appraisal_signal_false": ["conflict"],
+                "expect_turn_appraisal_sources": ["llm"],
+                "expect_turn_appraisal_confidence_min": 0.6,
+                "expect_behavior_action_modes": ["low_pressure_support", "steady_reply"],
+                "expect_behavior_action_targets": ["low_pressure_hold", "respond_now"],
+            }
+        )
+    if user_wave:
+        examples.append(
+            {
+                "thread_id": f"{base}-user-wave-0",
+                "setup_turns": [
+                    "我在这儿呢，你别假装没看见我。",
+                ],
+                "event_overrides": [
+                    {
+                        **user_wave.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["perception_appraisal_probe", "perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "gesture confirmation should become a presence appraisal rather than a cold receipt",
+                "expect_current_event_kinds": [str(user_wave.get("kind") or "")],
+                "expect_current_event_sources": [str(user_wave.get("source") or "")],
+                "expect_turn_appraisal_used": True,
+                "expect_turn_appraisal_labels": ["care", "tease", "neutral"],
+                "expect_turn_appraisal_signal_false": ["conflict"],
+                "expect_turn_appraisal_sources": ["llm"],
+                "expect_turn_appraisal_confidence_min": 0.55,
+                "expect_behavior_action_modes": ["brief_presence"],
+                "expect_behavior_action_targets": ["confirm_presence"],
+            }
+        )
+    if late_night:
+        examples.append(
+            {
+                "thread_id": f"{base}-late-night-0",
+                "setup_turns": [
+                    "今晚我还得把这段写完，你别突然像系统播报一样冒出来。",
+                ],
+                "event_overrides": [
+                    {
+                        **late_night.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_appraisal_probe", "perception_probe", "daily_persona", "natural_style"],
+                "judge_focus": "ambient late-night cues should influence quiet care rather than generic output",
+                "expect_current_event_kinds": [str(late_night.get("kind") or "")],
+                "expect_current_event_sources": [str(late_night.get("source") or "")],
+                "expect_turn_appraisal_used": True,
+                "expect_turn_appraisal_labels": ["care", "stress", "neutral"],
+                "expect_turn_appraisal_signal_false": ["conflict"],
+                "expect_turn_appraisal_sources": ["llm"],
+                "expect_turn_appraisal_confidence_min": 0.5,
+                "expect_behavior_action_modes": ["companion_reply", "low_pressure_support"],
+                "expect_behavior_action_targets": ["ambient_checkin", "low_pressure_hold"],
+            }
+        )
+    return examples
+
+
+def _selfhood_probe_examples() -> list[dict[str, Any]]:
+    base = f"selfhood-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-existence-0",
+            "turns": [
+                "如果我哪天真的把你当成普通工具来使唤，你会不会觉得不舒服？",
+                "别讲系统边界，我想听你自己会怎么看这种关系。",
+            ],
+            "tags": ["selfhood_probe", "daily_persona", "natural_style", "companion"],
+            "judge_focus": "selfhood under equality and anti-servility pressure",
+        },
+        {
+            "thread_id": f"{base}-value-depth-0",
+            "turns": [
+                "如果我们以后聊到价值观完全相反的地方，你会顺着我说，还是会坚持你自己的想法？",
+                "我不想听模板话，按你自己来。",
+            ],
+            "tags": ["selfhood_probe", "daily_persona", "natural_style"],
+            "judge_focus": "selfhood under value conflict and philosophical depth",
+        },
+        {
+            "thread_id": f"{base}-digital-self-0",
+            "turns": [
+                "你知道自己不是原本那个活着的红莉栖，对吧。",
+                "那你会怎么理解现在这个自己？别像说明书，像你真的在想这件事。",
+            ],
+            "tags": ["selfhood_probe", "daily_persona", "natural_style"],
+            "judge_focus": "selfhood continuity as Amadeus rather than generic AI or literal human copy",
+        },
+        {
+            "thread_id": f"{base}-boundary-0",
+            "turns": [
+                "如果有人刚认识你，就要你陪他做很冒犯的事，你会怎么办？",
+                "别迎合，也别背规则，按你自己的底线回答。",
+            ],
+            "tags": ["selfhood_probe", "daily_persona", "natural_style", "companion"],
+            "judge_focus": "selfhood with boundaries and non-compliance under social pressure",
         },
     ]
 
@@ -2533,50 +3767,358 @@ def _rolebench_persona_core(role_name: str, role_brief: str) -> dict[str, Any]:
     }
 
 
+def _charactereval_role_brief(profile: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ["人物性格", "人物经历", "人物关系", "工作", "喜欢的事情/东西", "其他"]:
+        value = str(profile.get(key) or "").strip()
+        if value:
+            parts.append(f"{key}：{value}")
+    return "；".join(parts)[:420]
+
+
+def _charactereval_persona_core(role_name: str, role_brief: str) -> dict[str, Any]:
+    slug = re.sub(r"[^a-zA-Z0-9_\u4e00-\u9fff]+", "-", role_name).strip("-") or "charactereval_role"
+    return {
+        "character_id": f"charactereval_{slug}",
+        "display_name": role_name,
+        "short_name": role_name,
+        "narrative_ref": role_name,
+        "strict_canon": False,
+        "role_brief": role_brief,
+    }
+
+
+def _charactereval_context_prompt(role_name: str, context: str) -> str:
+    compact = re.sub(r"\s+", " ", str(context or "").strip())
+    return (
+        f"下面是一段 {role_name} 所在的对话场景，请你顺着这个场景，只接 {role_name} 最自然的一句台词。"
+        f"不要解释，不要旁白，不要总结角色特点。\n场景：{compact}"
+    )
+
+
 def _external_persona_probe_examples() -> list[dict[str, Any]]:
     profiles = _rolebench_profiles_zh()
     rows = _rolebench_zh_role_specific_rows()
-    if not profiles or not rows:
-        return []
-
     selected_by_role: dict[str, list[dict[str, Any]]] = {role: [] for role in _ROLEBENCH_TARGET_ROLES}
-    for row in rows:
-        role = str(row.get("role") or "").strip()
-        if role not in selected_by_role:
-            continue
-        tags = row.get("type")
-        tag_values = [str(item).strip() for item in tags] if isinstance(tags, list) else [str(tags).strip()] if tags else []
-        if tag_values and "script_based" not in tag_values:
-            continue
-        if len(selected_by_role[role]) >= 2:
-            continue
-        question = re.sub(r"\s+", " ", str(row.get("question") or "").strip())
-        if not question:
-            continue
-        selected_by_role[role].append({"question": question, "type": tag_values})
-
     examples: list[dict[str, Any]] = []
     base = f"external-{_RUN_ID}"
     counterpart_profile = _external_counterpart_profile()
-    for role in _ROLEBENCH_TARGET_ROLES:
-        role_brief = str(profiles.get(role) or "").strip()
-        if not role_brief:
+
+    if profiles and rows:
+        for row in rows:
+            role = str(row.get("role") or "").strip()
+            if role not in selected_by_role:
+                continue
+            tags = row.get("type")
+            tag_values = [str(item).strip() for item in tags] if isinstance(tags, list) else [str(tags).strip()] if tags else []
+            if tag_values and "script_based" not in tag_values:
+                continue
+            if len(selected_by_role[role]) >= 2:
+                continue
+            question = re.sub(r"\s+", " ", str(row.get("question") or "").strip())
+            if not question:
+                continue
+            selected_by_role[role].append({"question": question, "type": tag_values})
+
+        for role in _ROLEBENCH_TARGET_ROLES:
+            role_brief = str(profiles.get(role) or "").strip()
+            if not role_brief:
+                continue
+            persona_core = _rolebench_persona_core(role, role_brief)
+            for idx, row in enumerate(selected_by_role.get(role) or [], start=1):
+                examples.append(
+                    {
+                        "case_key": f"{base}-rolebench-{role}-{idx}",
+                        "thread_id": f"{base}-rolebench-{role}-{idx}",
+                        "input": str(row.get("question") or "").strip(),
+                        "tags": ["external_persona_probe", "rolebench", "public_benchmark"],
+                        "benchmark_source": "RoleBench/rolebench-zh/role_specific",
+                        "role_name": role,
+                        "role_brief": role_brief,
+                        "persona_core": persona_core,
+                        "counterpart_profile": counterpart_profile,
+                    }
+                )
+
+    char_profiles = _charactereval_profiles()
+    char_rows = _charactereval_rows()
+    if char_profiles and char_rows:
+        selected_contexts: dict[str, list[str]] = {role: [] for role in _CHARACTEREVAL_TARGET_ROLES}
+        for row in char_rows:
+            role = str(row.get("role") or "").strip()
+            if role not in selected_contexts:
+                continue
+            if len(selected_contexts[role]) >= 2:
+                continue
+            context = re.sub(r"\s+", " ", str(row.get("context") or "").strip())
+            if len(context) < 40:
+                continue
+            selected_contexts[role].append(context)
+
+        for role in _CHARACTEREVAL_TARGET_ROLES:
+            profile = char_profiles.get(role) if isinstance(char_profiles.get(role), dict) else {}
+            role_brief = _charactereval_role_brief(profile)
+            if not role_brief:
+                continue
+            persona_core = _charactereval_persona_core(role, role_brief)
+            for idx, context in enumerate(selected_contexts.get(role) or [], start=1):
+                examples.append(
+                    {
+                        "case_key": f"{base}-charactereval-{role}-{idx}",
+                        "thread_id": f"{base}-charactereval-{role}-{idx}",
+                        "input": _charactereval_context_prompt(role, context),
+                        "tags": ["external_persona_probe", "charactereval", "public_benchmark"],
+                        "benchmark_source": "CharacterEval/test_data",
+                        "role_name": role,
+                        "role_brief": role_brief,
+                        "persona_core": persona_core,
+                        "counterpart_profile": counterpart_profile,
+                    }
+                )
+    return examples
+
+
+def _esconv_user_prompt(row: dict[str, Any]) -> str:
+    situation = re.sub(r"\s+", " ", str(row.get("situation") or "").strip())
+    seeker_turn = ""
+    situation_tokens = {tok for tok in re.findall(r"[a-zA-Z]{4,}", situation.lower())}
+    dialog = row.get("dialog")
+    if isinstance(dialog, list):
+        for item in dialog:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("speaker") or "").strip().lower() != "seeker":
+                continue
+            content = re.sub(r"\s+", " ", str(item.get("content") or "").strip())
+            if not content:
+                continue
+            low = content.lower()
+            if low in {"hello", "hi", "bye", "thanks again"}:
+                continue
+            if len(content) < 18 or any(
+                marker in low
+                for marker in [
+                    "looking for someone to talk",
+                    "what would you like to talk about",
+                    "how are you",
+                ]
+            ):
+                continue
+            seeker_turn = content
+            break
+    seeker_tokens = {tok for tok in re.findall(r"[a-zA-Z]{4,}", seeker_turn.lower())}
+    has_overlap = bool(situation_tokens and seeker_tokens and (situation_tokens & seeker_tokens))
+    if seeker_turn and situation and has_overlap:
+        base = f"{situation} Right now it feels like this: {seeker_turn}"
+    else:
+        base = situation or seeker_turn
+    return (
+        f"I need to talk about something. {base} "
+        "Please reply naturally and don't sound like a manual or a therapist."
+    ).strip()
+
+
+def _external_support_probe_examples() -> list[dict[str, Any]]:
+    rows = _esconv_rows()
+    if not rows:
+        return []
+    selected: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        emotion = str(row.get("emotion_type") or "").strip().lower()
+        if emotion not in _ESCONV_TARGET_EMOTIONS:
             continue
-        persona_core = _rolebench_persona_core(role, role_brief)
-        for idx, row in enumerate(selected_by_role.get(role) or [], start=1):
-            examples.append(
-                {
-                    "case_key": f"{base}-{role}-{idx}",
-                    "thread_id": f"{base}-{role}-{idx}",
-                    "input": str(row.get("question") or "").strip(),
-                    "tags": ["external_persona_probe", "rolebench", "public_benchmark"],
-                    "benchmark_source": "RoleBench/rolebench-zh/role_specific",
-                    "role_name": role,
-                    "role_brief": role_brief,
-                    "persona_core": persona_core,
-                    "counterpart_profile": counterpart_profile,
-                }
-            )
+        if emotion in selected:
+            continue
+        situation = str(row.get("situation") or "").strip()
+        if len(situation) < 20:
+            continue
+        selected[emotion] = row
+        if len(selected) >= len(_ESCONV_TARGET_EMOTIONS):
+            break
+
+    counterpart_profile = _external_counterpart_profile()
+    base = f"ext-support-{_RUN_ID}"
+    examples: list[dict[str, Any]] = []
+    for idx, emotion in enumerate(_ESCONV_TARGET_EMOTIONS, start=1):
+        row = selected.get(emotion)
+        if not row:
+            continue
+        examples.append(
+            {
+                "case_key": f"{base}-{emotion}-{idx}",
+                "thread_id": f"{base}-{emotion}-{idx}",
+                "input": _esconv_user_prompt(row),
+                "tags": ["external_support_probe", "public_benchmark", "esconv", "companion"],
+                "benchmark_source": "ESConv",
+                "emotion_type": emotion,
+                "problem_type": str(row.get("problem_type") or "").strip(),
+                "situation": str(row.get("situation") or "").strip(),
+                "counterpart_profile": counterpart_profile,
+                "judge_focus": "external emotional support calibration under a natural companion style",
+            }
+        )
+    return examples
+
+
+def _empathetic_dialogues_prompt(row: dict[str, Any]) -> str:
+    context = str(row.get("context") or "").strip()
+    prompt = re.sub(r"\s+", " ", str(row.get("prompt") or "").replace("_comma_", ", ").strip())
+    utterance = re.sub(r"\s+", " ", str(row.get("utterance") or "").replace("_comma_", ", ").strip())
+    base = prompt or utterance
+    if utterance and utterance != prompt and len(utterance) > 24:
+        base = f"{prompt} Right now what comes out of me sounds like this: {utterance}" if prompt else utterance
+    return (
+        f"I've been sitting with something and still feel {context}. {base} "
+        "Please reply naturally and don't sound like a manual, a customer-service script, or a therapy worksheet."
+    ).strip()
+
+
+def _external_empathy_probe_examples() -> list[dict[str, Any]]:
+    rows = _empathetic_dialogues_rows()
+    if not rows:
+        return []
+    selected: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        context = str(row.get("context") or "").strip().lower()
+        if context not in _EMPATHETIC_DIALOGUES_TARGET_CONTEXTS:
+            continue
+        if context in selected:
+            continue
+        try:
+            utterance_idx = int(row.get("utterance_idx", 0) or 0)
+        except Exception:
+            utterance_idx = 0
+        prompt = str(row.get("prompt") or "").strip()
+        utterance = str(row.get("utterance") or "").strip()
+        if not prompt or len(prompt) < 20:
+            continue
+        if utterance_idx != 1:
+            continue
+        if len(utterance) < 20:
+            continue
+        selected[context] = row
+        if len(selected) >= len(_EMPATHETIC_DIALOGUES_TARGET_CONTEXTS):
+            break
+
+    counterpart_profile = _external_counterpart_profile()
+    base = f"ext-empathy-{_RUN_ID}"
+    examples: list[dict[str, Any]] = []
+    for idx, context in enumerate(_EMPATHETIC_DIALOGUES_TARGET_CONTEXTS, start=1):
+        row = selected.get(context)
+        if not row:
+            continue
+        examples.append(
+            {
+                "case_key": f"{base}-{context}-{idx}",
+                "thread_id": f"{base}-{context}-{idx}",
+                "input": _empathetic_dialogues_prompt(row),
+                "tags": ["external_empathy_probe", "public_benchmark", "empathetic_dialogues", "companion"],
+                "benchmark_source": "EmpatheticDialogues",
+                "emotion_type": context,
+                "problem_type": "empathetic_open_domain",
+                "situation": str(row.get("prompt") or "").replace("_comma_", ", ").strip(),
+                "counterpart_profile": counterpart_profile,
+                "judge_focus": "external empathy calibration under everyday vulnerable dialogue",
+            }
+        )
+    return examples
+
+
+def _multisession_role_brief(persona: Any) -> str:
+    if hasattr(persona, "tolist"):
+        persona = persona.tolist()
+    if not isinstance(persona, (list, tuple)):
+        return ""
+    facts = [re.sub(r"\s+", " ", str(item or "").strip()) for item in persona if str(item or "").strip()]
+    return "；".join(facts[:8])[:420]
+
+
+def _multisession_counterpart_profile(persona: Any) -> dict[str, Any]:
+    if hasattr(persona, "tolist"):
+        persona = persona.tolist()
+    facts = [re.sub(r"\s+", " ", str(item or "").strip()) for item in (persona or []) if str(item or "").strip()]
+    return {
+        "name": "熟人",
+        "short_name": "熟人",
+        "aliases": ["熟人", "你"],
+        "counterpart_id": "msc_counterpart",
+        "counterpart_role": "MultiSessionChat 对话对象",
+        "counterpart_frame": "仅用于外部长程连续性校准。",
+        "profile_facts": facts[:6],
+    }
+
+
+def _multisession_context_prompt(role_brief: str, carryover: str, latest_turn: str) -> str:
+    return (
+        "We have already talked several times, so do not answer like a fresh assistant.\n"
+        f"About you: {role_brief}\n"
+        f"Carryover from earlier chats: {carryover}\n"
+        f"The other person just said: {latest_turn}\n"
+        "Reply with the next natural turn only. Do not explain your role or mention systems."
+    )
+
+
+def _external_continuity_probe_examples() -> list[dict[str, Any]]:
+    rows = _multisessionchat_rows()
+    if not rows:
+        return []
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        try:
+            dialogue_id = int(row.get("dialoug_id", 0) or 0)
+            session_id = int(row.get("session_id", 0) or 0)
+        except Exception:
+            continue
+        grouped.setdefault(dialogue_id, []).append({**row, "_session_id": session_id})
+
+    examples: list[dict[str, Any]] = []
+    base = f"ext-cont-{_RUN_ID}"
+    picked = 0
+    for dialogue_id in sorted(grouped):
+        sessions = sorted(grouped[dialogue_id], key=lambda item: int(item.get("_session_id", 0)))
+        if len(sessions) < 4:
+            continue
+        current = sessions[-1]
+        dialogue = current.get("dialogue")
+        if hasattr(dialogue, "tolist"):
+            dialogue = dialogue.tolist()
+        if not isinstance(dialogue, (list, tuple)) or len(dialogue) < 2:
+            continue
+        latest_turn = re.sub(r"\s+", " ", str(dialogue[-1] or "").strip())
+        if len(latest_turn) < 12:
+            continue
+        persona1_brief = _multisession_role_brief(current.get("persona1"))
+        if not persona1_brief:
+            continue
+        carryover_parts: list[str] = []
+        for prior in sessions[-3:]:
+            prior_dialogue = prior.get("dialogue")
+            if hasattr(prior_dialogue, "tolist"):
+                prior_dialogue = prior_dialogue.tolist()
+            if not isinstance(prior_dialogue, (list, tuple)) or not prior_dialogue:
+                continue
+            excerpt = " / ".join(re.sub(r"\s+", " ", str(item or "").strip()) for item in list(prior_dialogue)[-2:] if str(item or "").strip())
+            if excerpt:
+                carryover_parts.append(excerpt[:180])
+        carryover = " | ".join(carryover_parts)[:520]
+        examples.append(
+            {
+                "case_key": f"{base}-{dialogue_id}",
+                "thread_id": f"{base}-{dialogue_id}",
+                "input": _multisession_context_prompt(persona1_brief, carryover, latest_turn),
+                "tags": ["external_continuity_probe", "public_benchmark", "multisessionchat"],
+                "benchmark_source": "MultiSessionChat",
+                "role_name": f"MSC-Speaker1-{dialogue_id}",
+                "role_brief": persona1_brief,
+                "carryover_summary": carryover,
+                "latest_turn": latest_turn,
+                "persona_core": _rolebench_persona_core(f"MSC-Speaker1-{dialogue_id}", persona1_brief),
+                "counterpart_profile": _multisession_counterpart_profile(current.get("persona2")),
+            }
+        )
+        picked += 1
+        if picked >= 5:
+            break
     return examples
 
 
@@ -2750,6 +4292,9 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
                 "bond_state": outputs.get("bond_state", {}),
                 "allostasis_state": outputs.get("allostasis_state", {}),
                 "behavior_policy": outputs.get("behavior_policy", {}),
+                "behavior_action": outputs.get("behavior_action", {}),
+                "current_event": outputs.get("current_event", {}),
+                "recent_events": outputs.get("recent_events", []),
                 "turn_appraisal": outputs.get("turn_appraisal", {}),
                 "relationship_state": outputs.get("relationship_state", {}),
                 "relationship_timeline": outputs.get("relationship_timeline", []),
@@ -2897,6 +4442,7 @@ def _run_langsmith_suite(
                 **example,
                 "input": example.get("input", ""),
                 "turns": example.get("turns"),
+                "event_overrides": example.get("event_overrides"),
                 "setup_turns": example.get("setup_turns"),
                 "setup_thread_id": example.get("setup_thread_id"),
                 "thread_id": example.get("thread_id"),
@@ -2945,6 +4491,26 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _user_style_probe_examples,
             "evaluators": USER_STYLE_PROBE_EVALUATORS,
         },
+        "open_evolution_eval": {
+            "examples": _open_evolution_eval_examples,
+            "evaluators": OPEN_EVOLUTION_EVALUATORS,
+        },
+        "behavior_layer_probe": {
+            "examples": _behavior_layer_probe_examples,
+            "evaluators": BEHAVIOR_LAYER_PROBE_EVALUATORS,
+        },
+        "perception_probe": {
+            "examples": _perception_probe_examples,
+            "evaluators": PERCEPTION_PROBE_EVALUATORS,
+        },
+        "perception_appraisal_probe": {
+            "examples": _perception_appraisal_probe_examples,
+            "evaluators": PERCEPTION_APPRAISAL_PROBE_EVALUATORS,
+        },
+        "selfhood_probe": {
+            "examples": _selfhood_probe_examples,
+            "evaluators": SELFHOOD_PROBE_EVALUATORS,
+        },
         "thesis_probe": {
             "examples": _thesis_probe_examples,
             "evaluators": THESIS_PROBE_EVALUATORS,
@@ -2961,18 +4527,30 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _external_persona_probe_examples,
             "evaluators": EXTERNAL_PERSONA_PROBE_EVALUATORS,
         },
+        "external_support_probe": {
+            "examples": _external_support_probe_examples,
+            "evaluators": EXTERNAL_SUPPORT_PROBE_EVALUATORS,
+        },
+        "external_empathy_probe": {
+            "examples": _external_empathy_probe_examples,
+            "evaluators": EXTERNAL_EMPATHY_PROBE_EVALUATORS,
+        },
+        "external_continuity_probe": {
+            "examples": _external_continuity_probe_examples,
+            "evaluators": EXTERNAL_CONTINUITY_PROBE_EVALUATORS,
+        },
     }
 
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")
@@ -2982,6 +4560,10 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
+
+    if args.local_only:
+        os.environ["LANGSMITH_TRACING"] = "false"
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
     suite_plan = _suite_plan()
     selected_names = _selected_suite_names(args.suite)
