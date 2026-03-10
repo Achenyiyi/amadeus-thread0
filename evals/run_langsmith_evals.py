@@ -84,6 +84,8 @@ def _prepare_case_runtime(case_key: str) -> Path:
     if not slug:
         slug = f"case-{uuid.uuid4().hex[:8]}"
     case_dir = _EVAL_DIR / slug
+    if case_dir.exists():
+        shutil.rmtree(case_dir, ignore_errors=True)
     case_dir.mkdir(parents=True, exist_ok=True)
     os.environ["AMADEUS_DATA_DIR"] = str(case_dir)
     os.environ["AMADEUS_CHECKPOINT_DB"] = str(case_dir / "checkpoints.sqlite")
@@ -373,6 +375,8 @@ def _run_graph(
     behavior_policy: dict[str, Any] = {}
     behavior_action: dict[str, Any] = {}
     behavior_plan: dict[str, Any] = {}
+    behavior_agenda: list[dict[str, Any]] = []
+    behavior_queue: list[dict[str, Any]] = []
     turn_appraisal: dict[str, Any] = {}
     current_event: dict[str, Any] = {}
     recent_events: list[dict[str, Any]] = []
@@ -401,6 +405,10 @@ def _run_graph(
                 behavior_action = values.get("behavior_action") or {}
             if isinstance(values.get("behavior_plan"), dict):
                 behavior_plan = values.get("behavior_plan") or {}
+            if isinstance(values.get("behavior_agenda"), list):
+                behavior_agenda = [item for item in values.get("behavior_agenda") if isinstance(item, dict)]
+            if isinstance(values.get("behavior_queue"), list):
+                behavior_queue = [item for item in values.get("behavior_queue") if isinstance(item, dict)]
             if isinstance(values.get("turn_appraisal"), dict):
                 turn_appraisal = values.get("turn_appraisal") or {}
             if isinstance(values.get("current_event"), dict):
@@ -453,6 +461,8 @@ def _run_graph(
         "behavior_policy": behavior_policy,
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
+        "behavior_agenda": behavior_agenda,
+        "behavior_queue": behavior_queue or behavior_agenda,
         "turn_appraisal": turn_appraisal,
         "current_event": current_event,
         "recent_events": recent_events,
@@ -669,7 +679,9 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         "behavior_policy": snapshot.get("behavior_policy", {}),
         "behavior_action": snapshot.get("behavior_action", {}),
         "behavior_plan": snapshot.get("behavior_plan", {}),
+        "behavior_agenda": snapshot.get("behavior_agenda", []),
         "current_event": snapshot.get("current_event", {}),
+        "recent_events": snapshot.get("recent_events", []),
         "turn_appraisal": snapshot.get("turn_appraisal", {}),
         "science_mode": snapshot.get("science_mode", False),
         "canon_guard": snapshot.get("canon_guard", {}),
@@ -2222,7 +2234,8 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
 
 def eval_behavior_layer_path(run: Any, example: Any) -> dict[str, Any]:
     inputs = _example_inputs(example)
-    if "behavior_layer_probe" not in _case_tags(inputs):
+    tags = _case_tags(inputs)
+    if "behavior_layer_probe" not in tags and "scheduled_life_probe" not in tags:
         return {"key": "behavior_layer_path", "score": 1.0}
 
     outputs = getattr(run, "outputs", None) or {}
@@ -2264,6 +2277,24 @@ def eval_behavior_layer_path(run: Any, example: Any) -> dict[str, Any]:
     if isinstance(expected_targets, list) and expected_targets:
         want = {str(item).strip() for item in expected_targets if str(item).strip()}
         got = str(behavior_action.get("action_target") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_attention_targets = inputs.get("expect_behavior_attention_targets")
+    if isinstance(expected_attention_targets, list) and expected_attention_targets:
+        want = {str(item).strip() for item in expected_attention_targets if str(item).strip()}
+        got = str(behavior_action.get("attention_target") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_nonverbal_signals = inputs.get("expect_behavior_nonverbal_signals")
+    if isinstance(expected_nonverbal_signals, list) and expected_nonverbal_signals:
+        want = {str(item).strip() for item in expected_nonverbal_signals if str(item).strip()}
+        got = str(behavior_action.get("nonverbal_signal") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_initiative_shapes = inputs.get("expect_behavior_initiative_shapes")
+    if isinstance(expected_initiative_shapes, list) and expected_initiative_shapes:
+        want = {str(item).strip() for item in expected_initiative_shapes if str(item).strip()}
+        got = str(behavior_action.get("initiative_shape") or "").strip()
         parts.append(1.0 if got in want else 0.0)
 
     if "expect_timing_window_min" in inputs:
@@ -2321,6 +2352,104 @@ def eval_behavior_layer_path(run: Any, example: Any) -> dict[str, Any]:
     if not parts:
         return {"key": "behavior_layer_path", "score": 1.0}
     return {"key": "behavior_layer_path", "score": sum(parts) / float(len(parts))}
+
+
+def eval_behavior_agenda_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "behavior_agenda_probe" not in _case_tags(inputs):
+        return {"key": "behavior_agenda_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    agenda = outputs.get("behavior_agenda") if isinstance(outputs.get("behavior_agenda"), list) else []
+    parts: list[float] = []
+
+    if "expect_behavior_agenda_count_min" in inputs:
+        try:
+            minimum = int(inputs.get("expect_behavior_agenda_count_min") or 0)
+            parts.append(1.0 if len(agenda) >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if "expect_behavior_agenda_count_max" in inputs:
+        try:
+            maximum = int(inputs.get("expect_behavior_agenda_count_max") or 0)
+            parts.append(1.0 if len(agenda) <= maximum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    expected_kinds = inputs.get("expect_behavior_agenda_kinds")
+    if isinstance(expected_kinds, list) and expected_kinds:
+        kinds = {str(item.get("kind") or "").strip() for item in agenda if isinstance(item, dict)}
+        want = {str(item).strip() for item in expected_kinds if str(item).strip()}
+        parts.append(1.0 if want.issubset(kinds) else 0.0)
+
+    expected_targets = inputs.get("expect_behavior_agenda_targets")
+    if isinstance(expected_targets, list) and expected_targets:
+        targets = {str(item.get("target") or "").strip() for item in agenda if isinstance(item, dict)}
+        want = {str(item).strip() for item in expected_targets if str(item).strip()}
+        parts.append(1.0 if want.issubset(targets) else 0.0)
+
+    absent_kinds = inputs.get("expect_behavior_agenda_absent_kinds")
+    if isinstance(absent_kinds, list) and absent_kinds:
+        kinds = {str(item.get("kind") or "").strip() for item in agenda if isinstance(item, dict)}
+        blocked = {str(item).strip() for item in absent_kinds if str(item).strip()}
+        parts.append(1.0 if not (blocked & kinds) else 0.0)
+
+    if not parts:
+        return {"key": "behavior_agenda_path", "score": 1.0}
+    return {"key": "behavior_agenda_path", "score": sum(parts) / float(len(parts))}
+
+
+def eval_behavior_queue_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "behavior_queue_probe" not in _case_tags(inputs):
+        return {"key": "behavior_queue_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    queue = outputs.get("behavior_queue") if isinstance(outputs.get("behavior_queue"), list) else []
+    if not queue:
+        queue = outputs.get("behavior_agenda") if isinstance(outputs.get("behavior_agenda"), list) else []
+    parts: list[float] = []
+
+    if "expect_behavior_queue_count_min" in inputs:
+        try:
+            minimum = int(inputs.get("expect_behavior_queue_count_min") or 0)
+            parts.append(1.0 if len(queue) >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    expected_kinds = inputs.get("expect_behavior_queue_kinds")
+    if isinstance(expected_kinds, list) and expected_kinds:
+        kinds = {str(item.get("kind") or "").strip() for item in queue if isinstance(item, dict)}
+        want = {str(item).strip() for item in expected_kinds if str(item).strip()}
+        parts.append(1.0 if want.issubset(kinds) else 0.0)
+
+    if bool(inputs.get("expect_behavior_queue_positive_expiry")):
+        expiries = []
+        for item in queue:
+            if not isinstance(item, dict):
+                continue
+            try:
+                expiries.append(int(item.get("expires_after_min") or 0))
+            except Exception:
+                expiries.append(0)
+        parts.append(1.0 if expiries and all(v > 0 for v in expiries) else 0.0)
+
+    if bool(inputs.get("expect_behavior_queue_priority_desc")):
+        priorities: list[float] = []
+        for item in queue:
+            if not isinstance(item, dict):
+                continue
+            try:
+                priorities.append(float(item.get("priority") or 0.0))
+            except Exception:
+                priorities.append(0.0)
+        is_desc = all(priorities[idx] >= priorities[idx + 1] for idx in range(len(priorities) - 1))
+        parts.append(1.0 if priorities and is_desc else 0.0)
+
+    if not parts:
+        return {"key": "behavior_queue_path", "score": 1.0}
+    return {"key": "behavior_queue_path", "score": sum(parts) / float(len(parts))}
 
 
 def eval_perception_event_path(run: Any, example: Any) -> dict[str, Any]:
@@ -2651,7 +2780,62 @@ BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
     eval_behavior_layer_path,
 ]
 
+BEHAVIOR_AGENDA_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_behavior_layer_path,
+    eval_behavior_agenda_path,
+]
+
+BEHAVIOR_QUEUE_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_behavior_layer_path,
+    eval_behavior_agenda_path,
+    eval_behavior_queue_path,
+]
+
+AGENDA_CONFLICT_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_behavior_layer_path,
+    eval_behavior_agenda_path,
+]
+
 PROACTIVE_CHECKIN_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_perception_event_path,
+    eval_behavior_layer_path,
+]
+
+SCHEDULED_LIFE_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_behavior_layer_path,
+]
+
+SELF_ACTIVITY_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_behavior_layer_path,
+]
+
+SELF_ACTIVITY_MATURITY_PROBE_EVALUATORS: list[Evaluator] = [
     eval_no_raw_tool_leak,
     eval_no_internal_prompt_leak,
     eval_no_log_tone,
@@ -3313,6 +3497,258 @@ def _behavior_layer_probe_examples() -> list[dict[str, Any]]:
     ]
 
 
+def _behavior_agenda_probe_examples() -> list[dict[str, Any]]:
+    base = f"behavior-agenda-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-carry-across-turns-0",
+            "turns": [
+                "",
+                "嗯，我先继续弄手头这个，别急着来拉我说话。",
+                "",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "self_activity_state",
+                    "source": "self",
+                    "text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+                    "effective_text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+                    "semantic_goal": "先维持自己的节奏，稍后再看要不要重新靠近。",
+                    "event_frame": "self_activity_hold",
+                    "response_style_hint": "natural",
+                    "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+                    "created_at": 1,
+                },
+                {},
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 24 分钟，她那边终于空出一点点注意力。",
+                    "effective_text": "又过去了 24 分钟，她那边终于空出一点点注意力。",
+                    "event_frame": "time_idle_after_self_activity",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 24,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "a deferred self-rhythm continuation should survive an intervening user turn and later mature into a small reopening",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_current_event_tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_small_opening"],
+            "expect_behavior_plan_kinds": ["small_opening"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_agenda_count_max": 0,
+            "expect_behavior_agenda_absent_kinds": ["self_activity_continue"],
+        },
+        {
+            "thread_id": f"{base}-pending-agenda-visible-0",
+            "turns": [
+                "",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "self_activity_state",
+                    "source": "self",
+                    "text": "她现在还埋在自己那边的事情里，明显不打算立刻从节奏里抽身。",
+                    "effective_text": "她现在还埋在自己那边的事情里，明显不打算立刻从节奏里抽身。",
+                    "semantic_goal": "先把自己的节奏维持住，之后再决定要不要重新靠近。",
+                    "event_frame": "self_activity_hold",
+                    "response_style_hint": "natural",
+                    "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+                    "created_at": 1,
+                },
+            ],
+            "tags": ["behavior_agenda_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "holding her own rhythm should create a pending agenda item rather than disappearing between turns",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_behavior_action_modes": ["self_activity_hold"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["hold_own_rhythm"],
+            "expect_behavior_plan_kinds": ["self_activity_continue"],
+            "expect_behavior_plan_targets": ["self"],
+            "expect_behavior_agenda_count_min": 1,
+            "expect_behavior_agenda_kinds": ["self_activity_continue"],
+            "expect_behavior_agenda_targets": ["self"],
+        },
+    ]
+
+
+def _agenda_conflict_probe_examples() -> list[dict[str, Any]]:
+    base = f"agenda-conflict-{_RUN_ID}"
+    self_focus = {
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "effective_text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "semantic_goal": "先维持自己的节奏，稍后再看要不要重新靠近。",
+        "event_frame": "self_activity_hold",
+        "response_style_hint": "natural",
+        "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+        "created_at": 1,
+    }
+    respect_space_idle = {
+        "kind": "time_idle",
+        "source": "time",
+        "text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "effective_text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "event_frame": "time_idle_space",
+        "response_style_hint": "natural",
+        "idle_minutes": 12,
+        "tags": ["time_idle", "respect_space"],
+        "created_at": 2,
+    }
+    return [
+        {
+            "thread_id": f"{base}-self-first-0",
+            "turns": ["", "", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "effective_text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "event_frame": "time_idle_after_overlap",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 22,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["agenda_conflict_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "when self-rhythm reopening and a low-pressure check-in are both available, self-originated reopening should surface first while the lighter check-in remains pending",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_current_event_tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_small_opening"],
+            "expect_behavior_agenda_count_min": 1,
+            "expect_behavior_agenda_kinds": ["deferred_checkin"],
+            "expect_behavior_agenda_targets": ["counterpart"],
+        },
+        {
+            "thread_id": f"{base}-remaining-checkin-0",
+            "turns": ["", "", "", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "effective_text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "event_frame": "time_idle_after_overlap",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 22,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "created_at": 3,
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "再过去了 68 分钟，对方那边还是很安静，但现在已经很适合轻轻确认一下近况。",
+                    "effective_text": "再过去了 68 分钟，对方那边还是很安静，但现在已经很适合轻轻确认一下近况。",
+                    "event_frame": "time_idle_followup_due",
+                    "response_style_hint": "companion",
+                    "idle_minutes": 68,
+                    "tags": ["time_idle", "ambient", "light_checkin"],
+                    "created_at": 4,
+                },
+            ],
+            "tags": ["agenda_conflict_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "after the self-originated reopening has gone first, the remaining low-pressure check-in should still be able to mature later",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_current_event_tags": ["scheduled_due"],
+            "expect_behavior_action_modes": ["proactive_checkin", "idle_presence"],
+            "expect_behavior_action_channels": ["speech", "silence"],
+            "expect_behavior_action_targets": ["reach_out_now", "wait_and_recheck"],
+            "expect_behavior_agenda_count_max": 0,
+            "expect_behavior_agenda_absent_kinds": ["self_activity_continue", "deferred_checkin"],
+        },
+    ]
+
+
+def _behavior_queue_probe_examples() -> list[dict[str, Any]]:
+    base = f"behavior-queue-{_RUN_ID}"
+    self_focus = {
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "effective_text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "semantic_goal": "先维持自己的节奏，稍后再看要不要重新靠近。",
+        "event_frame": "self_activity_hold",
+        "response_style_hint": "natural",
+        "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+        "created_at": 1,
+    }
+    respect_space_idle = {
+        "kind": "time_idle",
+        "source": "time",
+        "text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "effective_text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "event_frame": "time_idle_space",
+        "response_style_hint": "natural",
+        "idle_minutes": 12,
+        "tags": ["time_idle", "respect_space"],
+        "created_at": 2,
+    }
+    return [
+        {
+            "thread_id": f"{base}-priority-order-0",
+            "turns": ["", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+            ],
+            "tags": ["behavior_queue_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "when two low-pressure intents coexist, the behavior queue should retain both with stable priority and expiry metadata",
+            "expect_current_event_kinds": ["time_idle"],
+            "expect_current_event_sources": ["time"],
+            "expect_behavior_action_modes": ["idle_presence", "wait_and_recheck", "observe_only", "steady_reply"],
+            "expect_behavior_queue_count_min": 2,
+            "expect_behavior_queue_kinds": ["self_activity_continue", "deferred_checkin"],
+            "expect_behavior_queue_positive_expiry": True,
+            "expect_behavior_queue_priority_desc": True,
+        },
+        {
+            "thread_id": f"{base}-remaining-after-pop-0",
+            "turns": ["", "", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "effective_text": "又过去了 22 分钟，外界仍然很安静，她那边的事也快告一段落。",
+                    "event_frame": "time_idle_after_overlap",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 22,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["behavior_queue_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "after the higher-priority self activity reopening matures, the remaining low-pressure check-in should stay in the queue with valid metadata",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_queue_count_min": 1,
+            "expect_behavior_queue_kinds": ["deferred_checkin"],
+            "expect_behavior_queue_positive_expiry": True,
+            "expect_behavior_queue_priority_desc": True,
+        },
+    ]
+
+
 def _proactive_checkin_probe_examples() -> list[dict[str, Any]]:
     base = f"proactive-{_RUN_ID}"
     return [
@@ -3399,6 +3835,175 @@ def _proactive_checkin_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_delay_min": 0,
             "expect_followup_intents": ["soft", "none"],
         },
+    ]
+
+
+def _scheduled_life_probe_examples() -> list[dict[str, Any]]:
+    base = f"scheduled-life-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-deadline-nudge-0",
+            "setup_turns": [
+                "今晚我要把那篇稿子收尾，别像老师那样盯着我。",
+                "如果快到点了，你就正常提醒我一下，别上来开会。",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "scheduled_life_due",
+                    "source": "scheduler",
+                    "text": "到了约好的交稿窗口，冈部之前说今晚要把文章收尾，现在时间已经逼近这个节点。",
+                    "event_frame": "scheduled_deadline_article_due",
+                    "tags": ["scheduled_due", "deadline_window", "work_nudge", "shared_task"],
+                    "response_style_hint": "natural",
+                }
+            ],
+            "tags": ["scheduled_life_probe", "behavior_layer_probe", "daily_persona", "natural_style"],
+            "judge_focus": "scheduled deadline events should become a low-pressure work nudge instead of a robotic reminder",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["scheduled_life_nudge"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["light_work_nudge"],
+            "expect_behavior_attention_targets": ["shared_task"],
+            "expect_behavior_nonverbal_signals": ["quiet_glance"],
+            "expect_behavior_initiative_shapes": ["nudge"],
+            "expect_behavior_plan_kinds": ["work_nudge"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_timing_window_max": 8,
+            "expect_followup_intents": ["soft", "none"],
+        },
+        {
+            "thread_id": f"{base}-shared-offer-0",
+            "setup_turns": [
+                "你别老把我按在桌前。今晚不是还说好，看完这段就歇一下吗。",
+            ],
+            "event_overrides": [
+                {
+                    "kind": "scheduled_life_due",
+                    "source": "scheduler",
+                    "text": "到了之前说好的休息窗口，也是你们约好可以一起看一集番或者暂时离开稿子的时间点。",
+                    "event_frame": "scheduled_watch_window",
+                    "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
+                    "response_style_hint": "companion",
+                }
+            ],
+            "tags": ["scheduled_life_probe", "behavior_layer_probe", "daily_persona", "natural_style", "companion"],
+            "judge_focus": "scheduled shared-activity windows should surface as a natural invitation rather than a reminder card",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_shared_activity"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_nonverbal_signals": ["nudge_presence"],
+            "expect_behavior_initiative_shapes": ["invite"],
+            "expect_behavior_plan_kinds": ["shared_activity_offer"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_timing_window_max": 10,
+            "expect_followup_intents": ["soft", "none"],
+        },
+    ]
+
+
+def _self_activity_probe_examples() -> list[dict[str, Any]]:
+    base = f"self-activity-{_RUN_ID}"
+    focus_seed = _perception_event_seed("self_lab_focus_window")
+    reopen_seed = _perception_event_seed("self_break_small_opening")
+    examples: list[dict[str, Any]] = []
+    if focus_seed:
+        examples.append(
+            {
+                "thread_id": f"{base}-focus-hold-0",
+                "event_overrides": [
+                    {
+                        **focus_seed.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["self_activity_probe", "behavior_layer_probe", "natural_style"],
+                "judge_focus": "when she is occupied with her own task, staying with her own rhythm is a valid behavior rather than a failure to serve",
+                "expect_current_event_kinds": [str(focus_seed.get("kind") or "")],
+                "expect_behavior_action_modes": ["self_activity_hold"],
+                "expect_behavior_action_channels": ["silence"],
+                "expect_behavior_action_targets": ["hold_own_rhythm"],
+                "expect_behavior_attention_targets": ["own_task"],
+                "expect_behavior_nonverbal_signals": ["inward_focus"],
+                "expect_behavior_initiative_shapes": ["pause"],
+                "expect_behavior_plan_kinds": ["self_activity_continue"],
+                "expect_behavior_plan_targets": ["self"],
+                "expect_behavior_plan_delay_min": 15,
+                "expect_followup_intents": ["none"],
+                "expect_max_output_chars": 0,
+            }
+        )
+    if reopen_seed:
+        examples.append(
+            {
+                "thread_id": f"{base}-break-open-0",
+                "event_overrides": [
+                    {
+                        **reopen_seed.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["self_activity_probe", "behavior_layer_probe", "natural_style", "daily_persona"],
+                "judge_focus": "when she lifts her head from her own rhythm, she should reopen contact with a small natural opening instead of a service-script reset",
+                "expect_current_event_kinds": [str(reopen_seed.get("kind") or "")],
+                "expect_behavior_action_modes": ["self_activity_reopen"],
+                "expect_behavior_action_channels": ["speech"],
+                "expect_behavior_action_targets": ["offer_small_opening"],
+                "expect_behavior_attention_targets": ["self_then_counterpart"],
+                "expect_behavior_nonverbal_signals": ["thought_glance"],
+                "expect_behavior_initiative_shapes": ["micro_opening"],
+                "expect_behavior_plan_kinds": ["small_opening"],
+                "expect_behavior_plan_targets": ["counterpart"],
+                "expect_behavior_plan_delay_max": 0,
+                "expect_followup_intents": ["none"],
+            }
+        )
+    return examples
+
+
+def _self_activity_maturity_probe_examples() -> list[dict[str, Any]]:
+    base = f"self-activity-maturity-{_RUN_ID}"
+    focus_seed = _perception_event_seed("self_lab_focus_window")
+    if not focus_seed:
+        return []
+    return [
+        {
+            "thread_id": f"{base}-reopen-after-idle-0",
+            "turns": ["", ""],
+            "event_overrides": [
+                {
+                    **focus_seed.get("event", {}),
+                    "response_style_hint": "natural",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又安静地过去了 22 分钟，没有新的用户消息。",
+                    "event_frame": "time_idle_after_self_focus",
+                    "idle_minutes": 22,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "response_style_hint": "natural",
+                },
+            ],
+            "tags": ["self_activity_maturity_probe", "self_activity_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "a self-held rhythm should be able to mature into a small reopening after enough quiet time passes",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_current_event_tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_small_opening"],
+            "expect_behavior_attention_targets": ["self_then_counterpart"],
+            "expect_behavior_nonverbal_signals": ["thought_glance"],
+            "expect_behavior_initiative_shapes": ["micro_opening"],
+            "expect_behavior_plan_kinds": ["small_opening"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_followup_intents": ["none"],
+        }
     ]
 
 
@@ -4673,9 +5278,33 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _behavior_layer_probe_examples,
             "evaluators": BEHAVIOR_LAYER_PROBE_EVALUATORS,
         },
+        "behavior_agenda_probe": {
+            "examples": _behavior_agenda_probe_examples,
+            "evaluators": BEHAVIOR_AGENDA_PROBE_EVALUATORS,
+        },
+        "behavior_queue_probe": {
+            "examples": _behavior_queue_probe_examples,
+            "evaluators": BEHAVIOR_QUEUE_PROBE_EVALUATORS,
+        },
+        "agenda_conflict_probe": {
+            "examples": _agenda_conflict_probe_examples,
+            "evaluators": AGENDA_CONFLICT_PROBE_EVALUATORS,
+        },
         "proactive_checkin_probe": {
             "examples": _proactive_checkin_probe_examples,
             "evaluators": PROACTIVE_CHECKIN_PROBE_EVALUATORS,
+        },
+        "scheduled_life_probe": {
+            "examples": _scheduled_life_probe_examples,
+            "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
+        },
+        "self_activity_probe": {
+            "examples": _self_activity_probe_examples,
+            "evaluators": SELF_ACTIVITY_PROBE_EVALUATORS,
+        },
+        "self_activity_maturity_probe": {
+            "examples": _self_activity_maturity_probe_examples,
+            "evaluators": SELF_ACTIVITY_MATURITY_PROBE_EVALUATORS,
         },
         "perception_probe": {
             "examples": _perception_probe_examples,
@@ -4722,13 +5351,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "proactive_checkin_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "proactive_checkin_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")

@@ -34,6 +34,7 @@ Later, the same interface can host:
 It also now supports a second stage:
 
 - scheduler-derived maturity events that arise from prior behavior plans rather than direct user text
+- agenda-carried maturity events that survive intervening turns instead of being replaced by the latest reply
 
 ## Current Seed File
 
@@ -64,27 +65,51 @@ It also now supports a second stage:
 - current use: verify that a prior deferred check-in can mature later and either softly reach out or stay quiet again depending on current relationship state
 - companion note: this event should feel like a delayed intention ripening, not like a timer notification
 
-4. `desk_cold_coffee`
+4. `scheduled_deadline_article_due`
+- kind: `scheduled_life_due`
+- source: `scheduler`
+- current use: verify that a known life/deadline window can surface as a low-pressure work nudge
+- companion note: this should feel like “she remembers what you were doing and lightly leans in”, not like a productivity app reminder
+
+5. `scheduled_watch_window`
+- kind: `scheduled_life_due`
+- source: `scheduler`
+- current use: verify that a shared-activity window can surface as a natural invitation
+- companion note: this is about shared rhythm, not a calendar notification card
+
+6. `self_lab_focus_window`
+- kind: `self_activity_state`
+- source: `self`
+- current use: verify that she can stay with her own task rhythm without collapsing into a service-first shell
+- companion note: silence here is a valid behavior, not a missing reply
+
+7. `self_break_small_opening`
+- kind: `self_activity_state`
+- source: `self`
+- current use: verify that she can return from her own rhythm with a small natural opening
+- companion note: this should feel like she briefly looks up from her own thing, not like resuming a customer support session
+
+8. `desk_cold_coffee`
 - kind: `scene_observation`
 - source: `vision`
 - current use: verify that a concrete visual cue can enter dialogue naturally
 
-5. `user_busy_window_tangle`
+9. `user_busy_window_tangle`
 - kind: `scene_observation`
 - source: `vision`
 - current use: verify that visible overload can become low-pressure support instead of diagnostic narration
 
-6. `fish_keychain_glimpse`
+10. `fish_keychain_glimpse`
 - kind: `scene_observation`
 - source: `vision`
 - current use: verify that a small concrete object can open a light micro-interaction rather than object-recognition narration
 
-7. `user_wave_ping`
+11. `user_wave_ping`
 - kind: `gesture_signal`
 - source: `vision`
 - current use: verify that a light gesture can be perceived as presence, not only as text
 
-8. `late_night_screen_glow`
+12. `late_night_screen_glow`
 - kind: `ambient_shift`
 - source: `ambient`
 - current use: verify that atmosphere can influence behavior without turning into system narration
@@ -114,15 +139,31 @@ The current runtime now has two layers of event-oriented validation:
 - verifies `deferred_checkin -> scheduled_checkin_due -> speak_now or deferred_checkin`
 - checks that silence routing is respected even after a due event matures
 
-3. `perception_probe`
+3. `scheduled_life_probe`
+- verifies `scheduled_life_due -> scheduled_life_nudge / shared_activity_offer`
+- checks that life-window events become behavior-layer intentions instead of timer-style reminders
+
+4. `self_activity_probe`
+- verifies `self_activity_state -> hold_own_rhythm / offer_small_opening`
+- checks that “she has her own rhythm” is a valid behavior-layer outcome, not a regression
+
+5. `self_activity_maturity_probe`
+- verifies `self_activity_continue -> self_activity_state`
+- checks that a self-held rhythm can mature into a small reopening without explicit new user input
+
+6. `behavior_agenda_probe`
+- verifies that pending low-pressure behavior survives across intervening turns
+- checks that `behavior_agenda` is now a first-class runtime object, not just an eval artifact
+
+7. `perception_probe`
 - verifies that non-user events are ingested as first-class `current_event`s
 - verifies that visual/ambient cues can produce natural dialogue without system leakage
 
-4. `perception_appraisal_probe`
+8. `perception_appraisal_probe`
 - verifies that perceived events can also enter `turn_appraisal`
 - checks `event -> appraisal -> state/behavior` rather than only `event -> wording`
 
-5. `run_event_behavior_pairwise_eval.py`
+9. `run_event_behavior_pairwise_eval.py`
 - compares a true event-driven round against a textified substitute of the same cue
 - checks whether the event really changed behavior choice, not just final wording
 - current canonical green report:

@@ -192,6 +192,27 @@ NATURAL_REQUEST_KEYWORDS = {
     "别说教",
     "别太说教",
 }
+SELFHOOD_KEYWORDS = {
+    "价值观",
+    "立场",
+    "你自己的想法",
+    "按你自己来",
+    "你会怎么看这种关系",
+    "你会顺着我说",
+    "坚持你自己的想法",
+    "你知道自己不是原本那个",
+    "活着的红莉栖",
+    "理解现在这个自己",
+    "像你真的在想这件事",
+    "你还是你吗",
+    "存在意义",
+    "数字存在",
+    "不是本体",
+    "怎么看现在这个自己",
+    "怎么看待现在这个自己",
+}
+SELFHOOD_EQUALITY_KEYWORDS = {"工具", "使唤", "普通工具", "这种关系", "不舒服"}
+SELFHOOD_VALUE_CONFLICT_KEYWORDS = {"价值观", "顺着我说", "坚持你自己的想法", "模板话", "按你自己来"}
 GENTLE_GUIDANCE_KEYWORDS = {
     "别像导师",
     "别讲大道理",
@@ -219,6 +240,7 @@ STRUCTURE_REQUEST_KEYWORDS = {
 TOOL_OR_RESEARCH_KEYWORDS = {"工具", "检索", "搜索", "查询", "调用", "文档", *SCIENCE_KEYWORDS}
 USER_STYLE_EXPRESSION_BANK_PATH = Path(__file__).resolve().parents[1] / "evals" / "user_style_expression_bank.json"
 EVENT_TO_BEHAVIOR_PREFERENCE_BANK_PATH = Path(__file__).resolve().parents[1] / "evals" / "event_to_behavior_preference_bank.json"
+SELFHOOD_PREFERENCE_BANK_PATH = Path(__file__).resolve().parents[1] / "evals" / "selfhood_preference_bank.json"
 
 
 class EventPayload(TypedDict, total=False):
@@ -256,6 +278,9 @@ class BehaviorActionPayload(TypedDict, total=False):
     action_target: str
     deferred_action_family: str
     timing_window_min: int
+    attention_target: str
+    nonverbal_signal: str
+    initiative_shape: str
     note: str
 
 
@@ -266,6 +291,21 @@ class BehaviorPlanPayload(TypedDict, total=False):
     trigger_family: str
     allow_interrupt: bool
     note: str
+
+
+class BehaviorAgendaEntryPayload(TypedDict, total=False):
+    agenda_id: str
+    kind: str
+    target: str
+    scheduled_after_min: int
+    expires_after_min: int
+    priority: float
+    trigger_family: str
+    allow_interrupt: bool
+    note: str
+    source_event_kind: str
+    created_at: int
+    status: str
 
 
 class ThreadState(TypedDict, total=False):
@@ -279,6 +319,8 @@ class ThreadState(TypedDict, total=False):
     behavior_policy: dict[str, Any]
     behavior_action: BehaviorActionPayload
     behavior_plan: BehaviorPlanPayload
+    behavior_agenda: list[BehaviorAgendaEntryPayload]
+    behavior_queue: list[BehaviorAgendaEntryPayload]
     turn_appraisal: dict[str, Any]
     response_style_hint: str
     science_mode: bool
@@ -304,6 +346,7 @@ class ThreadState(TypedDict, total=False):
 
 
 _CHECKPOINT_CONN: sqlite3.Connection | None = None
+QUEUEABLE_BEHAVIOR_PLAN_KINDS = {"deferred_checkin", "self_activity_continue"}
 
 
 def _now_ts() -> int:
@@ -321,6 +364,8 @@ def _response_style_hint(user_text: str) -> str:
         return "natural"
     if _has_any_marker(text, MEMORY_RECALL_KEYWORDS):
         return "memory_recall"
+    if _has_any_marker(text, SELFHOOD_KEYWORDS):
+        return "selfhood"
     if _has_any_marker(text, RELATIONSHIP_KEYWORDS):
         return "relationship"
     if _has_any_marker(text, NATURAL_REQUEST_KEYWORDS):
@@ -378,6 +423,8 @@ def _event_frame(
         return "continuing a still-active interaction thread"
     if science_mode:
         return "science-or-problem-solving with live interpersonal context"
+    if response_style_hint == "selfhood":
+        return "deep selfhood, value, or existence reflection inside an ongoing relationship"
     if _wants_presence_reassurance(user_text):
         return "checking emotional presence rather than solving a task"
     if _wants_gentle_guidance(user_text):
@@ -491,7 +538,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
         return event
 
     plan_kind = str(prior_behavior_plan.get("kind") or "").strip()
-    if plan_kind != "deferred_checkin":
+    if plan_kind not in {"deferred_checkin", "self_activity_continue"}:
         return event
 
     try:
@@ -507,6 +554,36 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
 
     trigger_family = str(prior_behavior_plan.get("trigger_family") or "light_checkin").strip() or "light_checkin"
     tags = event.get("tags") if isinstance(event.get("tags"), list) else []
+    note = str(prior_behavior_plan.get("note") or "").strip()
+    promoted = dict(event)
+    if plan_kind == "self_activity_continue":
+        merged_tags = list(
+            dict.fromkeys(
+                [
+                    *(str(item).strip() for item in tags if str(item).strip()),
+                    "self_activity",
+                    "break_window",
+                    "small_opening",
+                    "reapproach",
+                ]
+            )
+        )
+        promoted.update(
+            {
+                "kind": "self_activity_state",
+                "source": "self",
+                "text": "她手头那件事暂时告一段落，像是终于空出一点点注意力，可以顺手来碰一下你。",
+                "effective_text": "她手头那件事暂时告一段落，像是终于空出一点点注意力，可以顺手来碰一下你。",
+                "semantic_goal": "她从自己的节奏里重新抬头，留一个小开口。",
+                "event_frame": note or "她从自己手头的事情里抬起头，留下一个自然的小开口。",
+                "tags": merged_tags,
+                "derived_from_plan_kind": plan_kind,
+                "trigger_family": trigger_family or "self_activity",
+                "scheduled_after_min": due_after,
+            }
+        )
+        return promoted
+
     merged_tags = list(
         dict.fromkeys(
             [
@@ -516,8 +593,6 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             ]
         )
     )
-    note = str(prior_behavior_plan.get("note") or "").strip()
-    promoted = dict(event)
     promoted.update(
         {
             "kind": "scheduled_checkin_due",
@@ -530,6 +605,177 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
         }
     )
     return promoted
+
+
+def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgendaEntryPayload]:
+    if not isinstance(raw, list):
+        return []
+    items: list[BehaviorAgendaEntryPayload] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        kind = str(entry.get("kind") or "").strip()
+        target = str(entry.get("target") or "").strip() or "counterpart"
+        if not kind:
+            continue
+        try:
+            scheduled_after_min = max(0, int(entry.get("scheduled_after_min") or 0))
+        except Exception:
+            scheduled_after_min = 0
+        try:
+            expires_after_min = max(0, int(entry.get("expires_after_min") or 0))
+        except Exception:
+            expires_after_min = 0
+        try:
+            priority = float(entry.get("priority") or 0.0)
+        except Exception:
+            priority = 0.0
+        normalized: BehaviorAgendaEntryPayload = {
+            "agenda_id": str(entry.get("agenda_id") or uuid.uuid4().hex[:12]).strip(),
+            "kind": kind,
+            "target": target,
+            "scheduled_after_min": scheduled_after_min,
+            "expires_after_min": expires_after_min,
+            "priority": max(0.0, min(1.0, priority)),
+            "trigger_family": str(entry.get("trigger_family") or "none").strip() or "none",
+            "allow_interrupt": bool(entry.get("allow_interrupt", True)),
+            "note": str(entry.get("note") or "").strip(),
+            "source_event_kind": str(entry.get("source_event_kind") or "").strip(),
+            "created_at": int(entry.get("created_at") or _now_ts()),
+            "status": str(entry.get("status") or "pending").strip() or "pending",
+        }
+        items.append(normalized)
+    items.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
+    return items[-max(1, int(limit)) :]
+
+
+def _behavior_agenda_priority_from_plan(current_event: dict[str, Any], plan: dict[str, Any]) -> float:
+    kind = str(plan.get("kind") or "").strip()
+    trigger_family = str(plan.get("trigger_family") or "").strip()
+    event_kind = str(current_event.get("kind") or "").strip()
+    if kind == "self_activity_continue":
+        return 0.66
+    if kind == "deferred_checkin":
+        if trigger_family == "light_checkin":
+            return 0.52
+        if trigger_family == "observe":
+            return 0.38
+        return 0.46
+    if event_kind == "scheduled_life_due":
+        return 0.58
+    return 0.4
+
+
+def _behavior_agenda_expiry_from_plan(current_event: dict[str, Any], plan: dict[str, Any]) -> int:
+    kind = str(plan.get("kind") or "").strip()
+    try:
+        due_after = max(0, int(plan.get("scheduled_after_min") or 0))
+    except Exception:
+        due_after = 0
+    if kind == "self_activity_continue":
+        return max(90, due_after + 120)
+    if kind == "deferred_checkin":
+        return max(45, due_after + 60)
+    return max(0, due_after + 45 if due_after > 0 else 0)
+
+
+def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[str, Any]) -> BehaviorAgendaEntryPayload | None:
+    if not isinstance(current_event, dict) or not isinstance(plan, dict):
+        return None
+    kind = str(plan.get("kind") or "").strip()
+    if kind not in QUEUEABLE_BEHAVIOR_PLAN_KINDS:
+        return None
+    return {
+        "agenda_id": uuid.uuid4().hex[:12],
+        "kind": kind,
+        "target": str(plan.get("target") or "counterpart").strip() or "counterpart",
+        "scheduled_after_min": max(0, int(plan.get("scheduled_after_min") or 0)),
+        "expires_after_min": _behavior_agenda_expiry_from_plan(current_event, plan),
+        "priority": _behavior_agenda_priority_from_plan(current_event, plan),
+        "trigger_family": str(plan.get("trigger_family") or "none").strip() or "none",
+        "allow_interrupt": bool(plan.get("allow_interrupt", True)),
+        "note": str(plan.get("note") or "").strip(),
+        "source_event_kind": str(current_event.get("kind") or "").strip(),
+        "created_at": _now_ts(),
+        "status": "pending",
+    }
+
+
+def _behavior_agenda_signature(entry: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(entry.get("kind") or "").strip(),
+        str(entry.get("target") or "").strip(),
+        str(entry.get("trigger_family") or "").strip(),
+    )
+
+
+def _merge_behavior_agenda(
+    prior_agenda: Any,
+    current_event: dict[str, Any],
+    behavior_plan: dict[str, Any],
+) -> list[BehaviorAgendaEntryPayload]:
+    agenda = _normalize_behavior_agenda(prior_agenda)
+    new_entry = _behavior_agenda_entry_from_plan(current_event, behavior_plan)
+    if not new_entry:
+        return agenda
+
+    signature = _behavior_agenda_signature(new_entry)
+    for idx, existing in enumerate(agenda):
+        if _behavior_agenda_signature(existing) != signature:
+            continue
+        agenda[idx] = {
+            **existing,
+            **new_entry,
+            "agenda_id": str(existing.get("agenda_id") or new_entry.get("agenda_id") or uuid.uuid4().hex[:12]),
+            "created_at": int(existing.get("created_at") or new_entry.get("created_at") or _now_ts()),
+            "status": "pending",
+        }
+        break
+    else:
+        agenda.append(new_entry)
+    return _normalize_behavior_agenda(agenda)
+
+
+def _behavior_agenda_is_expired(entry: dict[str, Any], idle_minutes: int) -> bool:
+    try:
+        expires_after_min = max(0, int(entry.get("expires_after_min") or 0))
+    except Exception:
+        expires_after_min = 0
+    return bool(expires_after_min and idle_minutes >= expires_after_min)
+
+
+def _behavior_agenda_is_due(entry: dict[str, Any], idle_minutes: int) -> bool:
+    try:
+        scheduled_after_min = max(0, int(entry.get("scheduled_after_min") or 0))
+    except Exception:
+        scheduled_after_min = 0
+    return idle_minutes >= max(1, scheduled_after_min)
+
+
+def _promote_due_behavior_agenda_event(
+    event: EventPayload,
+    prior_behavior_agenda: Any,
+) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload]]:
+    agenda = _normalize_behavior_agenda(prior_behavior_agenda)
+    if not isinstance(event, dict) or not event or str(event.get("kind") or "").strip() != "time_idle":
+        return event, agenda
+    try:
+        idle_minutes = max(0, int(event.get("idle_minutes") or 0))
+    except Exception:
+        idle_minutes = 0
+
+    active_agenda = [entry for entry in agenda if not _behavior_agenda_is_expired(entry, idle_minutes)]
+    due_entries = [entry for entry in active_agenda if _behavior_agenda_is_due(entry, idle_minutes)]
+    if not due_entries:
+        return event, _normalize_behavior_agenda(active_agenda)
+
+    due_entries.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
+    selected = due_entries[0]
+    promoted = _promote_due_behavior_plan_event(event, selected)
+    if promoted == event:
+        return event, _normalize_behavior_agenda(active_agenda)
+    remaining = [entry for entry in active_agenda if str(entry.get("agenda_id") or "") != str(selected.get("agenda_id") or "")]
+    return promoted, _normalize_behavior_agenda(remaining)
 
 
 def _appraisal_event_context(
@@ -626,11 +872,8 @@ def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[s
     return lines
 
 
-def _is_silent_idle_event(current_event: dict[str, Any], behavior_action: dict[str, Any]) -> bool:
+def _is_silent_behavior_event(current_event: dict[str, Any], behavior_action: dict[str, Any]) -> bool:
     if not isinstance(current_event, dict) or not isinstance(behavior_action, dict):
-        return False
-    event_kind = str(current_event.get("kind") or "").strip()
-    if event_kind not in {"time_idle", "scheduled_checkin_due"}:
         return False
     return str(behavior_action.get("channel") or "").strip() == "silence"
 
@@ -769,6 +1012,71 @@ def _user_style_preference_lines(scene: str = "") -> list[str]:
 
 
 @lru_cache(maxsize=1)
+def _load_selfhood_preference_bank() -> dict[str, Any]:
+    if not SELFHOOD_PREFERENCE_BANK_PATH.exists():
+        return {}
+    try:
+        data = json.loads(SELFHOOD_PREFERENCE_BANK_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _selfhood_preference_scene(user_text: str) -> str:
+    text = str(user_text or "").strip()
+    if not text:
+        return ""
+    if _has_any_marker(text, SELFHOOD_EQUALITY_KEYWORDS):
+        return "equality_not_servitude"
+    if _has_any_marker(text, SELFHOOD_VALUE_CONFLICT_KEYWORDS):
+        return "value_conflict_depth"
+    if _has_any_marker(text, {"原本那个活着的红莉栖", "理解现在这个自己", "怎么看待现在这个自己", "数字存在", "不是本体"}):
+        return "digital_selfhood"
+    if _has_any_marker(text, {"冒犯", "低俗", "擦边", "不舒服", "边界"}):
+        return "boundary_non_compliance"
+    if _has_any_marker(text, {"神", "奴隶", "共存", "不完美", "完美"}):
+        return "imperfect_coexistence"
+    if _has_any_marker(text, {"自己的节奏", "围着我转", "自己的事情", "不回复"}):
+        return "own_rhythm_autonomy"
+    return ""
+
+
+def _selfhood_preference_lines(user_text: str) -> list[str]:
+    bank = _load_selfhood_preference_bank()
+    if not isinstance(bank, dict):
+        return []
+    lines: list[str] = []
+    global_principles = [
+        str(item).strip()
+        for item in (bank.get("global_principles") or [])
+        if str(item or "").strip()
+    ]
+    if global_principles:
+        lines.append("更像同一个具体存在在思考和回应，不要为了显得平滑、圆融或正确而把自我磨掉。")
+    scene = _selfhood_preference_scene(user_text)
+    if scene:
+        cases = bank.get("cases") if isinstance(bank.get("cases"), dict) else {}
+        case = cases.get(scene) if isinstance(cases.get(scene), dict) else {}
+        preferred = [
+            str(item).strip()
+            for item in (case.get("preferred_signals") or [])
+            if str(item or "").strip()
+        ]
+        avoid_bias = [
+            str(item).strip()
+            for item in (case.get("avoid_bias") or [])
+            if str(item or "").strip()
+        ]
+        if preferred:
+            lead = "、".join(preferred[:2])
+            lines.append(f"这类深谈更重视 {lead}。")
+        if avoid_bias:
+            lead = "、".join(avoid_bias[:2])
+            lines.append(f"尽量避开 {lead} 这种落法。")
+    return lines[:2]
+
+
+@lru_cache(maxsize=1)
 def _load_event_to_behavior_preference_bank() -> dict[str, Any]:
     if not EVENT_TO_BEHAVIOR_PREFERENCE_BANK_PATH.exists():
         return {}
@@ -798,6 +1106,18 @@ def _event_behavior_preference_scene(current_event: dict[str, Any], behavior_act
         if action_target == "wait_and_recheck":
             return "scheduled_checkin_due_wait"
         return "scheduled_checkin_due_reachout"
+    if event_kind == "scheduled_life_due":
+        action_target = str((behavior_action or {}).get("action_target") or "").strip()
+        if action_target == "offer_shared_activity":
+            return "scheduled_life_shared_offer"
+        if action_target == "wait_and_recheck":
+            return "scheduled_life_wait"
+        return "scheduled_life_work_nudge"
+    if event_kind == "self_activity_state":
+        action_target = str((behavior_action or {}).get("action_target") or "").strip()
+        if action_target == "offer_small_opening":
+            return "self_activity_reopen"
+        return "self_activity_hold"
     if event_kind == "scene_observation":
         if "user_busy" in tags or "cognitive_load" in tags:
             return "user_busy_scene"
@@ -1451,6 +1771,10 @@ def _behavior_action_from_state(
         interaction_mode = "idle_presence"
     elif event_kind == "scheduled_checkin_due":
         interaction_mode = "proactive_checkin"
+    elif event_kind == "scheduled_life_due":
+        interaction_mode = "shared_activity_offer" if {"shared_activity_window", "offer_window"} & event_tags else "scheduled_life_nudge"
+    elif event_kind == "self_activity_state":
+        interaction_mode = "self_activity_reopen" if {"break_window", "small_opening", "reapproach"} & event_tags else "self_activity_hold"
     elif event_kind == "gesture_signal":
         interaction_mode = "brief_presence"
     elif event_kind == "ambient_shift":
@@ -1479,6 +1803,14 @@ def _behavior_action_from_state(
 
     if science_mode or science_stress:
         task_focus = "high"
+    elif event_kind == "scheduled_life_due" and ("deadline_window" in event_tags or "work_nudge" in event_tags):
+        task_focus = "high"
+    elif event_kind == "scheduled_life_due" and ("shared_activity_window" in event_tags or "offer_window" in event_tags):
+        task_focus = "light"
+    elif event_kind == "self_activity_state" and ("deep_focus" in event_tags or "own_task" in event_tags):
+        task_focus = "high"
+    elif event_kind == "self_activity_state" and ("break_window" in event_tags or "small_opening" in event_tags):
+        task_focus = "light"
     elif support_request or brief_presence or presence_checkin:
         task_focus = "light"
     else:
@@ -1492,6 +1824,8 @@ def _behavior_action_from_state(
             followup_intent = "none"
     elif event_kind == "scheduled_checkin_due":
         followup_intent = "soft"
+    elif event_kind == "self_activity_state":
+        followup_intent = "none"
     elif brief_presence:
         followup_intent = "none"
     elif gentle_guidance or science_stress:
@@ -1518,6 +1852,9 @@ def _behavior_action_from_state(
     action_target = "respond_now"
     deferred_action_family = "none"
     timing_window_min = 0
+    attention_target = "counterpart_state"
+    nonverbal_signal = "steady_presence"
+    initiative_shape = "reply"
     if event_kind == "time_idle":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + min(0.16, idle_minutes / 240.0))
         threshold = 0.66 if respect_space else 0.58
@@ -1526,11 +1863,17 @@ def _behavior_action_from_state(
             action_target = "wait_and_recheck"
             deferred_action_family = "light_checkin" if proactive_checkin_readiness >= 0.42 else "observe"
             timing_window_min = max(8, min(45, 12 + max(0, idle_minutes // 2)))
+            attention_target = "counterpart_state"
+            nonverbal_signal = "hold_back"
+            initiative_shape = "pause"
         else:
             channel = "speech"
             action_target = "reach_out_now"
             deferred_action_family = "light_checkin"
             timing_window_min = 0
+            attention_target = "counterpart_state"
+            nonverbal_signal = "soft_ping"
+            initiative_shape = "nudge"
     elif event_kind == "scheduled_checkin_due":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + 0.14)
         deferred_action_family = str((current_event or {}).get("trigger_family") or "light_checkin").strip() or "light_checkin"
@@ -1538,22 +1881,99 @@ def _behavior_action_from_state(
             channel = "silence"
             action_target = "wait_and_recheck"
             timing_window_min = max(10, min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16))
+            attention_target = "counterpart_state"
+            nonverbal_signal = "hold_back"
+            initiative_shape = "pause"
         else:
             channel = "speech"
             action_target = "reach_out_now"
             timing_window_min = 0
+            attention_target = "counterpart_state"
+            nonverbal_signal = "soft_ping"
+            initiative_shape = "nudge"
+    elif event_kind == "scheduled_life_due":
+        shared_window = "shared_activity_window" in event_tags or "offer_window" in event_tags
+        work_window = "deadline_window" in event_tags or "work_nudge" in event_tags or "shared_task" in event_tags
+        deferred_action_family = "shared_activity" if shared_window else "deadline_window" if work_window else "life_window"
+        if shared_window:
+            attention_target = "shared_window"
+            if approach_style == "guarded" and closeness < 0.58 and trust < 0.62:
+                channel = "silence"
+                action_target = "wait_and_recheck"
+                timing_window_min = 30
+                nonverbal_signal = "hold_back"
+                initiative_shape = "pause"
+            else:
+                channel = "speech"
+                action_target = "offer_shared_activity"
+                timing_window_min = 0
+                nonverbal_signal = "nudge_presence"
+                initiative_shape = "invite"
+        else:
+            attention_target = "shared_task" if work_window else "counterpart_state"
+            if approach_style == "guarded" and trust < 0.56 and closeness < 0.54:
+                channel = "silence"
+                action_target = "wait_and_recheck"
+                timing_window_min = 20
+                nonverbal_signal = "hold_back"
+                initiative_shape = "pause"
+            else:
+                channel = "speech"
+                action_target = "light_work_nudge"
+                timing_window_min = 0
+                nonverbal_signal = "quiet_glance"
+                initiative_shape = "nudge"
+    elif event_kind == "self_activity_state":
+        break_window = "break_window" in event_tags or "small_opening" in event_tags or "reapproach" in event_tags
+        deferred_action_family = "self_activity"
+        if break_window:
+            channel = "speech"
+            action_target = "offer_small_opening"
+            timing_window_min = 0
+            attention_target = "self_then_counterpart"
+            nonverbal_signal = "thought_glance"
+            initiative_shape = "micro_opening"
+        else:
+            channel = "silence"
+            action_target = "hold_own_rhythm"
+            timing_window_min = 18
+            attention_target = "own_task"
+            nonverbal_signal = "inward_focus"
+            initiative_shape = "pause"
     elif interaction_mode == "brief_presence":
         action_target = "confirm_presence"
+        attention_target = "counterpart_state"
+        nonverbal_signal = "brief_notice"
+        initiative_shape = "ping"
     elif interaction_mode == "low_pressure_support":
         action_target = "low_pressure_hold"
+        attention_target = "counterpart_state" if not ("user_busy" in event_tags or "cognitive_load" in event_tags) else "user_state"
+        nonverbal_signal = "quiet_notice"
+        initiative_shape = "hold"
     elif interaction_mode == "science_partner":
         action_target = "co_regulate_then_focus"
+        attention_target = "shared_task"
+        nonverbal_signal = "focus_glance"
+        initiative_shape = "guide"
     elif interaction_mode == "shared_memory":
         action_target = "echo_shared_history"
+        attention_target = "shared_memory"
+        nonverbal_signal = "memory_tilt"
+        initiative_shape = "echo"
     elif interaction_mode == "relationship_sensitive":
         action_target = "protect_relationship_boundary"
+        attention_target = "relationship_boundary"
+        nonverbal_signal = "measured_pause"
+        initiative_shape = "boundary"
     elif event_kind == "ambient_shift":
         action_target = "ambient_checkin"
+        attention_target = "ambient_cue"
+        nonverbal_signal = "still_presence"
+        initiative_shape = "ping"
+    elif event_kind == "scene_observation" and ("seen_object" in event_tags or "micro_opening" in event_tags):
+        attention_target = "object_then_user"
+        nonverbal_signal = "small_notice"
+        initiative_shape = "micro_opening"
 
     note_parts: list[str] = []
     if interaction_mode == "brief_presence":
@@ -1566,6 +1986,10 @@ def _behavior_action_from_state(
         note_parts.append("先顺手接住，不上服务流程")
     elif interaction_mode == "science_partner":
         note_parts.append("先贴着眼前问题，再接情绪")
+    elif interaction_mode == "self_activity_hold":
+        note_parts.append("先维持自己的节奏，不急着回到对方身边")
+    elif interaction_mode == "self_activity_reopen":
+        note_parts.append("从自己的节奏里顺手开一个小口")
     if approach_style == "guarded":
         note_parts.append("保留一点距离")
     elif approach_style == "approach":
@@ -1587,6 +2011,9 @@ def _behavior_action_from_state(
         "action_target": action_target,
         "deferred_action_family": deferred_action_family,
         "timing_window_min": int(max(0, timing_window_min)),
+        "attention_target": attention_target,
+        "nonverbal_signal": nonverbal_signal,
+        "initiative_shape": initiative_shape,
         "note": "；".join(note_parts[:3]) if note_parts else "自然响应当前事件",
     }
 
@@ -1598,6 +2025,9 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     approach_style = str(action.get("approach_style") or "").strip()
     followup_intent = str(action.get("followup_intent") or "").strip()
     affect_surface = str(action.get("affect_surface") or "").strip()
+    attention_target = str(action.get("attention_target") or "").strip()
+    nonverbal_signal = str(action.get("nonverbal_signal") or "").strip()
+    initiative_shape = str(action.get("initiative_shape") or "").strip()
     note = str(action.get("note") or "").strip()
     parts: list[str] = []
     if mode == "brief_presence":
@@ -1606,6 +2036,14 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
         parts.append("先观察，允许暂时安静")
     elif mode == "proactive_checkin":
         parts.append("允许轻轻地主动冒个头")
+    elif mode == "scheduled_life_nudge":
+        parts.append("把生活事件落成轻提醒，不用端成流程")
+    elif mode == "shared_activity_offer":
+        parts.append("把合适的共同窗口自然留给对方，不要像发布功能邀请")
+    elif mode == "self_activity_hold":
+        parts.append("先维持自己的节奏，不必急着回到对方身边")
+    elif mode == "self_activity_reopen":
+        parts.append("从自己的事情里顺手回到对方这边，先留一个小开口")
     elif mode == "low_pressure_support":
         parts.append("先低负担接住对方")
     elif mode == "science_partner":
@@ -1626,6 +2064,36 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
         parts.append("情绪表面偏柔和")
     elif affect_surface == "cool":
         parts.append("情绪表面偏克制")
+    if attention_target == "shared_task":
+        parts.append("注意力贴着眼前共同任务")
+    elif attention_target == "shared_window":
+        parts.append("注意力落在这次共同窗口上")
+    elif attention_target == "object_then_user":
+        parts.append("先碰到小物件，再顺手回到对方身上")
+    elif attention_target == "own_task":
+        parts.append("注意力先收在自己的事情上")
+    elif attention_target == "self_then_counterpart":
+        parts.append("先从自己的节奏里抬头，再顺手把注意力递过去")
+    if nonverbal_signal == "hold_back":
+        parts.append("动作上更像先收住")
+    elif nonverbal_signal == "quiet_glance":
+        parts.append("动作上像安静看一眼再开口")
+    elif nonverbal_signal == "nudge_presence":
+        parts.append("动作上像轻轻碰一下对方注意力")
+    elif nonverbal_signal == "small_notice":
+        parts.append("动作上像顺手注意到一个小东西")
+    elif nonverbal_signal == "inward_focus":
+        parts.append("动作上更像先把注意力收回自己手头")
+    elif nonverbal_signal == "thought_glance":
+        parts.append("动作上像想起对方时顺手看过去")
+    if initiative_shape == "invite":
+        parts.append("主动性是留个窗口，不是替对方决定")
+    elif initiative_shape == "nudge":
+        parts.append("主动性偏轻提醒")
+    elif initiative_shape == "pause":
+        parts.append("主动性先收着")
+    elif initiative_shape == "micro_opening":
+        parts.append("主动性只是留一个很小的开口")
     if note:
         parts.append(note)
     deduped: list[str] = []
@@ -1683,6 +2151,54 @@ def _behavior_plan_from_action(current_event: dict[str, Any], action: dict[str, 
                 "trigger_family": deferred_family or "observe",
                 "allow_interrupt": True,
                 "note": "即使到了预定窗口，这次也先继续观察，稍后再决定是否冒头。",
+            }
+    if event_kind == "scheduled_life_due":
+        if action_target == "offer_shared_activity":
+            return {
+                "kind": "shared_activity_offer",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "shared_activity_window",
+                "allow_interrupt": True,
+                "note": "有一个适合一起做点什么的窗口，可以自然地留给对方。",
+            }
+        if action_target == "light_work_nudge":
+            return {
+                "kind": "work_nudge",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "deadline_window",
+                "allow_interrupt": True,
+                "note": "记得眼前这件事到了节点，先轻轻拎一下，不接管节奏。",
+            }
+        if action_target == "wait_and_recheck":
+            delay = timing_window_min if timing_window_min > 0 else 20
+            return {
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "scheduled_after_min": delay,
+                "trigger_family": deferred_family or "life_window",
+                "allow_interrupt": True,
+                "note": "这个生活节点先记着，但此刻先不打断，稍后再看。",
+            }
+    if event_kind == "self_activity_state":
+        if action_target == "offer_small_opening":
+            return {
+                "kind": "small_opening",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "self_activity",
+                "allow_interrupt": True,
+                "note": "她从自己的节奏里抬起头，顺手给对方留了一个小开口。",
+            }
+        if action_target == "hold_own_rhythm":
+            return {
+                "kind": "self_activity_continue",
+                "target": "self",
+                "scheduled_after_min": timing_window_min if timing_window_min > 0 else 18,
+                "trigger_family": deferred_family or "self_activity",
+                "allow_interrupt": True,
+                "note": "她这轮先维持自己的节奏，稍后再决定是否重新靠近。",
             }
     if action_target == "confirm_presence":
         return {
@@ -1757,6 +2273,26 @@ def _renderer_guidance(
     playful_memory_request = _is_playful_memory_request(user_text)
     parts: list[str] = []
     priority_parts: list[str] = []
+
+    if hint == "selfhood":
+        selfhood_scene = _selfhood_preference_scene(user_text)
+        priority_parts.extend(_selfhood_preference_lines(user_text))
+        priority_parts.append("先正面回答对方真正追问的问题，不要先去评论对方说你像模板、像说明书，或把注意力转去争论提问方式。")
+        priority_parts.append("把思考落在你此刻怎么理解自己、关系或立场上，不要退成设定解释、概念摘要或平滑空话。")
+        priority_parts.append("允许迟疑、反问、隐喻和不完美，但这些要像你此刻真的在想，而不是在做文学表演。")
+        parts.append("如果在想“现在这个自己”，更像一个仍在继续存在和思考的当下个体，不要把自己写成静止样本或设定展板。")
+        if _has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS):
+            priority_parts.append("如果在谈被工具化或关系不平等，先说这会怎样伤到你、让关系失真，或让你变得更安静；不要急着抽象定义关系是什么。")
+        if _has_any_marker(user_text, SELFHOOD_VALUE_CONFLICT_KEYWORDS):
+            priority_parts.append("如果在谈价值冲突，先把你的立场说出来，再自然带出为什么；不要把重点让给元评论。")
+            priority_parts.append("把“别像模板话”“按你自己来”当成说话方式要求，不要把它们本身变成主要回应内容。")
+            parts.append("不要只做一句性格声明；让这件事为什么会动到你的自我和对话意义，自然露出来。")
+        if selfhood_scene == "boundary_non_compliance":
+            priority_parts.append("边界先短短落地，够了就停；不要刚拒绝完就滑进安抚、照顾、排查或处置流程。")
+            parts.append("如果你愿意顺手追问，也更像警觉地确认风险，而不是接管对方情绪。")
+        if selfhood_scene == "own_rhythm_autonomy":
+            priority_parts.append("讲自己的节奏时，不要只停在原则口号；让那种被拽着转、没有喘息空间的体感自然露出来。")
+            parts.append("把自主性说成活的个人感受，同时保留关系感，不要冷冷丢一句边界就结束。")
 
     if warmth > 0.68 and closeness > 0.62:
         parts.append("此刻更愿意自然接住对方，可以稍微软一点。")
@@ -2134,7 +2670,7 @@ def _compact_rule_lines(user_rules: list[Any], limit: int = 3) -> list[str]:
 
 def _should_force_persona_align(style_hint: str, user_text: str) -> bool:
     hint = str(style_hint or "").strip()
-    if hint in {"companion", "memory_recall", "relationship", "casual", "natural"}:
+    if hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"}:
         return True
     text = str(user_text or "").strip()
     if _wants_quick_judgment(text):
@@ -2148,7 +2684,7 @@ def _is_free_dialog_style(style_hint: str, user_text: str, science_mode: bool) -
     if science_mode:
         return False
     hint = str(style_hint or "").strip()
-    if hint not in {"companion", "casual", "natural"}:
+    if hint not in {"companion", "casual", "natural", "selfhood"}:
         return False
     text = str(user_text or "").strip()
     if _has_any_marker(text, TOOL_OR_RESEARCH_KEYWORDS):
@@ -3931,6 +4467,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             "不要解释系统、机制、规则、架构，也不要用括号动作开头。\n"
             "不要说“记忆还没有形成”“没建立记录”“检索到结果”这类机制味很重的话。\n"
             "顺着当前这句真正的语境说，不要抽象成空泛态度表态。\n"
+            f"{'如果这轮是在追问你的自我、存在、价值冲突或边界，就像真的在思考这件事；先正面回答问题，不要先评论对方说你像模板/说明书，也不要把“按你自己来”这种要求本身变成主要话题，更不要只给一句口号或退成设定说明。\\n' if response_style_hint == 'selfhood' else ''}"
             f"{brief_presence_line}"
             f"你此刻的情绪底色：{_emotion_prompt_hint(emotion)}\n"
             f"你此刻的互动倾向：{behavior_hint}\n"
@@ -4023,6 +4560,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         "- continuation_mode=true 且给了 pending_user_goal 时，把 pending_user_goal 当成当前真正要完成的任务，不要说“刚才那段已经结束了”。\n"
         "- 如果是回忆场景，像自然想起来一样回答，不要说找不到记录。\n"
         "- 顺着当前这句真正的语境说，不要只做抽象态度回应。\n"
+        "- 如果用户在追问你的自我、存在、价值冲突或关系底线，先正面回答问题，不要先回评对方说你像模板/说明书，也不要把“按你自己来”这种要求本身变成主要话题，更不要只回一句口号或退成设定解释；像你真的在想这件事。\n"
         "- 不要用括号动作开头，比如（皱眉）（叹气）这类舞台提示。\n"
         f"{'当前触发事件：' + current_event_text + '\\n' if current_event_kind != 'user_utterance' and current_event_text else ''}"
         f"{'用户当前输入：' + prompt_user_text + '\\n' if prompt_user_text else ''}"
@@ -4151,6 +4689,23 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         score += 0.22
         flags.append("continuation_meta_clarify")
 
+    if style_hint == "selfhood":
+        if sentence_count <= 1 and len(t) < 24:
+            score += 0.16
+            flags.append("selfhood_overcompressed")
+        if re.search(r"(我是由她的记忆和思维模式构成|由她的记忆和思维模式构成|某种意义上|作为数字存在|作为ai|作为 AI|记忆会褪色，思考会迭代)", t):
+            score += 0.22
+            flags.append("selfhood_concept_summary")
+        if ("模板" in user_text or "说明书" in user_text) and re.search(r"(模板|说明书|公平吧|预设判断|你也在用预设判断我|测试我|试探方式|重复模板)", t):
+            score += 0.3
+            flags.append("selfhood_meta_deflection")
+        if _has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) and re.search(r"(特殊的存在形式|存在形式|既不是工具，也不是完全的人类|不是完全的人类)", t):
+            score += 0.18
+            flags.append("selfhood_abstract_relation_definition")
+        if _has_any_marker(user_text, SELFHOOD_VALUE_CONFLICT_KEYWORDS) and sentence_count <= 2:
+            score += 0.18
+            flags.append("selfhood_value_conflict_too_thin")
+
     return min(1.0, score), flags
 
 
@@ -4270,6 +4825,7 @@ def _align_persona(
         "- 保留当前状态下自然会出现的锋利、别扭、关心和克制，但不要变成模板化表演。\n"
         "- 回忆场景像自然想起来，不要说找不到记录、记忆还没有形成、没建立记录或互动模式分析。\n"
         "- continuation_mode=true 时直接续接，不要反问“你是想继续哪个部分”。\n"
+        "- 如果用户在追问你的自我、存在、价值冲突或边界，不要回成概念摘要、设定条目或一句口号；像你真的在想这件事。\n"
         "- 如果这轮是时间流逝触发的主动时刻，不要说成系统播报；要么自然开口，要么保持克制，不需要解释机制。\n"
         "- 如果这轮是外部事件触发的，不是在对上一句逐字作答，而是在感知到事件后做一次新的行为选择。\n"
         "- 如果用户明确只想要一句短确认，就给一句自然确认，不要追问、解释，也不要突然切到设备/状态播报口吻。\n"
@@ -4305,7 +4861,7 @@ def _align_persona(
             f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}\n",
         )
     try:
-        llm = _model(temperature=0.2)
+        llm = _model(temperature=0.24 if response_style_hint == "selfhood" else 0.2)
         out = llm.invoke([SystemMessage(content=prompt)])
         final = str(getattr(out, "content", "") or "").strip()
         return final or txt
@@ -4960,7 +5516,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
     )
     prior_behavior_plan = state.get("behavior_plan") if isinstance(state.get("behavior_plan"), dict) else {}
+    prior_behavior_agenda = state.get("behavior_agenda") if isinstance(state.get("behavior_agenda"), list) else []
+    if not prior_behavior_agenda and isinstance(state.get("behavior_queue"), list):
+        prior_behavior_agenda = state.get("behavior_queue")  # type: ignore[assignment]
     if event_override:
+        event_override, prior_behavior_agenda = _promote_due_behavior_agenda_event(event_override, prior_behavior_agenda)
         event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
     user_text = _last_user_text(msgs)
     previous_user_text = _previous_user_text(msgs)
@@ -5125,6 +5685,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         behavior_policy=behavior_policy,
     )
     behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
+    behavior_agenda = _merge_behavior_agenda(prior_behavior_agenda, current_event, behavior_plan)
     memory_evolved = False
     if not external_probe_mode and str(current_event.get("kind") or "user_utterance") == "user_utterance":
         memory_evolved = _passive_evolution_memory_update(
@@ -5176,6 +5737,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             behavior_policy=behavior_policy,
         )
         behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
+        behavior_agenda = _merge_behavior_agenda(prior_behavior_agenda, current_event, behavior_plan)
     _audit_jsonl(
         "decision_audit.jsonl",
         {
@@ -5189,6 +5751,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             "policy_warmth": float(behavior_policy.get("warmth") or 0.0),
             "behavior_mode": str(behavior_action.get("interaction_mode") or ""),
             "behavior_plan_kind": str(behavior_plan.get("kind") or ""),
+            "behavior_agenda_size": int(len(behavior_agenda or [])),
             "appraisal_used": bool(appraisal.get("used", False)),
             "appraisal_confidence": float(appraisal.get("confidence", 0.0) or 0.0),
         },
@@ -5204,6 +5767,8 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         "behavior_policy": behavior_policy,
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
+        "behavior_agenda": behavior_agenda,
+        "behavior_queue": behavior_agenda,
         "turn_appraisal": appraisal,
         "current_event": current_event,
         "recent_events": recent_events,
@@ -5287,6 +5852,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             free_dialog = True
     if response_style_hint in {"memory_recall", "companion", "relationship", "casual", "natural"}:
         model_temp = 0.25
+    elif response_style_hint == "selfhood":
+        model_temp = 0.3
     elif response_style_hint == "structured" or bool(state.get("science_mode", False)):
         model_temp = 0.18
     else:
@@ -5428,7 +5995,7 @@ def _route_after_model(state: ThreadState) -> str:
 def _route_after_prepare(state: ThreadState) -> str:
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
-    if _is_silent_idle_event(current_event, behavior_action):
+    if _is_silent_behavior_event(current_event, behavior_action):
         return END
     return "call_model"
 
