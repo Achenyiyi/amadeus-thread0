@@ -149,9 +149,12 @@ python evals\run_langsmith_evals.py --local-only --suite open_evolution_eval
 python evals\run_langsmith_evals.py --local-only --suite behavior_layer_probe
 python evals\run_langsmith_evals.py --local-only --suite behavior_agenda_probe
 python evals\run_langsmith_evals.py --local-only --suite behavior_queue_probe
+python evals\run_langsmith_evals.py --local-only --suite behavior_queue_conflict_probe
 python evals\run_langsmith_evals.py --local-only --suite agenda_conflict_probe
 python evals\run_langsmith_evals.py --local-only --suite proactive_checkin_probe
 python evals\run_langsmith_evals.py --local-only --suite scheduled_life_probe
+python evals\run_langsmith_evals.py --local-only --suite commitment_life_probe
+python evals\run_langsmith_evals.py --local-only --suite commitment_maturity_probe
 python evals\run_langsmith_evals.py --local-only --suite self_activity_probe
 python evals\run_langsmith_evals.py --local-only --suite self_activity_maturity_probe
 python evals\run_langsmith_evals.py --local-only --suite perception_probe
@@ -211,7 +214,10 @@ python evals\export_thesis_tables.py
 - `regression_isolated / long_thread / backend reliability`：工程与机制保底
 - `daily_persona_probe / user_style_probe / open_evolution_eval / selfhood_probe`：自然聊天、自由演化与自我同一性主评测
 - `run_open_evolution_pairwise_eval.py / run_selfhood_pairwise_eval.py`：主观偏好与“是不是同一个她”的诊断层，不拿关键词打分当最终裁判
-- `behavior_layer_probe / proactive_checkin_probe / scheduled_life_probe / self_activity_probe / self_activity_maturity_probe / perception_probe / perception_appraisal_probe / run_event_behavior_pairwise_eval.py`：事件驱动行为、延迟成熟的主动 check-in、生活事件、自身节奏、行为成熟、感知层与事件评估主评测
+- `behavior_layer_probe / behavior_agenda_probe / behavior_queue_probe / behavior_queue_conflict_probe / proactive_checkin_probe / scheduled_life_probe / self_activity_probe / self_activity_maturity_probe / perception_probe / perception_appraisal_probe / run_event_behavior_pairwise_eval.py`：事件驱动行为、待成熟行为队列、队列冲突与重排、延迟成熟的主动 check-in、生活事件、自身节奏、行为成熟、感知层与事件评估主评测
+- `commitment_life_probe`：显式 `due_at` 承诺如何在安静窗口里成熟成生活事件，并继续走行为层，而不是退回提醒器逻辑
+- `commitment_maturity_probe`：承诺窗口如果遇到“现在不适合打断”，会先进入队列，之后再按原本的生活语义回来，而不是退化成泛化 ping
+- `relationship_life_timing_probe`：同一个共享生活窗口会因为关系状态不同而改变成熟策略；温暖时自然邀约，带伤时先按住、再回来
 - `thesis_probe / transfer_probe / external_persona_probe / external_support_probe / external_empathy_probe / external_continuity_probe`：论文论证、迁移性、外部校准
 - `run_appraisal_calibration.py`：`GoEmotions` 外部情绪校准，不作为人格主评测
 
@@ -221,6 +227,9 @@ python evals\export_thesis_tables.py
 - `behavior_layer_probe` 已全绿
 - `proactive_checkin_probe` 已全绿
 - `scheduled_life_probe` 已全绿
+- `commitment_life_probe` 已全绿
+- `commitment_maturity_probe` 已全绿
+- `relationship_life_timing_probe` 已全绿
 - `self_activity_probe` 已全绿
 - `self_activity_maturity_probe` 已全绿
 - `perception_probe` 已全绿
@@ -230,7 +239,7 @@ python evals\export_thesis_tables.py
 - `selfhood_probe` 已全绿
 - `long_thread` 已全绿
 - `open_evolution_pairwise_eval` 已能稳定识别剩余表达层短板，当前是诊断层，不是 regression gate
-- `selfhood_pairwise_eval` 已经能稳定抓到“深层自我感”问题，其中 `digital_selfhood` 与 `equality_not_servitude` 已收住，`value_conflict_depth` 仍是表达层的开放诊断项
+- `selfhood_pairwise_eval` 已经能稳定抓到“深层自我感”问题，其中 `digital_selfhood`、`equality_not_servitude`、`dialogue_equality`、`relationship_degradation`、`value_conflict_depth` 都已经有稳定 targeted green 结果
 - `external_persona_probe` 已全绿
 - `external_support_probe` 已全绿
 - `external_empathy_probe` 已全绿

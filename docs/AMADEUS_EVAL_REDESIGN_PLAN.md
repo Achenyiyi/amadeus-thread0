@@ -219,7 +219,7 @@ Use for:
 - `open_evolution_eval`: green
 - `user_style_probe`: green
 - `selfhood_probe`: green
-- `selfhood_pairwise_eval`: live as a selfhood diagnostic layer; `digital_selfhood` and `equality_not_servitude` are now stable enough to pass in targeted reruns, while `value_conflict_depth` remains the main open expression-layer diagnostic
+- `selfhood_pairwise_eval`: live as a selfhood diagnostic layer; `digital_selfhood`, `equality_not_servitude`, `dialogue_equality`, `relationship_degradation`, and `value_conflict_depth` are now stable enough to pass in targeted reruns
 - `long_thread`: green as a regression gate
 - `external_persona_probe`: green with `RoleBench + CharacterEval`
 - `external_support_probe`: green with adapted `ESConv`

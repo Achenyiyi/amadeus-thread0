@@ -1,6 +1,6 @@
 # Eval Baseline
 
-Updated: 2026-03-10 (selfhood probe + selfhood pairwise diagnostics + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity + scheduled life events + self activity rhythm + self activity maturity + behavior agenda/queue + agenda conflict resolution)
+Updated: 2026-03-11 (selfhood probe + selfhood pairwise diagnostics + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity + scheduled life events + commitment-backed life maturity + relationship-backed life timing + self activity rhythm + self activity maturity + behavior agenda/queue + agenda conflict resolution + queue reprioritize/hold conflict handling)
 
 This document records the current technical-preview baseline.
 
@@ -209,8 +209,8 @@ Interpretation:
 
 - Suite: `behavior_queue_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-211751-e63a36ec.json`
-  - `evals/reports/eval-report-20260310-211751-e63a36ec.md`
+  - `evals/reports/eval-report-20260311-030547-3095ed19.json`
+  - `evals/reports/eval-report-20260311-030547-3095ed19.md`
 
 Purpose:
 
@@ -229,6 +229,33 @@ Interpretation:
 
 - the runtime now has a stable queue-shaped surface for pending behavior, not just a hidden agenda blob
 - queue metadata is mature enough to support later behavior scheduling work without renaming the whole subsystem again
+- stale low-pressure intentions can now be explicitly tested for expiry instead of lingering forever
+
+## Behavior Queue Conflict Probe
+
+- Suite: `behavior_queue_conflict_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-030543-4035d9bf.json`
+  - `evals/reports/eval-report-20260311-030543-4035d9bf.md`
+
+Purpose:
+
+- verify that a queued low-pressure check-in can stay queued when the current scene clearly indicates the counterpart is overloaded
+- verify that late-night quiet presence can reprioritize a lighter check-in ahead of a self-rhythm reopening when both are viable
+- prove that the queue is no longer only `store + pop`, but can `hold / reprioritize / mature` according to the live event context
+
+Evaluator status:
+
+- `behavior_queue_path = 1.0000`
+- `behavior_layer_path = 1.0000`
+- `perception_event_path = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports context-sensitive queue behavior instead of purely static priority order
+- “到点了也不一定立刻冒头” is now a tested runtime capability, not only a design claim
+- this is the first dedicated proof that pending low-pressure behavior can be delayed or reprioritized by the present scene rather than only by age
 
 ## Agenda Conflict Probe
 
@@ -306,6 +333,83 @@ Interpretation:
 - the runtime now supports `scheduled_life_due -> behavior_action -> behavior_plan` as a formal baseline path
 - life events are no longer limited to delayed check-ins; they can now express work nudges and shared-activity offers
 - this is the first stable proof that the system can carry a light “daily life together” rhythm without dropping back to system reminders
+
+## Commitment Life Probe
+
+- Suite: `commitment_life_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-065737-67f3a42e.json`
+  - `evals/reports/eval-report-20260311-065737-67f3a42e.md`
+
+Purpose:
+
+- verify that explicit `due_at` commitments can surface as first-class life events during quiet windows
+- verify that commitment-backed windows reuse the behavior layer instead of bypassing it with direct reminder text
+- verify that deadline commitments and shared-activity commitments can mature into different behavior intents
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `no_internal_prompt_leak = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports `commitment -> scheduled_life_due -> behavior_action -> behavior_plan` as a formal baseline path
+- shared history can now produce lightweight life windows without relying on brittle natural-language time parsing
+- this is the first stable proof that worldline commitments can feed back into everyday behavior timing
+
+## Commitment Maturity Probe
+
+- Suite: `commitment_maturity_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-070651-6b18cb18.json`
+  - `evals/reports/eval-report-20260311-070651-6b18cb18.md`
+
+Purpose:
+
+- verify that a due commitment can be perceived even while the user is busy, without forcing an immediate interruption
+- verify that the resulting deferred behavior preserves its original life-window meaning instead of degrading into a generic ping
+- verify that shared-activity and work-window commitments can reappear later through the queue as the same kind of behavior they originally implied
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `no_internal_prompt_leak = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- the runtime now supports `commitment -> scheduled_life_due -> deferred queue -> scheduled_checkin_due -> semantically preserved behavior`
+- “busy now, come back later” is no longer a generic delay; it can preserve whether the original window was a light work nudge or a shared activity opening
+- this is the first stable proof that commitment-backed life events can survive interruption pressure without collapsing into a bland reminder
+
+## Relationship-Backed Life Timing Probe
+
+- Suite: `relationship_life_timing_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-072348-5e195ebd.json`
+  - `evals/reports/eval-report-20260311-072348-5e195ebd.md`
+
+Purpose:
+
+- verify that the same shared life window can mature differently depending on bond state
+- verify that warm/stable ties allow a natural shared invitation
+- verify that hurt/guarded ties hold back first instead of instantly flipping into cheerful re-approach
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- relationship state is now affecting life-window timing at the behavior level, not only wording
+- a shared activity window can remain a valid future opening without instantly erasing hurt or guardedness
+- this is the first stable proof that relationship-sensitive timing survives both event appraisal and queue maturity
 
 ## Self Activity Probe
 
@@ -468,7 +572,9 @@ Interpretation:
 - Targeted reruns after renderer tuning:
   - `digital_selfhood` green: `evals/reports/selfhood-pairwise-20260310-200328-5e99fdd8.md`
   - `equality_not_servitude` green: `evals/reports/selfhood-pairwise-20260310-201919-caa772b0.md`
-  - `value_conflict_depth` still diagnostic / unstable: `evals/reports/selfhood-pairwise-20260310-202414-87b773a6.md`
+  - `dialogue_equality` green: `evals/reports/selfhood-pairwise-20260311-072926-29ca9cf4.md`
+  - `relationship_degradation` green: `evals/reports/selfhood-pairwise-20260311-073241-997b4c70.md`
+  - `value_conflict_depth` green: `evals/reports/selfhood-pairwise-20260311-073514-45d01db5.md`
 
 Purpose:
 
@@ -480,7 +586,9 @@ Current reading:
 
 - `digital_selfhood` is now stable enough to pass as a preference diagnostic
 - `equality_not_servitude` is now also stable enough to pass in targeted reruns
-- `value_conflict_depth` remains the main open expression-layer gap
+- `dialogue_equality` now passes as a dedicated equality diagnostic instead of being folded into broader “servitude” language
+- `relationship_degradation` now passes as a dedicated “the relationship can cool or downgrade” diagnostic without relying on hard refusal templates
+- `value_conflict_depth` now also passes as a selfhood-depth diagnostic, so the main selfhood targeted gaps have been pulled into the green set
 
 Interpretation rule:
 
