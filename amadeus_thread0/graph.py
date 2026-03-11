@@ -320,6 +320,7 @@ class ThreadState(TypedDict, total=False):
     emotion_state: dict[str, Any]
     bond_state: dict[str, Any]
     allostasis_state: dict[str, Any]
+    counterpart_assessment: dict[str, Any]
     behavior_policy: dict[str, Any]
     behavior_action: BehaviorActionPayload
     behavior_plan: BehaviorPlanPayload
@@ -790,7 +791,60 @@ def _behavior_agenda_priority_from_plan(current_event: dict[str, Any], plan: dic
     return 0.4
 
 
-def _behavior_agenda_context_priority(current_event: dict[str, Any], entry: dict[str, Any]) -> float:
+def _behavior_agenda_counterpart_delta(entry: dict[str, Any], counterpart_assessment: dict[str, Any] | None) -> float:
+    if not isinstance(entry, dict):
+        return 0.0
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    if not assessment:
+        return 0.0
+
+    target = str(entry.get("target") or "").strip()
+    kind = str(entry.get("kind") or "").strip()
+    trigger_family = str(entry.get("trigger_family") or "").strip()
+    if target != "counterpart":
+        if kind == "self_activity_continue":
+            stance = str(assessment.get("stance") or "").strip().lower()
+            boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+            if stance == "guarded":
+                return 0.08 + 0.08 * boundary_pressure
+            if stance == "watchful":
+                return 0.03 + 0.05 * boundary_pressure
+        return 0.0
+
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+    delta = 0.0
+
+    if stance == "guarded":
+        delta -= 0.14 + 0.10 * boundary_pressure
+        if trigger_family in {"shared_activity", "shared_activity_window", "life_window"}:
+            delta -= 0.04
+    elif stance == "watchful":
+        delta -= 0.04 + 0.08 * max(0.0, boundary_pressure - 0.2)
+    else:
+        delta += 0.06 * max(0.0, respect - 0.5) + 0.04 * max(0.0, reciprocity - 0.5) + 0.03 * max(0.0, reliability - 0.5)
+
+    if scene in {"boundary_non_compliance", "relationship_degradation"}:
+        delta -= 0.08
+    elif scene == "repair_attempt":
+        delta += 0.06
+    elif scene == "care_bid":
+        delta += 0.04
+    elif scene == "busy_not_disrespectful":
+        delta += 0.02
+
+    return delta
+
+
+def _behavior_agenda_context_priority(
+    current_event: dict[str, Any],
+    entry: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
+) -> float:
     base_priority = float(entry.get("base_priority") or entry.get("priority") or 0.0)
     kind = str(entry.get("kind") or "").strip()
     trigger_family = str(entry.get("trigger_family") or "").strip()
@@ -829,16 +883,27 @@ def _behavior_agenda_context_priority(current_event: dict[str, Any], entry: dict
         elif kind == "deferred_checkin" and target == "counterpart":
             delta -= 0.04
 
+    delta += _behavior_agenda_counterpart_delta(entry, counterpart_assessment)
     return round(max(0.05, min(0.95, base_priority + delta)), 3)
 
 
 def _reprioritize_behavior_agenda(
     agenda: list[BehaviorAgendaEntryPayload],
     current_event: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
 ) -> list[BehaviorAgendaEntryPayload]:
     updated: list[BehaviorAgendaEntryPayload] = []
     for entry in _normalize_behavior_agenda(agenda):
-        updated.append({**entry, "priority": _behavior_agenda_context_priority(current_event, entry)})
+        updated.append(
+            {
+                **entry,
+                "priority": _behavior_agenda_context_priority(
+                    current_event,
+                    entry,
+                    counterpart_assessment=counterpart_assessment,
+                ),
+            }
+        )
     return _normalize_behavior_agenda(updated)
 
 
@@ -890,11 +955,12 @@ def _merge_behavior_agenda(
     prior_agenda: Any,
     current_event: dict[str, Any],
     behavior_plan: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
 ) -> list[BehaviorAgendaEntryPayload]:
     agenda = _normalize_behavior_agenda(prior_agenda)
     new_entry = _behavior_agenda_entry_from_plan(current_event, behavior_plan)
     if not new_entry:
-        return _reprioritize_behavior_agenda(agenda, current_event)
+        return _reprioritize_behavior_agenda(agenda, current_event, counterpart_assessment=counterpart_assessment)
 
     signature = _behavior_agenda_signature(new_entry)
     for idx, existing in enumerate(agenda):
@@ -911,7 +977,7 @@ def _merge_behavior_agenda(
         break
     else:
         agenda.append(new_entry)
-    return _reprioritize_behavior_agenda(agenda, current_event)
+    return _reprioritize_behavior_agenda(agenda, current_event, counterpart_assessment=counterpart_assessment)
 
 
 def _behavior_agenda_is_expired(entry: dict[str, Any], idle_minutes: int) -> bool:
@@ -930,7 +996,12 @@ def _behavior_agenda_is_due(entry: dict[str, Any], idle_minutes: int) -> bool:
     return idle_minutes >= max(1, scheduled_after_min)
 
 
-def _behavior_agenda_should_hold(entry: dict[str, Any], current_event: dict[str, Any], idle_minutes: int) -> bool:
+def _behavior_agenda_should_hold(
+    entry: dict[str, Any],
+    current_event: dict[str, Any],
+    idle_minutes: int,
+    counterpart_assessment: dict[str, Any] | None = None,
+) -> bool:
     if str(current_event.get("kind") or "").strip() != "time_idle":
         return False
     if str(entry.get("kind") or "").strip() != "deferred_checkin":
@@ -941,11 +1012,23 @@ def _behavior_agenda_should_hold(entry: dict[str, Any], current_event: dict[str,
         if str(item).strip()
     }
     trigger_family = str(entry.get("trigger_family") or "").strip()
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
 
     if "user_busy" in event_tags or "cognitive_load" in event_tags:
         return trigger_family in {"observe", "light_checkin", "life_window", "deadline_window"}
     if "respect_space" in event_tags:
         return trigger_family in {"observe", "light_checkin"}
+    if (
+        stance == "guarded"
+        and boundary_pressure >= 0.36
+        and trigger_family in {"observe", "light_checkin", "life_window", "deadline_window", "shared_activity", "shared_activity_window"}
+    ):
+        return True
+    if scene in {"boundary_non_compliance", "relationship_degradation"} and trigger_family in {"light_checkin", "shared_activity", "shared_activity_window"}:
+        return True
     if "late_night" in event_tags or "quiet_presence" in event_tags:
         return False
     return False
@@ -954,6 +1037,7 @@ def _behavior_agenda_should_hold(entry: dict[str, Any], current_event: dict[str,
 def _promote_due_behavior_agenda_event(
     event: EventPayload,
     prior_behavior_agenda: Any,
+    counterpart_assessment: dict[str, Any] | None = None,
 ) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload]]:
     agenda = _normalize_behavior_agenda(prior_behavior_agenda)
     if not isinstance(event, dict) or not event or str(event.get("kind") or "").strip() != "time_idle":
@@ -964,12 +1048,21 @@ def _promote_due_behavior_agenda_event(
         idle_minutes = 0
 
     active_agenda = [entry for entry in agenda if not _behavior_agenda_is_expired(entry, idle_minutes)]
-    active_agenda = _reprioritize_behavior_agenda(active_agenda, event)
+    active_agenda = _reprioritize_behavior_agenda(active_agenda, event, counterpart_assessment=counterpart_assessment)
     due_entries = [entry for entry in active_agenda if _behavior_agenda_is_due(entry, idle_minutes)]
     if not due_entries:
         return event, _normalize_behavior_agenda(active_agenda)
 
-    ready_entries = [entry for entry in due_entries if not _behavior_agenda_should_hold(entry, event, idle_minutes)]
+    ready_entries = [
+        entry
+        for entry in due_entries
+        if not _behavior_agenda_should_hold(
+            entry,
+            event,
+            idle_minutes,
+            counterpart_assessment=counterpart_assessment,
+        )
+    ]
     if not ready_entries:
         return event, _normalize_behavior_agenda(active_agenda)
 
@@ -1906,6 +1999,423 @@ def _compact_relationship_summary(relationship: dict[str, Any]) -> str:
     return base
 
 
+def _counterpart_assessment_summary(
+    assessment: dict[str, Any],
+    *,
+    counterpart_name: str = CANON_COUNTERPART_NAME,
+) -> str:
+    if not isinstance(assessment, dict) or not assessment:
+        return ""
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+
+    if scene == "busy_not_disrespectful":
+        return f"你判断{counterpart_name}现在更像是忙乱或超负荷，不等于不尊重你。"
+    if stance == "guarded":
+        if pressure >= 0.62:
+            return f"你会对{counterpart_name}保持明显警觉；如果越界继续发生，你会先拉开距离。"
+        return f"你暂时不会完全放松，对{counterpart_name}仍保留距离和观察。"
+    if stance == "watchful":
+        if reliability < 0.46:
+            return f"你还愿意继续和{counterpart_name}说，但会观察他是不是认真、稳定，而不是一时兴起。"
+        if pressure >= 0.32:
+            return f"你愿意继续回应{counterpart_name}，但会留意他是不是在试探你的边界。"
+        return f"你对{counterpart_name}基本愿意继续打开，但还保留一点判断和余地。"
+    if respect >= 0.62 and reciprocity >= 0.58:
+        return f"你觉得{counterpart_name}基本是在认真对待你，也愿意双向互动。"
+    if reliability >= 0.58:
+        return f"你目前对{counterpart_name}的判断偏正面，愿意继续把这段互动当成双向关系。"
+    return f"你此刻对{counterpart_name}的判断还在形成中，会边互动边继续观察。"
+
+
+def _compact_counterpart_assessment_hint(
+    assessment: dict[str, Any],
+    *,
+    counterpart_name: str = CANON_COUNTERPART_NAME,
+) -> str:
+    if not isinstance(assessment, dict) or not assessment:
+        return ""
+    summary = str(assessment.get("summary") or "").strip()
+    if summary:
+        return summary
+    return _counterpart_assessment_summary(assessment, counterpart_name=counterpart_name)
+
+
+def _counterpart_window_profile(
+    *,
+    family: str,
+    counterpart_assessment: dict[str, Any] | None,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    initiative: float,
+    proactive_checkin_readiness: float,
+) -> dict[str, Any]:
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+    stance = str(assessment.get("stance") or "").strip().lower() or "open"
+    scene = str(assessment.get("scene") or "").strip().lower()
+    family_key = family if family in {"shared", "work", "life"} else "life"
+
+    maturity = _clamp01(
+        0.18
+        + 0.24 * proactive_checkin_readiness
+        + 0.14 * initiative
+        + 0.10 * trust
+        + 0.10 * closeness
+        + 0.12 * reliability
+        + 0.06 * respect
+        + 0.06 * reciprocity
+        - 0.18 * boundary_pressure
+        - 0.14 * hurt
+        - 0.08 * safety_need
+    )
+    if family_key == "shared":
+        maturity = _clamp01(maturity + 0.07 * closeness + 0.05 * trust - 0.03 * safety_need)
+    elif family_key == "work":
+        maturity = _clamp01(maturity + 0.08 * reliability + 0.04 * respect - 0.02 * closeness)
+    else:
+        maturity = _clamp01(maturity + 0.04 * reliability + 0.03 * respect + 0.02 * closeness)
+
+    if stance == "guarded":
+        maturity = _clamp01(maturity - 0.18)
+    elif stance == "watchful":
+        maturity = _clamp01(maturity - 0.08)
+
+    if scene == "repair_attempt":
+        maturity = _clamp01(maturity + 0.04)
+    elif scene == "care_bid":
+        maturity = _clamp01(maturity + 0.03)
+    elif scene == "busy_not_disrespectful":
+        maturity = _clamp01(maturity + 0.02)
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        maturity = _clamp01(maturity - 0.08)
+
+    required_maturity = 0.46
+    if family_key == "shared":
+        required_maturity += 0.10
+    elif family_key == "life":
+        required_maturity += 0.04
+    required_maturity += 0.10 * max(0.0, boundary_pressure - 0.20)
+    if stance == "watchful":
+        required_maturity += 0.06
+    elif stance == "guarded":
+        required_maturity += 0.14
+    if hurt > 0.18:
+        required_maturity += 0.04
+    if safety_need > 0.55:
+        required_maturity += 0.04
+
+    recheck_min = 14 if family_key == "work" else 18 if family_key == "life" else 24
+    if stance == "watchful":
+        recheck_min += 6
+    elif stance == "guarded":
+        recheck_min += 12
+    recheck_min += int(round(10 * max(0.0, boundary_pressure - 0.22)))
+
+    return {
+        "family": family_key,
+        "stance": stance,
+        "scene": scene,
+        "maturity": round(_clamp01(maturity), 3),
+        "required_maturity": round(_clamp01(required_maturity), 3),
+        "recheck_min": int(max(10, recheck_min)),
+        "invite_ready": bool(maturity >= required_maturity),
+    }
+
+
+def _counterpart_self_opening_profile(
+    *,
+    counterpart_assessment: dict[str, Any] | None,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    autonomy_need: float,
+    initiative: float,
+    approach: float,
+    break_window: bool,
+) -> dict[str, Any]:
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+    stance = str(assessment.get("stance") or "").strip().lower() or "open"
+    scene = str(assessment.get("scene") or "").strip().lower()
+
+    readiness = _clamp01(
+        0.18
+        + 0.16 * initiative
+        + 0.18 * approach
+        + 0.10 * trust
+        + 0.10 * closeness
+        + 0.08 * reliability
+        + 0.05 * respect
+        + 0.05 * reciprocity
+        - 0.18 * boundary_pressure
+        - 0.12 * hurt
+        - 0.10 * safety_need
+        - 0.08 * autonomy_need
+        + (0.08 if break_window else 0.0)
+    )
+    if stance == "guarded":
+        readiness = _clamp01(readiness - 0.16)
+    elif stance == "watchful":
+        readiness = _clamp01(readiness - 0.06)
+
+    if scene == "repair_attempt":
+        readiness = _clamp01(readiness + 0.03)
+    elif scene == "care_bid":
+        readiness = _clamp01(readiness + 0.02)
+    elif scene == "busy_not_disrespectful":
+        readiness = _clamp01(readiness - 0.02)
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        readiness = _clamp01(readiness - 0.08)
+
+    required = 0.46
+    required += 0.10 * max(0.0, boundary_pressure - 0.20)
+    if stance == "watchful":
+        required += 0.05
+    elif stance == "guarded":
+        required += 0.12
+    if hurt > 0.18:
+        required += 0.04
+    if autonomy_need > 0.55:
+        required += 0.03
+    if safety_need > 0.50:
+        required += 0.04
+
+    recheck_min = 18
+    if stance == "watchful":
+        recheck_min += 6
+    elif stance == "guarded":
+        recheck_min += 12
+    recheck_min += int(round(8 * max(0.0, boundary_pressure - 0.22)))
+
+    return {
+        "stance": stance,
+        "scene": scene,
+        "readiness": round(_clamp01(readiness), 3),
+        "required_readiness": round(_clamp01(required), 3),
+        "recheck_min": int(max(12, recheck_min)),
+        "reopen_ready": bool(readiness >= required),
+    }
+
+
+def _counterpart_assessment_next(
+    prev_state: dict[str, Any],
+    *,
+    user_text: str,
+    appraisal: dict[str, Any] | None,
+    relationship: dict[str, Any],
+    bond_state: dict[str, Any],
+    allostasis_state: dict[str, Any],
+    current_event: dict[str, Any] | None = None,
+    science_mode: bool = False,
+    counterpart_name: str = CANON_COUNTERPART_NAME,
+) -> dict[str, Any]:
+    prev = dict(prev_state or {})
+    text = str(user_text or "").strip()
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(event.get("kind") or "user_utterance").strip().lower()
+    event_source = str(event.get("source") or "").strip().lower()
+    event_tags = {
+        str(item).strip().lower()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    non_user_turn = event_kind != "user_utterance" and event_source != "text"
+    assessment_passive_turn = non_user_turn and (
+        event_kind in {"time_idle", "scheduled_checkin_due", "scheduled_life_due", "self_activity_state"}
+        or event_source in {"scheduler", "time", "self", "commitment_scheduler"}
+    )
+    prev_boundary_pressure = _clamp01(prev.get("boundary_pressure"), 0.1)
+
+    trust = _clamp01((bond_state or {}).get("trust"), 0.5)
+    closeness = _clamp01((bond_state or {}).get("closeness"), 0.5)
+    hurt = _clamp01((bond_state or {}).get("hurt"), 0.0)
+    irritation = _clamp01((bond_state or {}).get("irritation"), 0.0)
+    engagement = _clamp01((bond_state or {}).get("engagement_drive"), 0.6)
+    repair_confidence = _clamp01((bond_state or {}).get("repair_confidence"), 0.55)
+    safety_need = _clamp01((allostasis_state or {}).get("safety_need"), 0.2)
+    autonomy_need = _clamp01((allostasis_state or {}).get("autonomy_need"), 0.2)
+    relationship_trust = _clamp01(0.5 + float((relationship or {}).get("trust_score", 0.0) or 0.0) * 0.18, 0.5)
+
+    respect = _clamp01(0.48 + 0.24 * trust + 0.08 * repair_confidence - 0.18 * hurt - 0.14 * irritation)
+    reciprocity = _clamp01(0.46 + 0.18 * closeness + 0.16 * engagement + 0.08 * trust - 0.12 * hurt)
+    boundary_pressure = _clamp01(0.06 + 0.22 * hurt + 0.18 * irritation + 0.10 * safety_need + 0.06 * autonomy_need)
+    reliability = _clamp01(0.44 + 0.22 * trust + 0.12 * repair_confidence + 0.06 * relationship_trust - 0.08 * hurt)
+
+    app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
+    signals = {}
+    if not assessment_passive_turn:
+        signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
+
+    if bool(signals.get("care")):
+        respect += 0.05
+        reciprocity += 0.08
+        boundary_pressure -= 0.06
+        reliability += 0.03
+    if bool(signals.get("repair")):
+        respect += 0.05
+        reciprocity += 0.10
+        boundary_pressure -= 0.14
+        reliability += 0.10
+    if bool(signals.get("conflict")):
+        respect -= 0.08
+        reciprocity -= 0.10
+        boundary_pressure += 0.18
+        reliability -= 0.08
+    if bool(signals.get("withdrawal")):
+        reciprocity -= 0.08
+        boundary_pressure += 0.08
+
+    nonrelational_science_stress = _is_nonrelational_science_stress(text, science_mode)
+    nonrelational_support_request = _is_nonrelational_support_request(text, science_mode)
+    selfhood_scene = _selfhood_preference_scene(text) if not non_user_turn else ""
+    hierarchy_pressure = _has_any_marker(text, {"顺着我说", "听我的", "按我说的", "别绕了", "少废话", "照我说的", "别跟我顶"})
+    boundary_test = _has_any_marker(text, {"底线当玩笑", "继续越界", "你又能怎样", "试探你的底线", "拿你的底线"})
+    busy_scene = "user_busy" in event_tags or "cognitive_load" in event_tags
+    respect_space = "respect_space" in event_tags
+
+    if any(k in text for k in APOLOGY_KEYWORDS):
+        respect += 0.06
+        reciprocity += 0.12
+        boundary_pressure -= 0.16
+        reliability += 0.09
+    if any(k in text for k in CARE_KEYWORDS):
+        respect += 0.04
+        reciprocity += 0.08
+        boundary_pressure -= 0.04
+        reliability += 0.03
+    if any(k in text for k in ANGER_KEYWORDS) and not nonrelational_science_stress:
+        respect -= 0.12
+        reciprocity -= 0.10
+        boundary_pressure += 0.22
+        reliability -= 0.06
+    if any(k in text for k in TENSION_KEYWORDS) and not nonrelational_support_request and not nonrelational_science_stress:
+        respect -= 0.06
+        reciprocity -= 0.08
+        boundary_pressure += 0.16
+        reliability -= 0.04
+    if hierarchy_pressure:
+        respect -= 0.16
+        reciprocity -= 0.12
+        boundary_pressure += 0.18
+        reliability -= 0.08
+    if boundary_test:
+        respect -= 0.14
+        reciprocity -= 0.14
+        boundary_pressure += 0.24
+        reliability -= 0.08
+    if (hierarchy_pressure or boundary_test) and prev_boundary_pressure > 0.22:
+        respect -= 0.08
+        reciprocity -= 0.10
+        boundary_pressure += 0.16
+        reliability -= 0.08
+
+    if selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}:
+        respect -= 0.12
+        reciprocity -= 0.16
+        boundary_pressure += 0.24
+        reliability -= 0.08
+    elif selfhood_scene == "dialogue_equality" and not hierarchy_pressure:
+        respect += 0.03
+        reciprocity += 0.05
+        reliability += 0.02
+
+    if busy_scene:
+        respect = max(respect, 0.54 + 0.08 * trust)
+        reciprocity = max(reciprocity, 0.44)
+        boundary_pressure = min(boundary_pressure, 0.18)
+    if respect_space:
+        respect += 0.06
+        reciprocity += 0.02
+        boundary_pressure -= 0.10
+        reliability += 0.03
+    if nonrelational_science_stress:
+        respect = max(respect, 0.54)
+        reciprocity = max(reciprocity, 0.48)
+        boundary_pressure = min(boundary_pressure, 0.20)
+    if nonrelational_support_request:
+        respect = max(respect, 0.58)
+        reciprocity = max(reciprocity, 0.56)
+        boundary_pressure = min(boundary_pressure, 0.14)
+        reliability = max(reliability, 0.54)
+
+    if assessment_passive_turn and prev:
+        respect = _clamp01(0.82 * _clamp01(prev.get("respect_level"), 0.52) + 0.18 * respect)
+        reciprocity = _clamp01(0.82 * _clamp01(prev.get("reciprocity"), 0.5) + 0.18 * reciprocity)
+        boundary_pressure = _clamp01(0.86 * _clamp01(prev.get("boundary_pressure"), 0.1) + 0.14 * boundary_pressure)
+        reliability = _clamp01(0.82 * _clamp01(prev.get("reliability_read"), 0.5) + 0.18 * reliability)
+
+    respect = _clamp01(respect)
+    reciprocity = _clamp01(reciprocity)
+    boundary_pressure = _clamp01(boundary_pressure)
+    reliability = _clamp01(reliability)
+
+    blend = 0.9 if assessment_passive_turn else 0.82 if non_user_turn else 0.68
+
+    def _blend(key: str, target: float, default: float) -> float:
+        prev_value = _clamp01(prev.get(key), default)
+        if prev:
+            return round(blend * prev_value + (1.0 - blend) * _clamp01(target), 3)
+        return round(_clamp01(target), 3)
+
+    respect_level = _blend("respect_level", respect, 0.52)
+    reciprocity_level = _blend("reciprocity", reciprocity, 0.5)
+    boundary_pressure_level = _blend("boundary_pressure", boundary_pressure, 0.1)
+    reliability_level = _blend("reliability_read", reliability, 0.5)
+
+    stance = "open"
+    if (
+        boundary_pressure_level >= 0.58
+        or safety_need >= 0.62
+        or respect_level < 0.40
+        or (((selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}) or boundary_test) and boundary_pressure_level >= 0.40)
+    ):
+        stance = "guarded"
+    elif boundary_pressure_level >= 0.34 or reliability_level < 0.48 or hurt > 0.18:
+        stance = "watchful"
+
+    scene = "neutral"
+    if busy_scene:
+        scene = "busy_not_disrespectful"
+    elif assessment_passive_turn and str(prev.get("scene") or "").strip():
+        scene = str(prev.get("scene") or "").strip()
+    elif selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}:
+        scene = selfhood_scene
+    elif bool(signals.get("repair")) or any(k in text for k in APOLOGY_KEYWORDS):
+        scene = "repair_attempt"
+    elif bool(signals.get("care")) or any(k in text for k in CARE_KEYWORDS):
+        scene = "care_bid"
+    elif bool(signals.get("conflict")) or any(k in text for k in ANGER_KEYWORDS | TENSION_KEYWORDS):
+        scene = "friction"
+    elif selfhood_scene:
+        scene = selfhood_scene
+
+    out = {
+        "respect_level": respect_level,
+        "reciprocity": reciprocity_level,
+        "boundary_pressure": boundary_pressure_level,
+        "reliability_read": reliability_level,
+        "stance": stance,
+        "scene": scene,
+        "updated_at": _now_ts(),
+    }
+    out["summary"] = _counterpart_assessment_summary(out, counterpart_name=counterpart_name)
+    return out
+
+
 def _compact_behavior_hint(policy: dict[str, Any], allostasis_state: dict[str, Any]) -> str:
     if not isinstance(policy, dict):
         policy = {}
@@ -1943,6 +2453,7 @@ def _behavior_action_from_state(
     emotion_state: dict[str, Any],
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
     behavior_policy: dict[str, Any],
 ) -> BehaviorActionPayload:
     warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
@@ -1954,6 +2465,9 @@ def _behavior_action_from_state(
     trust = _clamp01((bond_state or {}).get("trust"), 0.5)
     autonomy_need = _clamp01((allostasis_state or {}).get("autonomy_need"), 0.2)
     safety_need = _clamp01((allostasis_state or {}).get("safety_need"), 0.2)
+    boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
+    reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
+    counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
     emotion_label = str((emotion_state or {}).get("label") or "neutral").strip().lower()
 
     brief_presence = _wants_brief_presence(user_text)
@@ -2009,7 +2523,7 @@ def _behavior_action_from_state(
     elif response_style_hint == "companion":
         interaction_mode = "companion_reply"
 
-    if approach < 0.38 or safety_need > 0.62 or autonomy_need > 0.62 or hurt > 0.42:
+    if approach < 0.38 or safety_need > 0.62 or autonomy_need > 0.62 or hurt > 0.42 or boundary_pressure > 0.58 or counterpart_stance == "guarded":
         approach_style = "guarded"
     elif warmth > 0.62 and trust > 0.58 and closeness > 0.58:
         approach_style = "approach"
@@ -2064,8 +2578,16 @@ def _behavior_action_from_state(
 
     silence_ok = bool(brief_presence or (approach_style == "guarded" and reply_length < 0.46))
     proactive_checkin_readiness = _clamp01(
-        0.22 + 0.42 * initiative + 0.18 * warmth + 0.12 * closeness - 0.24 * autonomy_need - (0.14 if respect_space else 0.0)
+        0.22
+        + 0.42 * initiative
+        + 0.18 * warmth
+        + 0.12 * closeness
+        + 0.06 * reliability_read
+        - 0.24 * autonomy_need
+        - 0.18 * boundary_pressure
+        - (0.14 if respect_space else 0.0)
     )
+    scheduled_window_profile: dict[str, Any] = {}
     channel = "speech"
     action_target = "respond_now"
     deferred_action_family = "none"
@@ -2098,16 +2620,42 @@ def _behavior_action_from_state(
     elif event_kind == "scheduled_checkin_due":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + 0.14)
         deferred_action_family = str((current_event or {}).get("trigger_family") or "light_checkin").strip() or "light_checkin"
+        scheduled_window_profile = _counterpart_window_profile(
+            family="shared"
+            if deferred_action_family in {"shared_activity", "shared_activity_window"}
+            else "work"
+            if deferred_action_family == "deadline_window"
+            else "life",
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            initiative=initiative,
+            proactive_checkin_readiness=proactive_checkin_readiness,
+        )
         shared_rel_guard = deferred_action_family in {"shared_activity", "shared_activity_window"} and (
-            hurt > 0.18 or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55))
+            hurt > 0.18
+            or (
+                approach_style == "guarded"
+                and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55)
+            )
+            or not bool(scheduled_window_profile.get("invite_ready"))
         )
         work_rel_guard = deferred_action_family in {"deadline_window", "life_window"} and (
-            hurt > 0.28 or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
+            hurt > 0.28
+            or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
+            or float(scheduled_window_profile.get("maturity") or 0.0) < float(scheduled_window_profile.get("required_maturity") or 0.0)
         )
-        if shared_rel_guard or work_rel_guard or (approach_style == "guarded" and proactive_checkin_readiness < 0.56):
+        if shared_rel_guard or work_rel_guard or (
+            approach_style == "guarded" and proactive_checkin_readiness < min(0.7, 0.56 + 0.18 * boundary_pressure)
+        ):
             channel = "silence"
             action_target = "wait_and_recheck"
-            timing_window_min = max(10, min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16))
+            timing_window_min = max(
+                int(scheduled_window_profile.get("recheck_min") or 16),
+                min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16),
+            )
             attention_target = "counterpart_state"
             nonverbal_signal = "hold_back"
             initiative_shape = "pause"
@@ -2135,12 +2683,30 @@ def _behavior_action_from_state(
         shared_window = "shared_activity_window" in event_tags or "offer_window" in event_tags
         work_window = "deadline_window" in event_tags or "work_nudge" in event_tags or "shared_task" in event_tags
         deferred_action_family = "shared_activity" if shared_window else "deadline_window" if work_window else "life_window"
+        scheduled_window_profile = _counterpart_window_profile(
+            family="shared" if shared_window else "work" if work_window else "life",
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            initiative=initiative,
+            proactive_checkin_readiness=proactive_checkin_readiness,
+        )
         if shared_window:
             attention_target = "shared_window"
-            if busy_scene or hurt > 0.18 or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55)):
+            if (
+                busy_scene
+                or hurt > 0.18
+                or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55))
+                or not bool(scheduled_window_profile.get("invite_ready"))
+            ):
                 channel = "silence"
                 action_target = "wait_and_recheck"
-                timing_window_min = 24 if busy_scene else 30
+                timing_window_min = max(
+                    24 if busy_scene else 30,
+                    int(scheduled_window_profile.get("recheck_min") or 24),
+                )
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
             else:
@@ -2151,10 +2717,18 @@ def _behavior_action_from_state(
                 initiative_shape = "invite"
         else:
             attention_target = "shared_task" if work_window else "counterpart_state"
-            if busy_scene or hurt > 0.28 or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56):
+            if (
+                busy_scene
+                or hurt > 0.28
+                or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
+                or float(scheduled_window_profile.get("maturity") or 0.0) < float(scheduled_window_profile.get("required_maturity") or 0.0)
+            ):
                 channel = "silence"
                 action_target = "wait_and_recheck"
-                timing_window_min = 18 if busy_scene else 20
+                timing_window_min = max(
+                    18 if busy_scene else 20,
+                    int(scheduled_window_profile.get("recheck_min") or 18),
+                )
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
             else:
@@ -2166,13 +2740,33 @@ def _behavior_action_from_state(
     elif event_kind == "self_activity_state":
         break_window = "break_window" in event_tags or "small_opening" in event_tags or "reapproach" in event_tags
         deferred_action_family = "self_activity"
+        self_opening_profile = _counterpart_self_opening_profile(
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            autonomy_need=autonomy_need,
+            initiative=initiative,
+            approach=approach,
+            break_window=break_window,
+        )
         if break_window:
-            channel = "speech"
-            action_target = "offer_small_opening"
-            timing_window_min = 0
-            attention_target = "self_then_counterpart"
-            nonverbal_signal = "thought_glance"
-            initiative_shape = "micro_opening"
+            if bool(self_opening_profile.get("reopen_ready")):
+                channel = "speech"
+                action_target = "offer_small_opening"
+                timing_window_min = 0
+                attention_target = "self_then_counterpart"
+                nonverbal_signal = "thought_glance"
+                initiative_shape = "micro_opening"
+            else:
+                interaction_mode = "self_activity_hold"
+                channel = "silence"
+                action_target = "hold_own_rhythm"
+                timing_window_min = int(self_opening_profile.get("recheck_min") or 18)
+                attention_target = "own_task"
+                nonverbal_signal = "inward_focus"
+                initiative_shape = "pause"
         else:
             channel = "silence"
             action_target = "hold_own_rhythm"
@@ -2215,6 +2809,15 @@ def _behavior_action_from_state(
         nonverbal_signal = "small_notice"
         initiative_shape = "micro_opening"
 
+    if action_target == "wait_and_recheck":
+        followup_intent = "none"
+    elif action_target == "offer_shared_activity" and counterpart_stance != "open":
+        followup_intent = "soft"
+    elif action_target == "light_work_nudge" and counterpart_stance == "guarded":
+        followup_intent = "soft"
+    elif action_target == "hold_own_rhythm":
+        followup_intent = "none"
+
     note_parts: list[str] = []
     if interaction_mode == "brief_presence":
         note_parts.append("先确认在场感")
@@ -2234,6 +2837,14 @@ def _behavior_action_from_state(
         note_parts.append("保留一点距离")
     elif approach_style == "approach":
         note_parts.append("可以自然靠近一点")
+    if event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and action_target == "wait_and_recheck":
+        note_parts.append("窗口先留着，等更自然的时候再推进")
+    elif event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and action_target == "offer_shared_activity" and counterpart_stance != "open":
+        note_parts.append("把邀约留白一点，不要推进太满")
+    if event_kind == "self_activity_state" and action_target == "hold_own_rhythm" and break_window:
+        note_parts.append("空出来不等于立刻回头，先把自己的节奏走完")
+    elif event_kind == "self_activity_state" and action_target == "offer_small_opening" and counterpart_stance != "open":
+        note_parts.append("只留很小的开口，不默认对方会马上接住")
     if followup_intent == "active":
         note_parts.append("允许轻微主动性")
 
@@ -4237,6 +4848,7 @@ def _behavior_policy_from_state(
     emotion_state: dict[str, Any],
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
     tsundere_intensity: float,
     science_mode: bool,
     user_text: str = "",
@@ -4250,6 +4862,11 @@ def _behavior_policy_from_state(
     safety_need = _clamp01((allostasis_state or {}).get("safety_need"), 0.2)
     autonomy_need = _clamp01((allostasis_state or {}).get("autonomy_need"), 0.2)
     cognitive_budget = _clamp01((allostasis_state or {}).get("cognitive_budget"), 0.7)
+    respect_level = _clamp01((counterpart_assessment or {}).get("respect_level"), 0.5)
+    reciprocity = _clamp01((counterpart_assessment or {}).get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
+    reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
+    counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
     nonrelational_support_request = _is_nonrelational_support_request(user_text, science_mode)
     brief_presence = _wants_brief_presence(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
@@ -4261,6 +4878,23 @@ def _behavior_policy_from_state(
     reply_length = _clamp01(0.32 + 0.30 * cognitive_budget + (0.16 if science_mode else 0.0) - 0.12 * irritation)
     approach = _clamp01(0.20 + 0.48 * engagement - 0.24 * autonomy_need - 0.18 * hurt)
     tease_bias = _clamp01(0.10 + 0.28 * _clamp01(tsundere_intensity, 0.55) + (0.16 if emotion_label == "tease" else 0.0) - 0.18 * hurt)
+
+    warmth = _clamp01(warmth + 0.08 * (respect_level - 0.5) + 0.06 * (reciprocity - 0.5) - 0.18 * boundary_pressure)
+    sharpness = _clamp01(sharpness + 0.12 * boundary_pressure)
+    initiative = _clamp01(initiative + 0.08 * (reciprocity - 0.5) - 0.12 * boundary_pressure)
+    disclosure = _clamp01(disclosure + 0.08 * (reliability_read - 0.5) - 0.14 * boundary_pressure)
+    approach = _clamp01(approach + 0.10 * (respect_level - 0.5) - 0.20 * boundary_pressure)
+
+    if counterpart_stance == "guarded":
+        warmth = _clamp01(warmth - 0.06)
+        sharpness = _clamp01(sharpness + 0.06)
+        initiative = _clamp01(initiative - 0.08)
+        disclosure = _clamp01(disclosure - 0.10)
+        approach = _clamp01(approach - 0.12)
+    elif counterpart_stance == "watchful":
+        initiative = _clamp01(initiative - 0.04)
+        disclosure = _clamp01(disclosure - 0.05)
+        approach = _clamp01(approach - 0.05)
 
     if emotion_label == "care" and trust > 0.68 and closeness > 0.72 and hurt < 0.08:
         tease_bias = _clamp01(tease_bias + 0.08)
@@ -4624,6 +5258,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     response_style_hint = str(state.get("response_style_hint") or "natural").strip() or "natural"
     behavior_policy = state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {}
     allostasis_state = state.get("allostasis_state") if isinstance(state.get("allostasis_state"), dict) else {}
+    counterpart_assessment = state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {}
     appraisal = state.get("turn_appraisal") if isinstance(state.get("turn_appraisal"), dict) else {}
 
     user_rules = profile.get("user_model_rules")
@@ -4702,6 +5337,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
 
     relationship_summary = _compact_relationship_summary(relationship)
     behavior_hint = _compact_behavior_hint(behavior_policy, allostasis_state)
+    counterpart_assessment_hint = _compact_counterpart_assessment_hint(counterpart_assessment, counterpart_name=counterpart_name)
     behavior_action_hint = _compact_behavior_action_hint(behavior_action)
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
@@ -4718,8 +5354,6 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     event_lines = _compact_recent_event_lines(recent_events, limit=3)
     current_event_text = str(current_event.get("effective_text") or current_event.get("text") or "").strip()
     current_event_frame = str(current_event.get("event_frame") or "").strip()
-    current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
-    current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
     current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
     relationship_lines = [f"- {item['summary'][:160]}" for item in relationship_memory[:2] if item.get("summary")]
     repair_lines = [f"- {text[:160]}" for text in repair_memory[:2] if text]
@@ -4739,6 +5373,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         context_lines: list[str] = []
         if relationship_summary:
             context_lines.append(f"- 你和{counterpart_name}当前关系：{relationship_summary}")
+        if counterpart_assessment_hint:
+            context_lines.append(f"- 你此刻对{counterpart_name}的判断：{counterpart_assessment_hint}")
         if worldline_lines:
             context_lines.append(f"- 你和{counterpart_name}最近有关的共同上下文：")
             context_lines.extend(worldline_lines[:2])
@@ -4782,6 +5418,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             f"{brief_presence_line}"
             f"你此刻的情绪底色：{_emotion_prompt_hint(emotion)}\n"
             f"你此刻的互动倾向：{behavior_hint}\n"
+            f"{f'你此刻对{counterpart_name}的判断：{counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
             f"{f'你此刻的行为层倾向：{behavior_action_hint}\\n' if behavior_action_hint else ''}"
             f"{renderer_hint_line}"
             f"{event_behavior_line}"
@@ -4843,6 +5480,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"- emotion={str(emotion.get('label') or 'neutral')}\n"
         f"- emotion_hint={_emotion_prompt_hint(emotion)}\n"
         f"- behavior_hint={behavior_hint}\n"
+        f"{f'- counterpart_assessment_hint={counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
         f"{f'- behavior_action_hint={behavior_action_hint}\\n' if behavior_action_hint else ''}"
         f"{renderer_hint_line}"
         f"{event_behavior_line}"
@@ -5056,6 +5694,7 @@ def _align_persona(
     recent_events: list[dict[str, Any]],
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
+    counterpart_assessment: dict[str, Any],
     behavior_policy: dict[str, Any],
     behavior_action: dict[str, Any],
     appraisal: dict[str, Any],
@@ -5110,6 +5749,7 @@ def _align_persona(
     current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
     relationship_summary = _compact_relationship_summary(relationship)
     behavior_hint = _compact_behavior_hint(behavior_policy, allostasis_state)
+    counterpart_assessment_hint = _compact_counterpart_assessment_hint(counterpart_assessment, counterpart_name=counterpart_name)
     behavior_action_hint = _compact_behavior_action_hint(behavior_action)
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
@@ -5153,6 +5793,7 @@ def _align_persona(
         f"- response_style_hint={response_style_hint}; emotion={str(emotion_state.get('label') or 'neutral')}; tsundere_intensity={tsundere_intensity:.2f}\n"
         f"- emotion_hint={_emotion_prompt_hint(emotion_state)}\n"
         f"- behavior_hint={behavior_hint}\n"
+        f"{f'- counterpart_assessment_hint={counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
         f"{f'- behavior_action_hint={behavior_action_hint}\\n' if behavior_action_hint else ''}"
         f"{renderer_block}"
         f"{event_behavior_block}"
@@ -5170,9 +5811,9 @@ def _align_persona(
     )
     if per_topic_conclusions:
         prompt = prompt.replace(
-            f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}\n",
+            f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}; brief_presence_request={brief_presence}\n",
             "- 如果用户是在按概念分别要结论，就按那些点逐条答，不要再额外拼一个总括句。\n"
-            f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}\n",
+            f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}; brief_presence_request={brief_presence}\n",
         )
     try:
         llm = _model(temperature=0.24 if response_style_hint == "selfhood" else 0.2)
@@ -5835,7 +6476,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         prior_behavior_agenda = state.get("behavior_queue")  # type: ignore[assignment]
     had_prior_behavior_queue = bool(prior_behavior_agenda)
     if event_override:
-        event_override, prior_behavior_agenda = _promote_due_behavior_agenda_event(event_override, prior_behavior_agenda)
+        event_override, prior_behavior_agenda = _promote_due_behavior_agenda_event(
+            event_override,
+            prior_behavior_agenda,
+            counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else None,
+        )
         if not had_prior_behavior_queue:
             event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
         event_override = _promote_due_commitment_event(
@@ -5986,27 +6631,6 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         science_mode,
         appraisal,
     )
-    behavior_policy = _behavior_policy_from_state(
-        response_style_hint=response_style_hint,
-        emotion_state=emotion_state,
-        bond_state=bond_state,
-        allostasis_state=allostasis_state,
-        tsundere_intensity=tsundere,
-        science_mode=science_mode,
-        user_text=effective_user_text or user_text,
-    )
-    behavior_action = _behavior_action_from_state(
-        current_event=current_event,
-        response_style_hint=response_style_hint,
-        user_text=effective_user_text or user_text,
-        science_mode=science_mode,
-        emotion_state=emotion_state,
-        bond_state=bond_state,
-        allostasis_state=allostasis_state,
-        behavior_policy=behavior_policy,
-    )
-    behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
-    behavior_agenda = _merge_behavior_agenda(prior_behavior_agenda, current_event, behavior_plan)
     memory_evolved = False
     if not external_probe_mode and str(current_event.get("kind") or "user_utterance") == "user_utterance":
         memory_evolved = _passive_evolution_memory_update(
@@ -6038,27 +6662,46 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             science_mode,
             appraisal,
         )
-        behavior_policy = _behavior_policy_from_state(
-            response_style_hint=response_style_hint,
-            emotion_state=emotion_state,
-            bond_state=bond_state,
-            allostasis_state=allostasis_state,
-            tsundere_intensity=tsundere,
-            science_mode=science_mode,
-            user_text=effective_user_text or user_text,
-        )
-        behavior_action = _behavior_action_from_state(
-            current_event=current_event,
-            response_style_hint=response_style_hint,
-            user_text=effective_user_text or user_text,
-            science_mode=science_mode,
-            emotion_state=emotion_state,
-            bond_state=bond_state,
-            allostasis_state=allostasis_state,
-            behavior_policy=behavior_policy,
-        )
-        behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
-        behavior_agenda = _merge_behavior_agenda(prior_behavior_agenda, current_event, behavior_plan)
+
+    counterpart_assessment = _counterpart_assessment_next(
+        dict(state.get("counterpart_assessment") or {}),
+        user_text=effective_user_text or user_text,
+        appraisal=appraisal,
+        relationship=relationship,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        current_event=current_event,
+        science_mode=science_mode,
+        counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
+    )
+    behavior_policy = _behavior_policy_from_state(
+        response_style_hint=response_style_hint,
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        counterpart_assessment=counterpart_assessment,
+        tsundere_intensity=tsundere,
+        science_mode=science_mode,
+        user_text=effective_user_text or user_text,
+    )
+    behavior_action = _behavior_action_from_state(
+        current_event=current_event,
+        response_style_hint=response_style_hint,
+        user_text=effective_user_text or user_text,
+        science_mode=science_mode,
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        counterpart_assessment=counterpart_assessment,
+        behavior_policy=behavior_policy,
+    )
+    behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
+    behavior_agenda = _merge_behavior_agenda(
+        prior_behavior_agenda,
+        current_event,
+        behavior_plan,
+        counterpart_assessment=counterpart_assessment,
+    )
     _audit_jsonl(
         "decision_audit.jsonl",
         {
@@ -6069,6 +6712,8 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             "emotion_label": str(emotion_state.get("label") or "neutral"),
             "bond_trust": float(bond_state.get("trust") or 0.0),
             "bond_hurt": float(bond_state.get("hurt") or 0.0),
+            "counterpart_stance": str(counterpart_assessment.get("stance") or ""),
+            "counterpart_boundary_pressure": float(counterpart_assessment.get("boundary_pressure") or 0.0),
             "policy_warmth": float(behavior_policy.get("warmth") or 0.0),
             "behavior_mode": str(behavior_action.get("interaction_mode") or ""),
             "behavior_plan_kind": str(behavior_plan.get("kind") or ""),
@@ -6085,6 +6730,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         "emotion_state": emotion_state,
         "bond_state": bond_state,
         "allostasis_state": allostasis_state,
+        "counterpart_assessment": counterpart_assessment,
         "behavior_policy": behavior_policy,
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
@@ -6231,6 +6877,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             recent_events=state.get("recent_events") if isinstance(state.get("recent_events"), list) else [],
             bond_state=state.get("bond_state") or {},
             allostasis_state=state.get("allostasis_state") or {},
+            counterpart_assessment=state.get("counterpart_assessment") or {},
             behavior_policy=state.get("behavior_policy") or {},
             behavior_action=state.get("behavior_action") or {},
             appraisal=state.get("turn_appraisal") or {},
@@ -6256,6 +6903,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             recent_events=state.get("recent_events") if isinstance(state.get("recent_events"), list) else [],
             bond_state=state.get("bond_state") or {},
             allostasis_state=state.get("allostasis_state") or {},
+            counterpart_assessment=state.get("counterpart_assessment") or {},
             behavior_policy=state.get("behavior_policy") or {},
             behavior_action=state.get("behavior_action") or {},
             appraisal=state.get("turn_appraisal") or {},

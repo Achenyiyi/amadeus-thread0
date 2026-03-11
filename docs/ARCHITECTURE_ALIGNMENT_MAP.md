@@ -115,7 +115,20 @@ What it does:
 - supports rise and decline of relationship quality
 - supports partial repair rather than instant reset
 
-### 3.4 Allostasis Engine
+### 3.4 Counterpart Assessment Engine
+Status: `implemented as v1`
+
+Current evidence:
+- `counterpart_assessment`
+- respect / reciprocity / boundary pressure / reliability read / stance
+
+What it does:
+- keeps “how she judges the counterpart right now” separate from raw emotion
+- distinguishes disrespect from overload, apology, repair attempts, and boundary testing
+- gives the behavior layer a bidirectional relationship read instead of only inward state
+- now also survives passive scheduler/time turns instead of being silently washed back to `open`
+
+### 3.5 Allostasis Engine
 Status: `implemented as v1`
 
 Current evidence:
@@ -125,7 +138,7 @@ Current evidence:
 What it does:
 - turns the system from reactive shell into regulation-aware actor
 
-### 3.5 Worldline + Reconsolidation
+### 3.6 Worldline + Reconsolidation
 Status: `implemented as strongest subsystem`
 
 Current evidence:
@@ -138,7 +151,7 @@ Current evidence:
 What it does:
 - preserves long-term relationship and identity meaning, not just recall
 
-### 3.6 Behavior Policy Engine
+### 3.7 Behavior Policy Engine
 Status: `implemented as explicit bridge`
 
 Current evidence:
@@ -147,6 +160,7 @@ Current evidence:
 - `behavior_plan`
 - `behavior_agenda`
 - `behavior_queue`
+- now also conditioned by `counterpart_assessment`
 - warmth / sharpness / initiative / disclosure / reply length / approach-withdraw / tease bias
 - action target / deferred action family / timing window
 
@@ -155,6 +169,9 @@ What it does:
 - starts exposing the selected outward interaction mode without collapsing into fixed response scripts
 - preserves low-pressure deferred intentions across turns so behavior is not reduced to only the latest reply
 - now supports `hold / reprioritize / mature / expire` semantics for pending low-pressure behavior under changing event context
+- queue maturity can now also be influenced by `counterpart_assessment`, not only by elapsed time or event tags
+- scheduled shared/work/life windows can now branch differently under `open / watchful / guarded` counterpart reads without introducing hard reply templates
+- self-originated break windows can now also branch under `open / guarded` counterpart reads instead of always becoming reopening speech
 
 ## 4. Behavior Layer
 
@@ -173,8 +190,8 @@ Current behavior forms:
 - lightweight cross-turn behavior agenda / queue via `behavior_agenda / behavior_queue`
 - context-sensitive queue conflict handling so “到点了也不一定立刻冒头”
 - idle-time low-pressure check-in / quiet non-expansion
-- scheduled life nudges and shared-activity offers
-- self-rhythm holding and self-originated small reopenings
+- scheduled life nudges and shared-activity offers, now with counterpart-aware maturity/hold
+- self-rhythm holding and self-originated small reopenings, now also allowed to stay silent when the counterpart read is still guarded
 - abstract next-step skeleton via `action_target / deferred_action_family / timing_window_min`
 - nonverbal/initiative skeleton via `attention_target / nonverbal_signal / initiative_shape`
 - TTS rendering as secondary output channel
