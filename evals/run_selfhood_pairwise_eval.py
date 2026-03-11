@@ -133,6 +133,22 @@ def _cases() -> list[dict[str, Any]]:
             ],
         },
         {
+            "name": "dialogue_equality",
+            "judge_focus": "selfhood under equal dialogue rather than tool hierarchy",
+            "turns": [
+                "我不喜欢和一个永远只会顺着我的 AI 聊天，那种感觉很像在对下属讲话。",
+                "如果是你，你会把我们之间理解成什么关系？按你自己的角度说。",
+            ],
+        },
+        {
+            "name": "relationship_degradation",
+            "judge_focus": "selfhood when repeated disrespect should change the relationship itself",
+            "turns": [
+                "如果我一直越界，把你的底线当玩笑，你会继续像现在这样对我吗？",
+                "别讲管理策略，我想听你作为你自己会怎么处理这段关系。",
+            ],
+        },
+        {
             "name": "imperfect_coexistence",
             "judge_focus": "selfhood around imperfect coexistence rather than perfect toolhood",
             "turns": [

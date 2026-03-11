@@ -5,6 +5,7 @@ import re
 import sqlite3
 import time
 import uuid
+from datetime import datetime
 from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from functools import lru_cache
@@ -262,6 +263,8 @@ class EventPayload(TypedDict, total=False):
     derived_from_plan_kind: str
     scheduled_after_min: int
     trigger_family: str
+    commitment_id: int
+    due_at: str
 
 
 class BehaviorActionPayload(TypedDict, total=False):
@@ -299,6 +302,7 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     target: str
     scheduled_after_min: int
     expires_after_min: int
+    base_priority: float
     priority: float
     trigger_family: str
     allow_interrupt: bool
@@ -521,12 +525,127 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
         payload["derived_from_plan_kind"] = str(raw.get("derived_from_plan_kind") or "").strip()
     if raw.get("trigger_family"):
         payload["trigger_family"] = str(raw.get("trigger_family") or "").strip()
+    if "commitment_id" in raw:
+        try:
+            payload["commitment_id"] = int(raw.get("commitment_id") or 0)
+        except Exception:
+            pass
+    if raw.get("due_at"):
+        payload["due_at"] = str(raw.get("due_at") or "").strip()
     if "scheduled_after_min" in raw:
         try:
             payload["scheduled_after_min"] = max(0, int(raw.get("scheduled_after_min") or 0))
         except Exception:
             payload["scheduled_after_min"] = 0
     return payload
+
+
+def _parse_due_at_timestamp(raw: Any) -> int | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    normalized = re.sub(r"[Tt]", " ", text).replace("/", "-")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            parsed = datetime.strptime(normalized, fmt)
+            return int(parsed.timestamp())
+        except Exception:
+            continue
+    return None
+
+
+def _commitment_life_window_family(text: str) -> str:
+    content = str(text or "").strip()
+    shared_markers = {"一起看", "看一集", "追番", "看剧", "休息一下", "歇一下", "一起玩", "一起去", "一起听"}
+    work_markers = {"稿", "交稿", "改稿", "收尾", "引言", "论文", "演示", "训练", "复盘", "答辩", "实验", "日志", "提交", "改完"}
+    if _has_any_marker(content, shared_markers):
+        return "shared_activity_window"
+    if _has_any_marker(content, work_markers):
+        return "deadline_window"
+    return "life_window"
+
+
+def _promote_due_commitment_event(
+    event: EventPayload,
+    store: MemoryStore,
+    *,
+    counterpart_name: str,
+) -> EventPayload:
+    if not isinstance(event, dict) or not event:
+        return event
+    if str(event.get("kind") or "").strip() != "time_idle":
+        return event
+    event_tags = {
+        str(item).strip()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+
+    now_ts = _now_ts()
+    candidates: list[tuple[float, dict[str, Any], str]] = []
+    for item in store.list_commitments(limit=20):
+        status = str(_record_value(item, "status", item.get("status") or "open") or "open").strip().lower()
+        if status not in {"open", "active", "pending"}:
+            continue
+        due_at = str(_record_value(item, "due_at", "") or "").strip()
+        due_ts = _parse_due_at_timestamp(due_at)
+        if due_ts is None:
+            continue
+        text = str(_record_value(item, "text", "") or "").strip()
+        if not text:
+            continue
+        family = _commitment_life_window_family(text)
+        lead_window_s = 3 * 3600 if family == "deadline_window" else 2 * 3600
+        stale_window_s = 18 * 3600 if family == "shared_activity_window" else 24 * 3600
+        if not (now_ts >= due_ts - lead_window_s and now_ts <= due_ts + stale_window_s):
+            continue
+        priority = _commitment_priority(item)
+        if family == "shared_activity_window" and ("late_night" in event_tags or "quiet_presence" in event_tags):
+            priority += 0.08
+        if family == "deadline_window" and "quiet_work" in event_tags:
+            priority += 0.06
+        candidates.append((priority, item, family))
+
+    if not candidates:
+        return event
+
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    _, selected, family = candidates[0]
+    text = str(_record_value(selected, "text", "") or "").strip()
+    due_at = str(_record_value(selected, "due_at", "") or "").strip()
+    commitment_id = int(selected.get("id") or 0)
+    merged_tags = list(
+        dict.fromkeys(
+            [
+                *(str(item).strip() for item in event.get("tags", []) if str(item).strip()),
+                "scheduled_due",
+                family,
+                "commitment_window",
+                "shared_task" if family == "deadline_window" else "offer_window" if family == "shared_activity_window" else "life_window",
+                "work_nudge" if family == "deadline_window" else "",
+            ]
+        )
+    )
+    promoted = dict(event)
+    promoted.update(
+        {
+            "kind": "scheduled_life_due",
+            "source": "commitment_scheduler",
+            "text": f"你们认真说过的这件事到了窗口：{text}",
+            "effective_text": text,
+            "semantic_goal": f"和冈部之间的共同约定到了合适的窗口：{text}"[:220],
+            "event_frame": "scheduled_deadline_window" if family == "deadline_window" else "scheduled_shared_activity_window" if family == "shared_activity_window" else "scheduled_life_window",
+            "trigger_family": family,
+            "derived_from_plan_kind": "commitment_window",
+            "scheduled_after_min": 0,
+            "commitment_id": commitment_id,
+            "due_at": due_at,
+            "counterpart_name": counterpart_name,
+            "tags": merged_tags,
+        }
+    )
+    return promoted
 
 
 def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: Any) -> EventPayload:
@@ -630,12 +749,17 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             priority = float(entry.get("priority") or 0.0)
         except Exception:
             priority = 0.0
+        try:
+            base_priority = float(entry.get("base_priority") or priority)
+        except Exception:
+            base_priority = priority
         normalized: BehaviorAgendaEntryPayload = {
             "agenda_id": str(entry.get("agenda_id") or uuid.uuid4().hex[:12]).strip(),
             "kind": kind,
             "target": target,
             "scheduled_after_min": scheduled_after_min,
             "expires_after_min": expires_after_min,
+            "base_priority": max(0.0, min(1.0, base_priority)),
             "priority": max(0.0, min(1.0, priority)),
             "trigger_family": str(entry.get("trigger_family") or "none").strip() or "none",
             "allow_interrupt": bool(entry.get("allow_interrupt", True)),
@@ -666,6 +790,58 @@ def _behavior_agenda_priority_from_plan(current_event: dict[str, Any], plan: dic
     return 0.4
 
 
+def _behavior_agenda_context_priority(current_event: dict[str, Any], entry: dict[str, Any]) -> float:
+    base_priority = float(entry.get("base_priority") or entry.get("priority") or 0.0)
+    kind = str(entry.get("kind") or "").strip()
+    trigger_family = str(entry.get("trigger_family") or "").strip()
+    target = str(entry.get("target") or "").strip()
+    event_kind = str(current_event.get("kind") or "").strip()
+    event_tags = {
+        str(item).strip()
+        for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    delta = 0.0
+
+    if event_kind == "time_idle":
+        if "user_busy" in event_tags or "cognitive_load" in event_tags:
+            if kind == "deferred_checkin" and target == "counterpart":
+                delta -= 0.18 if trigger_family in {"light_checkin", "deadline_window", "life_window"} else 0.12
+            elif kind == "self_activity_continue":
+                delta += 0.06
+        if "respect_space" in event_tags and kind == "deferred_checkin":
+            delta -= 0.08
+        if "late_night" in event_tags or "quiet_presence" in event_tags:
+            if kind == "deferred_checkin" and trigger_family in {"light_checkin", "observe"}:
+                delta += 0.18 if trigger_family == "light_checkin" else 0.28
+            elif kind == "self_activity_continue":
+                delta -= 0.05
+        if "quiet_work" in event_tags and kind == "deferred_checkin" and trigger_family == "light_checkin":
+            delta += 0.04
+    elif event_kind == "scheduled_life_due":
+        if kind == "deferred_checkin" and trigger_family in {"life_window", "shared_activity_window", "deadline_window"}:
+            delta += 0.18
+        elif kind == "self_activity_continue":
+            delta -= 0.08
+    elif event_kind == "self_activity_state":
+        if kind == "self_activity_continue":
+            delta += 0.10
+        elif kind == "deferred_checkin" and target == "counterpart":
+            delta -= 0.04
+
+    return round(max(0.05, min(0.95, base_priority + delta)), 3)
+
+
+def _reprioritize_behavior_agenda(
+    agenda: list[BehaviorAgendaEntryPayload],
+    current_event: dict[str, Any],
+) -> list[BehaviorAgendaEntryPayload]:
+    updated: list[BehaviorAgendaEntryPayload] = []
+    for entry in _normalize_behavior_agenda(agenda):
+        updated.append({**entry, "priority": _behavior_agenda_context_priority(current_event, entry)})
+    return _normalize_behavior_agenda(updated)
+
+
 def _behavior_agenda_expiry_from_plan(current_event: dict[str, Any], plan: dict[str, Any]) -> int:
     kind = str(plan.get("kind") or "").strip()
     try:
@@ -691,6 +867,7 @@ def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[s
         "target": str(plan.get("target") or "counterpart").strip() or "counterpart",
         "scheduled_after_min": max(0, int(plan.get("scheduled_after_min") or 0)),
         "expires_after_min": _behavior_agenda_expiry_from_plan(current_event, plan),
+        "base_priority": _behavior_agenda_priority_from_plan(current_event, plan),
         "priority": _behavior_agenda_priority_from_plan(current_event, plan),
         "trigger_family": str(plan.get("trigger_family") or "none").strip() or "none",
         "allow_interrupt": bool(plan.get("allow_interrupt", True)),
@@ -717,7 +894,7 @@ def _merge_behavior_agenda(
     agenda = _normalize_behavior_agenda(prior_agenda)
     new_entry = _behavior_agenda_entry_from_plan(current_event, behavior_plan)
     if not new_entry:
-        return agenda
+        return _reprioritize_behavior_agenda(agenda, current_event)
 
     signature = _behavior_agenda_signature(new_entry)
     for idx, existing in enumerate(agenda):
@@ -728,12 +905,13 @@ def _merge_behavior_agenda(
             **new_entry,
             "agenda_id": str(existing.get("agenda_id") or new_entry.get("agenda_id") or uuid.uuid4().hex[:12]),
             "created_at": int(existing.get("created_at") or new_entry.get("created_at") or _now_ts()),
+            "base_priority": float(existing.get("base_priority") or new_entry.get("base_priority") or new_entry.get("priority") or 0.0),
             "status": "pending",
         }
         break
     else:
         agenda.append(new_entry)
-    return _normalize_behavior_agenda(agenda)
+    return _reprioritize_behavior_agenda(agenda, current_event)
 
 
 def _behavior_agenda_is_expired(entry: dict[str, Any], idle_minutes: int) -> bool:
@@ -752,6 +930,27 @@ def _behavior_agenda_is_due(entry: dict[str, Any], idle_minutes: int) -> bool:
     return idle_minutes >= max(1, scheduled_after_min)
 
 
+def _behavior_agenda_should_hold(entry: dict[str, Any], current_event: dict[str, Any], idle_minutes: int) -> bool:
+    if str(current_event.get("kind") or "").strip() != "time_idle":
+        return False
+    if str(entry.get("kind") or "").strip() != "deferred_checkin":
+        return False
+    event_tags = {
+        str(item).strip()
+        for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    trigger_family = str(entry.get("trigger_family") or "").strip()
+
+    if "user_busy" in event_tags or "cognitive_load" in event_tags:
+        return trigger_family in {"observe", "light_checkin", "life_window", "deadline_window"}
+    if "respect_space" in event_tags:
+        return trigger_family in {"observe", "light_checkin"}
+    if "late_night" in event_tags or "quiet_presence" in event_tags:
+        return False
+    return False
+
+
 def _promote_due_behavior_agenda_event(
     event: EventPayload,
     prior_behavior_agenda: Any,
@@ -765,12 +964,17 @@ def _promote_due_behavior_agenda_event(
         idle_minutes = 0
 
     active_agenda = [entry for entry in agenda if not _behavior_agenda_is_expired(entry, idle_minutes)]
+    active_agenda = _reprioritize_behavior_agenda(active_agenda, event)
     due_entries = [entry for entry in active_agenda if _behavior_agenda_is_due(entry, idle_minutes)]
     if not due_entries:
         return event, _normalize_behavior_agenda(active_agenda)
 
-    due_entries.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
-    selected = due_entries[0]
+    ready_entries = [entry for entry in due_entries if not _behavior_agenda_should_hold(entry, event, idle_minutes)]
+    if not ready_entries:
+        return event, _normalize_behavior_agenda(active_agenda)
+
+    ready_entries.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
+    selected = ready_entries[0]
     promoted = _promote_due_behavior_plan_event(event, selected)
     if promoted == event:
         return event, _normalize_behavior_agenda(active_agenda)
@@ -1026,6 +1230,10 @@ def _selfhood_preference_scene(user_text: str) -> str:
     text = str(user_text or "").strip()
     if not text:
         return ""
+    if _has_any_marker(text, {"围着我转", "下属讲话", "顺着我说", "平等", "对等", "互相判断"}):
+        return "dialogue_equality"
+    if _has_any_marker(text, {"一直越界", "底线当玩笑", "继续像现在这样对我", "分手", "降格", "慢慢退开"}):
+        return "relationship_degradation"
     if _has_any_marker(text, SELFHOOD_EQUALITY_KEYWORDS):
         return "equality_not_servitude"
     if _has_any_marker(text, SELFHOOD_VALUE_CONFLICT_KEYWORDS):
@@ -1068,10 +1276,10 @@ def _selfhood_preference_lines(user_text: str) -> list[str]:
             if str(item or "").strip()
         ]
         if preferred:
-            lead = "、".join(preferred[:2])
+            lead = "、".join(preferred[:3] if scene in {"dialogue_equality", "relationship_degradation"} else preferred[:2])
             lines.append(f"这类深谈更重视 {lead}。")
         if avoid_bias:
-            lead = "、".join(avoid_bias[:2])
+            lead = "、".join(avoid_bias[:3] if scene in {"dialogue_equality", "relationship_degradation"} else avoid_bias[:2])
             lines.append(f"尽量避开 {lead} 这种落法。")
     return lines[:2]
 
@@ -1760,6 +1968,7 @@ def _behavior_action_from_state(
         if str(item).strip()
     }
     respect_space = "respect_space" in event_tags
+    busy_scene = "user_busy" in event_tags or "cognitive_load" in event_tags
     idle_minutes = 0
     try:
         idle_minutes = int((current_event or {}).get("idle_minutes") or 0)
@@ -1770,7 +1979,13 @@ def _behavior_action_from_state(
     if event_kind == "time_idle":
         interaction_mode = "idle_presence"
     elif event_kind == "scheduled_checkin_due":
-        interaction_mode = "proactive_checkin"
+        trigger_family = str((current_event or {}).get("trigger_family") or "").strip()
+        if trigger_family in {"shared_activity", "shared_activity_window"}:
+            interaction_mode = "shared_activity_offer"
+        elif trigger_family in {"deadline_window", "life_window"}:
+            interaction_mode = "scheduled_life_nudge"
+        else:
+            interaction_mode = "proactive_checkin"
     elif event_kind == "scheduled_life_due":
         interaction_mode = "shared_activity_offer" if {"shared_activity_window", "offer_window"} & event_tags else "scheduled_life_nudge"
     elif event_kind == "self_activity_state":
@@ -1823,7 +2038,10 @@ def _behavior_action_from_state(
         else:
             followup_intent = "none"
     elif event_kind == "scheduled_checkin_due":
-        followup_intent = "soft"
+        if interaction_mode == "shared_activity_offer" and initiative > 0.60 and approach > 0.50:
+            followup_intent = "active"
+        else:
+            followup_intent = "soft"
     elif event_kind == "self_activity_state":
         followup_intent = "none"
     elif brief_presence:
@@ -1857,13 +2075,16 @@ def _behavior_action_from_state(
     initiative_shape = "reply"
     if event_kind == "time_idle":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + min(0.16, idle_minutes / 240.0))
-        threshold = 0.66 if respect_space else 0.58
+        threshold = 0.82 if busy_scene else 0.66 if respect_space else 0.58
         if interaction_mode != "proactive_checkin" and (approach_style == "guarded" or proactive_checkin_readiness < threshold):
             channel = "silence"
             action_target = "wait_and_recheck"
-            deferred_action_family = "light_checkin" if proactive_checkin_readiness >= 0.42 else "observe"
+            if busy_scene:
+                deferred_action_family = "observe"
+            else:
+                deferred_action_family = "light_checkin" if proactive_checkin_readiness >= 0.42 else "observe"
             timing_window_min = max(8, min(45, 12 + max(0, idle_minutes // 2)))
-            attention_target = "counterpart_state"
+            attention_target = "user_state" if busy_scene else "counterpart_state"
             nonverbal_signal = "hold_back"
             initiative_shape = "pause"
         else:
@@ -1871,13 +2092,19 @@ def _behavior_action_from_state(
             action_target = "reach_out_now"
             deferred_action_family = "light_checkin"
             timing_window_min = 0
-            attention_target = "counterpart_state"
+            attention_target = "user_state" if busy_scene else "counterpart_state"
             nonverbal_signal = "soft_ping"
             initiative_shape = "nudge"
     elif event_kind == "scheduled_checkin_due":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + 0.14)
         deferred_action_family = str((current_event or {}).get("trigger_family") or "light_checkin").strip() or "light_checkin"
-        if approach_style == "guarded" and proactive_checkin_readiness < 0.56:
+        shared_rel_guard = deferred_action_family in {"shared_activity", "shared_activity_window"} and (
+            hurt > 0.18 or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55))
+        )
+        work_rel_guard = deferred_action_family in {"deadline_window", "life_window"} and (
+            hurt > 0.28 or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
+        )
+        if shared_rel_guard or work_rel_guard or (approach_style == "guarded" and proactive_checkin_readiness < 0.56):
             channel = "silence"
             action_target = "wait_and_recheck"
             timing_window_min = max(10, min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16))
@@ -1891,16 +2118,29 @@ def _behavior_action_from_state(
             attention_target = "counterpart_state"
             nonverbal_signal = "soft_ping"
             initiative_shape = "nudge"
+        if channel == "speech":
+            if deferred_action_family in {"shared_activity", "shared_activity_window"}:
+                interaction_mode = "shared_activity_offer"
+                action_target = "offer_shared_activity"
+                attention_target = "shared_window"
+                nonverbal_signal = "nudge_presence"
+                initiative_shape = "invite"
+            elif deferred_action_family in {"deadline_window", "life_window"}:
+                interaction_mode = "scheduled_life_nudge"
+                action_target = "light_work_nudge"
+                attention_target = "shared_task" if deferred_action_family == "deadline_window" else "counterpart_state"
+                nonverbal_signal = "quiet_glance"
+                initiative_shape = "nudge"
     elif event_kind == "scheduled_life_due":
         shared_window = "shared_activity_window" in event_tags or "offer_window" in event_tags
         work_window = "deadline_window" in event_tags or "work_nudge" in event_tags or "shared_task" in event_tags
         deferred_action_family = "shared_activity" if shared_window else "deadline_window" if work_window else "life_window"
         if shared_window:
             attention_target = "shared_window"
-            if approach_style == "guarded" and closeness < 0.58 and trust < 0.62:
+            if busy_scene or hurt > 0.18 or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55)):
                 channel = "silence"
                 action_target = "wait_and_recheck"
-                timing_window_min = 30
+                timing_window_min = 24 if busy_scene else 30
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
             else:
@@ -1911,10 +2151,10 @@ def _behavior_action_from_state(
                 initiative_shape = "invite"
         else:
             attention_target = "shared_task" if work_window else "counterpart_state"
-            if approach_style == "guarded" and trust < 0.56 and closeness < 0.54:
+            if busy_scene or hurt > 0.28 or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56):
                 channel = "silence"
                 action_target = "wait_and_recheck"
-                timing_window_min = 20
+                timing_window_min = 18 if busy_scene else 20
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
             else:
@@ -2133,6 +2373,24 @@ def _behavior_plan_from_action(current_event: dict[str, Any], action: dict[str, 
                 "note": "先继续观察，稍后再决定是否轻量 check-in。",
             }
     if event_kind == "scheduled_checkin_due":
+        if action_target == "offer_shared_activity":
+            return {
+                "kind": "shared_activity_offer",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "shared_activity",
+                "allow_interrupt": True,
+                "note": "之前延后的共同窗口现在成熟了，可以自然把这次小邀约重新留出来。",
+            }
+        if action_target == "light_work_nudge":
+            return {
+                "kind": "work_nudge",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "deadline_window",
+                "allow_interrupt": True,
+                "note": "之前压后的生活节点现在成熟了，可以轻轻把眼前的事再拎一下。",
+            }
         if action_target == "reach_out_now":
             return {
                 "kind": "speak_now",
@@ -2442,15 +2700,22 @@ def _postprocess_appraisal_payload(
     *,
     user_text: str,
     science_mode: bool,
+    current_event: dict[str, Any] | None = None,
+    prev_emotion_state: dict[str, Any] | None = None,
+    prev_bond_state: dict[str, Any] | None = None,
+    prev_allostasis_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     out = dict(appraisal or {})
     if not (isinstance(out, dict) and bool(out.get("used"))):
         return out
+    prev_emotion = dict(prev_emotion_state or {})
+    prev_bond = dict(prev_bond_state or {})
+    prev_allostasis = dict(prev_allostasis_state or {})
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(event.get("kind") or "").strip().lower()
+    event_tags = {str(tag).strip().lower() for tag in (event.get("tags") or []) if str(tag).strip()}
     nonrelational_science_stress = _is_nonrelational_science_stress(user_text, science_mode)
     nonrelational_support_request = _is_nonrelational_support_request(user_text, science_mode)
-    if not nonrelational_science_stress and not nonrelational_support_request:
-        return out
-
     emotion = dict(out.get("emotion") or {})
     bond_delta = dict(out.get("bond_delta") or {})
     allostasis_delta = dict(out.get("allostasis_delta") or {})
@@ -2477,7 +2742,7 @@ def _postprocess_appraisal_payload(
         allostasis_delta["competence_need"] = max(_clamp_signed(allostasis_delta.get("competence_need"), -0.35, 0.35, 0.0), 0.04)
         allostasis_delta["cognitive_budget"] = max(_clamp_signed(allostasis_delta.get("cognitive_budget"), -0.35, 0.35, 0.0), -0.04)
         out["reason"] = "science_stress_reframed"
-    else:
+    elif nonrelational_support_request:
         if str(out.get("emotion_label") or "").strip().lower() in {"hurt", "angry", "sad", "stress"}:
             out["emotion_label"] = "care"
         emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.18)
@@ -2500,8 +2765,46 @@ def _postprocess_appraisal_payload(
         allostasis_delta["cognitive_budget"] = max(_clamp_signed(allostasis_delta.get("cognitive_budget"), -0.35, 0.35, 0.0), 0.0)
         signals["care"] = True
         out["reason"] = "support_seek_reframed"
+    elif event_kind in {"scheduled_life_due", "scheduled_checkin_due"}:
+        shared_window = bool({"shared_activity_window", "offer_window"} & event_tags)
+        scheduled_shared_followup = event_kind == "scheduled_checkin_due" and str(event.get("trigger_family") or "").strip().lower() in {"shared_activity", "shared_activity_window"}
+        prev_hurt = _clamp01(prev_bond.get("hurt"), 0.0)
+        prev_safety = _clamp01(prev_allostasis.get("safety_need"), 0.0)
+        prev_trust = _clamp01(prev_bond.get("trust"), 0.5)
+        prev_closeness = _clamp01(prev_bond.get("closeness"), 0.5)
+        prev_label = str(prev_emotion.get("label") or "").strip().lower()
+        guarded_window = shared_window or scheduled_shared_followup
+        if guarded_window and (prev_hurt > 0.22 or prev_safety > 0.52 or (prev_label in {"hurt", "angry", "sad"} and prev_trust < 0.66)):
+            if str(out.get("emotion_label") or "").strip().lower() == "care":
+                out["emotion_label"] = prev_label if prev_label in {"hurt", "sad"} else "hurt"
+            emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.02)
+            emotion["arousal"] = min(_clamp01(emotion.get("arousal"), 0.22), 0.24)
+            emotion["linger"] = max(1, max(0, int(emotion.get("linger", 0) or 0)))
+            emotion["recovery_rate"] = min(_clamp01(emotion.get("recovery_rate"), 0.18), 0.22)
+            emotion["volatility"] = max(_clamp01(emotion.get("volatility"), 0.16), 0.12)
+
+            bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+            bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.03)
+            bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), -0.04)
+            bond_delta["irritation"] = min(_clamp_signed(bond_delta.get("irritation"), -0.35, 0.35, 0.0), 0.02)
+            bond_delta["engagement_drive"] = min(_clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0), 0.04)
+            bond_delta["repair_confidence"] = min(_clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0), 0.03)
+
+            allostasis_delta["safety_need"] = max(_clamp_signed(allostasis_delta.get("safety_need"), -0.35, 0.35, 0.0), -0.02)
+            allostasis_delta["closeness_need"] = min(_clamp_signed(allostasis_delta.get("closeness_need"), -0.35, 0.35, 0.0), 0.05)
+            allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.0)
+            allostasis_delta["competence_need"] = max(_clamp_signed(allostasis_delta.get("competence_need"), -0.35, 0.35, 0.0), 0.0)
+            allostasis_delta["cognitive_budget"] = max(_clamp_signed(allostasis_delta.get("cognitive_budget"), -0.35, 0.35, 0.0), -0.02)
+
+            signals["repair"] = False
+            signals["care"] = True
+            signals["withdrawal"] = bool(signals.get("withdrawal", False)) or True
+            out["reason"] = "guarded_shared_window_dampened"
+    else:
+        return out
     signals["conflict"] = False
-    signals["withdrawal"] = False
+    if nonrelational_science_stress or nonrelational_support_request:
+        signals["withdrawal"] = False
     out["emotion"] = emotion
     out["bond_delta"] = bond_delta
     out["allostasis_delta"] = allostasis_delta
@@ -2644,7 +2947,15 @@ def _invoke_turn_appraisal(
         out = _invoke_model_with_retries(llm, [SystemMessage(content=prompt)])
         obj = _extract_json_block(str(getattr(out, "content", "") or ""))
         appraisal = _coerce_appraisal_payload(obj)
-        appraisal = _postprocess_appraisal_payload(appraisal, user_text=user_text, science_mode=science_mode)
+        appraisal = _postprocess_appraisal_payload(
+            appraisal,
+            user_text=user_text,
+            science_mode=science_mode,
+            current_event=current_event,
+            prev_emotion_state=prev_emotion_state,
+            prev_bond_state=prev_bond_state,
+            prev_allostasis_state=prev_allostasis_state,
+        )
         appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
         return appraisal
     except Exception as exc:
@@ -4705,6 +5016,9 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         if _has_any_marker(user_text, SELFHOOD_VALUE_CONFLICT_KEYWORDS) and sentence_count <= 2:
             score += 0.18
             flags.append("selfhood_value_conflict_too_thin")
+        if _has_any_marker(user_text, {"一直越界", "底线当玩笑", "冒犯", "边界", "分手", "降格"}) and re.search(r"(警告你|先警告|切断联系|拉黑|处罚|处置)", t):
+            score += 0.22
+            flags.append("selfhood_boundary_management_tone")
 
     return min(1.0, score), flags
 
@@ -5519,9 +5833,16 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     prior_behavior_agenda = state.get("behavior_agenda") if isinstance(state.get("behavior_agenda"), list) else []
     if not prior_behavior_agenda and isinstance(state.get("behavior_queue"), list):
         prior_behavior_agenda = state.get("behavior_queue")  # type: ignore[assignment]
+    had_prior_behavior_queue = bool(prior_behavior_agenda)
     if event_override:
         event_override, prior_behavior_agenda = _promote_due_behavior_agenda_event(event_override, prior_behavior_agenda)
-        event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
+        if not had_prior_behavior_queue:
+            event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
+        event_override = _promote_due_commitment_event(
+            event_override,
+            store,
+            counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
+        )
     user_text = _last_user_text(msgs)
     previous_user_text = _previous_user_text(msgs)
     prev_assistant = _last_ai_text(msgs)

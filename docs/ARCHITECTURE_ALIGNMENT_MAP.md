@@ -1,6 +1,6 @@
 # Architecture Alignment Map
 
-Updated: 2026-03-10
+Updated: 2026-03-11
 
 This document maps the current codebase to the intended three-layer architecture:
 
@@ -154,6 +154,7 @@ What it does:
 - translates latent state into conversational tendency without rigid templates
 - starts exposing the selected outward interaction mode without collapsing into fixed response scripts
 - preserves low-pressure deferred intentions across turns so behavior is not reduced to only the latest reply
+- now supports `hold / reprioritize / mature / expire` semantics for pending low-pressure behavior under changing event context
 
 ## 4. Behavior Layer
 
@@ -170,6 +171,7 @@ Current behavior forms:
 - continuation behavior
 - explicit interaction mode summary via `behavior_action`
 - lightweight cross-turn behavior agenda / queue via `behavior_agenda / behavior_queue`
+- context-sensitive queue conflict handling so “到点了也不一定立刻冒头”
 - idle-time low-pressure check-in / quiet non-expansion
 - scheduled life nudges and shared-activity offers
 - self-rhythm holding and self-originated small reopenings

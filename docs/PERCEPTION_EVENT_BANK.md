@@ -143,27 +143,42 @@ The current runtime now has two layers of event-oriented validation:
 - verifies `scheduled_life_due -> scheduled_life_nudge / shared_activity_offer`
 - checks that life-window events become behavior-layer intentions instead of timer-style reminders
 
-4. `self_activity_probe`
+4. `commitment_life_probe`
+- verifies `commitment(due_at) -> scheduled_life_due -> behavior_layer`
+- checks that explicit worldline commitments can mature into quiet life windows during `time_idle`
+- keeps this path separate from fuzzy text parsing, so the runtime only promotes commitments with explicit structured due times
+
+5. `commitment_maturity_probe`
+- verifies `commitment(due_at) -> scheduled_life_due -> deferred queue -> scheduled_checkin_due`
+- checks that “too busy right now” does not erase the original meaning of the life window
+- verifies that a delayed shared activity still comes back as a shared activity, and a delayed work nudge still comes back as a work nudge
+
+6. `relationship_life_timing_probe`
+- verifies that the same shared life window behaves differently under warm vs guarded bond states
+- checks that relationship-sensitive timing is enforced at the behavior level, not only in final wording
+- verifies that shared invitations can be held back first when hurt/safety signals are still elevated
+
+7. `self_activity_probe`
 - verifies `self_activity_state -> hold_own_rhythm / offer_small_opening`
 - checks that “she has her own rhythm” is a valid behavior-layer outcome, not a regression
 
-5. `self_activity_maturity_probe`
+8. `self_activity_maturity_probe`
 - verifies `self_activity_continue -> self_activity_state`
 - checks that a self-held rhythm can mature into a small reopening without explicit new user input
 
-6. `behavior_agenda_probe`
+9. `behavior_agenda_probe`
 - verifies that pending low-pressure behavior survives across intervening turns
 - checks that `behavior_agenda` is now a first-class runtime object, not just an eval artifact
 
-7. `perception_probe`
+10. `perception_probe`
 - verifies that non-user events are ingested as first-class `current_event`s
 - verifies that visual/ambient cues can produce natural dialogue without system leakage
 
-8. `perception_appraisal_probe`
+11. `perception_appraisal_probe`
 - verifies that perceived events can also enter `turn_appraisal`
 - checks `event -> appraisal -> state/behavior` rather than only `event -> wording`
 
-9. `run_event_behavior_pairwise_eval.py`
+12. `run_event_behavior_pairwise_eval.py`
 - compares a true event-driven round against a textified substitute of the same cue
 - checks whether the event really changed behavior choice, not just final wording
 - current canonical green report:

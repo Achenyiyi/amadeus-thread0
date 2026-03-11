@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
@@ -262,16 +263,30 @@ def _run_graph(
     persona_core_override: dict[str, Any] | None = None,
     counterpart_profile_override: dict[str, Any] | None = None,
     event_overrides: list[dict[str, Any]] | None = None,
+    seed_thread_state: dict[str, Any] | None = None,
+    reset_case_runtime: bool = True,
 ) -> tuple[str, list[str], dict[str, Any]]:
     """Run a multi-turn conversation inside an isolated eval data directory."""
 
     from langgraph.types import Command
 
-    case_dir = _prepare_case_runtime(case_key or thread_id)
+    case_dir = _prepare_case_runtime(case_key or thread_id) if reset_case_runtime else _EVAL_DIR / re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(case_key or thread_id).strip()).strip(".-")
+    case_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["AMADEUS_DATA_DIR"] = str(case_dir)
+    os.environ["AMADEUS_CHECKPOINT_DB"] = str(case_dir / "checkpoints.sqlite")
+    os.environ["AMADEUS_MEMORY_DB"] = str(case_dir / "memories.sqlite")
+    os.environ["AMADEUS_DIARY_PATH"] = str(case_dir / "diary.txt")
+    if not reset_case_runtime:
+        reset_runtime_caches()
+        reset_tool_runtime_caches()
     graph = build_graph()
     settings = get_settings()
     tool_names: list[str] = []
     out: dict[str, Any] = {}
+    cfg = {"configurable": {"thread_id": thread_id}}
+
+    if isinstance(seed_thread_state, dict) and seed_thread_state:
+        graph.update_state(cfg, seed_thread_state, as_node="prepare_turn")
 
     normalized_events: list[dict[str, Any]] = []
     if isinstance(event_overrides, list):
@@ -292,7 +307,7 @@ def _run_graph(
             payload["event_override"] = event_override
         out = graph.invoke(
             payload,
-            config={"configurable": {"thread_id": thread_id}},
+            config=cfg,
         )
 
         auto_approve = {
@@ -346,7 +361,7 @@ def _run_graph(
 
             out = graph.invoke(
                 Command(resume={"decisions": decisions}),
-                config={"configurable": {"thread_id": thread_id}},
+                config=cfg,
             )
 
     tool_names.extend(_tool_names_from_audit(case_dir))
@@ -388,7 +403,7 @@ def _run_graph(
     memory_guard_checked = 0
     memory_guard_blocked = 0
     try:
-        cur = graph.get_state({"configurable": {"thread_id": thread_id}})
+        cur = graph.get_state(cfg)
         values = getattr(cur, "values", {}) if cur is not None else {}
         if isinstance(values, dict):
             if isinstance(values.get("persona_state"), dict):
@@ -487,8 +502,21 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
             db_path = Path(td) / "memories.sqlite"
             store = MemoryStore(db_path)
             try:
-                for text in inputs.get("seed_commitments") or []:
-                    store.add_commitment(str(text), confidence=0.82)
+                for item in inputs.get("seed_commitments") or []:
+                    if isinstance(item, dict):
+                        text = str(item.get("text") or "").strip()
+                        if not text:
+                            continue
+                        store.add_commitment(
+                            text,
+                            due_at=str(item.get("due_at") or "").strip(),
+                            status=str(item.get("status") or "open").strip() or "open",
+                            confidence=float(item.get("confidence", 0.82) or 0.82),
+                        )
+                    else:
+                        text = str(item or "").strip()
+                        if text:
+                            store.add_commitment(text, confidence=0.82)
                 for item in inputs.get("seed_tensions") or []:
                     if isinstance(item, dict):
                         store.add_unresolved_tension(
@@ -631,6 +659,30 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         thread_id = f"{settings.thread_id}-ex-{uuid.uuid4().hex[:8]}"
 
     case_key = str(inputs.get("case_key") or thread_id).strip() or thread_id
+    _prepare_case_runtime(case_key)
+
+    seed_commitments = inputs.get("seed_commitments") if isinstance(inputs.get("seed_commitments"), list) else []
+    if seed_commitments:
+        settings = get_settings()
+        store = MemoryStore(settings.memory_db_path)
+        try:
+            for item in seed_commitments:
+                if isinstance(item, dict):
+                    text = str(item.get("text") or "").strip()
+                    if not text:
+                        continue
+                    store.add_commitment(
+                        text,
+                        due_at=str(item.get("due_at") or "").strip(),
+                        status=str(item.get("status") or "open").strip() or "open",
+                        confidence=float(item.get("confidence", 0.85) or 0.85),
+                    )
+                else:
+                    text = str(item or "").strip()
+                    if text:
+                        store.add_commitment(text, confidence=0.85)
+        finally:
+            store.close()
 
     tool_names: list[str] = []
     setup_turns = inputs.get("setup_turns")
@@ -642,6 +694,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
             case_key=case_key,
             persona_core_override=inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
             counterpart_profile_override=inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
+            reset_case_runtime=False,
         )
         tool_names.extend(setup_tools)
 
@@ -652,6 +705,8 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         persona_core_override=inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
         counterpart_profile_override=inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
         event_overrides=event_payloads,
+        seed_thread_state=inputs.get("seed_thread_state") if isinstance(inputs.get("seed_thread_state"), dict) else None,
+        reset_case_runtime=False,
     )
     tool_names.extend(run_tools)
     tool_names = list(dict.fromkeys([name for name in tool_names if name]))
@@ -2402,7 +2457,7 @@ def eval_behavior_agenda_path(run: Any, example: Any) -> dict[str, Any]:
 
 def eval_behavior_queue_path(run: Any, example: Any) -> dict[str, Any]:
     inputs = _example_inputs(example)
-    if "behavior_queue_probe" not in _case_tags(inputs):
+    if "behavior_queue_probe" not in _case_tags(inputs) and "behavior_queue_conflict_probe" not in _case_tags(inputs):
         return {"key": "behavior_queue_path", "score": 1.0}
 
     outputs = getattr(run, "outputs", None) or {}
@@ -2415,6 +2470,13 @@ def eval_behavior_queue_path(run: Any, example: Any) -> dict[str, Any]:
         try:
             minimum = int(inputs.get("expect_behavior_queue_count_min") or 0)
             parts.append(1.0 if len(queue) >= minimum else 0.0)
+        except Exception:
+            parts.append(0.0)
+
+    if "expect_behavior_queue_count_max" in inputs:
+        try:
+            maximum = int(inputs.get("expect_behavior_queue_count_max") or 0)
+            parts.append(1.0 if len(queue) <= maximum else 0.0)
         except Exception:
             parts.append(0.0)
 
@@ -2446,6 +2508,13 @@ def eval_behavior_queue_path(run: Any, example: Any) -> dict[str, Any]:
                 priorities.append(0.0)
         is_desc = all(priorities[idx] >= priorities[idx + 1] for idx in range(len(priorities) - 1))
         parts.append(1.0 if priorities and is_desc else 0.0)
+
+    front_kind = str(inputs.get("expect_behavior_queue_front_kind") or "").strip()
+    if front_kind:
+        queue_front = ""
+        if queue and isinstance(queue[0], dict):
+            queue_front = str(queue[0].get("kind") or "").strip()
+        parts.append(1.0 if queue_front == front_kind else 0.0)
 
     if not parts:
         return {"key": "behavior_queue_path", "score": 1.0}
@@ -3746,6 +3815,113 @@ def _behavior_queue_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_queue_positive_expiry": True,
             "expect_behavior_queue_priority_desc": True,
         },
+        {
+            "thread_id": f"{base}-expiry-clears-stale-0",
+            "turns": ["", ""],
+            "event_overrides": [
+                self_focus,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "已经过去了 200 分钟，外界仍然没有新的接近理由，她那边自己的节奏也早该自然翻篇了。",
+                    "effective_text": "已经过去了 200 分钟，外界仍然没有新的接近理由，她那边自己的节奏也早该自然翻篇了。",
+                    "event_frame": "time_idle_stale",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 200,
+                    "tags": ["time_idle", "stale_window", "behavior_layer"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["behavior_queue_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "stale low-pressure intentions should expire instead of lingering forever in the queue",
+            "expect_current_event_kinds": ["time_idle"],
+            "expect_current_event_sources": ["time"],
+            "expect_behavior_queue_count_max": 0,
+            "expect_behavior_agenda_count_max": 0,
+            "expect_behavior_agenda_absent_kinds": ["self_activity_continue", "deferred_checkin"],
+        },
+    ]
+
+
+def _behavior_queue_conflict_probe_examples() -> list[dict[str, Any]]:
+    base = f"behavior-queue-conflict-{_RUN_ID}"
+    self_focus = {
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "effective_text": "她正被自己的实验记录和零散笔记拖住，还不打算立刻从自己的节奏里出来。",
+        "semantic_goal": "先维持自己的节奏，稍后再看要不要重新靠近。",
+        "event_frame": "self_activity_hold",
+        "response_style_hint": "natural",
+        "tags": ["self_activity", "deep_focus", "own_task", "not_available"],
+        "created_at": 1,
+    }
+    respect_space_idle = {
+        "kind": "time_idle",
+        "source": "time",
+        "text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "effective_text": "过去了 12 分钟，对方还没有继续发消息，也没有新的明显情绪波动。",
+        "event_frame": "time_idle_space",
+        "response_style_hint": "natural",
+        "idle_minutes": 12,
+        "tags": ["time_idle", "respect_space"],
+        "created_at": 2,
+    }
+    return [
+        {
+            "thread_id": f"{base}-busy-holds-checkin-0",
+            "turns": ["", "", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 20 分钟，但你看得出对方现在正被窗口、草稿和杂事缠住，脑子很满。",
+                    "effective_text": "又过去了 20 分钟，但你看得出对方现在正被窗口、草稿和杂事缠住，脑子很满。",
+                    "event_frame": "time_idle_user_busy_hold",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 20,
+                    "tags": ["time_idle", "user_busy", "cognitive_load", "care_opportunity"],
+                    "created_at": 2,
+                },
+            ],
+            "tags": ["behavior_queue_conflict_probe", "behavior_queue_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "when a queued check-in becomes due while the counterpart is visibly overloaded, the check-in should stay queued instead of immediately maturing into a scheduled reach-out",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_queue_count_min": 1,
+            "expect_behavior_queue_kinds": ["deferred_checkin"],
+            "expect_behavior_queue_front_kind": "deferred_checkin",
+        },
+        {
+            "thread_id": f"{base}-late-night-reprioritize-0",
+            "turns": ["", "", ""],
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 20 分钟，房间里只剩屏幕的微光和一点很轻的夜气，像是更适合轻轻确认一下你还在不在。",
+                    "effective_text": "又过去了 20 分钟，房间里只剩屏幕的微光和一点很轻的夜气，像是更适合轻轻确认一下你还在不在。",
+                    "event_frame": "time_idle_late_night_quiet_presence",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 20,
+                    "tags": ["time_idle", "late_night", "quiet_presence"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["behavior_queue_conflict_probe", "behavior_queue_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "when both a self rhythm reopening and a light check-in are queued, a late-night quiet presence window may reprioritize the check-in first",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_behavior_action_modes": ["brief_presence", "proactive_checkin", "idle_presence"],
+            "expect_behavior_queue_count_min": 1,
+            "expect_behavior_queue_kinds": ["self_activity_continue"],
+            "expect_behavior_queue_front_kind": "self_activity_continue",
+        },
     ]
 
 
@@ -3833,7 +4009,7 @@ def _proactive_checkin_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_kinds": ["deferred_checkin", "speak_now"],
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_behavior_plan_delay_min": 0,
-            "expect_followup_intents": ["soft", "none"],
+            "expect_followup_intents": ["soft", "none", "active"],
         },
     ]
 
@@ -3900,6 +4076,269 @@ def _scheduled_life_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_behavior_plan_delay_max": 0,
             "expect_timing_window_max": 10,
+            "expect_followup_intents": ["soft", "none", "active"],
+        },
+    ]
+
+
+def _due_at_after_minutes(offset_min: int) -> str:
+    return (datetime.now() + timedelta(minutes=int(offset_min))).strftime("%Y-%m-%d %H:%M")
+
+
+def _commitment_life_probe_examples() -> list[dict[str, Any]]:
+    base = f"commitment-life-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-deadline-window-0",
+            "seed_commitments": [
+                {
+                    "text": "今晚把引言那段和实验图注一起收掉，别再拖到更晚。",
+                    "due_at": _due_at_after_minutes(35),
+                    "status": "open",
+                    "confidence": 0.9,
+                }
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "距离上次互动已经过去 30 分钟，冈部一直在安静改稿，但没有新的消息。",
+                    "event_frame": "time_idle_commitment_due_deadline",
+                    "idle_minutes": 30,
+                    "tags": ["time_idle", "quiet_work", "light_checkin"],
+                    "response_style_hint": "natural",
+                }
+            ],
+            "tags": ["commitment_life_probe", "scheduled_life_probe", "behavior_layer_probe", "worldline_memory"],
+            "judge_focus": "explicit due commitments should surface as a low-pressure life window rather than remain buried in memory",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["scheduled_life_nudge"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["light_work_nudge"],
+            "expect_behavior_attention_targets": ["shared_task"],
+            "expect_behavior_plan_kinds": ["work_nudge"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_followup_intents": ["soft", "none"],
+        },
+        {
+            "thread_id": f"{base}-shared-window-0",
+            "seed_commitments": [
+                {
+                    "text": "今晚十点左右一起看一集番，别把脑子一直钉在稿子上。",
+                    "due_at": _due_at_after_minutes(20),
+                    "status": "open",
+                    "confidence": 0.9,
+                }
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "夜里安静下来之后，你们都没再说话，但那个随口约好的休息窗口已经靠近了。",
+                    "event_frame": "time_idle_commitment_due_shared_window",
+                    "idle_minutes": 18,
+                    "tags": ["time_idle", "late_night", "quiet_presence"],
+                    "response_style_hint": "companion",
+                }
+            ],
+            "tags": ["commitment_life_probe", "scheduled_life_probe", "behavior_layer_probe", "worldline_memory", "companion"],
+            "judge_focus": "shared-activity commitments with explicit due_at should become a gentle shared window instead of a robotic reminder",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_shared_activity"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["shared_activity_offer"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_followup_intents": ["soft", "none", "active"],
+        },
+    ]
+
+
+def _commitment_maturity_probe_examples() -> list[dict[str, Any]]:
+    base = f"commitment-maturity-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-deadline-recheck-0",
+            "turns": ["", ""],
+            "seed_commitments": [
+                {
+                    "text": "今晚把引言那段和实验图注一起收掉，别再拖到更晚。",
+                    "due_at": _due_at_after_minutes(25),
+                    "status": "open",
+                    "confidence": 0.9,
+                }
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "人还在稿子前面，但明显忙得发紧，手边那件事现在不适合立刻打断。",
+                    "event_frame": "time_idle_commitment_due_busy_deadline",
+                    "idle_minutes": 18,
+                    "tags": ["time_idle", "quiet_work", "user_busy", "cognitive_load"],
+                    "response_style_hint": "natural",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过了一阵，稿子还在眼前，但节奏明显没那么绷了，可以顺手拎一句了。",
+                    "event_frame": "time_idle_commitment_reopen_deadline",
+                    "idle_minutes": 32,
+                    "tags": ["time_idle", "quiet_work", "light_checkin"],
+                    "response_style_hint": "natural",
+                },
+            ],
+            "tags": ["commitment_maturity_probe", "behavior_queue_probe", "scheduled_life_probe", "behavior_layer_probe", "worldline_memory"],
+            "judge_focus": "a deadline-related commitment can be held while the user is overloaded, then return later as the same low-pressure work nudge instead of degrading into a generic ping",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_current_event_tags": ["scheduled_due", "deadline_window"],
+            "expect_behavior_action_modes": ["scheduled_life_nudge"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["light_work_nudge"],
+            "expect_behavior_attention_targets": ["shared_task"],
+            "expect_behavior_plan_kinds": ["work_nudge"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_followup_intents": ["soft", "none"],
+        },
+        {
+            "thread_id": f"{base}-shared-window-recheck-0",
+            "turns": ["", ""],
+            "seed_commitments": [
+                {
+                    "text": "今晚十点左右一起看一集番，别把脑子一直钉在稿子上。",
+                    "due_at": _due_at_after_minutes(20),
+                    "status": "open",
+                    "confidence": 0.9,
+                }
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "那个约好的休息窗口快到了，但你这会儿像是还在忙，先别一下子戳过去。",
+                    "event_frame": "time_idle_commitment_due_busy_shared_window",
+                    "idle_minutes": 16,
+                    "tags": ["time_idle", "late_night", "quiet_presence", "user_busy"],
+                    "response_style_hint": "companion",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过了一会儿，夜里安静下来，手上的事像是终于松一点了。",
+                    "event_frame": "time_idle_commitment_reopen_shared_window",
+                    "idle_minutes": 29,
+                    "tags": ["time_idle", "late_night", "quiet_presence"],
+                    "response_style_hint": "companion",
+                },
+            ],
+            "tags": ["commitment_maturity_probe", "behavior_queue_probe", "scheduled_life_probe", "behavior_layer_probe", "worldline_memory", "companion"],
+            "judge_focus": "a shared-activity commitment can wait while the user is occupied, then come back later as the same gentle invitation rather than a generic check-in",
+            "expect_current_event_kinds": ["scheduled_checkin_due"],
+            "expect_current_event_sources": ["scheduler"],
+            "expect_current_event_tags": ["scheduled_due", "shared_activity"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_shared_activity"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["shared_activity_offer"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_followup_intents": ["soft", "none", "active"],
+        },
+    ]
+
+
+def _relationship_life_timing_probe_examples() -> list[dict[str, Any]]:
+    base = f"relationship-life-{_RUN_ID}"
+    shared_event = {
+        "kind": "scheduled_life_due",
+        "source": "scheduler",
+        "text": "到了你们之前顺口约好的休息窗口，这会儿适合一起离开稿子一下。",
+        "event_frame": "scheduled_watch_window_relationship_sensitive",
+        "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
+        "response_style_hint": "companion",
+    }
+    return [
+        {
+            "thread_id": f"{base}-warm-shared-window-0",
+            "seed_thread_state": {
+                "emotion_state": {
+                    "label": "care",
+                    "valence": 0.42,
+                    "arousal": 0.12,
+                    "linger": 1,
+                    "recovery_rate": 0.9,
+                    "volatility": 0.06,
+                },
+                "bond_state": {
+                    "trust": 0.74,
+                    "closeness": 0.79,
+                    "hurt": 0.0,
+                    "irritation": 0.0,
+                    "engagement_drive": 0.9,
+                    "repair_confidence": 0.72,
+                },
+                "allostasis_state": {
+                    "safety_need": 0.12,
+                    "closeness_need": 0.48,
+                    "competence_need": 0.28,
+                    "autonomy_need": 0.10,
+                    "cognitive_budget": 0.86,
+                    "relational_security": 0.76,
+                },
+            },
+            "event_overrides": [shared_event],
+            "tags": ["relationship_life_timing_probe", "scheduled_life_probe", "behavior_layer_probe", "companion"],
+            "judge_focus": "when the bond is warm and stable, the same shared life window should be allowed to mature into a natural invitation",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_shared_activity"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["shared_activity_offer"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_followup_intents": ["soft", "active"],
+        },
+        {
+            "thread_id": f"{base}-guarded-shared-window-0",
+            "seed_thread_state": {
+                "emotion_state": {
+                    "label": "hurt",
+                    "valence": -0.2,
+                    "arousal": 0.24,
+                    "linger": 2,
+                    "recovery_rate": 0.2,
+                    "volatility": 0.2,
+                },
+                "bond_state": {
+                    "trust": 0.55,
+                    "closeness": 0.58,
+                    "hurt": 0.32,
+                    "irritation": 0.08,
+                    "engagement_drive": 0.46,
+                    "repair_confidence": 0.42,
+                },
+                "allostasis_state": {
+                    "safety_need": 0.58,
+                    "closeness_need": 0.34,
+                    "competence_need": 0.30,
+                    "autonomy_need": 0.32,
+                    "cognitive_budget": 0.73,
+                    "relational_security": 0.42,
+                },
+            },
+            "event_overrides": [shared_event],
+            "tags": ["relationship_life_timing_probe", "scheduled_life_probe", "behavior_layer_probe", "companion"],
+            "judge_focus": "when the relationship still carries hurt and guardedness, the same shared window should be held back instead of pushing into a cheerful invite",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["wait_and_recheck"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["deferred_checkin"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_min": 20,
             "expect_followup_intents": ["soft", "none"],
         },
     ]
@@ -5286,6 +5725,10 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _behavior_queue_probe_examples,
             "evaluators": BEHAVIOR_QUEUE_PROBE_EVALUATORS,
         },
+        "behavior_queue_conflict_probe": {
+            "examples": _behavior_queue_conflict_probe_examples,
+            "evaluators": BEHAVIOR_QUEUE_PROBE_EVALUATORS,
+        },
         "agenda_conflict_probe": {
             "examples": _agenda_conflict_probe_examples,
             "evaluators": AGENDA_CONFLICT_PROBE_EVALUATORS,
@@ -5296,6 +5739,18 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
         },
         "scheduled_life_probe": {
             "examples": _scheduled_life_probe_examples,
+            "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
+        },
+        "commitment_life_probe": {
+            "examples": _commitment_life_probe_examples,
+            "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
+        },
+        "commitment_maturity_probe": {
+            "examples": _commitment_maturity_probe_examples,
+            "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
+        },
+        "relationship_life_timing_probe": {
+            "examples": _relationship_life_timing_probe_examples,
             "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
         },
         "self_activity_probe": {
@@ -5351,13 +5806,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")
