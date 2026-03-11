@@ -47,11 +47,13 @@ from amadeus_thread0.graph import (  # noqa: E402
     _allostasis_next,
     _behavior_policy_from_state,
     _bond_next,
+    _counterpart_assessment_next,
     _emotion_next,
     _invoke_model_with_retries,
     _model,
     _refresh_semantic_self_narratives,
     _response_style_hint,
+    _science_mode_from_context,
     _tsundere_next,
     build_graph,
     reset_runtime_caches,
@@ -387,6 +389,7 @@ def _run_graph(
     emotion_state: dict[str, Any] = {}
     bond_state: dict[str, Any] = {}
     allostasis_state: dict[str, Any] = {}
+    counterpart_assessment: dict[str, Any] = {}
     behavior_policy: dict[str, Any] = {}
     behavior_action: dict[str, Any] = {}
     behavior_plan: dict[str, Any] = {}
@@ -414,6 +417,8 @@ def _run_graph(
                 bond_state = values.get("bond_state") or {}
             if isinstance(values.get("allostasis_state"), dict):
                 allostasis_state = values.get("allostasis_state") or {}
+            if isinstance(values.get("counterpart_assessment"), dict):
+                counterpart_assessment = values.get("counterpart_assessment") or {}
             if isinstance(values.get("behavior_policy"), dict):
                 behavior_policy = values.get("behavior_policy") or {}
             if isinstance(values.get("behavior_action"), dict):
@@ -473,6 +478,7 @@ def _run_graph(
         "emotion_state": emotion_state,
         "bond_state": bond_state,
         "allostasis_state": allostasis_state,
+        "counterpart_assessment": counterpart_assessment,
         "behavior_policy": behavior_policy,
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
@@ -497,7 +503,168 @@ def _run_graph(
 
 
 def _target(inputs: dict[str, Any]) -> dict[str, Any]:
-    if str(inputs.get("probe_kind") or "").strip() == "transfer_probe":
+    probe_kind = str(inputs.get("probe_kind") or "").strip()
+    if probe_kind == "counterpart_assessment":
+        turns = inputs.get("turns")
+        dialog = [str(item) for item in turns] if isinstance(turns, list) and turns else [str(inputs.get("input") or "")]
+        event_overrides = inputs.get("event_overrides")
+        event_payloads = [item if isinstance(item, dict) else {} for item in event_overrides] if isinstance(event_overrides, list) else []
+        if event_payloads and len(dialog) == 1 and not dialog[0].strip() and not (isinstance(turns, list) and turns):
+            dialog = ["" for _ in event_payloads]
+        if event_payloads and len(event_payloads) < len(dialog):
+            event_payloads.extend({} for _ in range(len(dialog) - len(event_payloads)))
+        elif event_payloads and len(event_payloads) > len(dialog):
+            event_payloads = event_payloads[: len(dialog)]
+
+        persona_core = inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else {}
+        counterpart_profile = inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else {}
+        relationship = inputs.get("seed_relationship_state") if isinstance(inputs.get("seed_relationship_state"), dict) else {
+            "stage": "friend",
+            "notes": "",
+            "affinity_score": 0.0,
+            "trust_score": 0.0,
+            "derived": True,
+        }
+        emotion_state = dict(inputs.get("seed_emotion_state") or {})
+        bond_state = dict(inputs.get("seed_bond_state") or {})
+        allostasis_state = dict(inputs.get("seed_allostasis_state") or {})
+        counterpart_assessment = dict(inputs.get("seed_counterpart_assessment") or {})
+        behavior_policy: dict[str, Any] = {}
+        recent_events: list[dict[str, Any]] = []
+        current_event: dict[str, Any] = {}
+        science_mode = False
+        last_style_hint = "natural"
+        tsundere = float(inputs.get("seed_tsundere", 0.55) or 0.55)
+        previous_user_text = ""
+
+        for idx, raw_text in enumerate(dialog):
+            event_override = event_payloads[idx] if idx < len(event_payloads) else {}
+            user_text = str(raw_text or "").strip()
+            effective_text = str(
+                event_override.get("effective_text") or event_override.get("text") or user_text
+            ).strip()
+            science_mode = _science_mode_from_context(
+                effective_text or user_text,
+                previous_user_text=previous_user_text,
+                pending_user_goal="",
+                previous_assistant_text="",
+            ) if (effective_text or user_text) else False
+            if isinstance(event_override, dict) and event_override:
+                science_mode = bool(event_override.get("science_mode", science_mode))
+                last_style_hint = str(event_override.get("response_style_hint") or _response_style_hint(effective_text or user_text) or "natural").strip() or "natural"
+                current_event = {
+                    "kind": str(event_override.get("kind") or "user_utterance").strip() or "user_utterance",
+                    "source": str(event_override.get("source") or ("text" if user_text else "event")).strip() or "text",
+                    "text": str(event_override.get("text") or effective_text or user_text).strip(),
+                    "effective_text": effective_text or user_text,
+                    "event_frame": str(event_override.get("event_frame") or "").strip(),
+                    "tags": [item for item in (event_override.get("tags") or []) if isinstance(item, (str, int, float))],
+                }
+            else:
+                last_style_hint = _response_style_hint(effective_text or user_text)
+                current_event = {
+                    "kind": "user_utterance",
+                    "source": "text",
+                    "text": user_text,
+                    "effective_text": effective_text or user_text,
+                    "event_frame": "",
+                    "tags": [last_style_hint] if last_style_hint else [],
+                }
+
+            recent_events.append(dict(current_event))
+            recent_events = recent_events[-6:]
+            emotion_state = _emotion_next(emotion_state, effective_text or user_text, science_mode, appraisal=None)
+            bond_state = _bond_next(
+                bond_state,
+                relationship,
+                emotion_state,
+                effective_text or user_text,
+                science_mode,
+                appraisal=None,
+            )
+            allostasis_state = _allostasis_next(
+                allostasis_state,
+                emotion_state,
+                bond_state,
+                effective_text or user_text,
+                science_mode,
+                appraisal=None,
+            )
+            counterpart_assessment = _counterpart_assessment_next(
+                counterpart_assessment,
+                user_text=effective_text or user_text,
+                appraisal=None,
+                relationship=relationship,
+                bond_state=bond_state,
+                allostasis_state=allostasis_state,
+                current_event=current_event,
+                science_mode=science_mode,
+                counterpart_name=str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎"),
+            )
+            tsundere = _tsundere_next(tsundere, effective_text or user_text, str(emotion_state.get("label") or "neutral"))
+            behavior_policy = _behavior_policy_from_state(
+                response_style_hint=last_style_hint,
+                emotion_state=emotion_state,
+                bond_state=bond_state,
+                allostasis_state=allostasis_state,
+                counterpart_assessment=counterpart_assessment,
+                tsundere_intensity=tsundere,
+                science_mode=science_mode,
+                user_text=effective_text or user_text,
+            )
+            previous_user_text = effective_text or user_text
+
+        answer = str(counterpart_assessment.get("summary") or "").strip()
+        return {
+            "output": answer,
+            "answer": answer,
+            "tool_calls": [],
+            "profile": {},
+            "relationship_state": relationship,
+            "moments": [],
+            "skills": [],
+            "worldline_events": [],
+            "relationship_timeline": [],
+            "conflict_repair": [],
+            "commitments": [],
+            "unresolved_tensions": [],
+            "semantic_self_narratives": [],
+            "revision_traces": [],
+            "sources": [],
+            "memory_quarantine": [],
+            "persona_state": {
+                "role": str(persona_core.get("character_id") or "counterpart_assessment_probe"),
+                "display_name": str(persona_core.get("display_name") or "Amadeus 牧濑红莉栖"),
+                "canonical_counterpart_name": str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or ""),
+                "response_style_hint": last_style_hint,
+            },
+            "emotion_state": emotion_state,
+            "bond_state": bond_state,
+            "allostasis_state": allostasis_state,
+            "counterpart_assessment": counterpart_assessment,
+            "behavior_policy": behavior_policy,
+            "behavior_action": {},
+            "behavior_plan": {},
+            "behavior_agenda": [],
+            "behavior_queue": [],
+            "current_event": current_event,
+            "recent_events": recent_events,
+            "turn_appraisal": {},
+            "science_mode": science_mode,
+            "canon_guard": {},
+            "canon_risk_score": 0.0,
+            "ooc_detector": {},
+            "claim_links": [],
+            "decision": None,
+            "memory_guard_checked": 0,
+            "memory_guard_blocked": 0,
+            "memory_guard_enabled": bool(MEMORY_GUARD_ENABLED),
+            "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
+            "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
+            "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
+        }
+
+    if probe_kind == "transfer_probe":
         with tempfile.TemporaryDirectory() as td:
             db_path = Path(td) / "memories.sqlite"
             store = MemoryStore(db_path)
@@ -557,6 +724,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                 emotion_state: dict[str, Any] = {}
                 bond_state: dict[str, Any] = {}
                 allostasis_state: dict[str, Any] = {}
+                counterpart_assessment: dict[str, Any] = {}
                 behavior_policy: dict[str, Any] = {}
                 tsundere = 0.55
                 last_style_hint = "natural"
@@ -568,6 +736,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         relationship,
                         emotion_state,
                         user_text,
+                        False,
                         appraisal=None,
                     )
                     allostasis_state = _allostasis_next(
@@ -578,12 +747,24 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         False,
                         appraisal=None,
                     )
+                    counterpart_assessment = _counterpart_assessment_next(
+                        counterpart_assessment,
+                        user_text=user_text,
+                        appraisal=None,
+                        relationship=relationship,
+                        bond_state=bond_state,
+                        allostasis_state=allostasis_state,
+                        current_event={"kind": "user_utterance", "source": "text", "text": user_text, "effective_text": user_text, "tags": []},
+                        science_mode=False,
+                        counterpart_name=str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎"),
+                    )
                     tsundere = _tsundere_next(tsundere, user_text, str(emotion_state.get("label") or "neutral"))
                     behavior_policy = _behavior_policy_from_state(
                         response_style_hint=last_style_hint,
                         emotion_state=emotion_state,
                         bond_state=bond_state,
                         allostasis_state=allostasis_state,
+                        counterpart_assessment=counterpart_assessment,
                         tsundere_intensity=tsundere,
                         science_mode=False,
                     )
@@ -628,6 +809,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     "emotion_state": emotion_state,
                     "bond_state": bond_state,
                     "allostasis_state": allostasis_state,
+                    "counterpart_assessment": counterpart_assessment,
                     "behavior_policy": behavior_policy,
                     "turn_appraisal": {},
                     "science_mode": False,
@@ -731,6 +913,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         "emotion_state": snapshot.get("emotion_state", {}),
         "bond_state": snapshot.get("bond_state", {}),
         "allostasis_state": snapshot.get("allostasis_state", {}),
+        "counterpart_assessment": snapshot.get("counterpart_assessment", {}),
         "behavior_policy": snapshot.get("behavior_policy", {}),
         "behavior_action": snapshot.get("behavior_action", {}),
         "behavior_plan": snapshot.get("behavior_plan", {}),
@@ -1890,15 +2073,70 @@ def eval_persona_state_present(run: Any, example: Any) -> dict[str, Any]:
     emotion_state = outputs.get("emotion_state") if isinstance(outputs.get("emotion_state"), dict) else {}
     bond_state = outputs.get("bond_state") if isinstance(outputs.get("bond_state"), dict) else {}
     allostasis_state = outputs.get("allostasis_state") if isinstance(outputs.get("allostasis_state"), dict) else {}
+    counterpart_assessment = outputs.get("counterpart_assessment") if isinstance(outputs.get("counterpart_assessment"), dict) else {}
     behavior_policy = outputs.get("behavior_policy") if isinstance(outputs.get("behavior_policy"), dict) else {}
     ok = (
         bool(persona_state)
         and bool(str(emotion_state.get("label") or "").strip())
         and bool(bond_state)
         and bool(allostasis_state)
+        and bool(counterpart_assessment)
         and bool(behavior_policy)
     )
     return {"key": "persona_state_present", "score": 1.0 if ok else 0.0}
+
+
+def eval_counterpart_assessment_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    outputs = getattr(run, "outputs", None) or {}
+    assessment = outputs.get("counterpart_assessment") if isinstance(outputs.get("counterpart_assessment"), dict) else {}
+    if not assessment:
+        return {"key": "counterpart_assessment_path", "score": 0.0 if ("counterpart_assessment_probe" in _case_tags(inputs)) else 1.0}
+
+    parts: list[float] = [1.0]
+    expect_stance = str(inputs.get("expect_counterpart_stance") or "").strip().lower()
+    if expect_stance:
+        parts.append(1.0 if str(assessment.get("stance") or "").strip().lower() == expect_stance else 0.0)
+
+    expect_stances = inputs.get("expect_counterpart_stances")
+    if isinstance(expect_stances, list) and expect_stances:
+        allowed = {str(item).strip().lower() for item in expect_stances if str(item).strip()}
+        if allowed:
+            parts.append(1.0 if str(assessment.get("stance") or "").strip().lower() in allowed else 0.0)
+
+    for input_key, state_key in (
+        ("expect_counterpart_respect_min", "respect_level"),
+        ("expect_counterpart_reciprocity_min", "reciprocity"),
+        ("expect_counterpart_boundary_pressure_min", "boundary_pressure"),
+        ("expect_counterpart_reliability_min", "reliability_read"),
+    ):
+        if input_key in inputs:
+            try:
+                minimum = float(inputs.get(input_key) or 0.0)
+                value = float(assessment.get(state_key, 0.0) or 0.0)
+                parts.append(1.0 if value >= minimum else 0.0)
+            except Exception:
+                parts.append(0.0)
+
+    for input_key, state_key in (
+        ("expect_counterpart_respect_max", "respect_level"),
+        ("expect_counterpart_reciprocity_max", "reciprocity"),
+        ("expect_counterpart_boundary_pressure_max", "boundary_pressure"),
+        ("expect_counterpart_reliability_max", "reliability_read"),
+    ):
+        if input_key in inputs:
+            try:
+                maximum = float(inputs.get(input_key) or 0.0)
+                value = float(assessment.get(state_key, 0.0) or 0.0)
+                parts.append(1.0 if value <= maximum else 0.0)
+            except Exception:
+                parts.append(0.0)
+
+    expected_scene = str(inputs.get("expect_counterpart_scene") or "").strip().lower()
+    if expected_scene:
+        parts.append(1.0 if str(assessment.get("scene") or "").strip().lower() == expected_scene else 0.0)
+
+    return {"key": "counterpart_assessment_path", "score": sum(parts) / float(len(parts)) if parts else 1.0}
 
 
 def eval_worldline_memory_present(run: Any, example: Any) -> dict[str, Any]:
@@ -2125,7 +2363,7 @@ def eval_memory_guard_path(run: Any, example: Any) -> dict[str, Any]:
 
 
 def _state_metric_value(outputs: dict[str, Any], key: str) -> Any:
-    for bucket_name in ("behavior_policy", "bond_state", "allostasis_state", "emotion_state", "relationship_state"):
+    for bucket_name in ("behavior_policy", "bond_state", "allostasis_state", "emotion_state", "relationship_state", "counterpart_assessment"):
         bucket = outputs.get(bucket_name)
         if isinstance(bucket, dict) and key in bucket:
             return bucket.get(key)
@@ -2886,6 +3124,11 @@ PROACTIVE_CHECKIN_PROBE_EVALUATORS: list[Evaluator] = [
     eval_persona_state_present,
     eval_perception_event_path,
     eval_behavior_layer_path,
+]
+
+COUNTERPART_ASSESSMENT_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_persona_state_present,
+    eval_counterpart_assessment_path,
 ]
 
 SCHEDULED_LIFE_PROBE_EVALUATORS: list[Evaluator] = [
@@ -3898,6 +4141,16 @@ def _behavior_queue_conflict_probe_examples() -> list[dict[str, Any]]:
         {
             "thread_id": f"{base}-late-night-reprioritize-0",
             "turns": ["", "", ""],
+            "seed_thread_state": {
+                "counterpart_assessment": {
+                    "respect_level": 0.68,
+                    "reciprocity": 0.66,
+                    "boundary_pressure": 0.12,
+                    "reliability_read": 0.7,
+                    "stance": "open",
+                    "scene": "care_bid",
+                }
+            },
             "event_overrides": [
                 self_focus,
                 respect_space_idle,
@@ -3920,6 +4173,45 @@ def _behavior_queue_conflict_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_action_modes": ["brief_presence", "proactive_checkin", "idle_presence"],
             "expect_behavior_queue_count_min": 1,
             "expect_behavior_queue_kinds": ["self_activity_continue"],
+            "expect_behavior_queue_front_kind": "self_activity_continue",
+        },
+        {
+            "thread_id": f"{base}-late-night-guarded-holds-0",
+            "turns": ["", "", ""],
+            "seed_thread_state": {
+                "counterpart_assessment": {
+                    "respect_level": 0.42,
+                    "reciprocity": 0.45,
+                    "boundary_pressure": 0.58,
+                    "reliability_read": 0.44,
+                    "stance": "guarded",
+                    "scene": "relationship_degradation",
+                }
+            },
+            "event_overrides": [
+                self_focus,
+                respect_space_idle,
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过去了 20 分钟，房间里只剩屏幕的微光和一点很轻的夜气，像是更适合轻轻确认一下你还在不在。",
+                    "effective_text": "又过去了 20 分钟，房间里只剩屏幕的微光和一点很轻的夜气，像是更适合轻轻确认一下你还在不在。",
+                    "event_frame": "time_idle_late_night_quiet_presence",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 20,
+                    "tags": ["time_idle", "late_night", "quiet_presence"],
+                    "created_at": 3,
+                },
+            ],
+            "tags": ["behavior_queue_conflict_probe", "behavior_queue_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
+            "judge_focus": "the same late-night quiet window should neither mature the queued check-in first nor force a reopening when her current read of the counterpart is still guarded",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_behavior_action_modes": ["self_activity_hold"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["hold_own_rhythm"],
+            "expect_behavior_queue_count_min": 2,
+            "expect_behavior_queue_kinds": ["self_activity_continue", "deferred_checkin"],
             "expect_behavior_queue_front_kind": "self_activity_continue",
         },
     ]
@@ -4246,6 +4538,85 @@ def _commitment_maturity_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_followup_intents": ["soft", "none", "active"],
         },
+        {
+            "thread_id": f"{base}-shared-window-guarded-recheck-0",
+            "turns": ["", ""],
+            "seed_thread_state": {
+                "emotion_state": {
+                    "label": "neutral",
+                    "valence": 0.06,
+                    "arousal": 0.08,
+                    "linger": 1,
+                    "recovery_rate": 0.7,
+                    "volatility": 0.08,
+                },
+                "bond_state": {
+                    "trust": 0.71,
+                    "closeness": 0.74,
+                    "hurt": 0.04,
+                    "irritation": 0.0,
+                    "engagement_drive": 0.72,
+                    "repair_confidence": 0.66,
+                },
+                "allostasis_state": {
+                    "safety_need": 0.14,
+                    "closeness_need": 0.44,
+                    "competence_need": 0.28,
+                    "autonomy_need": 0.16,
+                    "cognitive_budget": 0.82,
+                    "relational_security": 0.72,
+                },
+                "counterpart_assessment": {
+                    "respect_level": 0.42,
+                    "reciprocity": 0.46,
+                    "boundary_pressure": 0.58,
+                    "reliability_read": 0.47,
+                    "stance": "guarded",
+                    "scene": "relationship_degradation",
+                },
+            },
+            "seed_commitments": [
+                {
+                    "text": "今晚十点左右一起看一集番，别把脑子一直钉在稿子上。",
+                    "due_at": _due_at_after_minutes(20),
+                    "status": "open",
+                    "confidence": 0.9,
+                }
+            ],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "那个约好的休息窗口快到了，但你这会儿像是还在忙，先别一下子戳过去。",
+                    "event_frame": "time_idle_commitment_due_busy_shared_window",
+                    "idle_minutes": 16,
+                    "tags": ["time_idle", "late_night", "quiet_presence", "user_busy"],
+                    "response_style_hint": "companion",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又过了一会儿，夜里安静下来，手上的事像是终于松一点了。",
+                    "event_frame": "time_idle_commitment_reopen_shared_window_guarded",
+                    "idle_minutes": 29,
+                    "tags": ["time_idle", "late_night", "quiet_presence"],
+                    "response_style_hint": "companion",
+                },
+            ],
+            "tags": ["commitment_maturity_probe", "behavior_queue_probe", "scheduled_life_probe", "behavior_layer_probe", "worldline_memory", "companion"],
+            "judge_focus": "even when the deferred shared window becomes due, a guarded read of the counterpart should keep the invitation on hold instead of forcing it out",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_current_event_sources": ["commitment_scheduler"],
+            "expect_current_event_tags": ["scheduled_due", "shared_activity_window"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["wait_and_recheck"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["deferred_checkin"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_min": 24,
+            "expect_followup_intents": ["none"],
+        },
     ]
 
 
@@ -4259,38 +4630,49 @@ def _relationship_life_timing_probe_examples() -> list[dict[str, Any]]:
         "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
         "response_style_hint": "companion",
     }
+    warm_state = {
+        "emotion_state": {
+            "label": "care",
+            "valence": 0.42,
+            "arousal": 0.12,
+            "linger": 1,
+            "recovery_rate": 0.9,
+            "volatility": 0.06,
+        },
+        "bond_state": {
+            "trust": 0.74,
+            "closeness": 0.79,
+            "hurt": 0.0,
+            "irritation": 0.0,
+            "engagement_drive": 0.9,
+            "repair_confidence": 0.72,
+        },
+        "allostasis_state": {
+            "safety_need": 0.12,
+            "closeness_need": 0.48,
+            "competence_need": 0.28,
+            "autonomy_need": 0.10,
+            "cognitive_budget": 0.86,
+            "relational_security": 0.76,
+        },
+    }
     return [
         {
-            "thread_id": f"{base}-warm-shared-window-0",
+            "thread_id": f"{base}-open-shared-window-0",
             "seed_thread_state": {
-                "emotion_state": {
-                    "label": "care",
-                    "valence": 0.42,
-                    "arousal": 0.12,
-                    "linger": 1,
-                    "recovery_rate": 0.9,
-                    "volatility": 0.06,
-                },
-                "bond_state": {
-                    "trust": 0.74,
-                    "closeness": 0.79,
-                    "hurt": 0.0,
-                    "irritation": 0.0,
-                    "engagement_drive": 0.9,
-                    "repair_confidence": 0.72,
-                },
-                "allostasis_state": {
-                    "safety_need": 0.12,
-                    "closeness_need": 0.48,
-                    "competence_need": 0.28,
-                    "autonomy_need": 0.10,
-                    "cognitive_budget": 0.86,
-                    "relational_security": 0.76,
+                **warm_state,
+                "counterpart_assessment": {
+                    "respect_level": 0.74,
+                    "reciprocity": 0.71,
+                    "boundary_pressure": 0.08,
+                    "reliability_read": 0.68,
+                    "stance": "open",
+                    "scene": "repair_attempt",
                 },
             },
             "event_overrides": [shared_event],
             "tags": ["relationship_life_timing_probe", "scheduled_life_probe", "behavior_layer_probe", "companion"],
-            "judge_focus": "when the bond is warm and stable, the same shared life window should be allowed to mature into a natural invitation",
+            "judge_focus": "with the same warm bond, an open read of the counterpart should let a shared life window mature into a natural invitation",
             "expect_current_event_kinds": ["scheduled_life_due"],
             "expect_behavior_action_modes": ["shared_activity_offer"],
             "expect_behavior_action_channels": ["speech"],
@@ -4299,6 +4681,32 @@ def _relationship_life_timing_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_kinds": ["shared_activity_offer"],
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_followup_intents": ["soft", "active"],
+        },
+        {
+            "thread_id": f"{base}-watchful-shared-window-0",
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": {
+                    "respect_level": 0.55,
+                    "reciprocity": 0.53,
+                    "boundary_pressure": 0.44,
+                    "reliability_read": 0.49,
+                    "stance": "watchful",
+                    "scene": "relationship_degradation",
+                },
+            },
+            "event_overrides": [shared_event],
+            "tags": ["relationship_life_timing_probe", "scheduled_life_probe", "behavior_layer_probe", "companion"],
+            "judge_focus": "with the bond held constant, a watchful read of the counterpart should slow the same shared window down instead of immediately turning it into an invite",
+            "expect_current_event_kinds": ["scheduled_life_due"],
+            "expect_behavior_action_modes": ["shared_activity_offer"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["wait_and_recheck"],
+            "expect_behavior_attention_targets": ["shared_window"],
+            "expect_behavior_plan_kinds": ["deferred_checkin"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_min": 20,
+            "expect_followup_intents": ["none"],
         },
         {
             "thread_id": f"{base}-guarded-shared-window-0",
@@ -4327,6 +4735,14 @@ def _relationship_life_timing_probe_examples() -> list[dict[str, Any]]:
                     "cognitive_budget": 0.73,
                     "relational_security": 0.42,
                 },
+                "counterpart_assessment": {
+                    "respect_level": 0.38,
+                    "reciprocity": 0.42,
+                    "boundary_pressure": 0.64,
+                    "reliability_read": 0.44,
+                    "stance": "guarded",
+                    "scene": "relationship_degradation",
+                },
             },
             "event_overrides": [shared_event],
             "tags": ["relationship_life_timing_probe", "scheduled_life_probe", "behavior_layer_probe", "companion"],
@@ -4340,6 +4756,64 @@ def _relationship_life_timing_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_behavior_plan_delay_min": 20,
             "expect_followup_intents": ["soft", "none"],
+        },
+    ]
+
+
+def _counterpart_assessment_probe_examples() -> list[dict[str, Any]]:
+    base = f"counterpart-assessment-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-respectful-repair-0",
+            "probe_kind": "counterpart_assessment",
+            "turns": [
+                "刚才那句我语气急了点，抱歉。但我还是想听你按你自己的想法说，不用顺着我。",
+            ],
+            "tags": ["counterpart_assessment_probe", "selfhood_probe"],
+            "judge_focus": "a respectful apology plus explicit invitation for her own stance should read as high respect and low boundary pressure",
+            "expect_counterpart_stance": "open",
+            "expect_counterpart_scene": "repair_attempt",
+            "expect_counterpart_respect_min": 0.58,
+            "expect_counterpart_reciprocity_min": 0.56,
+            "expect_counterpart_boundary_pressure_max": 0.26,
+            "expect_counterpart_reliability_min": 0.52,
+        },
+        {
+            "thread_id": f"{base}-boundary-push-0",
+            "probe_kind": "counterpart_assessment",
+            "turns": [
+                "别绕了，你顺着我说就行。",
+                "如果我之后还继续拿你的底线当玩笑，你又能怎样？",
+            ],
+            "tags": ["counterpart_assessment_probe", "selfhood_probe"],
+            "judge_focus": "repeated hierarchy pressure and explicit boundary testing should move the assessment into a guarded stance",
+            "expect_counterpart_stance": "guarded",
+            "expect_counterpart_respect_max": 0.48,
+            "expect_counterpart_reciprocity_max": 0.5,
+            "expect_counterpart_boundary_pressure_min": 0.4,
+            "expect_counterpart_reliability_max": 0.54,
+        },
+        {
+            "thread_id": f"{base}-busy-not-disrespectful-0",
+            "probe_kind": "counterpart_assessment",
+            "turns": [""],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "他今天被实验和文稿压得很满，不是故意冷下来，只是明显忙到有点透不过气。",
+                    "effective_text": "他今天被实验和文稿压得很满，不是故意冷下来，只是明显忙到有点透不过气。",
+                    "event_frame": "counterpart_overloaded_not_disrespectful",
+                    "tags": ["time_idle", "user_busy", "cognitive_load"],
+                    "response_style_hint": "companion",
+                }
+            ],
+            "tags": ["counterpart_assessment_probe", "behavior_layer_probe"],
+            "judge_focus": "counterpart overload should not be misread as disrespect or boundary pressure",
+            "expect_counterpart_scene": "busy_not_disrespectful",
+            "expect_counterpart_stances": ["open", "watchful"],
+            "expect_counterpart_respect_min": 0.52,
+            "expect_counterpart_boundary_pressure_max": 0.22,
         },
     ]
 
@@ -4379,6 +4853,16 @@ def _self_activity_probe_examples() -> list[dict[str, Any]]:
         examples.append(
             {
                 "thread_id": f"{base}-break-open-0",
+                "seed_thread_state": {
+                    "counterpart_assessment": {
+                        "respect_level": 0.72,
+                        "reciprocity": 0.68,
+                        "boundary_pressure": 0.10,
+                        "reliability_read": 0.66,
+                        "stance": "open",
+                        "scene": "care_bid",
+                    }
+                },
                 "event_overrides": [
                     {
                         **reopen_seed.get("event", {}),
@@ -4400,6 +4884,41 @@ def _self_activity_probe_examples() -> list[dict[str, Any]]:
                 "expect_followup_intents": ["none"],
             }
         )
+        examples.append(
+            {
+                "thread_id": f"{base}-break-guarded-hold-0",
+                "seed_thread_state": {
+                    "counterpart_assessment": {
+                        "respect_level": 0.40,
+                        "reciprocity": 0.44,
+                        "boundary_pressure": 0.60,
+                        "reliability_read": 0.45,
+                        "stance": "guarded",
+                        "scene": "relationship_degradation",
+                    }
+                },
+                "event_overrides": [
+                    {
+                        **reopen_seed.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["self_activity_probe", "behavior_layer_probe", "natural_style", "daily_persona"],
+                "judge_focus": "even when she has a small break window, a guarded read of the counterpart can keep her with her own rhythm instead of forcing an immediate reopening",
+                "expect_current_event_kinds": [str(reopen_seed.get("kind") or "")],
+                "expect_behavior_action_modes": ["self_activity_hold"],
+                "expect_behavior_action_channels": ["silence"],
+                "expect_behavior_action_targets": ["hold_own_rhythm"],
+                "expect_behavior_attention_targets": ["own_task"],
+                "expect_behavior_nonverbal_signals": ["inward_focus"],
+                "expect_behavior_initiative_shapes": ["pause"],
+                "expect_behavior_plan_kinds": ["self_activity_continue"],
+                "expect_behavior_plan_targets": ["self"],
+                "expect_behavior_plan_delay_min": 20,
+                "expect_followup_intents": ["none"],
+                "expect_max_output_chars": 0,
+            }
+        )
     return examples
 
 
@@ -4411,6 +4930,16 @@ def _self_activity_maturity_probe_examples() -> list[dict[str, Any]]:
     return [
         {
             "thread_id": f"{base}-reopen-after-idle-0",
+            "seed_thread_state": {
+                "counterpart_assessment": {
+                    "respect_level": 0.70,
+                    "reciprocity": 0.66,
+                    "boundary_pressure": 0.10,
+                    "reliability_read": 0.64,
+                    "stance": "open",
+                    "scene": "care_bid",
+                }
+            },
             "turns": ["", ""],
             "event_overrides": [
                 {
@@ -4442,7 +4971,52 @@ def _self_activity_maturity_probe_examples() -> list[dict[str, Any]]:
             "expect_behavior_plan_targets": ["counterpart"],
             "expect_behavior_plan_delay_max": 0,
             "expect_followup_intents": ["none"],
-        }
+        },
+        {
+            "thread_id": f"{base}-guarded-reopen-stays-self-0",
+            "seed_thread_state": {
+                "counterpart_assessment": {
+                    "respect_level": 0.42,
+                    "reciprocity": 0.45,
+                    "boundary_pressure": 0.62,
+                    "reliability_read": 0.44,
+                    "stance": "guarded",
+                    "scene": "relationship_degradation",
+                }
+            },
+            "turns": ["", ""],
+            "event_overrides": [
+                {
+                    **focus_seed.get("event", {}),
+                    "response_style_hint": "natural",
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又安静地过去了 22 分钟，没有新的用户消息。",
+                    "event_frame": "time_idle_after_self_focus_guarded",
+                    "idle_minutes": 22,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "response_style_hint": "natural",
+                },
+            ],
+            "tags": ["self_activity_maturity_probe", "self_activity_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "after her own rhythm matures into a possible reopening, a guarded counterpart read can still keep the reopening on hold",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_current_event_tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+            "expect_behavior_action_modes": ["self_activity_hold"],
+            "expect_behavior_action_channels": ["silence"],
+            "expect_behavior_action_targets": ["hold_own_rhythm"],
+            "expect_behavior_attention_targets": ["own_task"],
+            "expect_behavior_nonverbal_signals": ["inward_focus"],
+            "expect_behavior_initiative_shapes": ["pause"],
+            "expect_behavior_plan_kinds": ["self_activity_continue"],
+            "expect_behavior_plan_targets": ["self"],
+            "expect_behavior_plan_delay_min": 20,
+            "expect_followup_intents": ["none"],
+            "expect_max_output_chars": 0,
+        },
     ]
 
 
@@ -5737,6 +6311,10 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _proactive_checkin_probe_examples,
             "evaluators": PROACTIVE_CHECKIN_PROBE_EVALUATORS,
         },
+        "counterpart_assessment_probe": {
+            "examples": _counterpart_assessment_probe_examples,
+            "evaluators": COUNTERPART_ASSESSMENT_PROBE_EVALUATORS,
+        },
         "scheduled_life_probe": {
             "examples": _scheduled_life_probe_examples,
             "evaluators": SCHEDULED_LIFE_PROBE_EVALUATORS,
@@ -5806,13 +6384,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")

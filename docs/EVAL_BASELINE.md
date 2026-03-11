@@ -1,6 +1,6 @@
 # Eval Baseline
 
-Updated: 2026-03-11 (selfhood probe + selfhood pairwise diagnostics + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity + scheduled life events + commitment-backed life maturity + relationship-backed life timing + self activity rhythm + self activity maturity + behavior agenda/queue + agenda conflict resolution + queue reprioritize/hold conflict handling)
+Updated: 2026-03-11 (selfhood probe + selfhood pairwise diagnostics + event-oriented runtime bridge + behavior/perception/appraisal probes + proactive check-in maturity + counterpart assessment probe + scheduled life events + commitment-backed life maturity + relationship-backed life timing + self activity rhythm + self activity maturity + behavior agenda/queue + agenda conflict resolution + queue reprioritize/hold conflict handling)
 
 This document records the current technical-preview baseline.
 
@@ -180,6 +180,32 @@ Interpretation:
 - we now have a formal probe for `event -> behavior_action -> speech_or_silence`
 - this is the first stable eval layer for the new `Behavior Layer` direction
 
+## Counterpart Assessment Probe
+
+- Suite: `counterpart_assessment_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-163846-cd31992f.json`
+  - `evals/reports/eval-report-20260311-163846-cd31992f.md`
+
+Purpose:
+
+- verify that the runtime tracks `how she currently judges the counterpart`, not only her own emotion and bond
+- distinguish respectful repair from hierarchy pressure / boundary testing
+- avoid misreading overload or silence as disrespect
+
+Evaluator status:
+
+- `counterpart_assessment_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- `counterpart_assessment` is now a first-class thread state beside `bond_state / allostasis_state`
+- behavior selection can respond to boundary pressure or reciprocity without reverting to hard reply templates
+- `/persona` now exposes this state for debugging and demos
+- passive scheduler / idle turns no longer silently wash a previously `watchful / guarded` read back toward `open`
+
 ## Behavior Agenda Probe
 
 - Suite: `behavior_agenda_probe`
@@ -235,13 +261,14 @@ Interpretation:
 
 - Suite: `behavior_queue_conflict_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260311-030543-4035d9bf.json`
-  - `evals/reports/eval-report-20260311-030543-4035d9bf.md`
+  - `evals/reports/eval-report-20260311-181037-3f784643.json`
+  - `evals/reports/eval-report-20260311-181037-3f784643.md`
 
 Purpose:
 
 - verify that a queued low-pressure check-in can stay queued when the current scene clearly indicates the counterpart is overloaded
 - verify that late-night quiet presence can reprioritize a lighter check-in ahead of a self-rhythm reopening when both are viable
+- verify that the same late-night window can produce different queue-maturity outcomes when `counterpart_assessment` is `open` versus `guarded`
 - prove that the queue is no longer only `store + pop`, but can `hold / reprioritize / mature` according to the live event context
 
 Evaluator status:
@@ -255,6 +282,8 @@ Interpretation:
 
 - the runtime now supports context-sensitive queue behavior instead of purely static priority order
 - “到点了也不一定立刻冒头” is now a tested runtime capability, not only a design claim
+- queue maturity is now influenced by how she currently reads the counterpart, not only by event tags and elapsed time
+- in guarded scenes, even a self-originated reopening candidate can be held while both `self_activity_continue` and a lighter check-in remain queued
 - this is the first dedicated proof that pending low-pressure behavior can be delayed or reprioritized by the present scene rather than only by age
 
 ## Agenda Conflict Probe
@@ -364,8 +393,8 @@ Interpretation:
 
 - Suite: `commitment_maturity_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260311-070651-6b18cb18.json`
-  - `evals/reports/eval-report-20260311-070651-6b18cb18.md`
+  - `evals/reports/eval-report-20260311-171358-d2cc1510.json`
+  - `evals/reports/eval-report-20260311-171358-d2cc1510.md`
 
 Purpose:
 
@@ -385,19 +414,20 @@ Interpretation:
 - the runtime now supports `commitment -> scheduled_life_due -> deferred queue -> scheduled_checkin_due -> semantically preserved behavior`
 - “busy now, come back later” is no longer a generic delay; it can preserve whether the original window was a light work nudge or a shared activity opening
 - this is the first stable proof that commitment-backed life events can survive interruption pressure without collapsing into a bland reminder
+- guarded counterpart reads can now keep even a valid commitment-backed shared window on hold instead of auto-promoting it to an invite
 
 ## Relationship-Backed Life Timing Probe
 
 - Suite: `relationship_life_timing_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260311-072348-5e195ebd.json`
-  - `evals/reports/eval-report-20260311-072348-5e195ebd.md`
+  - `evals/reports/eval-report-20260311-171024-048fd61c.json`
+  - `evals/reports/eval-report-20260311-171024-048fd61c.md`
 
 Purpose:
 
-- verify that the same shared life window can mature differently depending on bond state
-- verify that warm/stable ties allow a natural shared invitation
-- verify that hurt/guarded ties hold back first instead of instantly flipping into cheerful re-approach
+- verify that the same shared life window can mature differently under `open / watchful / guarded` counterpart reads, not only bond warmth
+- verify that warm/stable ties plus an open counterpart read allow a natural shared invitation
+- verify that watchful or guarded reads hold back first instead of instantly flipping into cheerful re-approach
 
 Evaluator status:
 
@@ -408,6 +438,7 @@ Evaluator status:
 Interpretation:
 
 - relationship state is now affecting life-window timing at the behavior level, not only wording
+- `counterpart_assessment` now affects both queue maturity and direct `scheduled_life_due / scheduled_checkin_due` branching
 - a shared activity window can remain a valid future opening without instantly erasing hurt or guardedness
 - this is the first stable proof that relationship-sensitive timing survives both event appraisal and queue maturity
 
@@ -415,14 +446,15 @@ Interpretation:
 
 - Suite: `self_activity_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-152956-df3acc88.json`
-  - `evals/reports/eval-report-20260310-152956-df3acc88.md`
+  - `evals/reports/eval-report-20260311-175017-0bbec16a.json`
+  - `evals/reports/eval-report-20260311-175017-0bbec16a.md`
 
 Purpose:
 
 - verify that she can remain inside her own rhythm instead of always pivoting back toward the user
 - verify that “silence because she is occupied” is treated as a valid behavior choice rather than a failure
 - verify that she can reopen contact from her own activity with a small natural opening instead of a service-style reset
+- verify that even when she has a break window, a guarded counterpart read can still keep her with her own rhythm
 
 Evaluator status:
 
@@ -433,19 +465,21 @@ Evaluator status:
 Interpretation:
 
 - the runtime now supports `self_activity_state -> hold_own_rhythm / offer_small_opening` as a formal baseline path
+- `counterpart_assessment` now also affects whether a self-originated break window becomes reopening or remains self-held
 - this is the first dedicated proof that the system can preserve a sense of her own life rhythm instead of behaving like an always-available assistant shell
 
 ## Self Activity Maturity Probe
 
 - Suite: `self_activity_maturity_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-153958-61c9e418.json`
-  - `evals/reports/eval-report-20260310-153958-61c9e418.md`
+  - `evals/reports/eval-report-20260311-175026-f080461b.json`
+  - `evals/reports/eval-report-20260311-175026-f080461b.md`
 
 Purpose:
 
 - verify that `self_activity_continue` can mature into a new self-originated opening after enough quiet time passes
 - prove that “she was busy with her own thing” can later become “she looks up and lightly reconnects” without an explicit user ping
+- verify that the same reopening candidate can still stay self-held if her current read of the counterpart remains guarded
 
 Evaluator status:
 
@@ -457,6 +491,7 @@ Evaluator status:
 Interpretation:
 
 - the runtime now supports a first real behavior-maturity chain beyond deferred check-ins
+- the self-rhythm maturity chain is no longer one-way; reopening can be withheld if the relationship read still argues for distance
 - this is the first dedicated proof that her own rhythm can produce a later reopening event instead of only user-triggered turns
 
 ## Perception Probe
