@@ -19,8 +19,10 @@ class Settings:
     user_id: str
     thread_id: str
 
-    # DeepSeek model settings.
-    deepseek_model: str
+    # Runtime model settings.
+    model_provider: str
+    model_name: str
+    model_base_url: str
     temperature: float
 
     # Embeddings for semantic retrieval over moments/reflections.
@@ -47,7 +49,11 @@ def get_settings() -> Settings:
     user_id = os.getenv("AMADEUS_USER_ID", "okabe_rintaro")
     thread_id = os.getenv("AMADEUS_THREAD_ID", "thread0")
 
-    deepseek_model = os.getenv("AMADEUS_DEEPSEEK_MODEL", "deepseek-chat")
+    model_name = str(os.getenv("AMADEUS_MODEL_NAME", "") or os.getenv("AMADEUS_DEEPSEEK_MODEL", "deepseek-chat")).strip()
+    model_base_url = str(os.getenv("AMADEUS_MODEL_BASE_URL", "")).strip()
+    model_provider = str(os.getenv("AMADEUS_MODEL_PROVIDER", "")).strip().lower()
+    if not model_provider:
+        model_provider = "openai_compatible" if model_base_url else "deepseek"
     temperature = float(os.getenv("AMADEUS_TEMPERATURE", "0.5"))
 
     embedding_model_name = os.getenv("AMADEUS_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
@@ -66,7 +72,9 @@ def get_settings() -> Settings:
         diary_path=diary_path,
         user_id=user_id,
         thread_id=thread_id,
-        deepseek_model=deepseek_model,
+        model_provider=model_provider,
+        model_name=model_name,
+        model_base_url=model_base_url,
         temperature=temperature,
         embedding_model_name=embedding_model_name,
         embedding_device=embedding_device,

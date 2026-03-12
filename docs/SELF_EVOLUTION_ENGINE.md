@@ -131,6 +131,31 @@ This prevents naive overwrite and supports gradual identity-consistent growth.
 
 This allows the system to distinguish an emerging narrative from a long-term, repeatedly reconsolidated narrative.
 
+Recommended semantic narrative categories in the current Amadeus design:
+
+- `bond_style`
+- `commitment_style`
+- `repair_style`
+- `tension_style`
+- `boundary_style`
+- `selfhood_style`
+- `agency_style`
+
+To avoid making these narratives depend only on explicit relationship records, runtime should also preserve
+`semantic self evidence` from high-value turns such as:
+
+- boundary / degradation discussions
+- equality / selfhood / value-conflict discussions
+- autonomy / own-rhythm discussions
+
+These evidence traces should be reconsolidated into semantic narratives over time rather than staying as one-off turn-local labels.
+
+These semantic narratives should not remain passive summaries. They must feed back into:
+
+- `appraise`: bias interpretation of ambiguous turns using long-horizon relationship history
+- `counterpart assessment`: keep the model's reading of the same counterpart from resetting every turn
+- `behavior policy`: modulate warmth / withdrawal / initiative without hard response templates
+
 #### 2.5 Behavior Policy Engine
 
 Purpose: translate latent state into conversational tendencies without hard templates.
@@ -174,6 +199,7 @@ Each turn should update state in the following order:
 10. `commit_trace`
 
 The `appraise` step should remain separate from final response generation so that the same engine can be reused under a different Persona Core.
+However, `appraise` should still see `semantic_self_narratives` as long-horizon priors; otherwise the system collapses back into turn-local role-play.
 
 ## Minimal Runtime Schema v1
 
