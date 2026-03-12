@@ -190,17 +190,19 @@ On-slide points:
 
 - `persona_off` 主要影响角色语气
 - `worldline_off` 主要影响跨线程召回和承诺兑现
+- `semantic_evidence_off` 会削弱跨人格壳层的 `boundary / selfhood / agency` 迁移
 - repeated probe 用均值和标准差报告关键指标
 
 Backing evidence:
 
 - `docs/thesis_assets/thesis_probe_variance.md`
 - `docs/thesis_assets/long_thread_worldline_comparison.md`
+- `docs/thesis_assets/transfer_ablation_summary.md`
 - `docs/ABLATION_RESULTS.md`
 
 Speaker guardrail:
 
-- 这一页强调“证据链”，不要展开到实现细节
+- 这一页强调“证据链”，不要展开到实现细节；transfer 只讲成“引擎可迁移性支持证据”，不要夸大成多角色产品化完成
 
 ## Slide 9. 用户研究设计
 

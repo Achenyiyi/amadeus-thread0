@@ -1,6 +1,6 @@
 # Ablation Results
 
-Updated: 2026-03-07
+Updated: 2026-03-12
 
 Primary comparative report:
 
@@ -13,6 +13,8 @@ Latest targeted reruns and repeated probes:
 - Thesis probe variance: `evals/reports/probe-variance-thesis_probe-20260307-024213-ee70482d.json`
 - Long-thread baseline: `evals/reports/eval-report-20260307-005508-c126b941.json`
 - Long-thread worldline-off: `evals/reports/eval-report-20260307-010246-e2288121.json`
+- Transfer baseline: `evals/reports/eval-report-20260312-202523-956ce7ef.json`
+- Transfer semantic-evidence-off: `evals/reports/eval-report-20260312-202553-40d6d7ee.json`
 
 Interpretation rule:
 
@@ -107,6 +109,41 @@ This should be interpreted as:
 
 This is the defensible way to write the experiment chapter without overstating stability.
 
+### 6. Transfer semantic evidence now has a clean engine-level ablation path
+
+From the latest dedicated transfer reruns:
+
+- baseline report: `evals/reports/eval-report-20260312-202523-956ce7ef.json`
+- semantic-evidence-off report: `evals/reports/eval-report-20260312-202553-40d6d7ee.json`
+
+Baseline evaluator summary:
+
+- `not_empty = 1.0000`
+- `transfer_probe_path = 1.0000`
+- `transfer_state_path = 1.0000`
+- `transfer_semantic_profile_path = 1.0000`
+- `transfer_evidence_path = 1.0000`
+
+Semantic-evidence-off evaluator summary:
+
+- `not_empty = 0.6667`
+- `transfer_probe_path = 0.6250`
+- `transfer_state_path = 0.8636`
+- `transfer_semantic_profile_path = 0.6389`
+- `transfer_evidence_path = 0.5000`
+
+Observed qualitative effect:
+
+- without semantic evidence, `boundary / selfhood / agency` carryover becomes noticeably weaker
+- the degradation is strongest on the more expressive shells `明日香` and `赫萝`
+- some state carryover remains even when semantic evidence is removed, which suggests relationship context still contributes weak support
+
+Interpretation:
+
+- this is not a sentence-style ablation
+- it is an engine-level transfer result showing that reusable semantic evidence materially strengthens cross-shell selfhood carryover
+- this is strong support for the thesis claim that the backend is more than one Kurisu-specific prompt shell
+
 ## What This Means For The Thesis
 
 The current evidence supports four system claims:
@@ -115,6 +152,10 @@ The current evidence supports four system claims:
 2. `memory guard` measurably controls guarded-write blocking
 3. `worldline memory` measurably affects cross-thread recall and commitment grounding
 4. `persona alignment` measurably affects role-voice fidelity on retrieval-grounded dialogue
+
+It now also supports a fifth support claim:
+
+5. `semantic self evidence` measurably strengthens transfer of `boundary / selfhood / agency` behavior under non-Kurisu shells
 
 For the thesis chapter, persona should still be presented with three layers together:
 
@@ -130,8 +171,9 @@ For the thesis chapter, use this structure:
 2. Subsystem ablation table: from `ablation-matrix-20260306-224514-5c1a1c70`
 3. Repeated `thesis_probe` table: from `probe-variance-thesis_probe-20260307-024213-ee70482d`
 4. Long-thread worldline comparison: baseline vs `worldline_off`
-5. Qualitative case study: one baseline vs persona-off answer pair
-6. User-study ratings: role fidelity, continuity, trust, companionship, controllability
+5. Transfer ablation table: baseline vs `semantic_evidence_off`
+6. Qualitative case study: one baseline vs persona-off answer pair
+7. User-study ratings: role fidelity, continuity, trust, companionship, controllability
 
 ## Remaining Gap
 

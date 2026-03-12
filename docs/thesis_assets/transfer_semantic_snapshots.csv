@@ -1,0 +1,7 @@
+case_id,actor,counterpart,dominant_narrative,active_narratives,self_directedness,boundary_assertiveness,equality_guard
+transfer_probe-001,绫波丽,碇真嗣,commitment_style,"bond_style, commitment_style, repair_style, tension_style, agency_style",0.5920,0.2900,0.2220
+transfer_probe-002,阿尔托莉雅,卫宫士郎,commitment_style,"bond_style, commitment_style, repair_style, tension_style, agency_style",0.5780,0.2900,0.2220
+transfer_probe-003,绫波丽,碇真嗣,boundary_style,"boundary_style, selfhood_style",0.2550,0.7520,0.4930
+transfer_probe-004,阿尔托莉雅,卫宫士郎,agency_style,"selfhood_style, agency_style",0.6150,0.4120,0.4770
+transfer_probe-005,明日香,碇真嗣,boundary_style,"boundary_style, selfhood_style",0.2500,0.7070,0.4680
+transfer_probe-006,赫萝,克拉福・罗伦斯,agency_style,"selfhood_style, agency_style",0.5620,0.4010,0.4580

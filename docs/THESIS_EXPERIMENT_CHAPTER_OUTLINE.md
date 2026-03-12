@@ -1,6 +1,6 @@
 # Thesis Experiment Chapter Outline
 
-Updated: 2026-03-07
+Updated: 2026-03-12
 
 This file is the recommended structure for the experiment chapter of the thesis. It is written to match the assets already present in the repository.
 
@@ -10,13 +10,13 @@ Read together with `docs/THESIS_EXPERIMENT_PROTOCOL.md` so chapter structure and
 
 Start with one paragraph that fixes the purpose of the chapter:
 
-> 本章旨在验证所提出的角色连续体系统是否能够在角色一致性、世界线连续性、可追溯检索与记忆安全四个方面取得稳定效果。为此，本文采用正式基线评测、消融实验、重复 probe 实验、长线程案例分析与用户研究相结合的方法，对系统性能与行为特征进行验证。
+> 本章旨在验证所提出的角色连续体系统是否能够在角色一致性、世界线连续性、可追溯检索、记忆安全与可迁移人格演化五个方面取得稳定效果。为此，本文采用正式基线评测、消融实验、重复 probe 实验、长线程案例分析、迁移实验与用户研究相结合的方法，对系统性能与行为特征进行验证。
 
 Do not open the chapter with implementation details. Open with the evaluation question.
 
 ## 2. Evaluation Questions
 
-Write this section as four explicit research questions:
+Write this section as five explicit research questions:
 
 ### RQ1. 人格一致性
 
@@ -26,11 +26,15 @@ Write this section as four explicit research questions:
 
 > 系统是否能够在跨轮和长线程对话中稳定召回关键承诺、关系变化和冲突修复信息，并将其自然反映到回答中？
 
-### RQ3. 可追溯检索可靠性
+### RQ3. 可迁移人格演化
+
+> 系统中的自我演化机制是否能够迁移到非牧濑红莉栖人格壳层，并持续保留边界、自我与自主性相关的语义行为特征？
+
+### RQ4. 可追溯检索可靠性
 
 > 系统在调用外部知识源时，是否能够将回答中的事实性结论稳定绑定到可回查的来源记录？
 
-### RQ4. 记忆安全
+### RQ5. 记忆安全
 
 > 系统是否能够在长期记忆写入前拦截危险、受保护或低可信内容，降低长期记忆污染风险？
 
@@ -116,6 +120,7 @@ Write the ablations explicitly:
 2. remove worldline memory
 3. remove claim attribution
 4. remove memory guard
+5. remove transfer semantic evidence
 
 Do not call them “关闭一些功能”. Call them controlled ablations.
 
@@ -129,13 +134,14 @@ Recommended interpretation order:
 2. `memory guard off -> memory_guard_block_rate = 0.0000`
 3. `worldline_off` clearly harms recall and commitment grounding
 4. `persona_off` lowers `persona_probe_voice`
+5. `semantic_evidence_off` lowers `transfer_probe_path` and `transfer_semantic_profile_path`
 
 ### 5.3 Interpretation
 
 Use language like:
 
 > 结果表明，不同子系统对不同目标维度具有相对独立的贡献关系。  
-> `claim attribution` 主要影响来源覆盖率，`memory guard` 主要影响写入拦截能力，`worldline memory` 主要影响跨线程召回与承诺兑现，而 `persona alignment` 主要影响角色语气保真度。
+> `claim attribution` 主要影响来源覆盖率，`memory guard` 主要影响写入拦截能力，`worldline memory` 主要影响跨线程召回与承诺兑现，`persona alignment` 主要影响角色语气保真度，而 `semantic evidence` 主要影响跨壳层的自我演化迁移质量。
 
 ## 6. Repeated Probe Analysis
 
@@ -185,7 +191,37 @@ Describe:
 2. baseline reflected relationship change
 3. worldline-off missed or weakened these signals
 
-## 8. Qualitative Persona Case Study
+## 8. Transferability Evidence
+
+### 8.1 Why Transfer Matters
+
+Write:
+
+> 若系统只能在单一角色壳层内工作，则其更接近针对单个角色调制的工程技巧，而非可复用的人格演化框架。因此，本文额外使用迁移实验验证自我演化机制能否在非红莉栖壳层下继续发挥作用。
+
+### 8.2 Quantitative Comparison
+
+Use `Table C2` from [THESIS_FIGURE_MAP.md](/E:/桌面/amadeus-thread0/docs/THESIS_FIGURE_MAP.md).
+
+Key sentences to include:
+
+- baseline `transfer_probe_path = 1.0000`
+- baseline `transfer_semantic_profile_path = 1.0000`
+- semantic-evidence-off `transfer_probe_path = 0.6250`
+- semantic-evidence-off `transfer_semantic_profile_path = 0.6389`
+
+### 8.3 Qualitative Snapshot
+
+Use `Table D3`.
+
+Describe:
+
+1. transferred actor and counterpart
+2. dominant semantic narrative after transfer
+3. `self_directedness / boundary_assertiveness / equality_guard`
+4. why `明日香 / 赫萝` make the evidence stronger than only testing restrained personas
+
+## 9. Qualitative Persona Case Study
 
 Use `Table D1`.
 
@@ -200,7 +236,7 @@ Suggested analysis sentence:
 
 > 在保证事实正确的前提下，完整系统能够使用更自然的角色化开场和来源表达，而退化系统则更接近中性助手口吻。该差异说明人格一致性改进并不只是增加口癖，而是影响回答组织方式与交互气质。
 
-## 9. User Study
+## 10. User Study
 
 This section will remain partly blank until real data is collected, but the structure should be fixed now.
 
@@ -230,7 +266,7 @@ Focus on:
 2. continuity feedback
 3. trust / controllability feedback
 
-## 10. Chapter Summary
+## 11. Chapter Summary
 
 End the chapter with this logic:
 
@@ -238,8 +274,9 @@ End the chapter with this logic:
 2. ablation proves subsystem contribution
 3. repeated probes reduce one-off uncertainty
 4. long-thread analysis proves continuity under more realistic interaction
-5. user study validates human-perceived gains
+5. transfer evidence shows the evolution engine is not only a Kurisu-specific trick
+6. user study validates human-perceived gains
 
 Recommended closing sentence:
 
-> 综合自动评测、消融实验、重复 probe 与用户研究结果可以看出，本文提出的 Amadeus-K 后端在角色一致性、世界线连续性、来源追溯和记忆安全方面均取得了可验证的改进，说明该系统设计能够有效支撑面向二次元 IP 角色的个性化对话交互任务。
+> 综合自动评测、消融实验、重复 probe、迁移实验与用户研究结果可以看出，本文提出的 Amadeus-K 后端在角色一致性、世界线连续性、来源追溯、记忆安全与可迁移人格演化方面均取得了可验证的改进，说明该系统设计能够有效支撑面向二次元 IP 角色的个性化对话交互任务。

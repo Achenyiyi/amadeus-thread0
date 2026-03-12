@@ -1,6 +1,6 @@
 # Thesis Figure Map
 
-Updated: 2026-03-07
+Updated: 2026-03-12
 
 This file maps current experiment assets to future thesis tables and figures. The goal is to remove ambiguity when writing the experiment chapter later.
 
@@ -121,7 +121,7 @@ Recommended caption:
 
 Use:
 
-- `eval-report-20260307-005508-c126b941.json`
+- `eval-report-20260309-120008-7784d487.json`
 - `eval-report-20260307-010246-e2288121.json`
 
 Recommended chart:
@@ -137,6 +137,32 @@ Metrics:
 Recommended caption:
 
 > Long-thread comparison between the full system and `worldline_off`, showing that worldline memory contributes beyond isolated probes.
+
+### Table C2. Transfer Semantic Evidence Ablation
+
+Use:
+
+- `evals/reports/eval-report-20260312-202523-956ce7ef.json`
+- `evals/reports/eval-report-20260312-202553-40d6d7ee.json`
+- `docs/thesis_assets/transfer_ablation_summary.md`
+
+Rows:
+
+1. baseline
+2. `semantic_evidence_off`
+
+Columns:
+
+1. `not_empty`
+2. `transfer_probe_path`
+3. `transfer_state_path`
+4. `transfer_semantic_profile_path`
+5. `transfer_evidence_path`
+6. `failing_cases`
+
+Recommended caption:
+
+> Transfer-probe ablation showing that reusable semantic evidence materially improves cross-shell carryover of boundary, selfhood, and agency signals.
 
 ## Section D. Qualitative Case Study
 
@@ -175,6 +201,26 @@ Show:
 2. baseline answer
 3. worldline-off answer
 4. missed commitment / missed relationship signal
+
+### Table D3. Transfer Semantic Snapshots
+
+Use:
+
+- `docs/thesis_assets/transfer_semantic_snapshots.md`
+- `evals/reports/eval-report-20260312-202523-956ce7ef.md`
+
+Show:
+
+1. transferred actor
+2. transferred counterpart
+3. dominant semantic narrative
+4. active narratives
+5. `self_directedness / boundary_assertiveness / equality_guard`
+
+Recommended analysis angle:
+
+- show that the engine remains interpretable after shell transfer
+- emphasize that `明日香 / 赫萝` extend the suite beyond restrained personas
 
 ## Section E. User Study
 

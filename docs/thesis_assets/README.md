@@ -1,6 +1,6 @@
 # Thesis Assets
 
-Updated: 2026-03-07
+Updated: 2026-03-12
 
 This directory contains export-ready tables for the thesis experiment chapter and defense slides.
 
@@ -14,4 +14,8 @@ Generated files:
 - `long_thread_worldline_comparison.md`
 - `support_ablation_summary.csv`
 - `support_ablation_summary.md`
+- `transfer_ablation_summary.csv`
+- `transfer_ablation_summary.md`
+- `transfer_semantic_snapshots.csv`
+- `transfer_semantic_snapshots.md`
 - `manifest.json`

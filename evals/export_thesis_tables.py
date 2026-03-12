@@ -14,12 +14,14 @@ DEFAULT_OUT_DIR = REPO_ROOT / "docs" / "thesis_assets"
 
 CANONICAL_REPORTS = {
     "regression_isolated": REPORTS_DIR / "eval-report-20260306-204132-c57f83bc.json",
-    "long_thread": REPORTS_DIR / "eval-report-20260307-005508-c126b941.json",
-    "experience_probe": REPORTS_DIR / "eval-report-20260306-215635-57bb39c4.json",
+    "long_thread": REPORTS_DIR / "eval-report-20260309-120008-7784d487.json",
+    "experience_probe": REPORTS_DIR / "eval-report-20260311-195915-e41f9cdb.json",
     "thesis_probe": REPORTS_DIR / "eval-report-20260307-022239-17048ce9.json",
     "long_thread_worldline_off": REPORTS_DIR / "eval-report-20260307-010246-e2288121.json",
     "probe_variance": REPORTS_DIR / "probe-variance-thesis_probe-20260307-024213-ee70482d.json",
     "ablation_matrix": REPORTS_DIR / "ablation-matrix-20260306-224514-5c1a1c70.json",
+    "transfer_probe": REPORTS_DIR / "eval-report-20260312-202523-956ce7ef.json",
+    "transfer_probe_semantic_off": REPORTS_DIR / "eval-report-20260312-202553-40d6d7ee.json",
 }
 
 
@@ -148,11 +150,65 @@ def build_support_ablation_rows() -> list[list[object]]:
     return rows
 
 
+def build_transfer_ablation_rows() -> list[list[object]]:
+    rows: list[list[object]] = []
+    variants = [
+        ("baseline", CANONICAL_REPORTS["transfer_probe"]),
+        ("semantic_evidence_off", CANONICAL_REPORTS["transfer_probe_semantic_off"]),
+    ]
+    for label, path in variants:
+        data = load_json(path)
+        suite = (data.get("suites") or [None])[0] or {}
+        summary = suite.get("evaluator_summary") or {}
+        failures = suite.get("failing_cases") or []
+        rows.append(
+            [
+                label,
+                summary.get("not_empty"),
+                summary.get("transfer_probe_path"),
+                summary.get("transfer_state_path"),
+                summary.get("transfer_semantic_profile_path"),
+                summary.get("transfer_evidence_path"),
+                len(failures),
+            ]
+        )
+    return rows
+
+
+def build_transfer_snapshot_rows() -> list[list[object]]:
+    data = load_json(CANONICAL_REPORTS["transfer_probe"])
+    suite = (data.get("suites") or [None])[0] or {}
+    rows: list[list[object]] = []
+    for case in suite.get("cases") or []:
+        if not isinstance(case, dict):
+            continue
+        persona_state = case.get("persona_state") if isinstance(case.get("persona_state"), dict) else {}
+        semantic_profile = case.get("semantic_narrative_profile") if isinstance(case.get("semantic_narrative_profile"), dict) else {}
+        behavior_policy = case.get("behavior_policy") if isinstance(case.get("behavior_policy"), dict) else {}
+        rows.append(
+            [
+                case.get("case_id"),
+                persona_state.get("display_name"),
+                persona_state.get("canonical_counterpart_name"),
+                semantic_profile.get("dominant_category"),
+                ", ".join(
+                    str(item).strip()
+                    for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
+                    if str(item).strip()
+                ),
+                behavior_policy.get("self_directedness"),
+                behavior_policy.get("boundary_assertiveness"),
+                behavior_policy.get("equality_guard"),
+            ]
+        )
+    return rows
+
+
 def write_readme(out_dir: Path, files: list[Path]) -> None:
     rel_files = "\n".join(f"- `{path.name}`" for path in files)
     text = (
         "# Thesis Assets\n\n"
-        "Updated: 2026-03-07\n\n"
+        "Updated: 2026-03-12\n\n"
         "This directory contains export-ready tables for the thesis experiment chapter and defense slides.\n\n"
         "Generated files:\n\n"
         f"{rel_files}\n"
@@ -251,6 +307,51 @@ def main() -> None:
         support_rows,
     )
     written.extend([support_csv, support_md])
+
+    transfer_ablation_headers = [
+        "variant",
+        "not_empty",
+        "transfer_probe_path",
+        "transfer_state_path",
+        "transfer_semantic_profile_path",
+        "transfer_evidence_path",
+        "failing_cases",
+    ]
+    transfer_ablation_rows = build_transfer_ablation_rows()
+    transfer_ablation_csv = out_dir / "transfer_ablation_summary.csv"
+    transfer_ablation_md = out_dir / "transfer_ablation_summary.md"
+    write_csv(transfer_ablation_csv, transfer_ablation_headers, transfer_ablation_rows)
+    write_md(
+        transfer_ablation_md,
+        "Transfer Ablation Summary",
+        "Transfer-probe comparison between the current baseline and the semantic-evidence-off ablation. Use this table to support the claim that boundary/selfhood/agency carryover depends on reusable semantic evidence instead of shell-specific wording alone.",
+        transfer_ablation_headers,
+        transfer_ablation_rows,
+    )
+    written.extend([transfer_ablation_csv, transfer_ablation_md])
+
+    transfer_snapshot_headers = [
+        "case_id",
+        "actor",
+        "counterpart",
+        "dominant_narrative",
+        "active_narratives",
+        "self_directedness",
+        "boundary_assertiveness",
+        "equality_guard",
+    ]
+    transfer_snapshot_rows = build_transfer_snapshot_rows()
+    transfer_snapshot_csv = out_dir / "transfer_semantic_snapshots.csv"
+    transfer_snapshot_md = out_dir / "transfer_semantic_snapshots.md"
+    write_csv(transfer_snapshot_csv, transfer_snapshot_headers, transfer_snapshot_rows)
+    write_md(
+        transfer_snapshot_md,
+        "Transfer Semantic Snapshots",
+        "Per-case semantic snapshots from the canonical transfer-probe baseline. Use this table for thesis qualitative evidence and defense slides when showing that the engine remains interpretable after shell transfer.",
+        transfer_snapshot_headers,
+        transfer_snapshot_rows,
+    )
+    written.extend([transfer_snapshot_csv, transfer_snapshot_md])
 
     manifest = {
         "generated_from": {key: str(path) for key, path in CANONICAL_REPORTS.items()},

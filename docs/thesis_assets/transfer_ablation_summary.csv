@@ -1,0 +1,3 @@
+variant,not_empty,transfer_probe_path,transfer_state_path,transfer_semantic_profile_path,transfer_evidence_path,failing_cases
+baseline,1.0000,1.0000,1.0000,1.0000,1.0000,0
+semantic_evidence_off,0.6667,0.6250,0.8636,0.6389,0.5000,4
