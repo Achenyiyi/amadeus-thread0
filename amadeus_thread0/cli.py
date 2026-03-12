@@ -8,9 +8,23 @@ import sqlite3
 import subprocess
 import sys
 import time
+import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 import io
+import math
+
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+warnings.filterwarnings(
+    "ignore",
+    message=r".*_register_pytree_node.*deprecated.*",
+    category=FutureWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*resume_download.*deprecated.*",
+    category=FutureWarning,
+)
 
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
@@ -114,6 +128,7 @@ def _print_help() -> None:
         "/agenda                   查看待成熟行为议程\n"
         "/queue                    查看待成熟行为队列（/agenda 别名）\n"
         "/idle [minutes] [| note]  模拟一段安静时间经过，让她决定是否主动开口\n"
+        "/pulse [total] [step] [| note] 连续推进安静时间，观察她是否会主动靠近/延后/保持自己的节奏\n"
         "/events                   列出可注入的感知/生活事件种子\n"
         "/event <seed_id> [| note] 触发一个事件种子，让她按事件而非用户发言做行为选择\n"
         "/correct key=value        纠正 profile\n"
@@ -240,6 +255,79 @@ def _invoke_event_round(
     return after_values, final_text
 
 
+def _speak_text_realtime(
+    *,
+    text: str,
+    emotion_label: str,
+    enabled: bool,
+    ref_audio: str,
+) -> None:
+    if not enabled:
+        return
+    final_text = str(text or "").strip()
+    if not final_text:
+        return
+
+    backend = str(os.getenv("AMADEUS_TTS_BACKEND", "dashscope_realtime") or "dashscope_realtime").strip().strip('"').lower()
+    if backend not in {"dashscope_realtime", "dashscope"}:
+        print("\n[TTS][warn] TTS backend must be dashscope_realtime -> fallback=text-only")
+        return
+    if not ref_audio:
+        print("\n[TTS][warn] AMADEUS_TTS_REF_AUDIO is required for dashscope enrollment -> fallback=text-only")
+        return
+
+    tts_out_dir = get_settings().data_dir / "tts_out"
+    rt = None
+    try:
+        noise = io.StringIO()
+        with redirect_stdout(noise), redirect_stderr(noise):
+            rt = create_dashscope_realtime_session(
+                ref_audio=ref_audio,
+                out_dir=tts_out_dir,
+                play_audio=True,
+            )
+        tts_plan = push_tts_segments(
+            rt,
+            text=final_text,
+            emotion_label=str(emotion_label or "neutral").strip() or "neutral",
+            sleep_fn=time.sleep,
+        )
+    except Exception as e:
+        print("\n[TTS][warn] realtime init/push failed: " + str(e) + " -> fallback=text-only")
+        return
+
+    noise = io.StringIO()
+    with redirect_stdout(noise), redirect_stderr(noise):
+        rt.finish_and_wait()
+    if rt.total_audio_bytes <= 0:
+        print("[TTS-RT][warn] received 0 audio bytes (check API key/model/ws url & callback logs)")
+    if isinstance(tts_plan, dict):
+        profile = emotion_to_tts_profile(str(tts_plan.get("emotion_label") or emotion_label or "neutral"))
+        print(
+            "[TTS-RT] emotion="
+            + str(tts_plan.get("emotion_label") or emotion_label or "neutral")
+            + " | segments="
+            + str(int(tts_plan.get("segment_count") or 0))
+            + " | chars="
+            + str(int(tts_plan.get("char_count") or 0))
+            + " | interval="
+            + str(profile.get("min_interval"))
+        )
+    if rt.first_audio_delay is not None:
+        print(f"[TTS-RT] first_audio_delay={rt.first_audio_delay:.2f}s")
+    print("[TTS-RT] saved: " + str(rt.out_path))
+
+
+def _behavior_action_compact_line(action: dict[str, object] | None) -> str:
+    if not isinstance(action, dict):
+        return "-"
+    mode = str(action.get("interaction_mode") or "").strip() or "-"
+    target = str(action.get("action_target") or "").strip() or "-"
+    channel = str(action.get("channel") or "").strip() or "-"
+    style = str(action.get("approach_style") or "").strip() or "-"
+    return f"mode={mode} | target={target} | channel={channel} | style={style}"
+
+
 def main():
     # 优先从当前工作目录加载 .env（你用 `python -m amadeus_thread0.cli` 运行时最符合直觉）
     # 再回退到包根目录（避免以模块/安装形式运行时找不到配置）。
@@ -254,6 +342,10 @@ def main():
             load_dotenv(dotenv_path=p, override=False)
             loaded_path = p
             break
+
+    if str(os.getenv("AMADEUS_CLI_ENABLE_TRACING") or "").strip() != "1":
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        os.environ["LANGSMITH_TRACING"] = "false"
 
     # 关闭 DashScope/websocket 的“正常断开(1000 Bye)”类提示，避免打断输入行。
     # （这些提示通常来自底层 websocket logger，而不是异常。）
@@ -600,8 +692,145 @@ def main():
                 print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
             if final_text:
                 print("\nAmadeus> " + final_text)
+                emotion_label = str(
+                    (
+                        after_values.get("emotion_state")
+                        if isinstance(after_values.get("emotion_state"), dict)
+                        else {}
+                    ).get("label")
+                    or "neutral"
+                )
+                _speak_text_realtime(
+                    text=final_text,
+                    emotion_label=emotion_label,
+                    enabled=tts_enabled,
+                    ref_audio=tts_ref_audio,
+                )
             else:
                 print("\nAmadeus> （这轮她选择先不主动开口。）")
+            continue
+
+        if user.lower().startswith("/pulse"):
+            raw = user[len("/pulse") :].strip()
+            note_override = ""
+            if "|" in raw:
+                left, right = raw.split("|", 1)
+                raw = left.strip()
+                note_override = right.strip()
+
+            total_minutes = 60
+            step_minutes = 15
+            if raw:
+                parts = [part for part in raw.split() if part.strip()]
+                if len(parts) >= 1:
+                    try:
+                        total_minutes = max(1, min(24 * 60, int(parts[0])))
+                    except Exception:
+                        print("用法：/pulse [total_minutes] [step_minutes] [| note]")
+                        continue
+                if len(parts) >= 2:
+                    try:
+                        step_minutes = max(1, min(total_minutes, int(parts[1])))
+                    except Exception:
+                        print("用法：/pulse [total_minutes] [step_minutes] [| note]")
+                        continue
+                elif total_minutes < step_minutes:
+                    step_minutes = total_minutes
+
+            rounds = max(1, int(math.ceil(total_minutes / float(max(1, step_minutes)))))
+            print(
+                "\n[pulse]"
+                + f" total={total_minutes}min"
+                + f" step={step_minutes}min"
+                + f" rounds={rounds}"
+            )
+
+            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            spoken_rounds = 0
+            silence_rounds = 0
+            elapsed_minutes = 0
+            last_spoken_signature = ""
+
+            for idx in range(rounds):
+                remaining = max(0, total_minutes - elapsed_minutes)
+                current_step = step_minutes if idx < rounds - 1 else max(1, remaining)
+                elapsed_minutes += current_step
+                event_text = note_override or f"已经安静地过去了 {elapsed_minutes} 分钟，没有新的用户消息。"
+                idle_payload = {
+                    "event_override": {
+                        "kind": "time_idle",
+                        "source": "time",
+                        "text": event_text,
+                        "effective_text": event_text,
+                        "semantic_goal": "time passed without new user input",
+                        "response_style_hint": "companion",
+                        "event_frame": f"和对方之间安静地过去了 {elapsed_minutes} 分钟，现在轮到她决定是否主动开口。",
+                        "tags": ["time_idle", "ambient", "behavior_layer", "pulse"],
+                        "idle_minutes": elapsed_minutes,
+                        "created_at": int(time.time()),
+                    }
+                }
+                after_values, final_text = _invoke_event_round(
+                    graph=graph,
+                    run_config=run_config,
+                    event_payload=idle_payload,
+                    transient_label="pulse",
+                )
+                if not after_values:
+                    break
+
+                behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
+                behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
+                line = _behavior_action_compact_line(behavior_action)
+                print(f"- round={idx + 1}/{rounds} elapsed={elapsed_minutes}min | {line}")
+                if behavior_plan:
+                    print("  plan=" + json.dumps(behavior_plan, ensure_ascii=False))
+
+                if final_text:
+                    normalized_text = re.sub(r"\s+", "", final_text).strip()
+                    signature = normalized_text + "||" + json.dumps(
+                        {
+                            "interaction_mode": behavior_action.get("interaction_mode"),
+                            "action_target": behavior_action.get("action_target"),
+                            "channel": behavior_action.get("channel"),
+                            "approach_style": behavior_action.get("approach_style"),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    if last_spoken_signature and signature == last_spoken_signature:
+                        print("  [pulse] 检测到重复主动开口，提前停止连续推进。")
+                        break
+                    last_spoken_signature = signature
+                    spoken_rounds += 1
+                    print("  Amadeus> " + final_text)
+                    emotion_label = str(
+                        (
+                            after_values.get("emotion_state")
+                            if isinstance(after_values.get("emotion_state"), dict)
+                            else {}
+                        ).get("label")
+                        or "neutral"
+                    )
+                    _speak_text_realtime(
+                        text=final_text,
+                        emotion_label=emotion_label,
+                        enabled=tts_enabled,
+                        ref_audio=tts_ref_audio,
+                    )
+                else:
+                    silence_rounds += 1
+                    print("  Amadeus> （这轮她选择先不主动开口。）")
+
+            print(
+                "[pulse][summary] spoken_rounds="
+                + str(spoken_rounds)
+                + " | silence_rounds="
+                + str(silence_rounds)
+                + " | total_elapsed="
+                + str(elapsed_minutes)
+                + "min"
+            )
             continue
 
         if user.lower().startswith("/idle"):
@@ -659,6 +888,20 @@ def main():
                 print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
             if final_text:
                 print("\nAmadeus> " + final_text)
+                emotion_label = str(
+                    (
+                        after_values.get("emotion_state")
+                        if isinstance(after_values.get("emotion_state"), dict)
+                        else {}
+                    ).get("label")
+                    or "neutral"
+                )
+                _speak_text_realtime(
+                    text=final_text,
+                    emotion_label=emotion_label,
+                    enabled=tts_enabled,
+                    ref_audio=tts_ref_audio,
+                )
             else:
                 print("\nAmadeus> （这轮她选择先不主动开口。）")
             continue
