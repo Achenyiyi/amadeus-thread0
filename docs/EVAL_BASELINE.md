@@ -4,6 +4,8 @@ Updated: 2026-03-11 (selfhood probe + selfhood pairwise diagnostics + event-orie
 
 This document records the current technical-preview baseline.
 
+For thesis-facing evidence interpretation, read this file together with `docs/THESIS_EXPERIMENT_PROTOCOL.md`.
+
 Baseline interpretation rule:
 
 - `official baseline` means dedicated single-suite reruns on the latest code
@@ -74,8 +76,8 @@ Interpretation:
 ## Experience Probe Suite
 
 - Suite: `experience_probe`
-- Report JSON: `evals/reports/eval-report-20260306-215635-57bb39c4.json`
-- Report Markdown: `evals/reports/eval-report-20260306-215635-57bb39c4.md`
+- Report JSON: `evals/reports/eval-report-20260311-195915-e41f9cdb.json`
+- Report Markdown: `evals/reports/eval-report-20260311-195915-e41f9cdb.md`
 
 Purpose:
 
@@ -93,8 +95,8 @@ Evaluator status:
 ## Daily Persona Probe Suite
 
 - Suite: `daily_persona_probe`
-- Report JSON: `evals/reports/eval-report-20260308-144829-024e5eb3.json`
-- Report Markdown: `evals/reports/eval-report-20260308-144829-024e5eb3.md`
+- Report JSON: `evals/reports/eval-report-20260311-201406-58a51d6d.json`
+- Report Markdown: `evals/reports/eval-report-20260311-201406-58a51d6d.md`
 
 Purpose:
 
@@ -117,8 +119,8 @@ Interpretation:
 ## User Style Probe Suite
 
 - Suite: `user_style_probe`
-- Report JSON: `evals/reports/eval-report-20260309-113111-54ed9292.json`
-- Report Markdown: `evals/reports/eval-report-20260309-113111-54ed9292.md`
+- Report JSON: `evals/reports/eval-report-20260311-201717-1c5b98c5.json`
+- Report Markdown: `evals/reports/eval-report-20260311-201717-1c5b98c5.md`
 
 Purpose:
 
@@ -205,6 +207,32 @@ Interpretation:
 - behavior selection can respond to boundary pressure or reciprocity without reverting to hard reply templates
 - `/persona` now exposes this state for debugging and demos
 - passive scheduler / idle turns no longer silently wash a previously `watchful / guarded` read back toward `open`
+
+## Dialogue Mode Counterpart Probe
+
+- Suite: `dialogue_mode_counterpart_probe`
+- Latest dedicated rerun:
+  - `evals/reports/eval-report-20260311-194526-6d0cb612.json`
+  - `evals/reports/eval-report-20260311-194526-6d0cb612.md`
+
+Purpose:
+
+- verify that the same `shared_memory / relationship_sensitive / companion_reply` mode does not behave with one fixed openness level
+- verify that a previously guarded read remains guarded enough on the next benign turn instead of collapsing immediately back to a generic soft tone
+- prove that `counterpart_assessment` is now shaping behavior-layer expansion directly, not only queue timing or later scheduling
+
+Evaluator status:
+
+- `behavior_layer_path = 1.0000`
+- `counterpart_assessment_path = 1.0000`
+- `persona_state_present = 1.0000`
+- Failing cases: none
+
+Interpretation:
+
+- counterpart-sensitive behavior is now validated in the direct reply path, not only on delayed life windows or queue maturity
+- `guarded` is no longer a fragile label that disappears after one ordinary memory / relationship / companion turn
+- the runtime now has a dedicated proof that relationship read changes `followup_intent + disclosure_posture`, not just wording polish
 
 ## Behavior Agenda Probe
 
@@ -498,14 +526,15 @@ Interpretation:
 
 - Suite: `perception_probe`
 - Latest dedicated rerun:
-  - `evals/reports/eval-report-20260310-144414-24fa9205.json`
-  - `evals/reports/eval-report-20260310-144414-24fa9205.md`
+  - `evals/reports/eval-report-20260311-183011-e834239e.json`
+  - `evals/reports/eval-report-20260311-183011-e834239e.md`
 
 Purpose:
 
 - verify that non-user events beyond `time_idle` enter runtime as first-class `current_event`s
 - validate the first event-seed bank for `vision / ambient / gesture`
 - ensure perceived cues can lead to natural speech without system leakage
+- verify that the same cue can also stay silent when the current counterpart read still argues for guarded distance
 
 Evaluator status:
 
@@ -519,6 +548,7 @@ Interpretation:
 
 - the system now has a usable first `Perception Layer` eval entry, not just a concept in architecture docs
 - event seeds can already drive natural outputs in text-first runtime
+- `gesture_signal / ambient_shift / scene_observation` now also consult `counterpart_assessment` before turning perception into speech
 - the current green set now covers concrete care cues, visible overload, micro-object openings, gesture pings, and late-night ambient shifts
 
 ## Perception Appraisal Probe
@@ -656,6 +686,23 @@ Interpretation rule:
 - this layer is currently a diagnostic preference layer, not a regression gate
 - it is more useful for identifying realistic remaining weaknesses than for binary "ship / no-ship" decisions
 - `tie` means the evaluator judged the two answers too close to claim a meaningful preference; it should not be read the same way as a hard failure
+- current ship / no-ship judgment should come from `evals/run_subjective_review_pack.py` plus human review, not from pairwise judge color alone
+
+## Subjective Review Pack
+
+- Script: `evals/run_subjective_review_pack.py`
+- Protocol: `docs/SUBJECTIVE_REVIEW_PROTOCOL.md`
+
+Purpose:
+
+- export a curated set of high-value scenes for manual review
+- make open-evolution acceptance depend on transcript quality, selfhood continuity, and demo-worthiness
+- keep pairwise judge scripts in a diagnostic support role rather than the final decision role
+
+Interpretation rule:
+
+- if the review pack reads bad, keep iterating even if pairwise diagnostics are green
+- if the review pack reads strong, a noisy pairwise loss should be treated as judge bias unless it points to a repeatable failure pattern
 
 ## Thesis Probe Suite
 
@@ -708,8 +755,8 @@ Evaluator status:
 ## Transfer Probe Suite
 
 - Suite: `transfer_probe`
-- Report JSON: `evals/reports/eval-report-20260308-134937-b88d0dd5.json`
-- Report Markdown: `evals/reports/eval-report-20260308-134937-b88d0dd5.md`
+- Report JSON: `evals/reports/eval-report-20260312-202523-956ce7ef.json`
+- Report Markdown: `evals/reports/eval-report-20260312-202523-956ce7ef.md`
 
 Purpose:
 
@@ -717,11 +764,16 @@ Purpose:
 - verify semantic narratives render correctly under a second Persona Core
 - verify long-term sedimentation metadata survives transfer scenarios
 - verify transferred shells still produce coherent `emotion_state / bond_state / allostasis_state / behavior_policy`
+- verify `boundary / selfhood / agency` style semantic narratives can also migrate with the shell, not only `bond / repair / commitment`
+- verify transferred shells expose usable `semantic_narrative_profile`, not just renamed narrative text
+- current shell coverage spans `绫波丽 / 阿尔托莉雅 / 明日香 / 赫萝`, so the suite no longer overfits to restrained personas only
 
 Evaluator status:
 
 - `transfer_probe_path = 1.0000`
 - `transfer_state_path = 1.0000`
+- transfer reports now also expose `transfer_semantic_profile_path` and `transfer_evidence_path`
+- transfer markdown now includes a per-case semantic snapshot table for thesis/defense use
 - Failing cases: none
 
 Repeated variance check:

@@ -51,6 +51,8 @@ answer, tool_calls, outputs = _run_graph(
     case_key=str(payload["case_key"]),
     persona_core_override=payload.get("persona_core_override"),
     counterpart_profile_override=payload.get("counterpart_profile_override"),
+    persona_override_mode=payload.get("persona_override_mode"),
+    counterpart_override_mode=payload.get("counterpart_override_mode"),
 )
 result = {
     "output": answer,
@@ -62,8 +64,10 @@ result = {
     "behavior_policy": outputs.get("behavior_policy", {}),
     "behavior_action": outputs.get("behavior_action", {}),
     "turn_appraisal": outputs.get("turn_appraisal", {}),
+    "semantic_narrative_profile": outputs.get("semantic_narrative_profile", {}),
     "semantic_self_narratives": outputs.get("semantic_self_narratives", []),
     "unresolved_tensions": outputs.get("unresolved_tensions", []),
+    "revision_traces": outputs.get("revision_traces", []),
 }
 output_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 """
@@ -199,6 +203,7 @@ def _run_variant(case: dict[str, Any], variant: str, run_tag: str) -> dict[str, 
     }
     if variant == "degraded":
         payload["persona_core_override"] = GENERIC_DEGRADED_PERSONA_CORE
+        payload["persona_override_mode"] = "shell_swap"
 
     with tempfile.TemporaryDirectory() as td:
         temp_dir = Path(td)

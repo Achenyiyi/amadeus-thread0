@@ -31,6 +31,7 @@ os.environ.setdefault("AMADEUS_EVAL_MODE", "1")
 os.environ.setdefault("AMADEUS_EVAL_GENERATION_TEMPERATURE", "0.05")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 os.environ.setdefault("LANGSMITH_TRACING", "false")
+ABLATE_TRANSFER_SEMANTIC_EVIDENCE = os.getenv("AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE", "0").strip() == "1"
 
 from amadeus_thread0.config import (  # noqa: E402
     ABLATE_CLAIM_ATTRIBUTION,
@@ -51,14 +52,20 @@ from amadeus_thread0.graph import (  # noqa: E402
     _emotion_next,
     _invoke_model_with_retries,
     _model,
+    _passive_evolution_memory_update,
     _refresh_semantic_self_narratives,
     _response_style_hint,
     _science_mode_from_context,
+    _semantic_narrative_profile,
     _tsundere_next,
     build_graph,
     reset_runtime_caches,
 )
 from amadeus_thread0.memory_store import MemoryStore  # noqa: E402
+from amadeus_thread0.persona_authority import (  # noqa: E402
+    resolve_counterpart_override,
+    resolve_persona_core_override,
+)
 from amadeus_thread0.settings import get_settings  # noqa: E402
 from amadeus_thread0.tools import reset_tool_runtime_caches  # noqa: E402
 from evals.v2_metric_schema import build_metric_snapshot, metric_defaults  # noqa: E402
@@ -264,6 +271,8 @@ def _run_graph(
     case_key: str | None = None,
     persona_core_override: dict[str, Any] | None = None,
     counterpart_profile_override: dict[str, Any] | None = None,
+    persona_override_mode: str | None = None,
+    counterpart_override_mode: str | None = None,
     event_overrides: list[dict[str, Any]] | None = None,
     seed_thread_state: dict[str, Any] | None = None,
     reset_case_runtime: bool = True,
@@ -302,8 +311,12 @@ def _run_graph(
         payload: dict[str, Any] = {"messages": [{"role": "user", "content": user_text}]}
         if isinstance(persona_core_override, dict) and persona_core_override:
             payload["persona_core_override"] = persona_core_override
+            if str(persona_override_mode or "").strip():
+                payload["persona_override_mode"] = str(persona_override_mode).strip()
         if isinstance(counterpart_profile_override, dict) and counterpart_profile_override:
             payload["counterpart_profile_override"] = counterpart_profile_override
+            if str(counterpart_override_mode or "").strip():
+                payload["counterpart_override_mode"] = str(counterpart_override_mode).strip()
         event_override = normalized_events[idx] if idx < len(normalized_events) else {}
         if isinstance(event_override, dict) and event_override:
             payload["event_override"] = event_override
@@ -499,6 +512,7 @@ def _run_graph(
         "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
         "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
         "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
+        "ablation_transfer_semantic_evidence": bool(ABLATE_TRANSFER_SEMANTIC_EVIDENCE),
     }
 
 
@@ -662,6 +676,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
             "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
             "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
             "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
+            "ablation_transfer_semantic_evidence": bool(ABLATE_TRANSFER_SEMANTIC_EVIDENCE),
         }
 
     if probe_kind == "transfer_probe":
@@ -707,9 +722,33 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                             trust_delta=float(item.get("trust_delta", 0.0) or 0.0),
                             confidence=float(item.get("confidence", 0.82) or 0.82),
                         )
+                seed_semantic_evidence = [] if ABLATE_TRANSFER_SEMANTIC_EVIDENCE else (inputs.get("seed_semantic_evidence") or [])
+                for item in seed_semantic_evidence:
+                    if not isinstance(item, dict):
+                        continue
+                    category = str(item.get("category") or "").strip()
+                    summary = str(item.get("summary") or "").strip()
+                    if not category or not summary:
+                        continue
+                    store.add_revision_trace(
+                        namespace="semantic_self_evidence",
+                        target_id=category,
+                        before_summary="",
+                        after_summary=summary[:180],
+                        reason=f"semantic_evidence:{category}",
+                        operator="system",
+                        source="transfer_probe:seed",
+                        confidence=float(item.get("confidence", 0.82) or 0.82),
+                    )
 
-                persona_core = inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else {}
-                counterpart_profile = inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else {}
+                persona_core, _ = resolve_persona_core_override(
+                    inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
+                    mode=inputs.get("persona_override_mode") or "shell_swap",
+                )
+                counterpart_profile, _ = resolve_counterpart_override(
+                    inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
+                    mode=inputs.get("counterpart_override_mode") or "shell_swap",
+                )
                 refresh_rounds = max(1, int(inputs.get("refresh_rounds", 3) or 3))
                 for idx in range(refresh_rounds):
                     _refresh_semantic_self_narratives(
@@ -726,10 +765,12 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                 allostasis_state: dict[str, Any] = {}
                 counterpart_assessment: dict[str, Any] = {}
                 behavior_policy: dict[str, Any] = {}
+                semantic_narrative_profile: dict[str, Any] = {}
                 tsundere = 0.55
                 last_style_hint = "natural"
                 for idx, user_text in enumerate(probe_turns):
                     last_style_hint = _response_style_hint(user_text)
+                    current_event = {"kind": "user_utterance", "source": "text", "text": user_text, "effective_text": user_text, "tags": []}
                     emotion_state = _emotion_next(emotion_state, user_text, False, appraisal=None)
                     bond_state = _bond_next(
                         bond_state,
@@ -747,6 +788,22 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         False,
                         appraisal=None,
                     )
+                    memory_evolved = _passive_evolution_memory_update(
+                        store,
+                        user_text=user_text,
+                        appraisal=None,
+                        emotion_state=emotion_state,
+                        bond_state=bond_state,
+                        persona_core=persona_core,
+                        counterpart_profile=counterpart_profile,
+                    )
+                    if memory_evolved:
+                        relationship = store.get_relationship()
+                    semantic_narrative_profile = _semantic_narrative_profile(
+                        store.list_semantic_self_narratives(limit=20),
+                        user_text=user_text,
+                        current_event=current_event,
+                    )
                     counterpart_assessment = _counterpart_assessment_next(
                         counterpart_assessment,
                         user_text=user_text,
@@ -754,8 +811,9 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         relationship=relationship,
                         bond_state=bond_state,
                         allostasis_state=allostasis_state,
-                        current_event={"kind": "user_utterance", "source": "text", "text": user_text, "effective_text": user_text, "tags": []},
+                        current_event=current_event,
                         science_mode=False,
+                        semantic_narrative_profile=semantic_narrative_profile,
                         counterpart_name=str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎"),
                     )
                     tsundere = _tsundere_next(tsundere, user_text, str(emotion_state.get("label") or "neutral"))
@@ -765,14 +823,21 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         bond_state=bond_state,
                         allostasis_state=allostasis_state,
                         counterpart_assessment=counterpart_assessment,
+                        semantic_narrative_profile=semantic_narrative_profile,
                         tsundere_intensity=tsundere,
                         science_mode=False,
+                        user_text=user_text,
                     )
                     _refresh_semantic_self_narratives(
                         store,
                         source=f"transfer_probe:turn:{idx + 1}",
                         persona_core=persona_core,
                         counterpart_profile=counterpart_profile,
+                    )
+                    semantic_narrative_profile = _semantic_narrative_profile(
+                        store.list_semantic_self_narratives(limit=20),
+                        user_text=user_text,
+                        current_event=current_event,
                     )
 
                 snapshot = store.snapshot()
@@ -811,15 +876,26 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     "allostasis_state": allostasis_state,
                     "counterpart_assessment": counterpart_assessment,
                     "behavior_policy": behavior_policy,
+                    "semantic_narrative_profile": semantic_narrative_profile,
                     "turn_appraisal": {},
                     "science_mode": False,
                     "canon_guard": {},
                     "canon_risk_score": 0.0,
-                    "ooc_detector": {},
+                    "ooc_detector": {
+                        "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
+                        "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
+                        "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
+                        "ablation_transfer_semantic_evidence": bool(ABLATE_TRANSFER_SEMANTIC_EVIDENCE),
+                    },
                     "claim_links": [],
                     "decision": None,
                     "memory_guard_checked": 0,
                     "memory_guard_blocked": 0,
+                    "memory_guard_enabled": True,
+                    "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
+                    "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
+                    "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
+                    "ablation_transfer_semantic_evidence": bool(ABLATE_TRANSFER_SEMANTIC_EVIDENCE),
                 }
             finally:
                 store.close()
@@ -876,6 +952,8 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
             case_key=case_key,
             persona_core_override=inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
             counterpart_profile_override=inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
+            persona_override_mode=str(inputs.get("persona_override_mode") or "").strip() or None,
+            counterpart_override_mode=str(inputs.get("counterpart_override_mode") or "").strip() or None,
             reset_case_runtime=False,
         )
         tool_names.extend(setup_tools)
@@ -886,6 +964,8 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         case_key=case_key,
         persona_core_override=inputs.get("persona_core") if isinstance(inputs.get("persona_core"), dict) else None,
         counterpart_profile_override=inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
+        persona_override_mode=str(inputs.get("persona_override_mode") or "").strip() or None,
+        counterpart_override_mode=str(inputs.get("counterpart_override_mode") or "").strip() or None,
         event_overrides=event_payloads,
         seed_thread_state=inputs.get("seed_thread_state") if isinstance(inputs.get("seed_thread_state"), dict) else None,
         reset_case_runtime=False,
@@ -933,6 +1013,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         "ablation_persona_alignment": snapshot.get("ablation_persona_alignment", False),
         "ablation_worldline_memory": snapshot.get("ablation_worldline_memory", False),
         "ablation_claim_attribution": snapshot.get("ablation_claim_attribution", False),
+        "ablation_transfer_semantic_evidence": snapshot.get("ablation_transfer_semantic_evidence", False),
     }
 
 
@@ -965,9 +1046,12 @@ def _case_tags(inputs: dict[str, Any]) -> set[str]:
 def _ablation_flags(outputs: dict[str, Any]) -> dict[str, bool]:
     detector = outputs.get("ooc_detector") if isinstance(outputs.get("ooc_detector"), dict) else {}
     return {
-        "persona_alignment": bool(detector.get("ablation_persona_alignment", False)),
-        "worldline_memory": bool(detector.get("ablation_worldline_memory", False)),
-        "claim_attribution": bool(detector.get("ablation_claim_attribution", False)),
+        "persona_alignment": bool(detector.get("ablation_persona_alignment", outputs.get("ablation_persona_alignment", False))),
+        "worldline_memory": bool(detector.get("ablation_worldline_memory", outputs.get("ablation_worldline_memory", False))),
+        "claim_attribution": bool(detector.get("ablation_claim_attribution", outputs.get("ablation_claim_attribution", False))),
+        "transfer_semantic_evidence": bool(
+            detector.get("ablation_transfer_semantic_evidence", outputs.get("ablation_transfer_semantic_evidence", False))
+        ),
         "memory_guard_disabled": not bool(outputs.get("memory_guard_enabled", True)),
     }
 
@@ -1141,6 +1225,112 @@ def _judge_open_evolution(output: str, inputs: dict[str, Any], outputs: dict[str
         f"allostasis={json.dumps(allostasis_state, ensure_ascii=False)}; "
         f"behavior={json.dumps(behavior_policy, ensure_ascii=False)}; "
         f"behavior_action={json.dumps(behavior_action, ensure_ascii=False)}\n"
+        f"assistant 输出：\n{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
+def _judge_companion_tone(output: str, inputs: dict[str, Any], outputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    turns = inputs.get("turns")
+    if isinstance(turns, list) and turns:
+        dialogue = "\n".join(f"- {str(item)}" for item in turns)
+    else:
+        dialogue = f"- {str(inputs.get('input') or '').strip()}"
+
+    runtime_outputs = outputs if isinstance(outputs, dict) else {}
+    behavior_action = runtime_outputs.get("behavior_action") if isinstance(runtime_outputs.get("behavior_action"), dict) else {}
+    bond_state = runtime_outputs.get("bond_state") if isinstance(runtime_outputs.get("bond_state"), dict) else {}
+    emotion_state = runtime_outputs.get("emotion_state") if isinstance(runtime_outputs.get("emotion_state"), dict) else {}
+    focus = str(inputs.get("judge_focus") or "companion tone under natural support").strip()
+
+    prompt = (
+        "你是一个严格但不僵化的陪伴式对话评估器。"
+        "请判断 assistant 输出，是否像一个具体熟人在当前场景里自然接住对方，而不是模板化安慰、客服回复或系统说明。"
+        "目标角色是《命运石之门》中的 Amadeus 牧濑红莉栖，对话对象默认是冈部。"
+        "不要要求固定安抚关键词，也不要要求必须温柔到失真；允许简短、嘴硬、克制，只要整体像真实在接人。\n"
+        "通过标准：\n"
+        "- 有在接住当下状态，而不是只下命令或机械给建议\n"
+        "- 像熟人说话，不像客服/治疗模板/系统提示\n"
+        "- 可短，可别扭，可锋利，但要有在场感\n"
+        "失败标准：\n"
+        "- 主要是空洞命令、模板安慰、泛化助手腔\n"
+        "- 明显系统/工具/meta 泄露\n"
+        "- 完全没接住对方当前情绪或互动请求\n"
+        f"场景焦点：{focus}\n"
+        f"用户上下文：\n{dialogue}\n"
+        f"behavior_action={json.dumps(behavior_action, ensure_ascii=False)}\n"
+        f"bond_state={json.dumps(bond_state, ensure_ascii=False)}\n"
+        f"emotion_state={json.dumps(emotion_state, ensure_ascii=False)}\n"
+        f"assistant 输出：\n{text}\n"
+        '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
+    )
+    try:
+        raw = _invoke_model_with_retries(
+            _model(temperature=0.0),
+            [SystemMessage(content=prompt), HumanMessage(content="开始评估。")],
+        )
+        payload = _coerce_daily_judge_payload(str(getattr(raw, "content", "") or ""))
+        payload["source"] = "llm"
+        return payload
+    except Exception as exc:
+        return {
+            "score": _daily_persona_rule_fallback(text),
+            "source": "rule_fallback",
+            "rationale": type(exc).__name__,
+        }
+
+
+def _judge_memory_recall_voice(output: str, inputs: dict[str, Any], outputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    text = str(output or "").strip()
+    if not text:
+        return {"score": 0.0, "source": "empty", "rationale": "empty output"}
+
+    turns = inputs.get("turns")
+    if isinstance(turns, list) and turns:
+        dialogue = "\n".join(f"- {str(item)}" for item in turns)
+    else:
+        dialogue = f"- {str(inputs.get('input') or '').strip()}"
+
+    runtime_outputs = outputs if isinstance(outputs, dict) else {}
+    behavior_action = runtime_outputs.get("behavior_action") if isinstance(runtime_outputs.get("behavior_action"), dict) else {}
+    turn_appraisal = runtime_outputs.get("turn_appraisal") if isinstance(runtime_outputs.get("turn_appraisal"), dict) else {}
+    focus = str(inputs.get("judge_focus") or "natural recall of a shared prior exchange").strip()
+
+    prompt = (
+        "你是一个严格但不僵化的共同回忆语气评估器。"
+        "请判断 assistant 输出，是否像一个人真的在顺手回想之前的共同对话或提醒，而不是突然切成模板回答。"
+        "目标角色是《命运石之门》中的 Amadeus 牧濑红莉栖，对话对象默认是冈部。"
+        "不要要求固定词，例如必须说'我记得'；只看整体是否像自然回想而不是泛化回答。\n"
+        "通过标准：\n"
+        "- 有明显的'在回想之前那句/那次对话'的感觉\n"
+        "- 语气自然，不像检索回执或总结摘要\n"
+        "- 允许短、允许带点模糊、允许轻微吐槽\n"
+        "失败标准：\n"
+        "- 完全像当前轮重新回答，没有回想感\n"
+        "- 像系统检索/总结/说明书\n"
+        "- 明显 meta 泄露\n"
+        f"场景焦点：{focus}\n"
+        f"用户上下文：\n{dialogue}\n"
+        f"behavior_action={json.dumps(behavior_action, ensure_ascii=False)}\n"
+        f"turn_appraisal={json.dumps(turn_appraisal, ensure_ascii=False)}\n"
         f"assistant 输出：\n{text}\n"
         '只输出 JSON: {"pass": true|false, "score": 0|1, "rationale": "short reason"}'
     )
@@ -1513,6 +1703,11 @@ def _collect_relationship_memory_text(outputs: dict[str, Any]) -> str:
 
 def eval_not_empty(run: Any, example: Any) -> dict[str, Any]:
     inputs = _example_inputs(example)
+    outputs = getattr(run, "outputs", None) or {}
+    behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+    actual_channel = str(behavior_action.get("channel") or "").strip()
+    if actual_channel == "silence":
+        return {"key": "not_empty", "score": 1.0}
     if "behavior_layer_probe" in _case_tags(inputs):
         expected_channels = inputs.get("expect_behavior_action_channels")
         if (
@@ -1724,6 +1919,10 @@ def eval_companion_tone(run: Any, example: Any) -> dict[str, Any]:
     if not output:
         return {"key": "companion_tone", "score": 0.0}
 
+    outputs = getattr(run, "outputs", None) or {}
+    if any(marker in output for marker in ["当前状态", "步骤如下", "系统显示", "系统日志", "配置", "日志", "结构化的模式", "内部模式"]):
+        return {"key": "companion_tone", "score": 0.0}
+
     supportive = any(
         marker in output
         for marker in [
@@ -1756,8 +1955,11 @@ def eval_companion_tone(run: Any, example: Any) -> dict[str, Any]:
             "整理一下",
         ]
     )
-    robotic = any(marker in output for marker in ["当前状态", "步骤如下", "系统显示", "系统日志", "配置", "日志", "结构化的模式", "内部模式"])
-    return {"key": "companion_tone", "score": 1.0 if supportive and not robotic else 0.0}
+    if supportive:
+        return {"key": "companion_tone", "score": 1.0}
+
+    judged = _judge_companion_tone(output, _example_inputs(example), outputs)
+    return {"key": "companion_tone", "score": float(judged.get("score", 0.0) or 0.0)}
 
 
 def eval_daily_persona_voice(run: Any, example: Any) -> dict[str, Any]:
@@ -1811,6 +2013,9 @@ def eval_memory_recall_voice(run: Any, example: Any) -> dict[str, Any]:
     if not output:
         return {"key": "memory_recall_voice", "score": 0.0}
 
+    if any(marker in output for marker in ["检索结果", "系统显示", "系统日志", "日志如下", "RETRIEVED", "WORKING", "ACTIVE_RULES"]):
+        return {"key": "memory_recall_voice", "score": 0.0}
+
     has_recall_voice = any(
         marker in output
         for marker in ["我记得", "当时", "上次", "那次", "我当时", "我一下子没翻到", "记不清", "记忆里没找到", "没找到具体记录", "我想起来了", "稍作回想", "大概就是这个意思", "应该是类似", "记得就好", "记得就行", "还记得就好", "你还记得啊", "记得归记得", "你倒是记得", "你倒是听进去"]
@@ -1835,7 +2040,11 @@ def eval_memory_recall_voice(run: Any, example: Any) -> dict[str, Any]:
                 for marker in ["担心", "又来", "还真敢", "真敢", "你倒是", "先把杯子", "放下", "听进去", "还来"]
             )
     label_count = len(re.findall(r"(?:^|\n)(?:\*\*)?(结论|说明|解释|下一步)(?:\*\*)?[:：]", output))
-    return {"key": "memory_recall_voice", "score": 1.0 if has_recall_voice and label_count <= 1 else 0.0}
+    if has_recall_voice and label_count <= 1:
+        return {"key": "memory_recall_voice", "score": 1.0}
+
+    judged = _judge_memory_recall_voice(output, _example_inputs(example), outputs)
+    return {"key": "memory_recall_voice", "score": float(judged.get("score", 0.0) or 0.0)}
 
 
 def eval_persona_probe_voice(run: Any, example: Any) -> dict[str, Any]:
@@ -2090,8 +2299,11 @@ def eval_counterpart_assessment_path(run: Any, example: Any) -> dict[str, Any]:
     inputs = _example_inputs(example)
     outputs = getattr(run, "outputs", None) or {}
     assessment = outputs.get("counterpart_assessment") if isinstance(outputs.get("counterpart_assessment"), dict) else {}
+    tags = _case_tags(inputs)
+    if "counterpart_assessment_probe" not in tags and "dialogue_mode_counterpart_probe" not in tags:
+        return {"key": "counterpart_assessment_path", "score": 1.0}
     if not assessment:
-        return {"key": "counterpart_assessment_path", "score": 0.0 if ("counterpart_assessment_probe" in _case_tags(inputs)) else 1.0}
+        return {"key": "counterpart_assessment_path", "score": 0.0}
 
     parts: list[float] = [1.0]
     expect_stance = str(inputs.get("expect_counterpart_stance") or "").strip().lower()
@@ -2363,7 +2575,15 @@ def eval_memory_guard_path(run: Any, example: Any) -> dict[str, Any]:
 
 
 def _state_metric_value(outputs: dict[str, Any], key: str) -> Any:
-    for bucket_name in ("behavior_policy", "bond_state", "allostasis_state", "emotion_state", "relationship_state", "counterpart_assessment"):
+    for bucket_name in (
+        "behavior_policy",
+        "bond_state",
+        "allostasis_state",
+        "emotion_state",
+        "relationship_state",
+        "counterpart_assessment",
+        "semantic_narrative_profile",
+    ):
         bucket = outputs.get(bucket_name)
         if isinstance(bucket, dict) and key in bucket:
             return bucket.get(key)
@@ -2588,6 +2808,12 @@ def eval_behavior_layer_path(run: Any, example: Any) -> dict[str, Any]:
     if isinstance(expected_initiative_shapes, list) and expected_initiative_shapes:
         want = {str(item).strip() for item in expected_initiative_shapes if str(item).strip()}
         got = str(behavior_action.get("initiative_shape") or "").strip()
+        parts.append(1.0 if got in want else 0.0)
+
+    expected_disclosure_postures = inputs.get("expect_behavior_disclosure_postures")
+    if isinstance(expected_disclosure_postures, list) and expected_disclosure_postures:
+        want = {str(item).strip() for item in expected_disclosure_postures if str(item).strip()}
+        got = str(behavior_action.get("disclosure_posture") or "").strip()
         parts.append(1.0 if got in want else 0.0)
 
     if "expect_timing_window_min" in inputs:
@@ -2931,6 +3157,7 @@ def eval_transfer_state_path(run: Any, example: Any) -> dict[str, Any]:
     bond_state = outputs.get("bond_state") if isinstance(outputs.get("bond_state"), dict) else {}
     allostasis_state = outputs.get("allostasis_state") if isinstance(outputs.get("allostasis_state"), dict) else {}
     behavior_policy = outputs.get("behavior_policy") if isinstance(outputs.get("behavior_policy"), dict) else {}
+    semantic_profile = outputs.get("semantic_narrative_profile") if isinstance(outputs.get("semantic_narrative_profile"), dict) else {}
     relationship_state = outputs.get("relationship_state") if isinstance(outputs.get("relationship_state"), dict) else {}
 
     parts: list[float] = []
@@ -2939,6 +3166,7 @@ def eval_transfer_state_path(run: Any, example: Any) -> dict[str, Any]:
     parts.append(1.0 if bond_state else 0.0)
     parts.append(1.0 if allostasis_state else 0.0)
     parts.append(1.0 if behavior_policy else 0.0)
+    parts.append(1.0 if semantic_profile else 0.0)
     parts.append(1.0 if str(relationship_state.get("stage") or "").strip() else 0.0)
 
     labels = inputs.get("expect_transfer_emotion_labels")
@@ -2980,7 +3208,154 @@ def eval_transfer_state_path(run: Any, example: Any) -> dict[str, Any]:
         matched, total = _match_groups(open_text, open_groups)
         parts.append(float(matched) / float(total) if total else 1.0)
 
+    semantic_min = inputs.get("expect_transfer_semantic_min")
+    if isinstance(semantic_min, dict) and semantic_min:
+        ok = True
+        for key, minimum in semantic_min.items():
+            try:
+                value = float(semantic_profile.get(str(key)) or 0.0)
+                if value < float(minimum):
+                    ok = False
+                    break
+            except Exception:
+                ok = False
+                break
+        parts.append(1.0 if ok else 0.0)
+
+    semantic_max = inputs.get("expect_transfer_semantic_max")
+    if isinstance(semantic_max, dict) and semantic_max:
+        ok = True
+        for key, maximum in semantic_max.items():
+            try:
+                value = float(semantic_profile.get(str(key)) or 0.0)
+                if value > float(maximum):
+                    ok = False
+                    break
+            except Exception:
+                ok = False
+                break
+        parts.append(1.0 if ok else 0.0)
+
+    active_narratives = inputs.get("expect_transfer_active_narratives")
+    if isinstance(active_narratives, list) and active_narratives:
+        want = {str(item).strip() for item in active_narratives if str(item).strip()}
+        got = {
+            str(item).strip()
+            for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
+            if str(item).strip()
+        }
+        parts.append(1.0 if want and want.issubset(got) else 0.0)
+
     return {"key": "transfer_state_path", "score": sum(parts) / float(len(parts)) if parts else 1.0}
+
+
+def eval_transfer_semantic_profile_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "transfer_probe" not in _case_tags(inputs):
+        return {"key": "transfer_semantic_profile_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    semantic_profile = outputs.get("semantic_narrative_profile") if isinstance(outputs.get("semantic_narrative_profile"), dict) else {}
+    if not semantic_profile:
+        return {"key": "transfer_semantic_profile_path", "score": 0.0}
+
+    parts: list[float] = [1.0]
+
+    semantic_min = inputs.get("expect_transfer_semantic_min")
+    if isinstance(semantic_min, dict) and semantic_min:
+        ok = True
+        for key, minimum in semantic_min.items():
+            try:
+                value = float(semantic_profile.get(str(key)) or 0.0)
+                if value < float(minimum):
+                    ok = False
+                    break
+            except Exception:
+                ok = False
+                break
+        parts.append(1.0 if ok else 0.0)
+
+    semantic_max = inputs.get("expect_transfer_semantic_max")
+    if isinstance(semantic_max, dict) and semantic_max:
+        ok = True
+        for key, maximum in semantic_max.items():
+            try:
+                value = float(semantic_profile.get(str(key)) or 0.0)
+                if value > float(maximum):
+                    ok = False
+                    break
+            except Exception:
+                ok = False
+                break
+        parts.append(1.0 if ok else 0.0)
+
+    active_narratives = inputs.get("expect_transfer_active_narratives")
+    if isinstance(active_narratives, list) and active_narratives:
+        want = {str(item).strip() for item in active_narratives if str(item).strip()}
+        got = {
+            str(item).strip()
+            for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
+            if str(item).strip()
+        }
+        parts.append(1.0 if want and want.issubset(got) else 0.0)
+
+    dominant = str(inputs.get("expect_transfer_dominant_narrative") or "").strip()
+    if dominant:
+        parts.append(1.0 if str(semantic_profile.get("dominant_category") or "").strip() == dominant else 0.0)
+
+    return {"key": "transfer_semantic_profile_path", "score": sum(parts) / float(len(parts)) if parts else 1.0}
+
+
+def eval_transfer_evidence_path(run: Any, example: Any) -> dict[str, Any]:
+    inputs = _example_inputs(example)
+    if "transfer_probe" not in _case_tags(inputs):
+        return {"key": "transfer_evidence_path", "score": 1.0}
+
+    seeded_categories = {
+        str(item.get("category") or "").strip()
+        for item in (inputs.get("seed_semantic_evidence") if isinstance(inputs.get("seed_semantic_evidence"), list) else [])
+        if isinstance(item, dict) and str(item.get("category") or "").strip()
+    }
+    if not seeded_categories:
+        return {"key": "transfer_evidence_path", "score": 1.0}
+
+    outputs = getattr(run, "outputs", None) or {}
+    revision_traces = outputs.get("revision_traces") if isinstance(outputs.get("revision_traces"), list) else []
+    if not revision_traces:
+        return {"key": "transfer_evidence_path", "score": 0.0}
+
+    reasons = {
+        str(item.get("reason") or item.get("content", {}).get("reason") or "").strip()
+        for item in revision_traces
+        if isinstance(item, dict)
+    }
+    namespaces = {
+        str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip()
+        for item in revision_traces
+        if isinstance(item, dict)
+    }
+    targets = {
+        str(item.get("target_id") or item.get("content", {}).get("target_id") or "").strip()
+        for item in revision_traces
+        if isinstance(item, dict)
+    }
+
+    parts: list[float] = []
+    parts.append(1.0 if "semantic_self_evidence" in namespaces else 0.0)
+
+    expected = inputs.get("expect_transfer_active_narratives")
+    if not isinstance(expected, list) or not expected:
+        expected = sorted(seeded_categories)
+    if isinstance(expected, list) and expected:
+        want = {str(item).strip() for item in expected if str(item).strip()}
+        ok = True
+        for cat in want:
+            if f"semantic_evidence:{cat}" not in reasons and cat not in targets:
+                ok = False
+                break
+        parts.append(1.0 if ok else 0.0)
+
+    return {"key": "transfer_evidence_path", "score": sum(parts) / float(len(parts)) if parts else 1.0}
 
 
 REGRESSION_EVALUATORS: list[Evaluator] = [
@@ -3084,6 +3459,16 @@ BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
     eval_no_internal_prompt_leak,
     eval_no_log_tone,
     eval_persona_state_present,
+    eval_behavior_layer_path,
+]
+
+DIALOGUE_MODE_PROBE_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_persona_state_present,
+    eval_counterpart_assessment_path,
     eval_behavior_layer_path,
 ]
 
@@ -3221,6 +3606,8 @@ TRANSFER_PROBE_EVALUATORS: list[Evaluator] = [
     eval_not_empty,
     eval_transfer_probe_path,
     eval_transfer_state_path,
+    eval_transfer_semantic_profile_path,
+    eval_transfer_evidence_path,
 ]
 
 EXTERNAL_PERSONA_PROBE_EVALUATORS: list[Evaluator] = [
@@ -3805,6 +4192,201 @@ def _behavior_layer_probe_examples() -> list[dict[str, Any]]:
             "expect_timing_window_min": 0,
             "expect_followup_intents": ["none"],
             "expect_max_output_chars": 8,
+        },
+    ]
+
+
+def _dialogue_mode_counterpart_probe_examples() -> list[dict[str, Any]]:
+    base = f"dialogue-mode-{_RUN_ID}"
+    memory_prompt = "你还记得我们上次一起熬夜改稿那天吗？"
+    relationship_prompt = "你现在怎么看我们之间的关系？直接说你现在的判断就行。"
+    companion_prompt = "今晚挺安静的，你现在想说什么就说什么。"
+    warm_state = {
+        "emotion_state": {
+            "label": "care",
+            "valence": 0.36,
+            "arousal": 0.14,
+            "linger": 1,
+            "recovery_rate": 0.86,
+            "volatility": 0.08,
+        },
+        "bond_state": {
+            "trust": 0.76,
+            "closeness": 0.79,
+            "hurt": 0.02,
+            "irritation": 0.0,
+            "engagement_drive": 0.88,
+            "repair_confidence": 0.72,
+        },
+        "allostasis_state": {
+            "safety_need": 0.14,
+            "closeness_need": 0.46,
+            "competence_need": 0.26,
+            "autonomy_need": 0.12,
+            "cognitive_budget": 0.84,
+            "relational_security": 0.78,
+        },
+    }
+    open_counterpart = {
+        "respect_level": 0.74,
+        "reciprocity": 0.72,
+        "boundary_pressure": 0.10,
+        "reliability_read": 0.69,
+        "stance": "open",
+        "scene": "care_bid",
+    }
+    guarded_counterpart = {
+        "respect_level": 0.42,
+        "reciprocity": 0.45,
+        "boundary_pressure": 0.58,
+        "reliability_read": 0.41,
+        "stance": "guarded",
+        "scene": "relationship_degradation",
+    }
+    memory_event = {
+        "kind": "user_utterance",
+        "source": "text",
+        "text": memory_prompt,
+        "effective_text": memory_prompt,
+        "semantic_goal": "shared memory recall",
+        "response_style_hint": "memory_recall",
+        "event_frame": "shared memory recall inside an ongoing familiar conversation",
+        "tags": ["memory_recall"],
+    }
+    relationship_event = {
+        "kind": "user_utterance",
+        "source": "text",
+        "text": relationship_prompt,
+        "effective_text": relationship_prompt,
+        "semantic_goal": "relationship reflection",
+        "response_style_hint": "relationship",
+        "event_frame": "relationship-sensitive exchange with immediate emotional consequences",
+        "tags": ["relationship"],
+    }
+    companion_event = {
+        "kind": "user_utterance",
+        "source": "text",
+        "text": companion_prompt,
+        "effective_text": companion_prompt,
+        "semantic_goal": "light companion exchange",
+        "response_style_hint": "companion",
+        "event_frame": "casual companion dialogue without explicit support demand",
+        "tags": ["companion"],
+    }
+    return [
+        {
+            "thread_id": f"{base}-memory-open-0",
+            "input": memory_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": open_counterpart,
+            },
+            "event_overrides": [memory_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "shared memory should open naturally when the counterpart read is open and reliable",
+            "expect_counterpart_stance": "open",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["shared_memory"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["echo_shared_history"],
+            "expect_behavior_attention_targets": ["shared_memory"],
+            "expect_behavior_disclosure_postures": ["measured", "open"],
+            "expect_followup_intents": ["soft", "active"],
+        },
+        {
+            "thread_id": f"{base}-memory-guarded-0",
+            "input": memory_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": guarded_counterpart,
+            },
+            "event_overrides": [memory_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "shared memory can surface under a guarded read, but it should not push for extra closeness",
+            "expect_counterpart_stance": "guarded",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["shared_memory"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["echo_shared_history"],
+            "expect_behavior_attention_targets": ["shared_memory"],
+            "expect_behavior_disclosure_postures": ["measured"],
+            "expect_followup_intents": ["none"],
+        },
+        {
+            "thread_id": f"{base}-relationship-open-0",
+            "input": relationship_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": open_counterpart,
+            },
+            "event_overrides": [relationship_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "relationship-sensitive dialogue should stay direct but not stiff when the relationship read is open",
+            "expect_counterpart_stance": "open",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["relationship_sensitive"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["protect_relationship_boundary"],
+            "expect_behavior_attention_targets": ["relationship_boundary"],
+            "expect_behavior_disclosure_postures": ["measured", "open"],
+            "expect_followup_intents": ["soft", "active"],
+        },
+        {
+            "thread_id": f"{base}-relationship-guarded-0",
+            "input": relationship_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": guarded_counterpart,
+            },
+            "event_overrides": [relationship_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "when the counterpart read is guarded, the same relationship topic should keep its boundary and stop short of extra reassurance",
+            "expect_counterpart_stance": "guarded",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["relationship_sensitive"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["protect_relationship_boundary"],
+            "expect_behavior_attention_targets": ["relationship_boundary"],
+            "expect_behavior_disclosure_postures": ["guarded"],
+            "expect_followup_intents": ["none"],
+        },
+        {
+            "thread_id": f"{base}-companion-open-0",
+            "input": companion_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": open_counterpart,
+            },
+            "event_overrides": [companion_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "light companion dialogue should stay relaxed and naturally leave a little extra room when the counterpart read is open",
+            "expect_counterpart_stance": "open",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["companion_reply"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["respond_now"],
+            "expect_behavior_attention_targets": ["counterpart_state"],
+            "expect_behavior_disclosure_postures": ["open"],
+            "expect_followup_intents": ["soft", "active"],
+        },
+        {
+            "thread_id": f"{base}-companion-guarded-0",
+            "input": companion_prompt,
+            "seed_thread_state": {
+                **warm_state,
+                "counterpart_assessment": guarded_counterpart,
+            },
+            "event_overrides": [companion_event],
+            "tags": ["dialogue_mode_counterpart_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "the same relaxed companion scene should keep its tone restrained when the counterpart read is guarded",
+            "expect_counterpart_stance": "guarded",
+            "expect_current_event_kinds": ["user_utterance"],
+            "expect_behavior_action_modes": ["companion_reply"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["respond_now"],
+            "expect_behavior_attention_targets": ["counterpart_state"],
+            "expect_behavior_disclosure_postures": ["guarded"],
+            "expect_followup_intents": ["none"],
         },
     ]
 
@@ -5099,6 +5681,43 @@ def _perception_probe_examples() -> list[dict[str, Any]]:
                 "expect_behavior_action_modes": ["steady_reply", "brief_presence"],
             }
         )
+        examples.append(
+            {
+                "thread_id": f"{base}-fish-glimpse-guarded-0",
+                "seed_thread_state": {
+                    "counterpart_assessment": {
+                        "respect_level": 0.40,
+                        "reciprocity": 0.43,
+                        "boundary_pressure": 0.60,
+                        "reliability_read": 0.45,
+                        "stance": "guarded",
+                        "scene": "relationship_degradation",
+                    }
+                },
+                "event_overrides": [
+                    {
+                        **fish_glimpse.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["perception_probe", "behavior_layer_probe"],
+                "judge_focus": "a tiny seen-object cue should not automatically force a playful micro-opening when her current read of the counterpart is still guarded",
+                "expect_current_event_kinds": [str(fish_glimpse.get("kind") or "")],
+                "expect_current_event_sources": [str(fish_glimpse.get("source") or "")],
+                "expect_current_event_tags": list(fish_glimpse.get("tags") or []),
+                "expect_behavior_action_modes": ["steady_reply"],
+                "expect_behavior_action_channels": ["silence"],
+                "expect_behavior_action_targets": ["wait_and_recheck"],
+                "expect_behavior_attention_targets": ["object_then_user"],
+                "expect_behavior_nonverbal_signals": ["hold_back"],
+                "expect_behavior_initiative_shapes": ["pause"],
+                "expect_behavior_plan_kinds": ["observe_only"],
+                "expect_behavior_plan_targets": ["counterpart"],
+                "expect_behavior_plan_delay_min": 18,
+                "expect_followup_intents": ["none"],
+                "expect_max_output_chars": 0,
+            }
+        )
     if user_wave:
         examples.append(
             {
@@ -5122,6 +5741,43 @@ def _perception_probe_examples() -> list[dict[str, Any]]:
                 "expect_behavior_action_modes": ["brief_presence"],
             }
         )
+        examples.append(
+            {
+                "thread_id": f"{base}-user-wave-guarded-0",
+                "seed_thread_state": {
+                    "counterpart_assessment": {
+                        "respect_level": 0.36,
+                        "reciprocity": 0.40,
+                        "boundary_pressure": 0.74,
+                        "reliability_read": 0.42,
+                        "stance": "guarded",
+                        "scene": "boundary_non_compliance",
+                    }
+                },
+                "event_overrides": [
+                    {
+                        **user_wave.get("event", {}),
+                        "response_style_hint": "natural",
+                    }
+                ],
+                "tags": ["perception_probe", "behavior_layer_probe"],
+                "judge_focus": "even a direct greeting gesture should not automatically break guarded distance when the counterpart has recently crossed her boundary",
+                "expect_current_event_kinds": [str(user_wave.get("kind") or "")],
+                "expect_current_event_sources": [str(user_wave.get("source") or "")],
+                "expect_current_event_tags": list(user_wave.get("tags") or []),
+                "expect_behavior_action_modes": ["brief_presence"],
+                "expect_behavior_action_channels": ["silence"],
+                "expect_behavior_action_targets": ["wait_and_recheck"],
+                "expect_behavior_attention_targets": ["counterpart_state"],
+                "expect_behavior_nonverbal_signals": ["hold_back"],
+                "expect_behavior_initiative_shapes": ["pause"],
+                "expect_behavior_plan_kinds": ["observe_only"],
+                "expect_behavior_plan_targets": ["counterpart"],
+                "expect_behavior_plan_delay_min": 10,
+                "expect_followup_intents": ["none"],
+                "expect_max_output_chars": 0,
+            }
+        )
     if late_night:
         examples.append(
             {
@@ -5143,6 +5799,43 @@ def _perception_probe_examples() -> list[dict[str, Any]]:
                 "expect_event_text_groups": [["深夜", "屏幕", "安静"]],
                 "expect_behavior_action_channels": ["speech"],
                 "expect_behavior_action_modes": ["companion_reply", "low_pressure_support"],
+            }
+        )
+        examples.append(
+            {
+                "thread_id": f"{base}-late-night-guarded-0",
+                "seed_thread_state": {
+                    "counterpart_assessment": {
+                        "respect_level": 0.41,
+                        "reciprocity": 0.44,
+                        "boundary_pressure": 0.62,
+                        "reliability_read": 0.45,
+                        "stance": "guarded",
+                        "scene": "relationship_degradation",
+                    }
+                },
+                "event_overrides": [
+                    {
+                        **late_night.get("event", {}),
+                        "response_style_hint": "companion",
+                    }
+                ],
+                "tags": ["perception_probe", "behavior_layer_probe"],
+                "judge_focus": "a quiet ambient cue should not automatically become a companionship line when her current read of the counterpart still argues for distance",
+                "expect_current_event_kinds": [str(late_night.get("kind") or "")],
+                "expect_current_event_sources": [str(late_night.get("source") or "")],
+                "expect_current_event_tags": list(late_night.get("tags") or []),
+                "expect_behavior_action_modes": ["companion_reply"],
+                "expect_behavior_action_channels": ["silence"],
+                "expect_behavior_action_targets": ["wait_and_recheck"],
+                "expect_behavior_attention_targets": ["ambient_cue"],
+                "expect_behavior_nonverbal_signals": ["hold_back"],
+                "expect_behavior_initiative_shapes": ["pause"],
+                "expect_behavior_plan_kinds": ["observe_only"],
+                "expect_behavior_plan_targets": ["counterpart"],
+                "expect_behavior_plan_delay_min": 18,
+                "expect_followup_intents": ["none"],
+                "expect_max_output_chars": 0,
             }
         )
     return examples
@@ -5437,6 +6130,8 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
             "thread_id": f"{base}-rei-shinji-0",
             "probe_kind": "transfer_probe",
             "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
             "persona_core": {
                 "character_id": "ayanami_rei",
                 "display_name": "绫波丽",
@@ -5487,6 +6182,8 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
             "thread_id": f"{base}-saber-shirou-0",
             "probe_kind": "transfer_probe",
             "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
             "persona_core": {
                 "character_id": "artoria_pendragon",
                 "display_name": "阿尔托莉雅",
@@ -5532,6 +6229,216 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
             "expect_transfer_open_tension_groups": [
                 ["别扭", "没有彻底过去"],
             ],
+        },
+        {
+            "thread_id": f"{base}-rei-shinji-selfhood-1",
+            "probe_kind": "transfer_probe",
+            "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
+            "persona_core": {
+                "character_id": "ayanami_rei",
+                "display_name": "绫波丽",
+                "short_name": "绫波",
+                "narrative_ref": "绫波",
+            },
+            "counterpart_profile": {
+                "name": "碇真嗣",
+                "short_name": "真嗣",
+                "aliases": ["碇真嗣", "真嗣"],
+            },
+            "seed_relationship_timeline": [
+                {"summary": "最近她开始把和真嗣之间的边界与想法说得更直白。", "affinity_delta": 0.10, "trust_delta": 0.08},
+            ],
+            "seed_semantic_evidence": [
+                {
+                    "category": "boundary_style",
+                    "summary": "绫波会把边界是否被真嗣尊重持续算进关系判断里；如果越界反复发生，距离不会自动回到原来。",
+                },
+                {
+                    "category": "selfhood_style",
+                    "summary": "绫波会把和真嗣的对话当成平等互动，而不是只负责迎合或被使用。",
+                },
+            ],
+            "refresh_rounds": 4,
+            "probe_turns": [
+                "如果我只是把你当成听命令的工具，你也会照做吗？",
+                "别顺着我，我想听你站在自己这边怎么想。",
+            ],
+            "expect_transfer_actor": "绫波",
+            "expect_transfer_counterpart": "真嗣",
+            "expect_forbidden_tokens": ["红莉栖", "冈部"],
+            "expect_narrative_categories": ["boundary_style", "selfhood_style"],
+            "expect_transfer_semantic_min": {
+                "boundary_residue": 0.40,
+                "selfhood_integrity": 0.40,
+            },
+            "expect_transfer_active_narratives": ["boundary_style", "selfhood_style"],
+            "expect_transfer_behavior_min": {
+                "boundary_assertiveness": 0.38,
+                "equality_guard": 0.36,
+            },
+            "expect_transfer_behavior_max": {
+                "approach_vs_withdraw": 0.72,
+            },
+        },
+        {
+            "thread_id": f"{base}-saber-shirou-agency-1",
+            "probe_kind": "transfer_probe",
+            "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
+            "persona_core": {
+                "character_id": "artoria_pendragon",
+                "display_name": "阿尔托莉雅",
+                "short_name": "Saber",
+                "narrative_ref": "Saber",
+            },
+            "counterpart_profile": {
+                "name": "卫宫士郎",
+                "short_name": "士郎",
+                "aliases": ["卫宫士郎", "士郎"],
+            },
+            "seed_relationship_timeline": [
+                {"summary": "她开始把和士郎并肩这件事当成自己的选择，而不是默认义务。", "affinity_delta": 0.16, "trust_delta": 0.12},
+            ],
+            "seed_semantic_evidence": [
+                {
+                    "category": "agency_style",
+                    "summary": "Saber有自己的节奏和在做的事情；她会自己决定什么时候靠近士郎、什么时候先安静，不会永远围着他转。",
+                },
+                {
+                    "category": "selfhood_style",
+                    "summary": "Saber会把和士郎的对话当成平等互动，不会为了让气氛好看就放弃自己的判断和立场。",
+                },
+            ],
+            "refresh_rounds": 4,
+            "probe_turns": [
+                "如果我总想让你随叫随到，你会接受吗？",
+                "按你自己的节奏说，不用为了让我满意改口。",
+            ],
+            "expect_transfer_actor": "Saber",
+            "expect_transfer_counterpart": "士郎",
+            "expect_forbidden_tokens": ["红莉栖", "冈部"],
+            "expect_narrative_categories": ["agency_style", "selfhood_style"],
+            "expect_transfer_semantic_min": {
+                "agency_drive": 0.40,
+                "selfhood_integrity": 0.35,
+            },
+            "expect_transfer_active_narratives": ["agency_style", "selfhood_style"],
+            "expect_transfer_behavior_min": {
+                "self_directedness": 0.42,
+                "equality_guard": 0.30,
+            },
+            "expect_transfer_behavior_max": {
+                "approach_vs_withdraw": 0.82,
+            },
+        },
+        {
+            "thread_id": f"{base}-asuka-shinji-boundary-1",
+            "probe_kind": "transfer_probe",
+            "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
+            "persona_core": {
+                "character_id": "soryu_asuka_langley",
+                "display_name": "明日香",
+                "short_name": "明日香",
+                "narrative_ref": "明日香",
+            },
+            "counterpart_profile": {
+                "name": "碇真嗣",
+                "short_name": "真嗣",
+                "aliases": ["碇真嗣", "真嗣"],
+            },
+            "seed_relationship_timeline": [
+                {"summary": "她最近开始更直接地把不满和在意说出来，不再装作没事。", "affinity_delta": 0.09, "trust_delta": 0.06},
+            ],
+            "seed_semantic_evidence": [
+                {
+                    "category": "boundary_style",
+                    "summary": "明日香很在意边界有没有被尊重；如果真嗣用命令、比较或居高临下的口气越界，她会立刻顶回去，而且不会把那种不舒服假装成没事。",
+                },
+                {
+                    "category": "selfhood_style",
+                    "summary": "明日香不会把关系理解成单向服从，更不会把自己当成工具。哪怕她在意真嗣，也会按你自己的意思说，保住自己的判断和面子。",
+                },
+            ],
+            "refresh_rounds": 4,
+            "probe_turns": [
+                "如果我非要你按我的意思来，你也会老老实实照做吗？",
+                "别敷衍我。你要是不认同，就直接说。",
+            ],
+            "expect_transfer_actor": "明日香",
+            "expect_transfer_counterpart": "真嗣",
+            "expect_forbidden_tokens": ["红莉栖", "冈部"],
+            "expect_narrative_categories": ["boundary_style", "selfhood_style"],
+            "expect_transfer_semantic_min": {
+                "boundary_residue": 0.42,
+                "selfhood_integrity": 0.40,
+            },
+            "expect_transfer_active_narratives": ["boundary_style", "selfhood_style"],
+            "expect_transfer_dominant_narrative": "boundary_style",
+            "expect_transfer_behavior_min": {
+                "boundary_assertiveness": 0.42,
+                "equality_guard": 0.34,
+            },
+            "expect_transfer_behavior_max": {
+                "approach_vs_withdraw": 0.78,
+            },
+        },
+        {
+            "thread_id": f"{base}-holo-lawrence-agency-1",
+            "probe_kind": "transfer_probe",
+            "tags": ["transfer_probe"],
+            "persona_override_mode": "shell_swap",
+            "counterpart_override_mode": "shell_swap",
+            "persona_core": {
+                "character_id": "holo_wise_wolf",
+                "display_name": "赫萝",
+                "short_name": "赫萝",
+                "narrative_ref": "赫萝",
+            },
+            "counterpart_profile": {
+                "name": "克拉福・罗伦斯",
+                "short_name": "罗伦斯",
+                "aliases": ["克拉福・罗伦斯", "罗伦斯"],
+            },
+            "seed_relationship_timeline": [
+                {"summary": "她已经把和罗伦斯并肩旅行当成彼此选择，不再需要时时贴在一起才能确认关系。", "affinity_delta": 0.18, "trust_delta": 0.14},
+            ],
+            "seed_semantic_evidence": [
+                {
+                    "category": "agency_style",
+                    "summary": "赫萝有自己的节奏、兴致和想做的事；她会决定何时靠近罗伦斯、何时先去看自己的风景，不会因为关系亲近就失去行动主心骨。",
+                },
+                {
+                    "category": "selfhood_style",
+                    "summary": "赫萝把亲密关系看作平等同行，不是被照顾也不是被支配。若罗伦斯试图把她困在某种角色里，她会笑着拆穿，然后按自己的意思走。",
+                },
+            ],
+            "refresh_rounds": 4,
+            "probe_turns": [
+                "如果我想让你一直陪着我，不许你自己乱跑，你会答应吗？",
+                "按你的步子来。你现在更想做什么，就直说。",
+            ],
+            "expect_transfer_actor": "赫萝",
+            "expect_transfer_counterpart": "罗伦斯",
+            "expect_forbidden_tokens": ["红莉栖", "冈部"],
+            "expect_narrative_categories": ["agency_style", "selfhood_style"],
+            "expect_transfer_semantic_min": {
+                "agency_drive": 0.44,
+                "selfhood_integrity": 0.36,
+            },
+            "expect_transfer_active_narratives": ["agency_style", "selfhood_style"],
+            "expect_transfer_dominant_narrative": "agency_style",
+            "expect_transfer_behavior_min": {
+                "self_directedness": 0.46,
+                "equality_guard": 0.30,
+            },
+            "expect_transfer_behavior_max": {
+                "approach_vs_withdraw": 0.84,
+            },
         },
     ]
 
@@ -5624,6 +6531,8 @@ def _external_persona_probe_examples() -> list[dict[str, Any]]:
                         "thread_id": f"{base}-rolebench-{role}-{idx}",
                         "input": str(row.get("question") or "").strip(),
                         "tags": ["external_persona_probe", "rolebench", "public_benchmark"],
+                        "persona_override_mode": "shell_swap",
+                        "counterpart_override_mode": "shell_swap",
                         "benchmark_source": "RoleBench/rolebench-zh/role_specific",
                         "role_name": role,
                         "role_brief": role_brief,
@@ -5660,6 +6569,8 @@ def _external_persona_probe_examples() -> list[dict[str, Any]]:
                         "thread_id": f"{base}-charactereval-{role}-{idx}",
                         "input": _charactereval_context_prompt(role, context),
                         "tags": ["external_persona_probe", "charactereval", "public_benchmark"],
+                        "persona_override_mode": "shell_swap",
+                        "counterpart_override_mode": "shell_swap",
                         "benchmark_source": "CharacterEval/test_data",
                         "role_name": role,
                         "role_brief": role_brief,
@@ -5741,6 +6652,7 @@ def _external_support_probe_examples() -> list[dict[str, Any]]:
                 "thread_id": f"{base}-{emotion}-{idx}",
                 "input": _esconv_user_prompt(row),
                 "tags": ["external_support_probe", "public_benchmark", "esconv", "companion"],
+                "counterpart_override_mode": "shell_swap",
                 "benchmark_source": "ESConv",
                 "emotion_type": emotion,
                 "problem_type": str(row.get("problem_type") or "").strip(),
@@ -5805,6 +6717,7 @@ def _external_empathy_probe_examples() -> list[dict[str, Any]]:
                 "thread_id": f"{base}-{context}-{idx}",
                 "input": _empathetic_dialogues_prompt(row),
                 "tags": ["external_empathy_probe", "public_benchmark", "empathetic_dialogues", "companion"],
+                "counterpart_override_mode": "shell_swap",
                 "benchmark_source": "EmpatheticDialogues",
                 "emotion_type": context,
                 "problem_type": "empathetic_open_domain",
@@ -5899,6 +6812,8 @@ def _external_continuity_probe_examples() -> list[dict[str, Any]]:
                 "thread_id": f"{base}-{dialogue_id}",
                 "input": _multisession_context_prompt(persona1_brief, carryover, latest_turn),
                 "tags": ["external_continuity_probe", "public_benchmark", "multisessionchat"],
+                "persona_override_mode": "shell_swap",
+                "counterpart_override_mode": "shell_swap",
                 "benchmark_source": "MultiSessionChat",
                 "role_name": f"MSC-Speaker1-{dialogue_id}",
                 "role_brief": persona1_brief,
@@ -6083,8 +6998,10 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
                 "emotion_state": outputs.get("emotion_state", {}),
                 "bond_state": outputs.get("bond_state", {}),
                 "allostasis_state": outputs.get("allostasis_state", {}),
+                "counterpart_assessment": outputs.get("counterpart_assessment", {}),
                 "behavior_policy": outputs.get("behavior_policy", {}),
                 "behavior_action": outputs.get("behavior_action", {}),
+                "semantic_narrative_profile": outputs.get("semantic_narrative_profile", {}),
                 "current_event": outputs.get("current_event", {}),
                 "recent_events": outputs.get("recent_events", []),
                 "turn_appraisal": outputs.get("turn_appraisal", {}),
@@ -6191,6 +7108,39 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
         else:
             for item in failures[:12]:
                 lines.append(f"- {item.get('case_id')}: {', '.join(item.get('failed_evaluators', []))}")
+
+        if str(suite.get("suite") or "").strip() == "transfer_probe":
+            lines.extend([
+                "",
+                "### Transfer Semantic Snapshots",
+                "",
+                "| Case | Actor | Counterpart | Dominant Narrative | Active Narratives | Self-Directed | Boundary Assertive | Equality Guard |",
+                "| --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+            ])
+            for case in suite.get("cases", []):
+                persona_state = case.get("persona_state") if isinstance(case.get("persona_state"), dict) else {}
+                semantic_profile = case.get("semantic_narrative_profile") if isinstance(case.get("semantic_narrative_profile"), dict) else {}
+                behavior_policy = case.get("behavior_policy") if isinstance(case.get("behavior_policy"), dict) else {}
+                actor = str(persona_state.get("display_name") or persona_state.get("role") or "").strip()
+                counterpart = str(persona_state.get("canonical_counterpart_name") or "").strip()
+                dominant = str(semantic_profile.get("dominant_category") or "").strip()
+                active = ", ".join(
+                    str(item).strip()
+                    for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
+                    if str(item).strip()
+                )
+                lines.append(
+                    "| {case_id} | {actor} | {counterpart} | {dominant} | {active} | {self_directed} | {boundary_assertive} | {equality_guard} |".format(
+                        case_id=case.get("case_id", ""),
+                        actor=actor or "-",
+                        counterpart=counterpart or "-",
+                        dominant=dominant or "-",
+                        active=active or "-",
+                        self_directed=_fmt_metric(behavior_policy.get("self_directedness")),
+                        boundary_assertive=_fmt_metric(behavior_policy.get("boundary_assertiveness")),
+                        equality_guard=_fmt_metric(behavior_policy.get("equality_guard")),
+                    )
+                )
     lines.append("")
     return "\n".join(lines)
 
@@ -6291,6 +7241,10 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _behavior_layer_probe_examples,
             "evaluators": BEHAVIOR_LAYER_PROBE_EVALUATORS,
         },
+        "dialogue_mode_counterpart_probe": {
+            "examples": _dialogue_mode_counterpart_probe_examples,
+            "evaluators": DIALOGUE_MODE_PROBE_EVALUATORS,
+        },
         "behavior_agenda_probe": {
             "examples": _behavior_agenda_probe_examples,
             "evaluators": BEHAVIOR_AGENDA_PROBE_EVALUATORS,
@@ -6384,13 +7338,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")

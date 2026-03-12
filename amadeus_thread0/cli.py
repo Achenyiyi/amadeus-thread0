@@ -14,7 +14,6 @@ import io
 
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
-from langchain_deepseek import ChatDeepSeek
 from langgraph.types import Command
 
 from .config import (
@@ -26,6 +25,7 @@ from .config import (
 )
 from .graph import build_graph
 from .memory_store import MemoryStore
+from .modeling import build_chat_model, runtime_model_summary
 from .session_orchestrator import emotion_to_tts_profile, push_tts_segments
 from .settings import get_settings
 from .tts_io import create_dashscope_realtime_session, get_tts_config
@@ -303,7 +303,7 @@ def main():
     print("Amadeus-K CLI 已启动。输入 /help 查看命令，/exit 退出。")
     print(
         "[runtime] model="
-        + str(s.deepseek_model)
+        + runtime_model_summary()
         + " | thread_id="
         + str(config["configurable"]["thread_id"])
         + " | data_dir="
@@ -412,8 +412,12 @@ def main():
             print(
                 "\n[env] cwd="
                 + str(Path.cwd())
-                + "\n  AMADEUS_DEEPSEEK_MODEL="
-                + str(s.deepseek_model)
+                + "\n  AMADEUS_MODEL_PROVIDER="
+                + str(s.model_provider)
+                + "\n  AMADEUS_MODEL_NAME="
+                + str(s.model_name)
+                + "\n  AMADEUS_MODEL_BASE_URL="
+                + (str(s.model_base_url) if str(s.model_base_url).strip() else "(default)")
                 + "\n  AMADEUS_TTS_ENABLED="
                 + str(os.getenv("AMADEUS_TTS_ENABLED"))
                 + "\n  AMADEUS_TTS_BACKEND="
@@ -510,6 +514,7 @@ def main():
             print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
             print("\n[ALLOSTASIS_STATE]\n" + json.dumps(vals.get("allostasis_state", {}), ensure_ascii=False, indent=2))
             print("\n[COUNTERPART_ASSESSMENT]\n" + json.dumps(vals.get("counterpart_assessment", {}), ensure_ascii=False, indent=2))
+            print("\n[SEMANTIC_NARRATIVE_PROFILE]\n" + json.dumps(vals.get("semantic_narrative_profile", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
@@ -875,7 +880,7 @@ def main():
                 print("\n没有 moments，无法生成反思。")
                 continue
 
-            llm = ChatDeepSeek(model=s.deepseek_model, temperature=0.2)
+            llm = build_chat_model(temperature=0.2)
 
             prompt = (
                 "你是记忆反思器(reflection generator)。给定一组按时间排序的 moments，请总结出 1~6 条‘长期规律/稳定结论’。\n"

@@ -57,21 +57,21 @@ Persona Core defines who she is.
 It is fixed and should not be rewritten by normal interaction.
 
 ### Current status
-Status: `implemented, needs explicit centralization`
+Status: `implemented and now centralized through a repo-level authority`
 
 Current evidence:
 - canonical Amadeus-Kurisu role brief
 - identity axioms
 - counterpart anchor: `冈部伦太郎`
 - canon shell used across draft and align stages
+- repo-level authority file: `amadeus_thread0/persona_specs/amadeus_kurisu.json`
+- runtime override policy: `authority_preserving` by default, explicit `shell_swap` only for transfer / external probes
 
 ### Missing
-- one canonical schema file for Persona Core
-- explicit separation between immutable identity and mutable preferences
 - stronger selfhood continuity evaluation at philosophical depth
 
 ### Near-term action
-Freeze Persona Core as a repo-level authority and route all future characterization changes through that authority only.
+Keep the authority file as the only entry point for future role-shell swaps and persona-core edits, and refuse ordinary runtime payloads that try to rewrite immutable identity fields.
 
 ## 3. Self-Evolution System
 
@@ -89,6 +89,7 @@ What it already does:
 - can now be triggered by non-user events such as `vision / ambient / gesture / idle-time` seeds
 - can now appraise scheduler-derived life windows such as `deadline_window` and `shared_activity_window`
 - can now preserve “she is busy with her own thing” as a valid runtime state instead of always pivoting toward the user
+- now reads `semantic_self_narratives` as long-horizon bias, so appraisal no longer treats each turn as an isolated reset
 
 What still needs work:
 - broader event understanding beyond text-first turns
@@ -127,6 +128,7 @@ What it does:
 - distinguishes disrespect from overload, apology, repair attempts, and boundary testing
 - gives the behavior layer a bidirectional relationship read instead of only inward state
 - now also survives passive scheduler/time turns instead of being silently washed back to `open`
+- now absorbs long-term semantic narratives, so unresolved tension / repair residue / bond depth can keep affecting how she reads the same person over time
 
 ### 3.5 Allostasis Engine
 Status: `implemented as v1`
@@ -150,6 +152,9 @@ Current evidence:
 
 What it does:
 - preserves long-term relationship and identity meaning, not just recall
+- semantic narratives now feed back into appraisal and counterpart judgment, so reconsolidation is part of runtime causality rather than a passive archive
+- current runtime narratives now cover not only `bond / commitment / repair / tension`, but also `boundary / selfhood / agency`, so “平权、自我、自己的节奏” 已经进入长期状态层而不是只停在提示词
+- runtime now also records `semantic self evidence` from high-value turns, so long-term self narratives can keep consolidating even when the user is discussing selfhood/boundaries/autonomy rather than generating explicit relationship events
 
 ### 3.7 Behavior Policy Engine
 Status: `implemented as explicit bridge`
@@ -172,6 +177,7 @@ What it does:
 - queue maturity can now also be influenced by `counterpart_assessment`, not only by elapsed time or event tags
 - scheduled shared/work/life windows can now branch differently under `open / watchful / guarded` counterpart reads without introducing hard reply templates
 - self-originated break windows can now also branch under `open / guarded` counterpart reads instead of always becoming reopening speech
+- gesture / ambient / observed-scene events can now also branch under the current counterpart read instead of always forcing immediate speech
 
 ## 4. Behavior Layer
 
@@ -192,6 +198,7 @@ Current behavior forms:
 - idle-time low-pressure check-in / quiet non-expansion
 - scheduled life nudges and shared-activity offers, now with counterpart-aware maturity/hold
 - self-rhythm holding and self-originated small reopenings, now also allowed to stay silent when the counterpart read is still guarded
+- perception-driven presence/support/object cues, now also allowed to stay silent when the current relationship read argues for distance
 - abstract next-step skeleton via `action_target / deferred_action_family / timing_window_min`
 - nonverbal/initiative skeleton via `attention_target / nonverbal_signal / initiative_shape`
 - TTS rendering as secondary output channel

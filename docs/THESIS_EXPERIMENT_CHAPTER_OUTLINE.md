@@ -4,6 +4,8 @@ Updated: 2026-03-07
 
 This file is the recommended structure for the experiment chapter of the thesis. It is written to match the assets already present in the repository.
 
+Read together with `docs/THESIS_EXPERIMENT_PROTOCOL.md` so chapter structure and experiment interpretation stay aligned.
+
 ## 1. Chapter Goal
 
 Start with one paragraph that fixes the purpose of the chapter:

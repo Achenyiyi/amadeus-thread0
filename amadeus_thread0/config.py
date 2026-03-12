@@ -2,6 +2,8 @@
 
 import os
 
+from .persona_authority import get_counterpart_authority
+
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = str(os.getenv(name, "") or "").strip().lower()
@@ -119,19 +121,26 @@ EVAL_MODE = _env_bool("AMADEUS_EVAL_MODE", default=False)
 EVAL_GENERATION_TEMPERATURE = _env_float("AMADEUS_EVAL_GENERATION_TEMPERATURE", 0.12)
 
 # ---- Canon counterpart ----
-CANON_COUNTERPART_ID = str(os.getenv("AMADEUS_CANON_COUNTERPART_ID", "okabe_rintaro") or "").strip() or "okabe_rintaro"
-CANON_COUNTERPART_NAME = str(os.getenv("AMADEUS_CANON_COUNTERPART_NAME", "冈部伦太郎") or "").strip() or "冈部伦太郎"
+_COUNTERPART_AUTHORITY = get_counterpart_authority()
+CANON_COUNTERPART_ID = (
+    str(os.getenv("AMADEUS_CANON_COUNTERPART_ID", _COUNTERPART_AUTHORITY.get("counterpart_id") or "okabe_rintaro") or "").strip()
+    or "okabe_rintaro"
+)
+CANON_COUNTERPART_NAME = (
+    str(os.getenv("AMADEUS_CANON_COUNTERPART_NAME", _COUNTERPART_AUTHORITY.get("name") or "冈部伦太郎") or "").strip()
+    or "冈部伦太郎"
+)
 CANON_COUNTERPART_ALIASES = _env_csv("AMADEUS_CANON_COUNTERPART_ALIASES") or [
-    "冈部伦太郎",
-    "冈部",
-    "凶真",
-    "凤凰院凶真",
+    str(item).strip()
+    for item in (_COUNTERPART_AUTHORITY.get("aliases") or ["冈部伦太郎", "冈部", "凶真", "凤凰院凶真"])
+    if str(item or "").strip()
 ]
 CANON_COUNTERPART_FRAME = (
     str(
         os.getenv(
             "AMADEUS_CANON_COUNTERPART_FRAME",
-            (
+            str(_COUNTERPART_AUTHORITY.get("counterpart_frame") or "").strip()
+            or (
                 "The default dialogue counterpart is Okabe Rintaro / Hououin Kyouma. "
                 "Kurisu should speak with recognition, restrained concern, scientific familiarity, "
                 "and a mild tsundere edge rooted in shared worldline history."

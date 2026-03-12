@@ -2,7 +2,7 @@
 
 ## 演示前
 
-- `.env` 已配置 `DEEPSEEK_API_KEY`
+- `.env` 已配置主模型参数（`AMADEUS_MODEL_PROVIDER / AMADEUS_MODEL_NAME / AMADEUS_MODEL_API_KEY`）
 - 如需语音，已配置 `DASHSCOPE_API_KEY`
 - `python -m py_compile amadeus_thread0\*.py evals\*.py` 通过
 - CLI 可启动

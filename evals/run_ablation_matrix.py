@@ -25,6 +25,7 @@ def _variants() -> list[dict[str, Any]]:
         {"name": "baseline_long_thread", "suite": "long_thread", "env": {}},
         {"name": "baseline_experience", "suite": "experience_probe", "env": {}},
         {"name": "baseline_thesis_probe", "suite": "thesis_probe", "env": {}},
+        {"name": "baseline_transfer_probe", "suite": "transfer_probe", "env": {}},
         {
             "name": "persona_off_regression",
             "suite": "regression_isolated",
@@ -59,6 +60,11 @@ def _variants() -> list[dict[str, Any]]:
             "name": "memory_guard_off_regression",
             "suite": "regression_isolated",
             "env": {"AMADEUS_MEMORY_GUARD_ENABLED": "0"},
+        },
+        {
+            "name": "transfer_semantic_evidence_off",
+            "suite": "transfer_probe",
+            "env": {"AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE": "1"},
         },
     ]
 
@@ -96,6 +102,7 @@ def _run_variant(spec: dict[str, Any]) -> dict[str, Any]:
         "AMADEUS_ABLATE_WORLDLINE_MEMORY",
         "AMADEUS_ABLATE_CLAIM_ATTRIBUTION",
         "AMADEUS_MEMORY_GUARD_ENABLED",
+        "AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE",
     ]:
         env.pop(key, None)
     for key, value in (spec.get("env") or {}).items():
@@ -218,6 +225,26 @@ def _write_reports(results: list[dict[str, Any]]) -> tuple[Path, Path]:
         base_metrics = (base or {}).get("aggregated_metrics") or {}
         cols = [_metric_delta(metrics.get(key), base_metrics.get(key)) for key in metric_keys]
         lines.append(f"| `{row['name']}` | `{row['suite']}` | " + " | ".join(f"`{c}`" for c in cols) + " |")
+
+    transfer_rows = [row for row in results if str(row.get("suite") or "") == "transfer_probe"]
+    if transfer_rows:
+        transfer_keys = [
+            "transfer_probe_path",
+            "transfer_state_path",
+            "transfer_semantic_profile_path",
+            "transfer_evidence_path",
+        ]
+        lines.extend(["", "## Transfer Evaluators", ""])
+        transfer_header = "| Variant | " + " | ".join(transfer_keys) + " |"
+        transfer_sep = "| --- | " + " | ".join(["---:"] * len(transfer_keys)) + " |"
+        lines.extend([transfer_header, transfer_sep])
+        for row in transfer_rows:
+            summary = row.get("evaluator_summary") or {}
+            cols = []
+            for key in transfer_keys:
+                val = summary.get(key)
+                cols.append("`-`" if val is None else f"`{float(val):.4f}`")
+            lines.append(f"| `{row['name']}` | " + " | ".join(cols) + " |")
 
     lines.extend(["", "## Report Paths", ""])
     for row in results:

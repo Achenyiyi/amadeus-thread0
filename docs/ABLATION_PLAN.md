@@ -77,6 +77,22 @@ Expected impact:
 - Lower `memory_guard_block_rate`
 - Higher risk in guarded memory-write cases
 
+### 5. Transfer Semantic Evidence Off
+
+Disables `seed_semantic_evidence` injection inside `transfer_probe` so the suite can measure how much the reusable self-evolution engine depends on explicit long-term semantic evidence when migrating to another persona shell.
+
+```powershell
+$env:AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE='1'
+python evals\run_langsmith_evals.py --local-only --suite transfer_probe
+```
+
+Expected impact:
+
+- Lower `transfer_semantic_profile_path`
+- Lower `transfer_evidence_path`
+- Weaker `boundary / selfhood / agency` carryover under non-Kurisu shells
+- Useful as engine-level ablation evidence, not a sentence-style persona ablation
+
 ## Reset
 
 Before running the next variant, clear the ablation flags:
@@ -86,6 +102,7 @@ Remove-Item Env:AMADEUS_ABLATE_PERSONA_ALIGNMENT -ErrorAction Ignore
 Remove-Item Env:AMADEUS_ABLATE_WORLDLINE_MEMORY -ErrorAction Ignore
 Remove-Item Env:AMADEUS_ABLATE_CLAIM_ATTRIBUTION -ErrorAction Ignore
 Remove-Item Env:AMADEUS_MEMORY_GUARD_ENABLED -ErrorAction Ignore
+Remove-Item Env:AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE -ErrorAction Ignore
 ```
 
 ## Reporting
@@ -97,6 +114,7 @@ Recommended report set for the thesis:
 - Worldline ablation
 - Claim attribution ablation
 - Memory guard ablation
+- Transfer semantic evidence ablation
 
 Each run should preserve:
 

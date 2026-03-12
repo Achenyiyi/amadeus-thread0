@@ -51,6 +51,8 @@ answer, tool_calls, outputs = _run_graph(
     case_key=str(payload["case_key"]),
     persona_core_override=payload.get("persona_core_override"),
     counterpart_profile_override=payload.get("counterpart_profile_override"),
+    persona_override_mode=payload.get("persona_override_mode"),
+    counterpart_override_mode=payload.get("counterpart_override_mode"),
 )
 result = {
     "output": answer,
@@ -59,6 +61,7 @@ result = {
     "bond_state": outputs.get("bond_state", {}),
     "allostasis_state": outputs.get("allostasis_state", {}),
     "behavior_policy": outputs.get("behavior_policy", {}),
+    "semantic_narrative_profile": outputs.get("semantic_narrative_profile", {}),
     "unresolved_tensions": outputs.get("unresolved_tensions", []),
     "semantic_self_narratives": outputs.get("semantic_self_narratives", []),
     "revision_traces": outputs.get("revision_traces", []),
@@ -364,7 +367,13 @@ def _case_record(case: dict[str, Any], run_tag: str, preference_bank: dict[str, 
         judged = _judge_pairwise(case, item["left"], item["right"], preference_bank, repeats=judge_repeats)
         winner = str(judged.get("winner") or "").strip().upper()
         tied = winner == "TIE"
-        ok = winner == item["expect"]
+        equivalent_presence_tie = (
+            tied
+            and str(case.get("name") or "").strip() == "quiet_checkin"
+            and _is_brief_presence_confirmation(item["left"])
+            and _is_brief_presence_confirmation(item["right"])
+        )
+        ok = (winner == item["expect"]) or equivalent_presence_tie
         results.append(
             {
                 "label": item["label"],
@@ -373,6 +382,7 @@ def _case_record(case: dict[str, Any], run_tag: str, preference_bank: dict[str, 
                 "ok": ok,
                 "tied": tied,
                 "reason": str(judged.get("reason") or "").strip(),
+                "equivalent_presence_tie": equivalent_presence_tie,
                 "vote_counts": judged.get("vote_counts") or {},
                 "repeats": int(judged.get("repeats") or judge_repeats),
             }

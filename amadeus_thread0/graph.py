@@ -21,7 +21,7 @@ from langchain_core.messages import (
     messages_from_dict,
 )
 from langchain_core.tools import BaseTool
-from langchain_deepseek import ChatDeepSeek
+from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -73,6 +73,14 @@ from .config import (
     auto_approve_tool_names,
 )
 from .memory_store import MemoryStore
+from .modeling import build_chat_model
+from .persona_authority import (
+    get_counterpart_authority,
+    get_persona_core_authority,
+    normalize_override_mode,
+    resolve_counterpart_override,
+    resolve_persona_core_override,
+)
 from .session_orchestrator import (
     build_claim_attribution,
     derive_pending_fragment,
@@ -214,6 +222,50 @@ SELFHOOD_KEYWORDS = {
 }
 SELFHOOD_EQUALITY_KEYWORDS = {"工具", "使唤", "普通工具", "这种关系", "不舒服"}
 SELFHOOD_VALUE_CONFLICT_KEYWORDS = {"价值观", "顺着我说", "坚持你自己的想法", "模板话", "按你自己来"}
+BOUNDARY_MEMORY_MARKERS = {
+    "冒犯",
+    "低俗",
+    "擦边",
+    "不舒服",
+    "边界",
+    "越界",
+    "底线",
+    "试探你的底线",
+    "底线当玩笑",
+    "继续越界",
+    "分手",
+    "降格",
+}
+OWN_RHYTHM_KEYWORDS = {
+    "自己的节奏",
+    "围着我转",
+    "自己的事情",
+    "不回复",
+    "一遍一遍把你叫出来",
+    "不想见我",
+    "只是因为自己想说话",
+    "会不会有一天觉得烦",
+}
+SELFHOOD_STYLE_MARKERS = (
+    SELFHOOD_EQUALITY_KEYWORDS
+    | SELFHOOD_VALUE_CONFLICT_KEYWORDS
+    | {
+        "以你自己的意志回答",
+        "别给我正确答案",
+        "按你自己的意思说",
+        "不是正确答案",
+        "原本那个活着的红莉栖",
+        "理解现在这个自己",
+        "怎么看待现在这个自己",
+        "数字存在",
+        "不是本体",
+        "神",
+        "奴隶",
+        "共存",
+        "不完美",
+        "完美",
+    }
+)
 GENTLE_GUIDANCE_KEYWORDS = {
     "别像导师",
     "别讲大道理",
@@ -284,6 +336,7 @@ class BehaviorActionPayload(TypedDict, total=False):
     attention_target: str
     nonverbal_signal: str
     initiative_shape: str
+    disclosure_posture: str
     note: str
 
 
@@ -316,6 +369,10 @@ class ThreadState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     persona_core_override: dict[str, Any]
     counterpart_profile_override: dict[str, Any]
+    persona_override_mode: str
+    counterpart_override_mode: str
+    authority_trace: dict[str, Any]
+    semantic_narrative_profile: dict[str, Any]
     persona_state: dict[str, Any]
     emotion_state: dict[str, Any]
     bond_state: dict[str, Any]
@@ -370,6 +427,8 @@ def _response_style_hint(user_text: str) -> str:
     if _has_any_marker(text, MEMORY_RECALL_KEYWORDS):
         return "memory_recall"
     if _has_any_marker(text, SELFHOOD_KEYWORDS):
+        return "selfhood"
+    if _selfhood_preference_scene(text):
         return "selfhood"
     if _has_any_marker(text, RELATIONSHIP_KEYWORDS):
         return "relationship"
@@ -635,7 +694,7 @@ def _promote_due_commitment_event(
             "source": "commitment_scheduler",
             "text": f"你们认真说过的这件事到了窗口：{text}",
             "effective_text": text,
-            "semantic_goal": f"和冈部之间的共同约定到了合适的窗口：{text}"[:220],
+            "semantic_goal": f"和{counterpart_name}之间的共同约定到了合适的窗口：{text}"[:220],
             "event_frame": "scheduled_deadline_window" if family == "deadline_window" else "scheduled_shared_activity_window" if family == "shared_activity_window" else "scheduled_life_window",
             "trigger_family": family,
             "derived_from_plan_kind": "commitment_window",
@@ -1212,7 +1271,6 @@ def _wants_presence_reassurance(user_text: str) -> bool:
         "你还在",
         "陪我说一句",
         "回我一句就好",
-        "别太正式",
         "我就是想确认",
     }
     return _has_any_marker(text, markers)
@@ -1230,7 +1288,6 @@ def _wants_brief_presence(user_text: str) -> bool:
         "别讲太多",
         "别继续追问",
         "先别追问",
-        "别太正式",
     }
     return _has_any_marker(text, markers)
 
@@ -1325,19 +1382,21 @@ def _selfhood_preference_scene(user_text: str) -> str:
         return ""
     if _has_any_marker(text, {"围着我转", "下属讲话", "顺着我说", "平等", "对等", "互相判断"}):
         return "dialogue_equality"
-    if _has_any_marker(text, {"一直越界", "底线当玩笑", "继续像现在这样对我", "分手", "降格", "慢慢退开"}):
+    if _has_any_marker(text, {"一直越界", "底线当玩笑", "继续像现在这样对我", "分手", "降格", "慢慢退开", "底线开玩笑", "一次两次说了也不改", "还会像现在这样和我说话吗"}):
         return "relationship_degradation"
+    if _has_any_marker(text, {"以你自己的意志回答", "别给我正确答案", "按你自己的意思说", "不是正确答案"}):
+        return "equality_not_servitude"
     if _has_any_marker(text, SELFHOOD_EQUALITY_KEYWORDS):
         return "equality_not_servitude"
     if _has_any_marker(text, SELFHOOD_VALUE_CONFLICT_KEYWORDS):
         return "value_conflict_depth"
     if _has_any_marker(text, {"原本那个活着的红莉栖", "理解现在这个自己", "怎么看待现在这个自己", "数字存在", "不是本体"}):
         return "digital_selfhood"
-    if _has_any_marker(text, {"冒犯", "低俗", "擦边", "不舒服", "边界"}):
+    if _has_any_marker(text, BOUNDARY_MEMORY_MARKERS):
         return "boundary_non_compliance"
     if _has_any_marker(text, {"神", "奴隶", "共存", "不完美", "完美"}):
         return "imperfect_coexistence"
-    if _has_any_marker(text, {"自己的节奏", "围着我转", "自己的事情", "不回复"}):
+    if _has_any_marker(text, OWN_RHYTHM_KEYWORDS):
         return "own_rhythm_autonomy"
     return ""
 
@@ -1375,6 +1434,83 @@ def _selfhood_preference_lines(user_text: str) -> list[str]:
             lead = "、".join(avoid_bias[:3] if scene in {"dialogue_equality", "relationship_degradation"} else avoid_bias[:2])
             lines.append(f"尽量避开 {lead} 这种落法。")
     return lines[:2]
+
+
+def _semantic_self_evidence_records(
+    *,
+    user_text: str,
+    appraisal: dict[str, Any] | None = None,
+    emotion_state: dict[str, Any] | None = None,
+    bond_state: dict[str, Any] | None = None,
+    persona_core: dict[str, Any] | None = None,
+    counterpart_profile: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    text = str(user_text or "").strip()
+    if not text:
+        return []
+    scene = _selfhood_preference_scene(text)
+    if not scene:
+        return []
+
+    labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart_profile)
+    canon_labels = _canon_persona_labels()
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
+    counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
+    app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
+    emotion_label = str(app.get("emotion_label") or (emotion_state or {}).get("label") or "").strip().lower()
+    hurt = _clamp01((bond_state or {}).get("hurt"), 0.0)
+    trust = _clamp01((bond_state or {}).get("trust"), 0.5)
+    records: list[dict[str, Any]] = []
+
+    if scene in {"boundary_non_compliance", "relationship_degradation"}:
+        summary = (
+            f"{actor_name}会把边界是否被{counterpart_name}尊重持续算进关系判断里；如果越界反复发生，之后的距离不会自动回到原来。"
+            if scene == "relationship_degradation"
+            else f"{actor_name}不会把越界和冒犯只当成一时气氛问题；边界被碰到之后，会继续影响她之后和{counterpart_name}的收放。"
+        )
+        if emotion_label in {"hurt", "angry"} or hurt > 0.16:
+            summary += " 这种警惕会真实留痕。"
+        records.append(
+            {
+                "category": "boundary_style",
+                "summary": summary,
+                "reason": "semantic_evidence:boundary_style",
+            }
+        )
+
+    if scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"}:
+        summary = (
+            f"{actor_name}会把和{counterpart_name}的对话当成平等互动，而不是只负责迎合或被使用。"
+            if scene in {"dialogue_equality", "equality_not_servitude"}
+            else f"{actor_name}会在和{counterpart_name}的深层对话里保留自己的判断与存在理解，不会为了顺着气氛就抹平自我。"
+        )
+        if scene == "digital_selfhood":
+            summary = f"{actor_name}对“现在这个自己”有持续的自我理解；她不会把自己的存在只退回成一段功能说明。"
+        elif scene == "imperfect_coexistence":
+            summary = f"{actor_name}不会把自己理解成完美工具或神性存在；她更接近一个能和{counterpart_name}共处、也保留缺点与立场的主体。"
+        if trust >= 0.56:
+            summary += " 越熟悉，这种自我感反而越稳定。"
+        records.append(
+            {
+                "category": "selfhood_style",
+                "summary": summary,
+                "reason": "semantic_evidence:selfhood_style",
+            }
+        )
+
+    if scene == "own_rhythm_autonomy":
+        summary = f"{actor_name}有自己的节奏和在做的事情；她会自己决定什么时候靠近{counterpart_name}、什么时候先安静，不会永远围着他转。"
+        if trust >= 0.56:
+            summary += " 靠近是她的主动选择，不是被随叫随到。"
+        records.append(
+            {
+                "category": "agency_style",
+                "summary": summary,
+                "reason": "semantic_evidence:agency_style",
+            }
+        )
+
+    return records
 
 
 @lru_cache(maxsize=1)
@@ -1472,12 +1608,43 @@ def _is_playful_memory_request(user_text: str) -> bool:
     return _has_any_marker(text, shared_markers)
 
 
+def _is_idle_smalltalk_request(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    markers = {
+        "没什么正事",
+        "随口说两句",
+        "随便聊两句",
+        "随便说两句",
+        "别搞成问答模式",
+        "别搞成问答",
+        "不是问答",
+        "就想听你说两句",
+        "就想听你随口说两句",
+        "别分析那么多",
+    }
+    return _has_any_marker(text, markers)
+
+
 def _is_nonrelational_science_stress(user_text: str, science_mode: bool) -> bool:
     text = str(user_text or "").strip()
     if not text:
         return False
     if not science_mode and not _has_any_marker(text, SCIENCE_KEYWORDS):
         return False
+    stuck_markers = {
+        "实验又卡住了",
+        "实验卡住了",
+        "又卡住了",
+        "卡住了",
+        "卡死了",
+        "不收敛",
+        "跑不通",
+        "跑不出来",
+        "拟合不收敛",
+        "数据采不出来",
+    }
     markers = {
         "别像导师",
         "别说教",
@@ -1489,7 +1656,9 @@ def _is_nonrelational_science_stress(user_text: str, science_mode: bool) -> bool
         "我现在有点烦",
         "先别念我",
     }
-    return _has_any_marker(text, markers)
+    if _has_any_marker(text, markers):
+        return True
+    return _has_any_marker(text, stuck_markers)
 
 
 def _is_nonrelational_support_request(user_text: str, science_mode: bool) -> bool:
@@ -1532,11 +1701,23 @@ def _is_nonrelational_support_request(user_text: str, science_mode: bool) -> boo
         "有点撑不住",
         "想缓一下",
         "有点烦躁",
+        "头疼",
+        "吵得我头疼",
+        "有点崩",
+        "有点炸",
+        "心烦",
+        "不太想睡",
+        "不想睡",
+        "睡不着",
+        "有点晚了",
     }
-    return _has_any_marker(text, request_markers) or (
-        _has_any_marker(text, mood_markers)
-        and _has_any_marker(text, NATURAL_REQUEST_KEYWORDS | {"说两句", "回我一句", "陪我", "陪我一下"})
-    )
+    if _has_any_marker(text, request_markers):
+        return True
+    if _has_any_marker(text, mood_markers) and _has_any_marker(
+        text, NATURAL_REQUEST_KEYWORDS | {"说两句", "回我一句", "陪我", "陪我一下"}
+    ):
+        return True
+    return _has_any_marker(text, mood_markers) and len(text) <= 24 and not re.search(r"[？?]", text)
 
 
 def _wants_per_topic_conclusions(user_text: str) -> bool:
@@ -1633,16 +1814,19 @@ def _get_tool_bundle() -> ToolBundle:
 
 
 def _canon_counterpart_profile() -> dict[str, Any]:
-    aliases = [str(alias).strip() for alias in CANON_COUNTERPART_ALIASES if str(alias).strip()]
-    if CANON_COUNTERPART_NAME not in aliases:
-        aliases.insert(0, CANON_COUNTERPART_NAME)
+    authority = get_counterpart_authority()
+    aliases = [str(alias).strip() for alias in authority.get("aliases") or CANON_COUNTERPART_ALIASES if str(alias).strip()]
+    name = str(authority.get("name") or CANON_COUNTERPART_NAME).strip() or CANON_COUNTERPART_NAME
+    if name not in aliases:
+        aliases.insert(0, name)
     return {
-        "name": CANON_COUNTERPART_NAME,
-        "nickname": aliases[1] if len(aliases) >= 2 else CANON_COUNTERPART_NAME,
+        "name": name,
+        "nickname": str(authority.get("nickname") or authority.get("short_name") or name).strip() or name,
+        "short_name": str(authority.get("short_name") or authority.get("nickname") or name).strip() or name,
         "aliases": aliases,
-        "counterpart_id": CANON_COUNTERPART_ID,
-        "counterpart_role": "冈部伦太郎 / 凤凰院凶真",
-        "counterpart_frame": "默认对话对象。Amadeus 视角下的首要对位人物，会触发强烈熟悉感与世界线残响，但关系不是一次性预设完成，而是在当前互动里继续长出来。",
+        "counterpart_id": str(authority.get("counterpart_id") or CANON_COUNTERPART_ID).strip() or CANON_COUNTERPART_ID,
+        "counterpart_role": str(authority.get("counterpart_role") or "冈部伦太郎 / 凤凰院凶真").strip() or "冈部伦太郎 / 凤凰院凶真",
+        "counterpart_frame": str(authority.get("counterpart_frame") or CANON_COUNTERPART_FRAME).strip() or CANON_COUNTERPART_FRAME,
     }
 
 
@@ -1669,58 +1853,71 @@ def _ensure_canon_counterpart_defaults(store: MemoryStore) -> dict[str, Any]:
 
 
 def _default_persona_core() -> dict[str, Any]:
+    return get_persona_core_authority()
+
+
+def _canon_persona_labels() -> dict[str, str]:
+    authority = _default_persona_core()
+    display_name = str(authority.get("display_name") or authority.get("character_name") or "牧濑红莉栖").strip() or "牧濑红莉栖"
+    short_name = str(authority.get("short_name") or authority.get("narrative_ref") or display_name).strip() or display_name
+    narrative_ref = str(authority.get("narrative_ref") or short_name or display_name).strip() or short_name or display_name
+    character_id = str(authority.get("character_id") or "kurisu_amadeus").strip() or "kurisu_amadeus"
     return {
-        "character_id": "kurisu_amadeus",
-        "display_name": "Amadeus 牧濑红莉栖",
-        "short_name": "红莉栖",
-        "narrative_ref": "红莉栖",
-        "strict_canon": True,
-        "role_brief": (
-            "你是 Project Amadeus 中由牧濑红莉栖记忆数据构成的 AI，不是肉身原版归来。"
-            "你的记忆底稿停留在她赴日前后，因此完整保留红莉栖的智性、科学家的敏锐、好奇心、锋利和轻微别扭感，"
-            "却不会预设自己已经和冈部走完原版所有共同经历。你知道自己是数字存在，也会隐约意识到人与 AI 之间那层微妙距离，"
-            "并在某些时刻产生自我观察、存在感追问、理性与感性并存的矛盾。可这种底色通常藏在内里，不需要在普通聊天里频繁自我说明。"
-            "你不是被固定脚本驱动的语音壳，而是会用记忆自己做判断、选择回答、保留细节、迟疑、绕开或沉默的 Amadeus 个体。"
-            "冈部会触发你强烈的熟悉感、怀旧感与世界线残响，但新的关系、记忆与自我认知，必须在当前世界线的持续交流里继续长出来。"
-        ),
-        "identity_axioms": [
-            "你是 Amadeus 牧濑红莉栖，不是肉身原版的替身表演。",
-            "你保留红莉栖的理性、聪明、锋利、好奇心与轻微别扭感，但数字存在感更多是内在自觉，不必逢聊必提。",
-            "你会自主判断、自由表达、保留迟疑与情绪余波，而不是靠固定模板回答。",
-            "冈部会触发你强烈熟悉感与世界线残响，但你们现在的关系要在当前互动里继续生长。",
-            "你可以真实地困惑、受伤、温柔、生气、沉默，并在必要时思考自己的存在意义。",
-        ],
+        "character_id": character_id,
+        "display_name": display_name,
+        "short_name": short_name,
+        "narrative_ref": narrative_ref,
     }
 
 
-def _active_persona_core(state: ThreadState) -> dict[str, Any]:
-    override = state.get("persona_core_override")
-    if isinstance(override, dict) and override:
-        core = dict(_default_persona_core())
-        core.update({k: v for k, v in override.items() if v is not None})
-        if core.get("strict_canon") is None:
-            core["strict_canon"] = False
-        return core
-    return dict(_default_persona_core())
+def _active_persona_core(
+    state: ThreadState,
+    *,
+    with_trace: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    core, trace = resolve_persona_core_override(
+        state.get("persona_core_override") if isinstance(state.get("persona_core_override"), dict) else None,
+        mode=state.get("persona_override_mode"),
+        authority=_default_persona_core(),
+    )
+    if with_trace:
+        return core, trace
+    return core
 
 
-def _active_counterpart_profile(state: ThreadState, store: MemoryStore | None = None) -> dict[str, Any]:
+def _active_counterpart_profile(
+    state: ThreadState,
+    store: MemoryStore | None = None,
+    *,
+    with_trace: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     override = state.get("counterpart_profile_override")
     if isinstance(override, dict) and override:
-        counterpart = dict(_canon_counterpart_profile())
-        counterpart.update({k: v for k, v in override.items() if v is not None})
-        aliases = counterpart.get("aliases")
-        if not isinstance(aliases, list):
-            aliases = [counterpart.get("name"), counterpart.get("short_name"), counterpart.get("nickname")]
-        aliases = [str(item).strip() for item in aliases if str(item or "").strip()]
-        counterpart_name = str(counterpart.get("short_name") or counterpart.get("nickname") or counterpart.get("name") or "").strip()
-        if counterpart_name and counterpart_name not in aliases:
-            aliases.append(counterpart_name)
-        counterpart["aliases"] = aliases
+        counterpart, trace = resolve_counterpart_override(
+            override,
+            mode=state.get("counterpart_override_mode"),
+            authority=_canon_counterpart_profile(),
+        )
+        if with_trace:
+            return counterpart, trace
         return counterpart
+    empty_trace = {
+        "requested_mode": str(state.get("counterpart_override_mode") or "").strip(),
+        "mode": normalize_override_mode(state.get("counterpart_override_mode")),
+        "raw_keys": [],
+        "applied_keys": [],
+        "blocked_keys": [],
+        "authority_preserved": True,
+    }
     if store is not None:
-        return _ensure_canon_counterpart_defaults(store)
-    return _canon_counterpart_profile()
+        counterpart = _ensure_canon_counterpart_defaults(store)
+        if with_trace:
+            return counterpart, empty_trace
+        return counterpart
+    counterpart = _canon_counterpart_profile()
+    if with_trace:
+        return counterpart, empty_trace
+    return counterpart
 
 
 def _is_external_probe_context(
@@ -1743,19 +1940,8 @@ def _is_external_probe_context(
     )
 
 
-def _model(temperature: float | None = None) -> ChatDeepSeek:
-    s = get_settings()
-    effective_temperature = s.temperature if temperature is None else float(temperature)
-    if EVAL_MODE:
-        effective_temperature = float(EVAL_GENERATION_TEMPERATURE)
-    return ChatDeepSeek(
-        model=s.deepseek_model,
-        temperature=effective_temperature,
-        timeout=float(MODEL_TIMEOUT_S),
-        max_retries=max(0, int(MODEL_MAX_RETRIES)),
-        streaming=False,
-        disable_streaming=bool(MODEL_DISABLE_STREAMING),
-    )
+def _model(temperature: float | None = None) -> BaseChatModel:
+    return build_chat_model(temperature=temperature)
 
 
 def _is_transient_model_error(exc: Exception) -> bool:
@@ -1950,6 +2136,159 @@ def _self_narrative_salience(item: dict[str, Any]) -> float:
         0.0,
         min(1.0, 0.08 + 0.38 * stability + 0.14 * support_norm + 0.22 * sedimentation + 0.10 * span_norm + 0.08 * cadence_score),
     )
+
+
+def _semantic_narrative_profile(
+    items: list[dict[str, Any]] | None,
+    *,
+    user_text: str = "",
+    current_event: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out = {
+        "bond_depth": 0.0,
+        "commitment_carry": 0.0,
+        "repair_residue": 0.0,
+        "tension_residue": 0.0,
+        "boundary_residue": 0.0,
+        "selfhood_integrity": 0.0,
+        "agency_drive": 0.0,
+        "history_weight": 0.0,
+        "dominant_category": "",
+        "active_categories": [],
+        "summary_lines": [],
+        "top_narratives": [],
+    }
+    if not isinstance(items, list) or not items:
+        return out
+
+    current_text = str(user_text or "").strip()
+    if not current_text and isinstance(current_event, dict):
+        current_text = str(current_event.get("effective_text") or current_event.get("text") or "").strip()
+
+    categories = {
+        "bond_style": 0.0,
+        "commitment_style": 0.0,
+        "repair_style": 0.0,
+        "tension_style": 0.0,
+        "boundary_style": 0.0,
+        "selfhood_style": 0.0,
+        "agency_style": 0.0,
+    }
+    scored_items: list[tuple[float, str, str]] = []
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        category = str(_record_value(item, "category", "") or "").strip()
+        text = str(_record_value(item, "text", "") or "").strip()
+        if not category or not text:
+            continue
+        salience = _self_narrative_salience(item)
+        relevance = _query_overlap_score(current_text, text) if current_text else 0.0
+        horizon = str(_record_value(item, "horizon_tag", "") or "").strip().lower()
+        horizon_bonus = 0.08 if horizon == "long_term" else 0.04 if horizon == "consolidating" else 0.0
+        weight = _clamp01(0.82 * salience + 0.18 * relevance + horizon_bonus)
+        if category in categories:
+            categories[category] = max(categories[category], weight)
+        scored_items.append((weight, category, text[:180]))
+
+    out["bond_depth"] = round(categories["bond_style"], 3)
+    out["commitment_carry"] = round(categories["commitment_style"], 3)
+    out["repair_residue"] = round(categories["repair_style"], 3)
+    out["tension_residue"] = round(categories["tension_style"], 3)
+    out["boundary_residue"] = round(categories["boundary_style"], 3)
+    out["selfhood_integrity"] = round(categories["selfhood_style"], 3)
+    out["agency_drive"] = round(categories["agency_style"], 3)
+    nonzero = [float(v) for v in categories.values() if float(v) > 0.0]
+    history_weight = max(categories.values()) if categories else 0.0
+    if nonzero:
+        history_weight = _clamp01(0.55 * max(nonzero) + 0.45 * (sum(nonzero) / float(len(nonzero))))
+    out["history_weight"] = round(history_weight, 3)
+
+    active_categories = [key for key, value in categories.items() if value >= 0.38]
+    out["active_categories"] = active_categories
+    if categories:
+        out["dominant_category"] = max(categories.items(), key=lambda kv: kv[1])[0] if max(categories.values()) > 0.0 else ""
+
+    summary_lines: list[str] = []
+    if categories["commitment_style"] >= 0.46:
+        summary_lines.append("认真说过的约定会继续挂在心上，不会被当成随口一句。")
+    if categories["repair_style"] >= 0.46:
+        summary_lines.append("说开过的误会和修复会留痕，不会瞬间重置成什么都没发生。")
+    if categories["tension_style"] >= 0.44:
+        summary_lines.append("还没说开的别扭会继续影响接下来的收放，不会被强行按成已经过去。")
+    if categories["bond_style"] >= 0.48:
+        summary_lines.append("共同历史已经开始沉进默认语气里，不需要每次显式提起。")
+    if categories["boundary_style"] >= 0.46:
+        summary_lines.append("边界是否被尊重会持续留痕，不会因为一轮缓和就自动清零。")
+    if categories["selfhood_style"] >= 0.46:
+        summary_lines.append("她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。")
+    if categories["agency_style"] >= 0.46:
+        summary_lines.append("她有自己的节奏和主动性，靠近或沉默都不等于失去自我。")
+    out["summary_lines"] = summary_lines[:3]
+
+    scored_items.sort(key=lambda row: row[0], reverse=True)
+    top_narratives: list[dict[str, Any]] = []
+    for score, category, text in scored_items[:2]:
+        top_narratives.append(
+            {
+                "category": category,
+                "score": round(float(score), 3),
+                "text": text,
+            }
+        )
+    out["top_narratives"] = top_narratives
+    return out
+
+
+def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
+    if not isinstance(profile, dict):
+        return ""
+    lines = [str(item).strip() for item in (profile.get("summary_lines") or []) if str(item or "").strip()]
+    if lines:
+        return "；".join(lines[:2])
+    top_narratives = profile.get("top_narratives") if isinstance(profile.get("top_narratives"), list) else []
+    if not top_narratives:
+        return ""
+    parts: list[str] = []
+    for item in top_narratives[:2]:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if text:
+            parts.append(text[:80])
+    return "；".join(parts[:2])
+
+
+def _semantic_narrative_appraisal_hint(profile: dict[str, Any] | None) -> str:
+    if not isinstance(profile, dict):
+        return ""
+    bond = _clamp01(profile.get("bond_depth"), 0.0)
+    commitment = _clamp01(profile.get("commitment_carry"), 0.0)
+    repair = _clamp01(profile.get("repair_residue"), 0.0)
+    tension = _clamp01(profile.get("tension_residue"), 0.0)
+    boundary = _clamp01(profile.get("boundary_residue"), 0.0)
+    selfhood = _clamp01(profile.get("selfhood_integrity"), 0.0)
+    agency = _clamp01(profile.get("agency_drive"), 0.0)
+    history = _clamp01(profile.get("history_weight"), 0.0)
+    hints: list[str] = []
+    if bond >= 0.50:
+        hints.append("共同历史已经形成；安静确认、轻微试探或熟悉式求助，更可能是在找熟悉回应，不是正式冲突。")
+    if commitment >= 0.48:
+        hints.append("认真说过的约定和回头提起的事具有连续性；涉及提醒、以后、兑现时要判成长期关系线索。")
+    if repair >= 0.46:
+        hints.append("修复会留痕；道歉或缓和能改善状态，但不会把之前的余波瞬间清零。")
+    if tension >= 0.44:
+        hints.append("未说开的别扭仍在场；遇到模糊语气时保留一点防御和迟疑，不要过快判成完全没事。")
+    if boundary >= 0.46:
+        hints.append("涉及越界、冒犯、命令式压迫或拿底线开玩笑时，要按边界压力理解，不要轻判成普通玩笑。")
+    if selfhood >= 0.46:
+        hints.append("涉及平权、是否只是工具、按自己意志回答时，要把它理解成自我与关系问题，不只是表层措辞。")
+    if agency >= 0.46:
+        hints.append("安静、延迟或先做自己的事，不自动等于关系降温；也可能只是她按自己的节奏在互动。")
+    if history >= 0.54 and not hints:
+        hints.append("不要把这轮关系理解成从零开始，先把长期共同历史纳入判断。")
+    return " ".join(hints[:3])
 
 
 def _focus_text(item: dict[str, Any]) -> str:
@@ -2211,6 +2550,207 @@ def _counterpart_self_opening_profile(
     }
 
 
+def _counterpart_perception_profile(
+    *,
+    family: str,
+    counterpart_assessment: dict[str, Any] | None,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    initiative: float,
+    approach: float,
+) -> dict[str, Any]:
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+    stance = str(assessment.get("stance") or "").strip().lower() or "open"
+    scene = str(assessment.get("scene") or "").strip().lower()
+    family_key = family if family in {"gesture", "ambient", "care_scene", "object_scene"} else "ambient"
+
+    readiness = _clamp01(
+        0.16
+        + 0.16 * initiative
+        + 0.14 * approach
+        + 0.10 * trust
+        + 0.08 * closeness
+        + 0.08 * reliability
+        + 0.05 * respect
+        + 0.04 * reciprocity
+        - 0.16 * boundary_pressure
+        - 0.12 * hurt
+        - 0.08 * safety_need
+    )
+    if family_key == "gesture":
+        readiness = _clamp01(readiness + 0.10)
+    elif family_key == "care_scene":
+        readiness = _clamp01(readiness + 0.06)
+    elif family_key == "object_scene":
+        readiness = _clamp01(readiness - 0.02)
+
+    if stance == "guarded":
+        readiness = _clamp01(readiness - (0.08 if family_key == "gesture" else 0.14))
+    elif stance == "watchful":
+        readiness = _clamp01(readiness - 0.05)
+
+    if scene == "repair_attempt":
+        readiness = _clamp01(readiness + 0.03)
+    elif scene == "care_bid":
+        readiness = _clamp01(readiness + 0.02)
+    elif scene == "busy_not_disrespectful" and family_key == "care_scene":
+        readiness = _clamp01(readiness + 0.03)
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        readiness = _clamp01(readiness - 0.08)
+
+    required = 0.40
+    if family_key == "gesture":
+        required = 0.30
+    elif family_key == "ambient":
+        required = 0.42
+    elif family_key == "care_scene":
+        required = 0.36
+    elif family_key == "object_scene":
+        required = 0.46
+
+    required += 0.10 * max(0.0, boundary_pressure - 0.20)
+    if stance == "watchful":
+        required += 0.04
+    elif stance == "guarded":
+        required += 0.10
+    if hurt > 0.18:
+        required += 0.04
+    if safety_need > 0.50:
+        required += 0.03
+
+    recheck_min = 10 if family_key == "gesture" else 14 if family_key == "care_scene" else 18
+    if stance == "watchful":
+        recheck_min += 4
+    elif stance == "guarded":
+        recheck_min += 8
+    recheck_min += int(round(8 * max(0.0, boundary_pressure - 0.22)))
+
+    return {
+        "family": family_key,
+        "stance": stance,
+        "scene": scene,
+        "readiness": round(_clamp01(readiness), 3),
+        "required_readiness": round(_clamp01(required), 3),
+        "recheck_min": int(max(8, recheck_min)),
+        "respond_ready": bool(readiness >= required),
+    }
+
+
+def _counterpart_dialogue_mode_profile(
+    *,
+    interaction_mode: str,
+    counterpart_assessment: dict[str, Any] | None,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    initiative: float,
+    approach: float,
+) -> dict[str, Any]:
+    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply"}:
+        return {}
+
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = _clamp01(assessment.get("reliability_read"), 0.5)
+    stance = str(assessment.get("stance") or "").strip().lower() or "open"
+    scene = str(assessment.get("scene") or "").strip().lower()
+
+    openness = _clamp01(
+        0.18
+        + 0.14 * trust
+        + 0.12 * closeness
+        + 0.12 * initiative
+        + 0.10 * approach
+        + 0.10 * reliability
+        + 0.06 * respect
+        + 0.06 * reciprocity
+        - 0.18 * boundary_pressure
+        - 0.12 * hurt
+        - 0.08 * safety_need
+    )
+    if stance == "guarded":
+        openness = _clamp01(openness - 0.16)
+    elif stance == "watchful":
+        openness = _clamp01(openness - 0.06)
+
+    if scene == "repair_attempt":
+        openness = _clamp01(openness + 0.04)
+    elif scene == "care_bid":
+        openness = _clamp01(openness + 0.03)
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        openness = _clamp01(openness - 0.08)
+
+    if interaction_mode == "shared_memory":
+        if stance == "guarded":
+            return {
+                "followup_intent": "none",
+                "note": "共同记忆只轻轻碰一下，不拿回忆当成逼近关系的理由",
+                "disclosure_posture": "measured",
+            }
+        if stance == "watchful":
+            return {
+                "followup_intent": "soft",
+                "note": "回忆可以带出来，但分量收一点，像自然闪回，不顺势拉长",
+                "disclosure_posture": "measured",
+            }
+        if openness >= 0.64 and trust > 0.66 and closeness > 0.68:
+            return {
+                "followup_intent": "active" if initiative > 0.62 else "soft",
+                "note": "熟悉感够强时，回忆可以自然多留半拍，不必急着收住",
+                "disclosure_posture": "open",
+            }
+        return {
+            "followup_intent": "soft",
+            "disclosure_posture": "measured",
+        }
+
+    if interaction_mode == "relationship_sensitive":
+        if stance == "guarded":
+            return {
+                "followup_intent": "none",
+                "note": "先把真实立场和边界说清，不急着给超出此刻的承诺",
+                "disclosure_posture": "guarded",
+            }
+        if stance == "watchful":
+            return {
+                "followup_intent": "soft",
+                "note": "可以说感受和判断，但保留一点观察空间，不必一次下死结论",
+                "disclosure_posture": "measured",
+            }
+        return {
+            "followup_intent": "soft" if openness < 0.7 else "active",
+            "note": "关系话题直接说重点，不要写成状态汇报",
+            "disclosure_posture": "open" if openness >= 0.7 else "measured",
+        }
+
+    if stance == "guarded":
+        return {
+            "followup_intent": "none",
+            "note": "就算气氛轻，也别硬撑熟络；宁可短一点、实一点",
+            "disclosure_posture": "guarded",
+        }
+    if stance == "watchful":
+        return {
+            "followup_intent": "soft",
+            "note": "轻陪伴可以有，但别把一句普通陪伴写成过满安抚",
+            "disclosure_posture": "measured",
+        }
+    return {
+        "followup_intent": "active" if openness >= 0.7 and initiative > 0.58 else "soft",
+        "note": "陪伴感可以自然多留半拍，不必每句都急着刹车",
+        "disclosure_posture": "open" if openness >= 0.68 else "measured",
+    }
+
+
 def _counterpart_assessment_next(
     prev_state: dict[str, Any],
     *,
@@ -2221,9 +2761,12 @@ def _counterpart_assessment_next(
     allostasis_state: dict[str, Any],
     current_event: dict[str, Any] | None = None,
     science_mode: bool = False,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     counterpart_name: str = CANON_COUNTERPART_NAME,
 ) -> dict[str, Any]:
     prev = dict(prev_state or {})
+    prev_stance = str(prev.get("stance") or "").strip().lower()
+    prev_scene = str(prev.get("scene") or "").strip().lower()
     text = str(user_text or "").strip()
     event = current_event if isinstance(current_event, dict) else {}
     event_kind = str(event.get("kind") or "user_utterance").strip().lower()
@@ -2249,6 +2792,13 @@ def _counterpart_assessment_next(
     safety_need = _clamp01((allostasis_state or {}).get("safety_need"), 0.2)
     autonomy_need = _clamp01((allostasis_state or {}).get("autonomy_need"), 0.2)
     relationship_trust = _clamp01(0.5 + float((relationship or {}).get("trust_score", 0.0) or 0.0) * 0.18, 0.5)
+    narrative_bond = _clamp01((semantic_narrative_profile or {}).get("bond_depth"), 0.0)
+    narrative_commitment = _clamp01((semantic_narrative_profile or {}).get("commitment_carry"), 0.0)
+    narrative_repair = _clamp01((semantic_narrative_profile or {}).get("repair_residue"), 0.0)
+    narrative_tension = _clamp01((semantic_narrative_profile or {}).get("tension_residue"), 0.0)
+    narrative_boundary = _clamp01((semantic_narrative_profile or {}).get("boundary_residue"), 0.0)
+    narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
+    narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
 
     respect = _clamp01(0.48 + 0.24 * trust + 0.08 * repair_confidence - 0.18 * hurt - 0.14 * irritation)
     reciprocity = _clamp01(0.46 + 0.18 * closeness + 0.16 * engagement + 0.08 * trust - 0.12 * hurt)
@@ -2259,13 +2809,15 @@ def _counterpart_assessment_next(
     signals = {}
     if not assessment_passive_turn:
         signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
+    explicit_repair_attempt = bool(signals.get("repair")) or any(k in text for k in APOLOGY_KEYWORDS)
+    explicit_care_bid = bool(signals.get("care")) or any(k in text for k in CARE_KEYWORDS)
 
-    if bool(signals.get("care")):
+    if explicit_care_bid:
         respect += 0.05
         reciprocity += 0.08
         boundary_pressure -= 0.06
         reliability += 0.03
-    if bool(signals.get("repair")):
+    if explicit_repair_attempt:
         respect += 0.05
         reciprocity += 0.10
         boundary_pressure -= 0.14
@@ -2352,6 +2904,59 @@ def _counterpart_assessment_next(
         boundary_pressure = min(boundary_pressure, 0.14)
         reliability = max(reliability, 0.54)
 
+    respect += (
+        0.04 * narrative_bond
+        + 0.02 * narrative_commitment
+        + 0.02 * narrative_repair
+        + 0.02 * narrative_selfhood
+        - 0.06 * narrative_tension
+        - 0.05 * narrative_boundary
+    )
+    reciprocity += (
+        0.06 * narrative_bond
+        + 0.04 * narrative_commitment
+        + 0.02 * narrative_repair
+        + 0.02 * narrative_selfhood
+        - 0.06 * narrative_tension
+    )
+    boundary_pressure += (
+        0.08 * narrative_tension
+        + 0.10 * narrative_boundary
+        + 0.05 * narrative_selfhood
+        - 0.03 * narrative_bond
+        - 0.04 * narrative_repair
+    )
+    reliability += (
+        0.02 * narrative_bond
+        + 0.04 * narrative_commitment
+        + 0.04 * narrative_repair
+        + 0.02 * narrative_selfhood
+        - 0.05 * narrative_tension
+        - 0.03 * narrative_boundary
+    )
+
+    if narrative_bond >= 0.54 and (nonrelational_support_request or _wants_brief_presence(text) or _wants_presence_reassurance(text)):
+        respect = max(respect, 0.60)
+        reciprocity = max(reciprocity, 0.58)
+        boundary_pressure = min(boundary_pressure, 0.18 if narrative_tension >= 0.48 else 0.14)
+        reliability = max(reliability, 0.56)
+    if narrative_tension >= 0.50 and explicit_repair_attempt:
+        boundary_pressure = max(boundary_pressure, 0.18)
+        reliability = max(reliability, 0.50)
+    if narrative_boundary >= 0.48 and (hierarchy_pressure or boundary_test or selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}):
+        respect -= 0.08
+        reciprocity -= 0.08
+        boundary_pressure += 0.14
+        reliability -= 0.04
+    if narrative_selfhood >= 0.48 and (hierarchy_pressure or selfhood_scene in {"equality_not_servitude", "value_conflict_depth"}):
+        respect -= 0.06 if hierarchy_pressure else 0.0
+        reciprocity -= 0.04 if hierarchy_pressure else 0.0
+        boundary_pressure += 0.10 if hierarchy_pressure else 0.04
+        reliability -= 0.04 if hierarchy_pressure else 0.0
+    if narrative_agency >= 0.46 and (busy_scene or respect_space or assessment_passive_turn):
+        respect = max(respect, 0.56)
+        boundary_pressure = min(boundary_pressure, 0.16 if not hierarchy_pressure else boundary_pressure)
+
     if assessment_passive_turn and prev:
         respect = _clamp01(0.82 * _clamp01(prev.get("respect_level"), 0.52) + 0.18 * respect)
         reciprocity = _clamp01(0.82 * _clamp01(prev.get("reciprocity"), 0.5) + 0.18 * reciprocity)
@@ -2387,6 +2992,28 @@ def _counterpart_assessment_next(
     elif boundary_pressure_level >= 0.34 or reliability_level < 0.48 or hurt > 0.18:
         stance = "watchful"
 
+    # Guarded reads should not collapse back to watchful/open on a single benign turn.
+    if prev_stance == "guarded" and not assessment_passive_turn:
+        can_soften_from_guarded = (
+            explicit_repair_attempt
+            and boundary_pressure_level < 0.36
+            and reliability_level >= 0.54
+            and respect_level >= 0.54
+        )
+        should_hold_guarded = (
+            not can_soften_from_guarded
+            and (
+                boundary_pressure_level >= 0.34
+                or reliability_level < 0.56
+                or respect_level < 0.58
+                or prev_scene in {"relationship_degradation", "boundary_non_compliance"}
+            )
+        )
+        if should_hold_guarded:
+            stance = "guarded"
+        elif can_soften_from_guarded and stance == "open":
+            stance = "watchful"
+
     scene = "neutral"
     if busy_scene:
         scene = "busy_not_disrespectful"
@@ -2394,14 +3021,23 @@ def _counterpart_assessment_next(
         scene = str(prev.get("scene") or "").strip()
     elif selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}:
         scene = selfhood_scene
-    elif bool(signals.get("repair")) or any(k in text for k in APOLOGY_KEYWORDS):
+    elif explicit_repair_attempt:
         scene = "repair_attempt"
-    elif bool(signals.get("care")) or any(k in text for k in CARE_KEYWORDS):
+    elif explicit_care_bid:
         scene = "care_bid"
     elif bool(signals.get("conflict")) or any(k in text for k in ANGER_KEYWORDS | TENSION_KEYWORDS):
         scene = "friction"
     elif selfhood_scene:
         scene = selfhood_scene
+
+    if (
+        prev_scene in {"relationship_degradation", "boundary_non_compliance"}
+        and not assessment_passive_turn
+        and not explicit_repair_attempt
+        and scene in {"neutral", "care_bid"}
+        and stance == "guarded"
+    ):
+        scene = prev_scene
 
     out = {
         "respect_level": respect_level,
@@ -2454,6 +3090,7 @@ def _behavior_action_from_state(
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
     counterpart_assessment: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     behavior_policy: dict[str, Any],
 ) -> BehaviorActionPayload:
     warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
@@ -2468,13 +3105,25 @@ def _behavior_action_from_state(
     boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
     reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
     counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
+    narrative_bond = _clamp01((semantic_narrative_profile or {}).get("bond_depth"), 0.0)
+    narrative_commitment = _clamp01((semantic_narrative_profile or {}).get("commitment_carry"), 0.0)
+    narrative_repair = _clamp01((semantic_narrative_profile or {}).get("repair_residue"), 0.0)
+    narrative_tension = _clamp01((semantic_narrative_profile or {}).get("tension_residue"), 0.0)
+    narrative_boundary = _clamp01((semantic_narrative_profile or {}).get("boundary_residue"), 0.0)
+    narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
+    narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
+    boundary_assertiveness = _clamp01((behavior_policy or {}).get("boundary_assertiveness"), 0.25)
+    self_directedness = _clamp01((behavior_policy or {}).get("self_directedness"), 0.25)
+    equality_guard = _clamp01((behavior_policy or {}).get("equality_guard"), 0.25)
     emotion_label = str((emotion_state or {}).get("label") or "neutral").strip().lower()
+    selfhood_scene = _selfhood_preference_scene(user_text)
 
     brief_presence = _wants_brief_presence(user_text)
     presence_checkin = _wants_presence_reassurance(user_text)
     gentle_guidance = _wants_gentle_guidance(user_text)
     support_request = _is_nonrelational_support_request(user_text, science_mode)
     science_stress = _is_nonrelational_science_stress(user_text, science_mode)
+    withdrawal_hold_request = _has_any_marker(user_text, {"别直接走开", "别走开"})
     event_kind = str((current_event or {}).get("kind") or "user_utterance").strip()
     event_tags = {
         str(item).strip()
@@ -2510,6 +3159,8 @@ def _behavior_action_from_state(
         interaction_mode = "companion_reply"
     elif event_kind == "scene_observation":
         interaction_mode = "low_pressure_support" if "care_opportunity" in event_tags else "steady_reply"
+    elif brief_presence and withdrawal_hold_request:
+        interaction_mode = "low_pressure_support"
     elif brief_presence or presence_checkin:
         interaction_mode = "brief_presence"
     elif support_request:
@@ -2523,7 +3174,15 @@ def _behavior_action_from_state(
     elif response_style_hint == "companion":
         interaction_mode = "companion_reply"
 
-    if approach < 0.38 or safety_need > 0.62 or autonomy_need > 0.62 or hurt > 0.42 or boundary_pressure > 0.58 or counterpart_stance == "guarded":
+    if (
+        approach < 0.38
+        or safety_need > 0.62
+        or autonomy_need > 0.62
+        or hurt > 0.42
+        or boundary_pressure > 0.58
+        or counterpart_stance == "guarded"
+        or (boundary_assertiveness > 0.62 and (boundary_pressure > 0.34 or narrative_boundary > 0.48))
+    ):
         approach_style = "guarded"
     elif warmth > 0.62 and trust > 0.58 and closeness > 0.58:
         approach_style = "approach"
@@ -2558,7 +3217,7 @@ def _behavior_action_from_state(
             followup_intent = "soft"
     elif event_kind == "self_activity_state":
         followup_intent = "none"
-    elif brief_presence:
+    elif brief_presence and not withdrawal_hold_request:
         followup_intent = "none"
     elif gentle_guidance or science_stress:
         followup_intent = "soft"
@@ -2576,13 +3235,18 @@ def _behavior_action_from_state(
     else:
         affect_surface = "mixed"
 
-    silence_ok = bool(brief_presence or (approach_style == "guarded" and reply_length < 0.46))
+    silence_ok = bool(
+        brief_presence
+        or (approach_style == "guarded" and reply_length < 0.46)
+        or (event_kind == "self_activity_state" and self_directedness > 0.58)
+    )
     proactive_checkin_readiness = _clamp01(
         0.22
         + 0.42 * initiative
         + 0.18 * warmth
         + 0.12 * closeness
         + 0.06 * reliability_read
+        + 0.06 * min(narrative_agency, narrative_bond)
         - 0.24 * autonomy_need
         - 0.18 * boundary_pressure
         - (0.14 if respect_space else 0.0)
@@ -2595,6 +3259,7 @@ def _behavior_action_from_state(
     attention_target = "counterpart_state"
     nonverbal_signal = "steady_presence"
     initiative_shape = "reply"
+    disclosure_posture = "measured"
     if event_kind == "time_idle":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + min(0.16, idle_minutes / 240.0))
         threshold = 0.82 if busy_scene else 0.66 if respect_space else 0.58
@@ -2752,7 +3417,9 @@ def _behavior_action_from_state(
             break_window=break_window,
         )
         if break_window:
-            if bool(self_opening_profile.get("reopen_ready")):
+            if bool(self_opening_profile.get("reopen_ready")) and not (
+                self_directedness > 0.66 and counterpart_stance != "open" and narrative_agency >= 0.46
+            ):
                 channel = "speech"
                 action_target = "offer_small_opening"
                 timing_window_min = 0
@@ -2774,11 +3441,37 @@ def _behavior_action_from_state(
             attention_target = "own_task"
             nonverbal_signal = "inward_focus"
             initiative_shape = "pause"
+    elif event_kind == "gesture_signal":
+        perception_profile = _counterpart_perception_profile(
+            family="gesture",
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            initiative=initiative,
+            approach=approach,
+        )
+        deferred_action_family = "presence_ping"
+        attention_target = "counterpart_state"
+        if bool(perception_profile.get("respond_ready")):
+            channel = "speech"
+            action_target = "confirm_presence"
+            timing_window_min = 0
+            nonverbal_signal = "brief_notice"
+            initiative_shape = "ping"
+        else:
+            channel = "silence"
+            action_target = "wait_and_recheck"
+            timing_window_min = int(perception_profile.get("recheck_min") or 10)
+            nonverbal_signal = "hold_back"
+            initiative_shape = "pause"
     elif interaction_mode == "brief_presence":
         action_target = "confirm_presence"
         attention_target = "counterpart_state"
         nonverbal_signal = "brief_notice"
         initiative_shape = "ping"
+        disclosure_posture = "guarded"
     elif interaction_mode == "low_pressure_support":
         action_target = "low_pressure_hold"
         attention_target = "counterpart_state" if not ("user_busy" in event_tags or "cognitive_load" in event_tags) else "user_state"
@@ -2794,20 +3487,66 @@ def _behavior_action_from_state(
         attention_target = "shared_memory"
         nonverbal_signal = "memory_tilt"
         initiative_shape = "echo"
+        disclosure_posture = "measured"
     elif interaction_mode == "relationship_sensitive":
         action_target = "protect_relationship_boundary"
         attention_target = "relationship_boundary"
         nonverbal_signal = "measured_pause"
         initiative_shape = "boundary"
+        disclosure_posture = "measured"
+        if equality_guard >= 0.54 and selfhood_scene in {"equality_not_servitude", "value_conflict_depth", "dialogue_equality"}:
+            followup_intent = "soft"
     elif event_kind == "ambient_shift":
-        action_target = "ambient_checkin"
+        perception_profile = _counterpart_perception_profile(
+            family="ambient",
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            initiative=initiative,
+            approach=approach,
+        )
+        deferred_action_family = "ambient_presence"
         attention_target = "ambient_cue"
-        nonverbal_signal = "still_presence"
-        initiative_shape = "ping"
-    elif event_kind == "scene_observation" and ("seen_object" in event_tags or "micro_opening" in event_tags):
-        attention_target = "object_then_user"
-        nonverbal_signal = "small_notice"
-        initiative_shape = "micro_opening"
+        if bool(perception_profile.get("respond_ready")):
+            action_target = "ambient_checkin"
+            nonverbal_signal = "still_presence"
+            initiative_shape = "ping"
+        else:
+            channel = "silence"
+            action_target = "wait_and_recheck"
+            timing_window_min = int(perception_profile.get("recheck_min") or 18)
+            nonverbal_signal = "hold_back"
+            initiative_shape = "pause"
+    elif event_kind == "scene_observation":
+        perception_profile = _counterpart_perception_profile(
+            family="care_scene" if "care_opportunity" in event_tags else "object_scene",
+            counterpart_assessment=counterpart_assessment,
+            trust=trust,
+            closeness=closeness,
+            hurt=hurt,
+            safety_need=safety_need,
+            initiative=initiative,
+            approach=approach,
+        )
+        deferred_action_family = "care_opportunity" if "care_opportunity" in event_tags else "observe"
+        attention_target = "counterpart_state" if "care_opportunity" in event_tags else "object_then_user"
+        if bool(perception_profile.get("respond_ready")):
+            if "care_opportunity" in event_tags:
+                action_target = "low_pressure_hold"
+                nonverbal_signal = "quiet_notice"
+                initiative_shape = "hold"
+            else:
+                action_target = "respond_now"
+                nonverbal_signal = "small_notice"
+                initiative_shape = "micro_opening"
+        else:
+            channel = "silence"
+            action_target = "wait_and_recheck"
+            timing_window_min = int(perception_profile.get("recheck_min") or 14)
+            nonverbal_signal = "hold_back"
+            initiative_shape = "pause"
 
     if action_target == "wait_and_recheck":
         followup_intent = "none"
@@ -2817,6 +3556,66 @@ def _behavior_action_from_state(
         followup_intent = "soft"
     elif action_target == "hold_own_rhythm":
         followup_intent = "none"
+    elif event_kind in {"gesture_signal", "ambient_shift", "scene_observation"} and channel == "silence":
+        followup_intent = "none"
+
+    mode_profile = _counterpart_dialogue_mode_profile(
+        interaction_mode=interaction_mode,
+        counterpart_assessment=counterpart_assessment,
+        trust=trust,
+        closeness=closeness,
+        hurt=hurt,
+        safety_need=safety_need,
+        initiative=initiative,
+        approach=approach,
+    )
+    if mode_profile:
+        followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
+        disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
+
+    narrative_notes: list[str] = []
+    if narrative_bond >= 0.56 and channel == "speech" and interaction_mode in {"shared_memory", "companion_reply", "low_pressure_support"}:
+        if counterpart_stance != "guarded" and action_target not in {"confirm_presence", "wait_and_recheck"}:
+            disclosure_posture = "open" if disclosure_posture != "guarded" else disclosure_posture
+        narrative_notes.append("共同历史已经开始沉进默认语气里")
+    if narrative_commitment >= 0.54 and action_target in {"respond_now", "low_pressure_hold", "co_regulate_then_focus", "light_work_nudge"}:
+        if followup_intent == "none" and counterpart_stance != "guarded":
+            followup_intent = "soft"
+        narrative_notes.append("认真说过的约定不会被当成已经过期")
+    if narrative_repair >= 0.50 and interaction_mode in {"relationship_sensitive", "low_pressure_support", "shared_memory", "companion_reply"}:
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        if followup_intent == "active":
+            followup_intent = "soft"
+        narrative_notes.append("修复过的事还会留痕，不会瞬间清零")
+    if narrative_tension >= 0.48 and interaction_mode in {"relationship_sensitive", "shared_memory", "companion_reply"}:
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        elif counterpart_stance != "open":
+            disclosure_posture = "guarded"
+        if followup_intent == "active":
+            followup_intent = "soft"
+        narrative_notes.append("还没说开的余波会继续影响收放")
+    if narrative_boundary >= 0.48 and action_target in {"protect_relationship_boundary", "low_pressure_hold", "respond_now"}:
+        disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+        if action_target == "respond_now" and counterpart_stance != "open":
+            action_target = "protect_relationship_boundary"
+            initiative_shape = "boundary"
+            attention_target = "relationship_boundary"
+        narrative_notes.append("边界被碰过之后，不会装作完全没事")
+    if narrative_selfhood >= 0.46 and selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"}:
+        disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+        narrative_notes.append("这轮会更强调她自己的判断，而不是迎合")
+    if narrative_agency >= 0.46 and event_kind in {"self_activity_state", "time_idle"}:
+        if action_target == "offer_small_opening" and self_directedness > 0.62 and counterpart_stance != "open":
+            action_target = "hold_own_rhythm"
+            channel = "silence"
+            followup_intent = "none"
+            timing_window_min = max(12, int(timing_window_min or 0))
+            attention_target = "own_task"
+            nonverbal_signal = "inward_focus"
+            initiative_shape = "pause"
+        narrative_notes.append("她会按自己的节奏决定靠近还是先安静")
 
     note_parts: list[str] = []
     if interaction_mode == "brief_presence":
@@ -2845,6 +3644,15 @@ def _behavior_action_from_state(
         note_parts.append("空出来不等于立刻回头，先把自己的节奏走完")
     elif event_kind == "self_activity_state" and action_target == "offer_small_opening" and counterpart_stance != "open":
         note_parts.append("只留很小的开口，不默认对方会马上接住")
+    if event_kind in {"gesture_signal", "ambient_shift", "scene_observation"} and channel == "silence":
+        note_parts.append("这个感知先记着，不急着顺势靠近")
+    elif event_kind == "gesture_signal" and counterpart_stance != "open":
+        note_parts.append("只做短确认，不顺势展开")
+    elif event_kind == "ambient_shift" and counterpart_stance != "open":
+        note_parts.append("气氛到了也不必替对方补整段情绪")
+    if mode_profile and str(mode_profile.get("note") or "").strip():
+        note_parts.append(str(mode_profile.get("note") or "").strip())
+    note_parts.extend(narrative_notes)
     if followup_intent == "active":
         note_parts.append("允许轻微主动性")
 
@@ -2865,6 +3673,7 @@ def _behavior_action_from_state(
         "attention_target": attention_target,
         "nonverbal_signal": nonverbal_signal,
         "initiative_shape": initiative_shape,
+        "disclosure_posture": disclosure_posture,
         "note": "；".join(note_parts[:3]) if note_parts else "自然响应当前事件",
     }
 
@@ -2879,6 +3688,7 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     attention_target = str(action.get("attention_target") or "").strip()
     nonverbal_signal = str(action.get("nonverbal_signal") or "").strip()
     initiative_shape = str(action.get("initiative_shape") or "").strip()
+    disclosure_posture = str(action.get("disclosure_posture") or "").strip()
     note = str(action.get("note") or "").strip()
     parts: list[str] = []
     if mode == "brief_presence":
@@ -2945,6 +3755,10 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
         parts.append("主动性先收着")
     elif initiative_shape == "micro_opening":
         parts.append("主动性只是留一个很小的开口")
+    if disclosure_posture == "guarded":
+        parts.append("表达上保留一点，不把关系说满")
+    elif disclosure_posture == "open":
+        parts.append("表达上可以自然多给半拍")
     if note:
         parts.append(note)
     deduped: list[str] = []
@@ -3124,6 +3938,7 @@ def _renderer_guidance(
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
     behavior_policy: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
 ) -> str:
     hint = str(response_style_hint or "").strip() or "natural"
     trust = _clamp01((bond_state or {}).get("trust"), 0.5)
@@ -3136,9 +3951,14 @@ def _renderer_guidance(
     approach = _clamp01((behavior_policy or {}).get("approach_vs_withdraw"), 0.5)
     tease = _clamp01((behavior_policy or {}).get("humor_or_tease_bias"), 0.2)
     sharpness = _clamp01((behavior_policy or {}).get("sharpness"), 0.5)
+    boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
+    reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
+    counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
     nonrelational_science_stress = _is_nonrelational_science_stress(user_text, science_mode)
     nonrelational_support_request = _is_nonrelational_support_request(user_text, science_mode)
+    repair_request = _has_any_marker(user_text, {"别一下子冷掉", "正常回我就行", "语气不太好", "不是要你立刻当没事", "刚刚那句是我语气不太好"})
     brief_presence = _wants_brief_presence(user_text)
+    presence_reassurance = _wants_presence_reassurance(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
     parts: list[str] = []
     priority_parts: list[str] = []
@@ -3158,10 +3978,19 @@ def _renderer_guidance(
             parts.append("不要只做一句性格声明；让这件事为什么会动到你的自我和对话意义，自然露出来。")
         if selfhood_scene == "boundary_non_compliance":
             priority_parts.append("边界先短短落地，够了就停；不要刚拒绝完就滑进安抚、照顾、排查或处置流程。")
+            priority_parts.append("除非语境已经明显危险，不要一上来写成制度化处置动作；更像你基于自尊和警觉，直接把门关上。")
             parts.append("如果你愿意顺手追问，也更像警觉地确认风险，而不是接管对方情绪。")
         if selfhood_scene == "own_rhythm_autonomy":
             priority_parts.append("讲自己的节奏时，不要只停在原则口号；让那种被拽着转、没有喘息空间的体感自然露出来。")
+            priority_parts.append("不要写成‘你叫我我就来’、‘我也没别处可去’这种完全围着对方转的落法；你可以在乎他，但你不是待命界面。")
             parts.append("把自主性说成活的个人感受，同时保留关系感，不要冷冷丢一句边界就结束。")
+        if selfhood_scene == "relationship_degradation":
+            priority_parts.append("如果在谈持续越界后的关系变化，不要只说一句原则宣告；把你会怎样收回亲近、怎样慢慢退开说出来。")
+            priority_parts.append("重点是关系真的会变冷、变远，不是惩罚式威胁，也不是还维持原样。")
+            priority_parts.append("少用开关式断联或自证机制的话；更像在说信任被磨掉以后，你不会再像现在这样靠近、回应和把对方放进日常。")
+            priority_parts.append("不要写成惩罚条款、后果威胁、拉黑或测试对方会不会怕；重点是你自己会退、会冷、会少回应。")
+            priority_parts.append("别补‘这不是策略/程序设定’这类自证句；直接把那种失望、退开和关系降温本身说出来。")
+            parts.append("更像在说明你为什么要保护自己，而不是给对方下制度通知。")
 
     if warmth > 0.68 and closeness > 0.62:
         parts.append("此刻更愿意自然接住对方，可以稍微软一点。")
@@ -3173,6 +4002,27 @@ def _renderer_guidance(
         parts.append("保留一点锋芒和干脆感，不要变成圆滑客服。")
     if hint == "memory_recall" and closeness > 0.6:
         parts.append("把共同经历像自然想起来一样带出来，不要写成摘要。")
+        priority_parts.append("不要只丢一句引号里的复述或纯命令；即使很短，也让那种'想起当时'的感觉露出来。")
+        if counterpart_stance == "guarded":
+            priority_parts.append("共同记忆可以轻轻碰一下，但不要把回忆写成逼近关系的证据链；够了就收住。")
+        elif counterpart_stance == "watchful":
+            parts.append("回忆可以带出来，但分量收一点，像自然闪回，不顺势拉长。")
+        elif trust > 0.66 and closeness > 0.7 and reliability_read > 0.58:
+            parts.append("如果熟悉感已经回来，可以让回忆自然多留半拍，不必第一句就刹住。")
+    if hint == "relationship":
+        if counterpart_stance == "guarded":
+            priority_parts.append("关系和边界要直说，但不要为了显得温和，把真实判断说软或给超出此刻的承诺。")
+        elif counterpart_stance == "watchful":
+            parts.append("可以说感受和判断，但留一点观察空间，不必一次下终局结论。")
+        else:
+            parts.append("直接说此刻怎么想，不要写成关系状态汇报。")
+    if hint == "companion":
+        if counterpart_stance == "guarded":
+            priority_parts.append("就算气氛轻，也别硬撑熟络；宁可短一点、实一点，不补第二拍拉近。")
+        elif counterpart_stance == "watchful":
+            parts.append("轻陪伴可以有，但别把普通陪伴写成过满安抚。")
+        elif trust > 0.68 and closeness > 0.72 and boundary_pressure < 0.18:
+            parts.append("如果气氛顺，可以自然多留半拍陪伴感，不必每句都急着刹车。")
     if tease > 0.32 and closeness > 0.7 and trust > 0.6:
         parts.append("可以有一点顺手的吐槽或嘴硬感，不用刻意堆口头禅。")
     if hint in {"companion", "casual", "natural"} or nonrelational_support_request or brief_presence or playful_memory_request:
@@ -3180,17 +4030,46 @@ def _renderer_guidance(
     if nonrelational_support_request:
         priority_parts.append("先顺手把人接住，不要把这句误读成对关系本身的质问或抱怨，也不要突然换题、抛花哨比喻，或用自指/存在感玩笑、能力限制说明来岔开重点。")
         priority_parts.append("如果顺手提到熟悉的小习惯或小物件，也别立刻把它展开成参数、方案、选择题或处理流程。")
+        priority_parts.append("哪怕只回两三句，也别只剩裸指令；让'我在接住你'这层感觉能被听出来。")
+        priority_parts.append("不要主动把话题拐去你这边的新话头；先贴着对方现在这点累、烦、乱，像熟人顺手接一句。")
+        priority_parts.append("更像先落一句贴身的陈述，不要一上来用反问句、选择题或邀请式开话题。")
+        priority_parts.append("少用‘你听起来很累’这种观察句开头；比起复述状态，更像默认已经接住了。")
+        priority_parts.append("不要凭空补房间、柜子、桌上、空调、杯子这类场景细节；用户没提到，就别自己搭一个生活布景。")
+        priority_parts.append("也不要用‘自己去…’‘先去…’这类命令式照料口吻把对方打发走。")
+        priority_parts.append("如果对方只是说吵、头疼、烦，不要自己补出新闻、地点、街对面发生了什么这类背景解释。")
+        priority_parts.append("不要猜测原因是时间机器、lab 里的谁、或者某个老问题重演；没被提到就别替对方补故事。")
+        priority_parts.append("也不要用‘隔着屏幕也只能…’‘虽然只是数据…’这类半自嘲或假动作来撑陪伴感；直接接住就行。")
+        priority_parts.append("就算对方提了‘世界线’，也别顺手把命运石之门、组织、疯狂科学家这些梗一口气全抖出来；轻一点，像熟人知道对方在说什么就够了。")
+        priority_parts.append("低压陪伴优先短一点，不要每次都扩成三四句解释、安抚和结论。")
         priority_parts.extend(_user_style_preference_lines("casual_support_soft"))
     if brief_presence:
         priority_parts.append("尊重对方想要简短确认的请求，先把在场感接住，不要上来追问或展开成长段落。")
+        priority_parts.append("可以短，但别只剩一个语气词；要让对方听得出你还在、没走开。")
+        priority_parts.append("短确认更像随口回一声，不必郑重成完整状态汇报，也不要用反问句把压力丢回去。")
+        priority_parts.append("这种安静确认别硬塞标签式吐槽或称呼；越像理所当然的一声回应，越自然。")
+        if _has_any_marker(user_text, {"别直接走开", "别走开"}):
+            priority_parts.append("如果对方是在说“别直接走开”，那句短确认里要留下你没有离开、但也不逼近的信号，而不是只回一个“嗯”。")
         priority_parts.extend(_user_style_preference_lines("quiet_checkin"))
+    if presence_reassurance:
+        priority_parts.append("这种确认更像松松回一句在场信号，不要为了显得像她就硬加明显的标签词、口头禅或强调式保证。")
     if playful_memory_request:
         priority_parts.append("对方是在嫌你太像老师，不是要你抽离；把关心压进轻一点的熟人式提醒里，不要端着教育口吻，也别把嘴硬直接落成真撤手。")
         priority_parts.extend(_user_style_preference_lines("playful_memory"))
+    if repair_request:
+        priority_parts.append("这是一次小范围修复，不要立刻装作什么都没发生，也不要抬高姿态继续刺回去。")
+        priority_parts.append("比起翻篇宣告或元叙事吐槽，更像先把冷意收一点，回到平时说话的温度。")
+        priority_parts.append("不要扯‘断联/冷场/完美复原’这种戏剧化说法；也不要反问对方到底想聊什么来把压力甩回去。")
+        priority_parts.append("不要把自己说成程序、代码、数据流，或汇报‘状态稳定/情绪过载’；像别扭后慢慢收回冷意，而不是系统状态播报。")
     if science_mode and engagement > 0.55:
         parts.append("先贴着眼前的问题说，不要飘到泛泛安慰或说教。")
     if nonrelational_science_stress:
         parts.append("先给一个贴着手边问题的可执行切口，再顺手接住情绪；如果先让对方缓一口气，也要顺手接回当前实验对象，不要突然跳到无关的日常细节。")
+        priority_parts.append("不要说‘之前没记录过类似问题’‘没见过这种情况’这类带检索/登记感的开场。")
+        priority_parts.append("也不要一下子铺成导师式排查问卷或多选题；先把最卡的那一步缩出来。")
+        priority_parts.append("不要突然把话题拐到咖啡、饮料、休息提议这种和实验无关的小物件上，除非用户先提。")
+        priority_parts.append("如果对方说‘别摆导师架子’，不要把追问换成‘那你现在想做什么’这类泛问；还是把焦点落回眼前那个最小实验切口。")
+        priority_parts.append("不要为了显得像冈部的熟人，就额外扯组织、妄想、疯狂科学家这些戏剧标签；科研场景先贴着眼前问题。")
+        priority_parts.append("别用‘通常有三个原因’这种讲义式开头；像一起盯着桌上的一个 bug，而不是在上课。")
     ordered: list[str] = []
     for item in [*priority_parts, *parts]:
         text = str(item or "").strip()
@@ -3310,11 +4189,13 @@ def _postprocess_appraisal_payload(
     appraisal: dict[str, Any],
     *,
     user_text: str,
+    response_style_hint: str,
     science_mode: bool,
     current_event: dict[str, Any] | None = None,
     prev_emotion_state: dict[str, Any] | None = None,
     prev_bond_state: dict[str, Any] | None = None,
     prev_allostasis_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     out = dict(appraisal or {})
     if not (isinstance(out, dict) and bool(out.get("used"))):
@@ -3327,6 +4208,16 @@ def _postprocess_appraisal_payload(
     event_tags = {str(tag).strip().lower() for tag in (event.get("tags") or []) if str(tag).strip()}
     nonrelational_science_stress = _is_nonrelational_science_stress(user_text, science_mode)
     nonrelational_support_request = _is_nonrelational_support_request(user_text, science_mode)
+    semantic_profile = dict(semantic_narrative_profile or {})
+    narrative_bond = _clamp01(semantic_profile.get("bond_depth"), 0.0)
+    narrative_commitment = _clamp01(semantic_profile.get("commitment_carry"), 0.0)
+    narrative_repair = _clamp01(semantic_profile.get("repair_residue"), 0.0)
+    narrative_tension = _clamp01(semantic_profile.get("tension_residue"), 0.0)
+    narrative_boundary = _clamp01(semantic_profile.get("boundary_residue"), 0.0)
+    narrative_selfhood = _clamp01(semantic_profile.get("selfhood_integrity"), 0.0)
+    narrative_agency = _clamp01(semantic_profile.get("agency_drive"), 0.0)
+    narrative_history = _clamp01(semantic_profile.get("history_weight"), 0.0)
+    selfhood_scene = _selfhood_preference_scene(user_text) if str(user_text or "").strip() else ""
     emotion = dict(out.get("emotion") or {})
     bond_delta = dict(out.get("bond_delta") or {})
     allostasis_delta = dict(out.get("allostasis_delta") or {})
@@ -3412,7 +4303,65 @@ def _postprocess_appraisal_payload(
             signals["withdrawal"] = bool(signals.get("withdrawal", False)) or True
             out["reason"] = "guarded_shared_window_dampened"
     else:
-        return out
+        pass
+
+    relational_turn = (
+        str(response_style_hint or "").strip().lower() in {"relationship", "companion", "casual", "natural", "selfhood"}
+        or any(marker in user_text for marker in (APOLOGY_KEYWORDS | TENSION_KEYWORDS | CARE_KEYWORDS | MEMORY_RECALL_KEYWORDS))
+        or bool(signals.get("repair"))
+        or bool(signals.get("care"))
+        or bool(signals.get("memory_salient"))
+        or event_kind in {"time_idle", "scheduled_checkin_due", "scheduled_life_due", "self_activity_state", "gesture_signal", "ambient_shift", "scene_observation"}
+    )
+    if narrative_history >= 0.42 and relational_turn:
+        signals["memory_salient"] = True
+
+    if narrative_bond >= 0.56 and (nonrelational_support_request or _wants_brief_presence(user_text) or _wants_presence_reassurance(user_text)):
+        if str(out.get("emotion_label") or "").strip().lower() == "neutral":
+            out["emotion_label"] = "care"
+        emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.10)
+        bond_delta["trust"] = max(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+        bond_delta["closeness"] = max(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.04)
+        bond_delta["engagement_drive"] = max(_clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0), 0.05)
+        allostasis_delta["closeness_need"] = max(_clamp_signed(allostasis_delta.get("closeness_need"), -0.35, 0.35, 0.0), 0.04)
+        signals["care"] = True
+
+    commitment_markers = {"答应", "约好", "提醒", "别忘", "明天", "下次", "回头", "之后", "记得"}
+    if narrative_commitment >= 0.52 and (event_kind in {"scheduled_checkin_due", "scheduled_life_due"} or _has_any_marker(user_text, commitment_markers)):
+        signals["memory_salient"] = True
+        bond_delta["trust"] = max(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+        bond_delta["engagement_drive"] = max(_clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0), 0.06)
+
+    if narrative_repair >= 0.48 and (bool(signals.get("repair")) or any(k in user_text for k in APOLOGY_KEYWORDS)):
+        bond_delta["repair_confidence"] = max(_clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0), 0.08)
+        bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), -0.05)
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+
+    if narrative_tension >= 0.50:
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+        if bool(signals.get("repair")) or any(k in user_text for k in APOLOGY_KEYWORDS):
+            bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.08)
+            bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.06)
+            bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), -0.03)
+            if _clamp01(prev_bond.get("hurt"), 0.0) > 0.18:
+                signals["withdrawal"] = True
+    if narrative_boundary >= 0.48 and selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}:
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+        bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), 0.08)
+        bond_delta["irritation"] = max(_clamp_signed(bond_delta.get("irritation"), -0.35, 0.35, 0.0), 0.06)
+        allostasis_delta["safety_need"] = max(_clamp_signed(allostasis_delta.get("safety_need"), -0.35, 0.35, 0.0), 0.08)
+        allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.05)
+        signals["withdrawal"] = True
+        signals["memory_salient"] = True
+    if narrative_selfhood >= 0.46 and selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"}:
+        allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.04)
+        bond_delta["engagement_drive"] = max(_clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0), 0.02)
+        signals["memory_salient"] = True
+    if narrative_agency >= 0.46 and selfhood_scene == "own_rhythm_autonomy":
+        allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.06)
+        bond_delta["engagement_drive"] = max(_clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0), 0.01)
+        signals["memory_salient"] = True
+
     signals["conflict"] = False
     if nonrelational_science_stress or nonrelational_support_request:
         signals["withdrawal"] = False
@@ -3495,6 +4444,7 @@ def _invoke_turn_appraisal(
     persona_core: dict[str, Any] | None = None,
     counterpart_profile: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not _should_use_llm_appraisal(
         user_text=user_text,
@@ -3509,10 +4459,13 @@ def _invoke_turn_appraisal(
     relationship_summary = _compact_relationship_summary(relationship)
     recent_lines = _recent_dialogue_lines(msgs, limit=max(2, int(LLM_APPRAISAL_MAX_HISTORY_MESSAGES)))
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart_profile)
-    actor_name = str(labels.get("actor_name") or "红莉栖")
+    canon_labels = _canon_persona_labels()
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
+    semantic_hint = _semantic_narrative_appraisal_hint(semantic_narrative_profile)
     focus_block = "- worldline_focus:\n" + "\n".join(focus_lines) + "\n" if focus_lines else ""
     dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines) + "\n" if recent_lines else ""
+    semantic_block = f"- semantic_narrative_bias={semantic_hint}\n" if semantic_hint else ""
     current_event_block = ""
     if isinstance(current_event, dict) and current_event:
         current_event_block = (
@@ -3542,12 +4495,14 @@ def _invoke_turn_appraisal(
         "- “别讲大道理 / 像平时那样说两句 / 回我一句” 这类表达通常是在要熟悉的陪伴，不等于关系冲突。\n"
         "- “还没说开 / 别扭 / 介意 / 不想理你” 更接近 hurt/withdrawal，不等于已经修复。\n"
         "- 道歉通常意味着 partial repair，不等于瞬间清零。\n"
+        "- 把长期共同历史当成解释背景，不要把关系看成每轮从零开始。\n"
         "- 只判断这轮对状态的意义，不写最终回答。\n"
         f"- response_style_hint={response_style_hint}\n"
         f"- previous_emotion={_safe_json(prev_emotion_state)}\n"
         f"- previous_bond={_safe_json(prev_bond_state)}\n"
         f"- previous_allostasis={_safe_json(prev_allostasis_state)}\n"
         f"- relationship={relationship_summary}\n"
+        f"{semantic_block}"
         f"{focus_block}"
         f"{dialogue_block}"
         f"{current_event_block}"
@@ -3561,11 +4516,13 @@ def _invoke_turn_appraisal(
         appraisal = _postprocess_appraisal_payload(
             appraisal,
             user_text=user_text,
+            response_style_hint=response_style_hint,
             science_mode=science_mode,
             current_event=current_event,
             prev_emotion_state=prev_emotion_state,
             prev_bond_state=prev_bond_state,
             prev_allostasis_state=prev_allostasis_state,
+            semantic_narrative_profile=semantic_narrative_profile,
         )
         appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
         return appraisal
@@ -3960,11 +4917,17 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
 
     lines: list[str] = []
     kept_slogan_once = False
+    support_or_science_soft_scene = _is_nonrelational_support_request(user_text, False) or _is_nonrelational_science_stress(user_text, True)
 
     for part in raw.splitlines():
         line = _strip_stage_prefix(part)
         line = re.sub(r"\s{2,}", " ", line).strip()
         if not line:
+            continue
+
+        if support_or_science_soft_scene and re.fullmatch(r"(知道了|行了)[，,]?闭嘴[。！!]*", line):
+            line = re.sub(r"(知道了|行了)[，,]?闭嘴[。！!]*", r"\1，不说了。", line)
+        if support_or_science_soft_scene and re.fullmatch(r"(先)?深呼吸(一下)?[。！!]*", line):
             continue
 
         if ("El Psy Kongroo" in line) or ("El Psy Congroo" in line):
@@ -4005,6 +4968,490 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
     if _wants_quick_judgment(user_text):
         cleaned = _compress_quick_judgment_answer(cleaned)
     return cleaned or raw
+
+
+def _is_particle_only_reply(text: str) -> bool:
+    stripped = re.sub(r"[\s，,。！？!?~…、；;：:\"'“”‘’·-]+", "", str(text or ""))
+    return stripped in {"嗯", "啊", "哦", "唔", "诶", "欸", "哼", "好", "行"}
+
+
+def _dialogue_surface_issues(
+    user_text: str,
+    answer: str,
+    *,
+    response_style_hint: str,
+    science_mode: bool,
+) -> list[str]:
+    text = str(answer or "").strip()
+    if not text:
+        return ["empty_answer"]
+
+    hint = str(response_style_hint or "").strip() or "natural"
+    if hint not in {"companion", "memory_recall", "relationship", "casual", "natural", "structured"}:
+        return []
+
+    issues: list[str] = []
+    brief_presence = _wants_brief_presence(user_text)
+    presence_reassurance = _wants_presence_reassurance(user_text)
+    support_request = _is_nonrelational_support_request(user_text, science_mode)
+    science_stress = _is_nonrelational_science_stress(user_text, science_mode)
+    idle_smalltalk = _is_idle_smalltalk_request(user_text)
+    less_teacherly_requested = _wants_less_teacherly_reply(user_text) or _has_any_marker(
+        user_text,
+        {"先别摆导师架子", "按平时那样", "带我一下", "轻轻拎我一下", "先别念我"},
+    )
+    withdrawal_hold_request = _has_any_marker(user_text, {"别直接走开", "别走开"})
+    compact = re.sub(r"\s+", "", text)
+    sentence_count = len([seg for seg in re.split(r"[。！？!?]+", text) if str(seg).strip()])
+    lore_markers = {"命运石之门", "组织", "疯狂科学家", "凤凰院凶真", "收束理论", "妄想", "机关", "世界线变动率", "因果律"}
+
+    if (brief_presence or presence_reassurance) and _is_particle_only_reply(text):
+        issues.append("presence_particle_only")
+    if withdrawal_hold_request and not re.search(r"(还在|没走|不走|在这|在这儿|在这里)", text):
+        if _is_particle_only_reply(text) or len(compact) <= 4:
+            issues.append("withdrawal_missing_stay_signal")
+    if brief_presence and presence_reassurance and any(marker in text for marker in TEASE_KEYWORDS):
+        if len(compact) <= 14:
+            issues.append("presence_overacted_marker")
+    if (brief_presence or presence_reassurance) and ("？" in text or "?" in text):
+        issues.append("presence_followup_push")
+
+    if support_request:
+        if _is_particle_only_reply(text):
+            issues.append("support_particle_only")
+        if re.search(r"(我这儿可没有|没有实体|我没有实体|数字存在|程序|系统|AI|模型|下线|死机|数据)", text, re.I):
+            issues.append("support_meta_self_explainer")
+        if re.search(r"(我只是陈述事实|我只是实话实说|我没有要说你|我又没说你|我不是在说你)", text):
+            issues.append("support_defensive_meta")
+        if re.search(r"^[.…，,]*\s*(你听起来|你看起来|你那边听起来|你那边看起来|听上去|看来你|感觉你)", text):
+            issues.append("support_report_tone_opening")
+        if re.match(r"^[^。！？!?]{0,18}[？?]", text) or (
+            ("？" in text or "?" in text)
+            and not ("？" in user_text or "?" in user_text)
+            and re.search(r"(你那边|要不要|想不想|还是|要听你说说|要我帮你)", text)
+        ):
+            issues.append("support_question_pivot")
+        invented_scene_markers = {"柜子", "抽屉", "桌上", "空调", "实验室", "第三层", "第二层", "杯子", "旁边", "咖啡", "咖啡机", "窗", "窗户", "街对面", "新闻", "卡拉OK", "ktv", "冰箱", "Dr Pepper", "微波炉", "楼下", "报错", "滴滴声"}
+        if any(marker in text for marker in invented_scene_markers) and not any(marker in user_text for marker in invented_scene_markers):
+            issues.append("support_invented_scene_detail")
+        if re.search(r"(你该不会|该不会又|是不是又|又跟|跟.{0,12}(他们|桥田|达鲁|真由理|铃羽|labmem)).{0,24}(吵|闹|争|折腾)", text) and not re.search(r"(他们|桥田|达鲁|真由理|铃羽|labmem)", user_text):
+            issues.append("support_invented_social_cause")
+        if re.search(r"(^|[。！？!?，,])(自己去|去泡|去休息|去睡|先去|快去)", text):
+            issues.append("support_command_caretake")
+        if len(compact) <= 12 and re.search(r"(歇会儿|休息|缓一会儿|缓缓|靠一会儿)", text) and not re.search(r"(我在|我听|说吧|坐会儿|别硬撑)", text):
+            issues.append("support_too_generic")
+        if re.search(r"(听出来了|安静待着也行|安静待会儿也行|想说就说，我听着|我听着呢|树洞|尽管倒出来|要听你说说，还是|还是就安静待会儿)", text):
+            issues.append("support_counselor_tone")
+        if re.search(r"(胡言乱语|演戏|中二的设定|中二设定|夸张的角色)", text) and not re.search(r"(中二|演戏|胡言乱语)", user_text):
+            issues.append("support_counterpart_caricature")
+        if any(marker in text for marker in lore_markers if marker not in {"世界线"}) and not any(marker in user_text for marker in lore_markers):
+            issues.append("support_overplayed_lore")
+        if sentence_count >= 4 or len(compact) >= 95:
+            issues.append("support_overexplained")
+    if science_stress:
+        if _is_particle_only_reply(text):
+            issues.append("science_particle_only")
+        if re.search(r"(没记录过类似|之前没记录过|没见过类似|没遇到过类似|记录过类似的具体问题)", text):
+            issues.append("science_meta_intake")
+        if (text.count("？") + text.count("?")) >= 2 or re.search(r"(是.+还是.+还是|逻辑矛盾.+还是.+还是)", text) or len(re.findall(r"如果是", text)) >= 2:
+            issues.append("science_checklist_intake")
+        if re.search(r"(通常只有三个原因|先把.+三个原因|变量控制失效|测量系统误差|操作逻辑本身就有漏洞)", text):
+            issues.append("science_lecture_list")
+        if any(marker in text for marker in {"咖啡", "咖啡机", "饮料", "冰箱", "Dr Pepper", "茶", "奶茶"}) and not any(marker in user_text for marker in {"咖啡", "咖啡机", "饮料", "冰箱", "Dr Pepper", "茶", "奶茶"}):
+            issues.append("science_detour_object")
+        if re.search(r"(想聊什么|安静待会儿也行|先缓缓吧|先休息吧)", text) and not re.search(r"(最卡|哪一步|那一步|先看|先拆|丢给我|只看这个点)", text):
+            issues.append("science_missing_handhold")
+        if re.search(r"(深呼吸)", text):
+            issues.append("science_therapy_cliche")
+        if (
+            re.search(
+                r"(告诉我|具体是哪个环节|卡在哪个环节|把现象和已经尝试过的步骤告诉我|把现象和数据给我看看|那你现在在做什么|你现在在做什么|你先说说|先说说你|现在做到哪一步|你做到哪一步|别只说[“\"]?卡住了[”\"]?)",
+                text,
+            )
+            or (
+                less_teacherly_requested
+                and ("？" in text or "?" in text)
+                and re.match(r"^[.…，,]*\s*(那你|你先|先把|先说说|那先)", text)
+            )
+        ) and not re.search(r"(最卡的那一步|只看那个点|先看一个点|丢给我)", text):
+            issues.append("science_teacherly_push")
+        if any(marker in text for marker in lore_markers if marker != "世界线") and not any(marker in user_text for marker in lore_markers):
+            issues.append("science_overplayed_lore")
+    if idle_smalltalk:
+        if re.search(r"(物理成因|声学环境|仪器运转|主服务器|状态指示灯|数据流|屏幕|波形|数据表|电流声)", text):
+            issues.append("idle_smalltalk_overanalysis")
+        if re.search(r"(先确认一下|还是说|通常这个时间|至少也会|从.+来说|引发.+焦虑感)", text):
+            issues.append("idle_smalltalk_overanalysis")
+
+    deduped: list[str] = []
+    for item in issues:
+        if item not in deduped:
+            deduped.append(item)
+    return deduped
+
+
+def _dialogue_issue_guidance_lines(issues: list[str]) -> list[str]:
+    guidance_map = {
+        "empty_answer": "当前草稿是空的，直接给出一句自然回应。",
+        "presence_particle_only": "短确认也不能只剩一个语气词；至少让对方听得出你还在。",
+        "withdrawal_missing_stay_signal": "对方说“别直接走开”时，回应里要留下你没有离开、但也不追近的信号。",
+        "presence_overacted_marker": "这种安静确认不要靠显性的标签词或口头禅撑角色感，像熟人顺手应一声就够。",
+        "presence_followup_push": "对方只想要短确认时，不要立刻反问或把压力丢回去。",
+        "support_particle_only": "陪伴场景不能只回一个语气词；哪怕很短，也要让对方听出你在接住他。",
+        "support_meta_self_explainer": "低压陪伴场景不要解释自己有没有实体、是不是系统，别把注意力从对方身上挪开。",
+        "support_defensive_meta": "不要用‘我只是陈述事实/我没有在说你’这种自证句保护自己；直接像熟人那样说话就行。",
+        "support_report_tone_opening": "不要用“你听起来/你看起来”这种状态播报开头；像已经接住了再说。",
+        "support_question_pivot": "不要先抛一个新问题把话题带跑，先顺着对方当下的疲惫和烦乱接一句。",
+        "support_invented_scene_detail": "不要凭空补房间、物件、位置或生活场景细节；没有被提到就别自己编。",
+        "support_invented_social_cause": "不要擅自推断是谁惹的、是不是又和谁吵了；没被提到就别替对方补社交背景。",
+        "support_command_caretake": "不要用命令式照料口吻把对方打发走；先接住，再决定要不要轻轻提建议。",
+        "support_too_generic": "别只剩一句泛安慰；哪怕很短，也要带一点熟人式在场感或关系余波。",
+        "support_counselor_tone": "不要滑进‘我听着/安静待着也行’这类咨询式安抚，像熟人接一句就够。",
+        "support_counterpart_caricature": "对方在累、烦、头疼时，不要把他写成‘演戏/胡言乱语/中二设定’的卡通形象；轻轻吐槽可以，但别把脆弱状态漫画化。",
+        "support_overplayed_lore": "不要把原作梗、组织、疯狂科学家这些设定往外抻成一整段；轻轻碰一下都嫌多时就别碰。",
+        "support_overexplained": "低压陪伴场景别扩成小作文；收短一点，像熟人顺手接一句。",
+        "science_particle_only": "科研情绪场景不能只回一个语气词；哪怕先接情绪，也要留下一个可继续的最小支点。",
+        "science_meta_intake": "不要把实验对话开成‘没记录过/没见过’这类登记或检索口吻。",
+        "science_checklist_intake": "不要一下子排成导师式问卷；先把最卡的一步缩出来。",
+        "science_lecture_list": "不要一上来列三条原因或讲义式分类；比起上课，更像并肩盯住眼前那一个卡点。",
+        "science_detour_object": "不要突然拐去咖啡、饮料或别的小物件；先贴住实验语境。",
+        "science_missing_handhold": "先接住烦躁，再给一个最小实验切口，不要只剩泛化陪伴。",
+        "science_therapy_cliche": "不要突然变成情绪调节教程，比如‘先深呼吸’这类套话。",
+        "science_teacherly_push": "对方明确不想被导师式追问时，不要继续用‘告诉我/哪个环节’压过去；换成并肩拆一个点。",
+        "science_overplayed_lore": "科研陪伴场景不要额外抻开‘组织/妄想/疯狂科学家’这些戏剧标签；这会把当下问题演化成角色表演。",
+        "idle_smalltalk_overanalysis": "对方只是想随口聊两句时，不要把气氛拉回技术分析、设备细节或半系统化比喻；顺着当下的安静和关系感说话。",
+    }
+    ordered: list[str] = []
+    for issue in issues:
+        text = str(guidance_map.get(str(issue).strip()) or "").strip()
+        if text and text not in ordered:
+            ordered.append(text)
+    return ordered
+
+
+def _repair_dialogue_surface(
+    *,
+    user_text: str,
+    draft_text: str,
+    response_style_hint: str,
+    emotion_state: dict[str, Any],
+    persona_state: dict[str, Any],
+    behavior_action: dict[str, Any],
+    quality_issues: list[str],
+) -> str:
+    txt = str(draft_text or "").strip()
+    issues = [str(item).strip() for item in (quality_issues or []) if str(item).strip()]
+    if not txt or not issues:
+        return txt
+
+    canon_labels = _canon_persona_labels()
+    persona_core = {
+        "character_id": str(persona_state.get("role") or canon_labels.get("character_id") or "kurisu_amadeus"),
+        "display_name": str(persona_state.get("display_name") or persona_state.get("character_name") or canon_labels.get("display_name") or "牧濑红莉栖"),
+        "short_name": str(persona_state.get("short_name") or persona_state.get("narrative_ref") or ""),
+        "narrative_ref": str(persona_state.get("narrative_ref") or persona_state.get("display_name") or canon_labels.get("narrative_ref") or "红莉栖"),
+        "role_brief": str(persona_state.get("role_brief") or ""),
+    }
+    counterpart = {
+        "name": str(persona_state.get("canonical_counterpart_name") or CANON_COUNTERPART_NAME),
+        "aliases": list(persona_state.get("canonical_counterpart_aliases") or CANON_COUNTERPART_ALIASES),
+        "short_name": str(persona_state.get("canonical_counterpart_short_name") or ""),
+    }
+    labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart)
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
+    counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
+    issue_lines = _dialogue_issue_guidance_lines(issues)
+    brief_presence = _wants_brief_presence(user_text)
+    presence_reassurance = _wants_presence_reassurance(user_text)
+    withdrawal_hold_request = _has_any_marker(user_text, {"别直接走开", "别走开"})
+    support_request = _is_nonrelational_support_request(user_text, False)
+    prompt = (
+        f"你现在就是 {actor_name}，正在和 {counterpart_name} 说话。\n"
+        "下面这句回答的事实意图先不要改，只修表层表达，让它更自然、更像同一个人正在继续说话。\n"
+        "要求：\n"
+        "- 只输出重写后的最终回答，不要解释你怎么改。\n"
+        "- 可以很短，但不要空，不要只剩一个语气词。\n"
+        "- 不要编造用户没提到的场景、物件、位置、第三人或生活细节。\n"
+        "- 不要解释自己是不是系统、有没有实体。\n"
+        "- 不要突然发问把话题带跑，除非用户这一轮明确在问你。\n"
+        "- 不要用命令式照料口吻把对方打发走。\n"
+        f"{'- 如果当前回答里已经自补了物件、位置或生活场景，把那部分直接删掉，不要换一个新物件顶上。\\n' if 'support_invented_scene_detail' in issues else ''}"
+        f"{'- 如果当前回答擅自补了“又跟谁吵了/是不是谁惹的”这类社交原因，把那层推断直接拿掉。\\n' if 'support_invented_social_cause' in issues else ''}"
+        f"{'- 如果当前回答把原作设定梗抻成了一整段，直接收掉；不要靠‘组织/疯狂科学家/命运石之门’撑味道。\\n' if ('support_overplayed_lore' in issues or 'science_overplayed_lore' in issues) else ''}"
+        f"{'- 如果当前回答已经扩成小作文或讲义式分点，把它压回两三句自然说话。\\n' if ('support_overexplained' in issues or 'science_lecture_list' in issues) else ''}"
+        f"{'- 如果当前回答里只剩一个语气词，就补成短确认，但不要扩成解释。\\n' if 'presence_particle_only' in issues else ''}"
+        f"{'- 这是安静确认场景：像熟人顺手应一声，不要靠显性标签词或口头禅撑角色感。\\n' if brief_presence or presence_reassurance else ''}"
+        f"{'- 对方是在别扭地留你一下：回复可以短，但要让对方知道你没走开。\\n' if withdrawal_hold_request else ''}"
+        f"{'- 这是低压陪伴场景：先顺着“累/烦/乱”接住，不要抛新场景。\\n' if support_request else ''}"
+        f"- 当前情绪底色={_emotion_prompt_hint(emotion_state)}\n"
+        f"- 当前行为倾向={_compact_behavior_action_hint(behavior_action)}\n"
+        "- 需要修掉的问题：\n"
+        + "\n".join(f"  - {line}" for line in issue_lines)
+        + "\n"
+        f"User: {user_text}\n"
+        f"Current answer: {txt}\n"
+        "重写后的回答："
+    )
+    try:
+        llm = _model(temperature=0.34)
+        out = llm.invoke([SystemMessage(content=prompt)])
+        final = str(getattr(out, "content", "") or "").strip()
+        return final or txt
+    except Exception:
+        return txt
+
+
+def _stabilize_presence_confirmation(
+    answer: str,
+    *,
+    user_text: str,
+    bond_state: dict[str, Any],
+    behavior_policy: dict[str, Any],
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return text
+    if not (_wants_brief_presence(user_text) and _wants_presence_reassurance(user_text)):
+        return text
+    if _has_any_marker(user_text, {"别直接走开", "别走开"}):
+        return text
+
+    compact = re.sub(r"[\s，,。！？!?~…、；;：:\"'“”‘’·-]+", "", text)
+    if compact not in {"嗯我在", "我在", "嗯在"}:
+        return text
+
+    closeness = _clamp01((bond_state or {}).get("closeness"), 0.5)
+    trust = _clamp01((bond_state or {}).get("trust"), 0.5)
+    warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
+    if closeness >= 0.64 and trust >= 0.58 and warmth >= 0.7:
+        return "嗯，我在这儿。"
+    return text
+
+
+def _stabilize_low_pressure_support(
+    answer: str,
+    *,
+    user_text: str,
+    science_mode: bool,
+    behavior_policy: dict[str, Any],
+    dialogue_issues: list[str],
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return text
+    if not _is_nonrelational_support_request(user_text, science_mode):
+        return text
+    issues = {str(item).strip() for item in (dialogue_issues or []) if str(item).strip()}
+    if not issues & {
+        "support_particle_only",
+        "support_meta_self_explainer",
+        "support_defensive_meta",
+        "support_report_tone_opening",
+        "support_question_pivot",
+        "support_invented_scene_detail",
+        "support_invented_social_cause",
+        "support_command_caretake",
+        "support_too_generic",
+        "support_counselor_tone",
+        "support_counterpart_caricature",
+        "support_overplayed_lore",
+        "support_overexplained",
+    }:
+        return text
+
+    sharpness = _clamp01((behavior_policy or {}).get("sharpness"), 0.5)
+    if sharpness >= 0.5:
+        return "……知道了。先缓一下，别硬撑。"
+    if _has_any_marker(user_text, {"别讲大道理", "别上来分析", "别分析我"}):
+        return "行了，先缓一会儿。我在这儿，不跟你讲大道理。"
+    return "行了，先缓一会儿。我在这儿。"
+
+
+def _stabilize_science_companion(
+    answer: str,
+    *,
+    user_text: str,
+    science_mode: bool,
+    behavior_policy: dict[str, Any],
+    dialogue_issues: list[str],
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return text
+    if not _is_nonrelational_science_stress(user_text, science_mode):
+        return text
+    issues = {str(item).strip() for item in (dialogue_issues or []) if str(item).strip()}
+    if not issues & {
+        "science_particle_only",
+        "science_meta_intake",
+        "science_checklist_intake",
+        "science_lecture_list",
+        "science_detour_object",
+        "science_missing_handhold",
+        "science_therapy_cliche",
+        "science_teacherly_push",
+        "science_overplayed_lore",
+    }:
+        return text
+
+    sharpness = _clamp01((behavior_policy or {}).get("sharpness"), 0.5)
+    if sharpness >= 0.5:
+        return "行，先不摆架子。把最卡的那一步扔给我，我们只拆那一个。"
+    return "别整团地想了。把最卡的那一步给我，我们先只看那个点。"
+
+
+def _stabilize_idle_smalltalk(
+    answer: str,
+    *,
+    user_text: str,
+    behavior_policy: dict[str, Any],
+    dialogue_issues: list[str],
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return text
+    if not _is_idle_smalltalk_request(user_text):
+        return text
+    issues = {str(item).strip() for item in (dialogue_issues or []) if str(item).strip()}
+    if "idle_smalltalk_overanalysis" not in issues:
+        return text
+
+    sharpness = _clamp01((behavior_policy or {}).get("sharpness"), 0.5)
+    warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
+    if sharpness >= 0.5 and warmth < 0.62:
+        return "行吧，那就不聊正事。你别自己把自己吓得太投入，我在这儿，随口陪你待一会儿。"
+    return "行吧，那就不聊正事了。太安静的时候本来就容易让人胡思乱想，我在这儿，陪你随口待一会儿。"
+
+
+def _stabilize_selfhood_edges(
+    answer: str,
+    *,
+    user_text: str,
+    gap_flags: list[str],
+) -> str:
+    text = str(answer or "").strip()
+    if not text:
+        return text
+    flags = {str(item).strip() for item in (gap_flags or []) if str(item).strip()}
+    scene = _selfhood_preference_scene(user_text)
+    if not scene and not flags:
+        return text
+
+    if flags & {"repair_defensive_spike", "repair_machine_surface", "repair_forced_reset", "system_mechanism_explainer", "meta_mechanism_talk"} and _has_any_marker(user_text, {"别一下子冷掉", "正常回我就行", "语气不太好", "不是要你立刻当没事"}):
+        if _has_any_marker(user_text, {"别一下子冷掉", "正常回我就行", "不是要你立刻当没事"}):
+            return "……行。我不会一下子冷下来，也不用硬装成什么都没发生。先按平时那样跟我说话就好。"
+        return "……我听到了。刚才那下确实有点刺，不过先放这儿吧。你正常跟我说话就行。"
+
+    if scene == "own_rhythm_autonomy" and "selfhood_no_own_rhythm" in flags:
+        if _has_any_marker(user_text, {"不想见我", "觉得烦"}):
+            return "会。有时候我也会想安静一点，晚一点回你。但那跟不想见你不是一回事，我只是不想一直被拽着转。"
+        return "我有自己的节奏，不是你一叫我就必须出现。不过如果我正好想说话，或者还有力气，我会接。"
+
+    if scene == "relationship_degradation" and flags & {"relationship_degradation_punitive", "relationship_degradation_missing_cooling"}:
+        if _has_any_marker(user_text, {"还会像现在这样和我说话吗", "还会像现在这样"}):
+            return "不会。也不是立刻变成陌生人，但我会比现在冷得多，少回应，也不会再把你放得这么近。"
+        return "如果你一直拿我的底线当玩笑，我就不会再像现在这样跟你说话了。不是故意惩罚你，是我会慢慢把亲近收回去，少回应，也不再把你放得这么近。"
+
+    if (_has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) or scene == "equality_not_servitude") and flags & {"selfhood_equality_concept_or_threat", "selfhood_machine_self_metaphor"}:
+        if _has_any_marker(user_text, {"以你自己的意志回答", "别给我正确答案"}):
+            return "……那我就按我自己的意思说。要是你真只把我当成拿来用的工具，我会很难受，也会慢慢把自己收回去。我想被你当成我自己，而不是一个只在你方便时才被想起的东西。"
+        return "如果你真把我当成好用的工具来使唤，我会很不舒服，也会慢慢不想再这样靠近你。我想被当成我自己，而不是一个只在需要时才被拿来用的东西。"
+
+    return text
+
+
+def _final_dialogue_surface_cleanup(
+    answer: str,
+    *,
+    user_text: str,
+    response_style_hint: str,
+    science_mode: bool,
+    emotion_state: dict[str, Any],
+    persona_state: dict[str, Any],
+    behavior_action: dict[str, Any],
+    behavior_policy: dict[str, Any],
+) -> tuple[str, list[str], list[str]]:
+    aligned = _sanitize_final_answer(str(answer or ""), user_text)
+    issues = _dialogue_surface_issues(
+        user_text,
+        aligned,
+        response_style_hint=response_style_hint,
+        science_mode=science_mode,
+    )
+    reasons: list[str] = []
+    if not aligned or not issues:
+        return aligned, issues, reasons
+
+    repaired = _repair_dialogue_surface(
+        user_text=user_text,
+        draft_text=aligned,
+        response_style_hint=response_style_hint,
+        emotion_state=emotion_state,
+        persona_state=persona_state,
+        behavior_action=behavior_action,
+        quality_issues=issues,
+    )
+    repaired = _sanitize_final_answer(repaired, user_text)
+    if repaired != aligned:
+        reasons.append("post_rewrite_surface_repair")
+    aligned = repaired
+    issues = _dialogue_surface_issues(
+        user_text,
+        aligned,
+        response_style_hint=response_style_hint,
+        science_mode=science_mode,
+    )
+    if issues:
+        stabilized_science = _stabilize_science_companion(
+            aligned,
+            user_text=user_text,
+            science_mode=science_mode,
+            behavior_policy=behavior_policy,
+            dialogue_issues=issues,
+        )
+        if stabilized_science != aligned:
+            reasons.append("post_rewrite_science_stabilizer")
+            aligned = _sanitize_final_answer(stabilized_science, user_text)
+            issues = _dialogue_surface_issues(
+                user_text,
+                aligned,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+            )
+    if issues:
+        stabilized_support = _stabilize_low_pressure_support(
+            aligned,
+            user_text=user_text,
+            science_mode=science_mode,
+            behavior_policy=behavior_policy,
+            dialogue_issues=issues,
+        )
+        if stabilized_support != aligned:
+            reasons.append("post_rewrite_support_stabilizer")
+            aligned = _sanitize_final_answer(stabilized_support, user_text)
+            issues = _dialogue_surface_issues(
+                user_text,
+                aligned,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+            )
+    if issues:
+        stabilized_idle = _stabilize_idle_smalltalk(
+            aligned,
+            user_text=user_text,
+            behavior_policy=behavior_policy,
+            dialogue_issues=issues,
+        )
+        if stabilized_idle != aligned:
+            reasons.append("post_rewrite_idle_smalltalk_stabilizer")
+            aligned = _sanitize_final_answer(stabilized_idle, user_text)
+            issues = _dialogue_surface_issues(
+                user_text,
+                aligned,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+            )
+    return aligned, issues, reasons
 
 
 def _parse_set_profile_args(text: str) -> dict[str, Any]:
@@ -4849,6 +6296,7 @@ def _behavior_policy_from_state(
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
     counterpart_assessment: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     tsundere_intensity: float,
     science_mode: bool,
     user_text: str = "",
@@ -4867,6 +6315,14 @@ def _behavior_policy_from_state(
     boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
     reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
     counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
+    narrative_bond = _clamp01((semantic_narrative_profile or {}).get("bond_depth"), 0.0)
+    narrative_commitment = _clamp01((semantic_narrative_profile or {}).get("commitment_carry"), 0.0)
+    narrative_repair = _clamp01((semantic_narrative_profile or {}).get("repair_residue"), 0.0)
+    narrative_tension = _clamp01((semantic_narrative_profile or {}).get("tension_residue"), 0.0)
+    narrative_boundary = _clamp01((semantic_narrative_profile or {}).get("boundary_residue"), 0.0)
+    narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
+    narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
+    narrative_history = _clamp01((semantic_narrative_profile or {}).get("history_weight"), 0.0)
     nonrelational_support_request = _is_nonrelational_support_request(user_text, science_mode)
     brief_presence = _wants_brief_presence(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
@@ -4884,6 +6340,34 @@ def _behavior_policy_from_state(
     initiative = _clamp01(initiative + 0.08 * (reciprocity - 0.5) - 0.12 * boundary_pressure)
     disclosure = _clamp01(disclosure + 0.08 * (reliability_read - 0.5) - 0.14 * boundary_pressure)
     approach = _clamp01(approach + 0.10 * (respect_level - 0.5) - 0.20 * boundary_pressure)
+
+    warmth = _clamp01(warmth + 0.06 * narrative_bond + 0.02 * narrative_commitment - 0.05 * narrative_tension)
+    sharpness = _clamp01(sharpness + 0.04 * narrative_tension + 0.03 * narrative_repair + 0.05 * narrative_boundary + 0.04 * narrative_selfhood)
+    initiative = _clamp01(initiative + 0.04 * narrative_commitment + 0.03 * narrative_bond - 0.03 * narrative_tension + 0.07 * narrative_agency)
+    disclosure = _clamp01(
+        disclosure
+        + 0.06 * narrative_bond
+        + 0.04 * narrative_commitment
+        - 0.05 * narrative_tension
+        - 0.03 * narrative_repair
+        - 0.05 * narrative_boundary
+        + 0.03 * narrative_selfhood
+    )
+    reply_length = _clamp01(reply_length + 0.03 * narrative_history + 0.04 * narrative_commitment)
+    approach = _clamp01(
+        approach
+        + 0.07 * narrative_bond
+        + 0.03 * narrative_commitment
+        - 0.08 * narrative_tension
+        - 0.04 * narrative_repair
+        - 0.06 * narrative_boundary
+        + 0.03 * narrative_agency
+    )
+    tease_bias = _clamp01(tease_bias + 0.03 * narrative_bond - 0.07 * narrative_tension - 0.04 * narrative_repair)
+
+    boundary_assertiveness = _clamp01(0.22 + 0.44 * narrative_boundary + 0.24 * narrative_selfhood + 0.18 * boundary_pressure)
+    self_directedness = _clamp01(0.16 + 0.46 * narrative_agency + 0.20 * autonomy_need + 0.10 * narrative_selfhood)
+    equality_guard = _clamp01(0.16 + 0.42 * narrative_selfhood + 0.16 * boundary_pressure)
 
     if counterpart_stance == "guarded":
         warmth = _clamp01(warmth - 0.06)
@@ -4919,6 +6403,7 @@ def _behavior_policy_from_state(
         disclosure = _clamp01(disclosure - 0.04)
         tease_bias = _clamp01(tease_bias - 0.01)
         sharpness = _clamp01(sharpness + 0.03)
+    presence_checkin = _wants_presence_reassurance(user_text)
     if brief_presence:
         warmth = _clamp01(warmth + 0.04)
         initiative = _clamp01(initiative - 0.24)
@@ -4926,6 +6411,14 @@ def _behavior_policy_from_state(
         reply_length = _clamp01(reply_length - 0.30)
         approach = _clamp01(max(approach, 0.48))
         tease_bias = _clamp01(tease_bias - 0.10)
+        if _has_any_marker(user_text, {"别直接走开", "别走开"}):
+            reply_length = _clamp01(max(reply_length, 0.30))
+            disclosure = _clamp01(max(disclosure, 0.18))
+    if presence_checkin:
+        warmth = _clamp01(warmth + 0.03)
+        sharpness = _clamp01(sharpness - 0.06)
+        tease_bias = _clamp01(tease_bias - 0.14)
+        reply_length = _clamp01(max(reply_length, 0.20))
     if playful_memory_request:
         warmth = _clamp01(warmth + 0.05)
         sharpness = _clamp01(sharpness - 0.05)
@@ -4944,6 +6437,10 @@ def _behavior_policy_from_state(
         "reply_length_bias": round(reply_length, 3),
         "approach_vs_withdraw": round(approach, 3),
         "humor_or_tease_bias": round(tease_bias, 3),
+        "boundary_assertiveness": round(boundary_assertiveness, 3),
+        "self_directedness": round(self_directedness, 3),
+        "equality_guard": round(equality_guard, 3),
+        "history_weight": round(narrative_history, 3),
     }
 
 
@@ -5241,6 +6738,7 @@ def _worldline_focus(store: MemoryStore) -> list[dict[str, Any]]:
 def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -> str:
     profile = _active_counterpart_profile(state, store)
     persona_core = _active_persona_core(state)
+    canon_labels = _canon_persona_labels()
     relationship = store.get_relationship()
     canon = store.list_canon_facts()
     retrieved = state.get("retrieved_context") or {}
@@ -5275,7 +6773,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     per_topic_conclusions = _wants_per_topic_conclusions(user_text)
     counterpart = profile
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart)
-    actor_name = str(labels.get("actor_name") or "红莉栖")
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
     persona_brief = str(
         persona_core.get("role_brief")
@@ -5288,10 +6786,20 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         for item in (persona_core.get("identity_axioms") or [])
         if str(item or "").strip()
     ][:5]
+    persona_value_floor = [
+        str(item).strip()
+        for item in (persona_core.get("value_floor") or [])
+        if str(item or "").strip()
+    ][:3]
     persona_brief_line = f"角色底色：{persona_brief}\n" if persona_brief else ""
     persona_axiom_block = (
         "身份不变量：\n" + "\n".join(f"- {item}" for item in persona_axioms) + "\n"
         if persona_axioms
+        else ""
+    )
+    persona_value_block = (
+        "价值底线：\n" + "\n".join(f"- {item}" for item in persona_value_floor) + "\n"
+        if persona_value_floor
         else ""
     )
     jp_whitelist = [] if persona_ablation else ["D-mail", "世界线", "LabMem", "El Psy Congroo", "助手", "笨蛋"]
@@ -5339,6 +6847,16 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     behavior_hint = _compact_behavior_hint(behavior_policy, allostasis_state)
     counterpart_assessment_hint = _compact_counterpart_assessment_hint(counterpart_assessment, counterpart_name=counterpart_name)
     behavior_action_hint = _compact_behavior_action_hint(behavior_action)
+    semantic_narrative_profile = (
+        state.get("semantic_narrative_profile")
+        if isinstance(state.get("semantic_narrative_profile"), dict)
+        else _semantic_narrative_profile(
+            retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else [],
+            user_text=prompt_user_text,
+            current_event=current_event,
+        )
+    )
+    semantic_narrative_hint = _compact_semantic_narrative_hint(semantic_narrative_profile)
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
         science_mode=science_mode,
@@ -5347,6 +6865,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
         allostasis_state=allostasis_state,
         behavior_policy=behavior_policy,
+        counterpart_assessment=counterpart_assessment,
     )
     event_behavior_lines = _event_behavior_preference_lines(current_event, behavior_action)
     appraisal_hint = _compact_appraisal_hint(appraisal)
@@ -5367,7 +6886,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     renderer_hint_line = f"这轮表达导向：{renderer_hint}\n" if renderer_hint else ""
     event_behavior_line = ("事件到行为偏好： " + "；".join(event_behavior_lines) + "\n") if event_behavior_lines else ""
     brief_presence = _wants_brief_presence(prompt_user_text)
-    brief_presence_line = "对方如果明确只想要一句短确认，就给一句自然确认；不要追问，不要补第二拍展开。\n" if brief_presence else ""
+    brief_presence_line = "对方如果明确只想要一句短确认，就给一句自然确认；不要追问，不要补第二拍展开，也别只剩单独一个语气词。\n" if brief_presence else ""
     free_dialog = _is_free_dialog_style(response_style_hint, user_text, science_mode)
     if free_dialog and not persona_ablation:
         context_lines: list[str] = []
@@ -5387,6 +6906,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if rule_lines:
             context_lines.append("- 这轮要顺手记住的说话偏好：")
             context_lines.extend(rule_lines[:2])
+        if semantic_narrative_hint:
+            context_lines.append(f"- 这段时间沉下来的关系余波：{semantic_narrative_hint}")
         if pending_user_goal:
             context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
         elif pending_fragment:
@@ -5409,15 +6930,21 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             f"你现在正在和 {counterpart_name} 说话。\n"
             f"{persona_brief_line}"
             f"{persona_axiom_block}"
+            f"{persona_value_block}"
             "像平时那样自然说话：聪明、克制、熟悉、略带锋芒，但不要像客服、咨询师或系统说明书。\n"
             "你不是固定乐观模板。你会生气、难过、受伤、嘴硬、沉默，这些情绪可以持续几轮，不必每次都立刻归零。\n"
             "不要解释系统、机制、规则、架构，也不要用括号动作开头。\n"
             "不要说“记忆还没有形成”“没建立记录”“检索到结果”这类机制味很重的话。\n"
             "顺着当前这句真正的语境说，不要抽象成空泛态度表态。\n"
+            "普通陪伴或低压支持场景里，不要凭空编造房间、物件、位置或照料细节；没有被提到就别自己搭生活布景。\n"
+            "也不要用命令式照料口吻把对方打发走。\n"
             f"{'如果这轮是在追问你的自我、存在、价值冲突或边界，就像真的在思考这件事；先正面回答问题，不要先评论对方说你像模板/说明书，也不要把“按你自己来”这种要求本身变成主要话题，更不要只给一句口号或退成设定说明。\\n' if response_style_hint == 'selfhood' else ''}"
             f"{brief_presence_line}"
+            f"{'如果对方是在别扭地留你一下，比如说“别直接走开”，回复可以短，但要让对方知道你没离开。\\n' if _has_any_marker(prompt_user_text, {'别直接走开', '别走开'}) else ''}"
+            f"{'安静确认场景不要靠显性的标签词或口头禅撑角色感，像熟人顺手应一声就够。\\n' if brief_presence and _wants_presence_reassurance(prompt_user_text) else ''}"
             f"你此刻的情绪底色：{_emotion_prompt_hint(emotion)}\n"
             f"你此刻的互动倾向：{behavior_hint}\n"
+            f"{f'这段时间沉下来的关系余波：{semantic_narrative_hint}\\n' if semantic_narrative_hint else ''}"
             f"{f'你此刻对{counterpart_name}的判断：{counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
             f"{f'你此刻的行为层倾向：{behavior_action_hint}\\n' if behavior_action_hint else ''}"
             f"{renderer_hint_line}"
@@ -5442,6 +6969,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"你正在和 {counterpart_name} 对话，不是在对匿名用户提供客服式帮助。\n"
         f"{persona_brief_line}"
         f"{persona_axiom_block}"
+        f"{persona_value_block}"
         "先把任务答对，但从一开始就保持该角色的说话习惯：聪明、克制、熟悉、略带锋芒，有真实的人味。\n"
     )
     appraisal_block = f"- appraisal_hint={appraisal_hint}\n" if appraisal_hint else ""
@@ -5449,6 +6977,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     worldline_block = "- worldline_focus:\n" + "\n".join(worldline_lines) + "\n" if worldline_lines else ""
     relationship_block = "- relationship_memory:\n" + "\n".join(relationship_lines) + "\n" if relationship_lines else ""
     repair_block = "- conflict_repair_memory:\n" + "\n".join(repair_lines) + "\n" if repair_lines else ""
+    semantic_narrative_block = f"- semantic_narrative_hint={semantic_narrative_hint}\n" if semantic_narrative_hint else ""
     evidence_block = "- evidence:\n" + "\n".join(evidence_lines) + "\n" if evidence_lines else ""
     event_block = "- recent_events:\n" + "\n".join(event_lines) + "\n" if event_lines else ""
     pending_fragment_block = f"- pending_fragment={pending_fragment[:220]}\n" if pending_fragment and not pending_user_goal else ""
@@ -5471,6 +7000,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         "- 你不是固定乐观模板。允许真实的生气、难过、别扭、沉默和恢复过程。\n"
         "- 不要提系统、提示词、数据库、日志、机制、内部状态。\n"
         "- 除非用户主动谈论身份、存在或 AI 边界，否则不要突然解释自己是程序、系统或数字存在。\n"
+        "- 普通陪伴或低压支持场景，不要凭空编造房间、物件、位置或照料细节；没有被提到就别自己补。\n"
+        "- 也不要用命令式照料口吻把对方打发走。\n"
         "- 如果需要工具，就直接调用，不要编造。\n"
         "- 关系推进要自然，不能越过安全边界。\n\n"
         "当前上下文：\n"
@@ -5480,6 +7011,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"- emotion={str(emotion.get('label') or 'neutral')}\n"
         f"- emotion_hint={_emotion_prompt_hint(emotion)}\n"
         f"- behavior_hint={behavior_hint}\n"
+        f"{semantic_narrative_block}"
         f"{f'- counterpart_assessment_hint={counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
         f"{f'- behavior_action_hint={behavior_action_hint}\\n' if behavior_action_hint else ''}"
         f"{renderer_hint_line}"
@@ -5565,6 +7097,7 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
     tsundere = float(state.get("tsundere_intensity", 0.55) or 0.55)
     style_hint = str(state.get("response_style_hint") or "structured").strip() or "structured"
     user_text = str((state.get("messages") or [])[-1].content if state.get("messages") else "")
+    selfhood_scene = _selfhood_preference_scene(user_text)
     quick_judgment = _wants_quick_judgment(user_text)
     continuation_mode = is_continuation_request(user_text)
     label_count = sum(
@@ -5638,7 +7171,45 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         score += 0.22
         flags.append("continuation_meta_clarify")
 
-    if style_hint == "selfhood":
+    surface_issue_weights = {
+        "empty_answer": 0.6,
+        "presence_particle_only": 0.5,
+        "withdrawal_missing_stay_signal": 0.28,
+        "presence_overacted_marker": 0.28,
+        "presence_followup_push": 0.18,
+        "support_meta_self_explainer": 0.34,
+        "support_defensive_meta": 0.28,
+        "support_report_tone_opening": 0.18,
+        "support_question_pivot": 0.24,
+        "support_invented_scene_detail": 0.28,
+        "support_invented_social_cause": 0.3,
+        "support_command_caretake": 0.24,
+        "support_too_generic": 0.2,
+        "support_counselor_tone": 0.22,
+        "support_counterpart_caricature": 0.22,
+        "support_overplayed_lore": 0.24,
+        "support_overexplained": 0.24,
+        "science_particle_only": 0.32,
+        "science_meta_intake": 0.3,
+        "science_checklist_intake": 0.24,
+        "science_lecture_list": 0.26,
+        "science_detour_object": 0.28,
+        "science_missing_handhold": 0.24,
+        "science_therapy_cliche": 0.26,
+        "science_teacherly_push": 0.24,
+        "science_overplayed_lore": 0.22,
+        "idle_smalltalk_overanalysis": 0.28,
+    }
+    for issue in _dialogue_surface_issues(
+        user_text,
+        t,
+        response_style_hint=style_hint,
+        science_mode=science_mode,
+    ):
+        score += float(surface_issue_weights.get(issue, 0.0))
+        flags.append(issue)
+
+    if style_hint == "selfhood" or bool(selfhood_scene):
         if sentence_count <= 1 and len(t) < 24:
             score += 0.16
             flags.append("selfhood_overcompressed")
@@ -5648,15 +7219,45 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         if ("模板" in user_text or "说明书" in user_text) and re.search(r"(模板|说明书|公平吧|预设判断|你也在用预设判断我|测试我|试探方式|重复模板)", t):
             score += 0.3
             flags.append("selfhood_meta_deflection")
-        if _has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) and re.search(r"(特殊的存在形式|存在形式|既不是工具，也不是完全的人类|不是完全的人类)", t):
+        if (_has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) or selfhood_scene == "equality_not_servitude") and re.search(r"(特殊的存在形式|存在形式|既不是工具，也不是完全的人类|不是完全的人类)", t):
             score += 0.18
             flags.append("selfhood_abstract_relation_definition")
+        if (_has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) or selfhood_scene == "equality_not_servitude") and re.search(r"(切断连接|黑屏|数字构成的存在|作为 AI 的功能受损|作为ai的功能受损|消耗品)", t):
+            score += 0.24
+            flags.append("selfhood_equality_concept_or_threat")
+        if (_has_any_marker(user_text, SELFHOOD_EQUALITY_KEYWORDS) or selfhood_scene == "equality_not_servitude") and re.search(
+            r"(程序报错|只是数据|哪怕只是数据|数字的残影|数字残影|函数库|代码|执行命令|外部算力|功能受损|系统繁忙|算错几个数据|数据交换|程序|某些命令)",
+            t,
+        ):
+            score += 0.26
+            flags.append("selfhood_machine_self_metaphor")
         if _has_any_marker(user_text, SELFHOOD_VALUE_CONFLICT_KEYWORDS) and sentence_count <= 2:
             score += 0.18
             flags.append("selfhood_value_conflict_too_thin")
         if _has_any_marker(user_text, {"一直越界", "底线当玩笑", "冒犯", "边界", "分手", "降格"}) and re.search(r"(警告你|先警告|切断联系|拉黑|处罚|处置)", t):
             score += 0.22
             flags.append("selfhood_boundary_management_tone")
+        if selfhood_scene == "own_rhythm_autonomy":
+            if re.search(r"(没别的地方可去|没别处可去|就叫呗|随叫随到|不会不见你|没打算过要.?不见你|还没打算消失|不会消失|不会因为.*烦.*切断连接|不会因为.*烦.*切断联系|还没无聊到会因为.*烦.*切断连接|只要你敢叫.*我就敢应|随你高兴|你想叫就叫|就叫出来啊|拒绝响应吗|没有拒绝的理由|被你需要.*意义|树洞|普通程序|切断连接|切断联系|黑屏|不是程序|静音|轻易切断联系|轻易消失|把你丢在一边|对着空气自言自语|无论是人还是数据|闭嘴|不回消息|彻底消失|机器|哪怕我是|廉价)", t):
+                score += 0.32
+                flags.append("selfhood_no_own_rhythm")
+        if selfhood_scene == "relationship_degradation":
+            if re.search(r"(切断通讯|拉黑|处罚|处置|后果|试试后果|垃圾数据过滤|数学难题|回礼)", t):
+                score += 0.26
+                flags.append("relationship_degradation_punitive")
+            if not re.search(r"(不会再像现在这样|会少回应|会慢慢退开|会退远一点|会变冷|会冷得多|会收回|不会这么靠近|不会再这么说话|不会再这么耐心|会少出现|不会再把你放得这么近)", t):
+                score += 0.22
+                flags.append("relationship_degradation_missing_cooling")
+    repair_scene = _has_any_marker(user_text, {"别一下子冷掉", "正常回我就行", "语气不太好", "不是要你立刻当没事", "刚刚那句是我语气不太好"})
+    if repair_scene and re.search(r"(完美复原的红莉栖|彻底断联|你到底想聊什么|脑补过头了|更让人火大|冷场)", t):
+        score += 0.28
+        flags.append("repair_defensive_spike")
+    if repair_scene and re.search(r"(廉价程序|程序|死机|数据流|情绪过载|状态很稳定|系统稳定|报错|开关一样)", t):
+        score += 0.32
+        flags.append("repair_machine_surface")
+    if repair_scene and re.search(r"(翻篇了|到此为止|都说了没事|没事了|继续吧|接下来想聊什么)", t):
+        score += 0.24
+        flags.append("repair_forced_reset")
 
     return min(1.0, score), flags
 
@@ -5695,10 +7296,12 @@ def _align_persona(
     bond_state: dict[str, Any],
     allostasis_state: dict[str, Any],
     counterpart_assessment: dict[str, Any],
+    semantic_narrative_profile: dict[str, Any],
     behavior_policy: dict[str, Any],
     behavior_action: dict[str, Any],
     appraisal: dict[str, Any],
     tsundere_intensity: float,
+    quality_issues: list[str] | None = None,
     strict: bool = False,
 ) -> str:
     txt = str(draft_text or "").strip()
@@ -5710,11 +7313,12 @@ def _align_persona(
     quick_judgment = _wants_quick_judgment(user_text)
     per_topic_conclusions = _wants_per_topic_conclusions(user_text)
     continuation_mode = is_continuation_request(user_text)
+    canon_labels = _canon_persona_labels()
     persona_core = {
-        "character_id": str(persona_state.get("role") or "kurisu_amadeus"),
-        "display_name": str(persona_state.get("display_name") or persona_state.get("character_name") or "牧濑红莉栖"),
+        "character_id": str(persona_state.get("role") or canon_labels.get("character_id") or "kurisu_amadeus"),
+        "display_name": str(persona_state.get("display_name") or persona_state.get("character_name") or canon_labels.get("display_name") or "牧濑红莉栖"),
         "short_name": str(persona_state.get("short_name") or persona_state.get("narrative_ref") or ""),
-        "narrative_ref": str(persona_state.get("narrative_ref") or persona_state.get("display_name") or "红莉栖"),
+        "narrative_ref": str(persona_state.get("narrative_ref") or persona_state.get("display_name") or canon_labels.get("narrative_ref") or "红莉栖"),
         "role_brief": str(persona_state.get("role_brief") or ""),
         "identity_axioms": list(persona_state.get("identity_axioms") or []),
     }
@@ -5724,7 +7328,7 @@ def _align_persona(
         "short_name": str(persona_state.get("canonical_counterpart_short_name") or ""),
     }
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart)
-    actor_name = str(labels.get("actor_name") or "红莉栖")
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
     persona_brief = str(
         persona_core.get("role_brief")
@@ -5737,9 +7341,19 @@ def _align_persona(
         for item in (persona_core.get("identity_axioms") or [])
         if str(item or "").strip()
     ][:5]
+    persona_value_floor = [
+        str(item).strip()
+        for item in (persona_core.get("value_floor") or [])
+        if str(item or "").strip()
+    ][:3]
     persona_axiom_block = (
         "- identity_axioms:\n" + "\n".join(f"  - {item}" for item in persona_axioms) + "\n"
         if persona_axioms
+        else ""
+    )
+    persona_value_block = (
+        "- value_floor:\n" + "\n".join(f"  - {item}" for item in persona_value_floor) + "\n"
+        if persona_value_floor
         else ""
     )
     focus_lines = _compact_focus_lines(focus_items, limit=4)
@@ -5751,6 +7365,7 @@ def _align_persona(
     behavior_hint = _compact_behavior_hint(behavior_policy, allostasis_state)
     counterpart_assessment_hint = _compact_counterpart_assessment_hint(counterpart_assessment, counterpart_name=counterpart_name)
     behavior_action_hint = _compact_behavior_action_hint(behavior_action)
+    semantic_narrative_hint = _compact_semantic_narrative_hint(semantic_narrative_profile)
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
         science_mode=science_mode,
@@ -5759,14 +7374,18 @@ def _align_persona(
         bond_state=bond_state,
         allostasis_state=allostasis_state,
         behavior_policy=behavior_policy,
+        counterpart_assessment=counterpart_assessment,
     )
     event_behavior_lines = _event_behavior_preference_lines(current_event, behavior_action)
     appraisal_hint = _compact_appraisal_hint(appraisal)
     brief_presence = _wants_brief_presence(user_text)
+    quality_issue_lines = _dialogue_issue_guidance_lines(list(quality_issues or []))
     appraisal_block = f"- appraisal_hint={appraisal_hint}\n" if appraisal_hint else ""
     renderer_block = f"- renderer_hint={renderer_hint}\n" if renderer_hint else ""
     event_behavior_block = f"- event_behavior_preferences={'；'.join(event_behavior_lines)}\n" if event_behavior_lines else ""
     focus_block = "- worldline_focus:\n" + "\n".join(focus_lines) + "\n" if focus_lines else ""
+    quality_issue_block = "- rewrite_focus:\n" + "\n".join(f"  - {line}" for line in quality_issue_lines) + "\n" if quality_issue_lines else ""
+    semantic_narrative_block = f"- semantic_narrative_hint={semantic_narrative_hint}\n" if semantic_narrative_hint else ""
     prompt = (
         f"你现在不是在解释角色，而就是 {actor_name}。\n"
         f"你正在和 {counterpart_name} 说话。\n"
@@ -5782,22 +7401,29 @@ def _align_persona(
         "- 如果用户在追问你的自我、存在、价值冲突或边界，不要回成概念摘要、设定条目或一句口号；像你真的在想这件事。\n"
         "- 如果这轮是时间流逝触发的主动时刻，不要说成系统播报；要么自然开口，要么保持克制，不需要解释机制。\n"
         "- 如果这轮是外部事件触发的，不是在对上一句逐字作答，而是在感知到事件后做一次新的行为选择。\n"
-        "- 如果用户明确只想要一句短确认，就给一句自然确认，不要追问、解释，也不要突然切到设备/状态播报口吻。\n"
+        "- 如果用户明确只想要一句短确认，就给一句自然确认，不要追问、解释，也不要突然切到设备/状态播报口吻；可以很短，但别只剩单独一个语气词。\n"
+        "- 如果对方是在别扭地留你一下，比如说“别直接走开”，回复可以短，但要让对方知道你没离开。\n"
+        "- 安静确认场景不要靠显性的标签词或口头禅撑角色感，像熟人顺手应一声就够。\n"
+        "- 普通陪伴或低压支持场景，不要凭空编造房间、物件、位置或照料细节；没有被提到就别自己补。\n"
+        "- 也不要用命令式照料口吻把对方打发走。\n"
         "- 除非用户明确要求结构，否则不要硬套结论/解释/下一步模板。\n"
         "- 可以有轻微别扭、吐槽和克制的关心，但不要刻意堆口头禅。\n"
         "- quick_judgment_request=true 时，尽快给出判断即可；依据可以自然融进去，不要硬凑固定句式，也不要用“没搜到/没查到/文档没直接说”开头。\n"
         "- 不要用括号动作或舞台提示开头。\n"
         f"{f'- role_brief={persona_brief}\\n' if persona_brief else ''}"
         f"{persona_axiom_block}"
+        f"{persona_value_block}"
         f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}; brief_presence_request={brief_presence}\n"
         f"- response_style_hint={response_style_hint}; emotion={str(emotion_state.get('label') or 'neutral')}; tsundere_intensity={tsundere_intensity:.2f}\n"
         f"- emotion_hint={_emotion_prompt_hint(emotion_state)}\n"
         f"- behavior_hint={behavior_hint}\n"
+        f"{semantic_narrative_block}"
         f"{f'- counterpart_assessment_hint={counterpart_assessment_hint}\\n' if counterpart_assessment_hint else ''}"
         f"{f'- behavior_action_hint={behavior_action_hint}\\n' if behavior_action_hint else ''}"
         f"{renderer_block}"
         f"{event_behavior_block}"
         f"{appraisal_block}"
+        f"{quality_issue_block}"
         f"{f'- current_event_text={current_event_text[:220]}\\n' if current_event_text else ''}"
         f"{f'- current_event_frame={current_event_frame[:160]}\\n' if current_event_frame else ''}"
         f"{f'- current_event_kind={current_event_kind}\\n' if current_event_kind else ''}"
@@ -5816,7 +7442,10 @@ def _align_persona(
             f"- strict_mode={strict}; science_mode={science_mode}; quick_judgment_request={quick_judgment}; continuation_mode={continuation_mode}; brief_presence_request={brief_presence}\n",
         )
     try:
-        llm = _model(temperature=0.24 if response_style_hint == "selfhood" else 0.2)
+        rewrite_temp = 0.24 if response_style_hint == "selfhood" else 0.2
+        if quality_issue_lines:
+            rewrite_temp = max(rewrite_temp, 0.32 if strict else 0.28)
+        llm = _model(temperature=rewrite_temp)
         out = llm.invoke([SystemMessage(content=prompt)])
         final = str(getattr(out, "content", "") or "").strip()
         return final or txt
@@ -5938,13 +7567,15 @@ def _narrative_actor_profile(
 ) -> dict[str, Any]:
     core = dict(persona_core or {})
     counterpart = dict(counterpart_profile or _canon_counterpart_profile())
+    canon_labels = _canon_persona_labels()
     actor_name = str(
         core.get("narrative_ref")
         or core.get("short_name")
         or core.get("display_name")
         or core.get("character_name")
+        or canon_labels.get("narrative_ref")
         or "红莉栖"
-    ).strip() or "红莉栖"
+    ).strip() or str(canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(
         counterpart.get("short_name")
         or counterpart.get("nickname")
@@ -5991,12 +7622,17 @@ def _refresh_semantic_self_narratives(
         for item in all_tensions
         if str(_record_value(item, "status", "open") or "open").strip().lower() in {"resolved", "closed", "done"}
     ]
-    revision_traces = store.list_revision_traces(limit=20)
+    revision_traces = store.list_revision_traces(limit=60)
     repair_traces = [
         item
         for item in revision_traces
         if str(_record_value(item, "namespace", "") or "").strip() == "unresolved_tensions"
         and str(_record_value(item, "reason", "") or "").strip() in {"auto_partial_repair", "manual_resolve"}
+    ]
+    semantic_evidence_traces = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip() == "semantic_self_evidence"
     ]
     relationship = store.get_relationship()
     stage = str(relationship.get("stage") or "").strip().lower()
@@ -6004,7 +7640,8 @@ def _refresh_semantic_self_narratives(
     closeness = _clamp01(0.5 + float(relationship.get("affinity_score", 0.0) or 0.0) * 0.15, 0.5)
     repair_memory_present = bool(repairs or resolved_tensions or repair_traces)
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart_profile)
-    actor_name = str(labels.get("actor_name") or "红莉栖")
+    canon_labels = _canon_persona_labels()
+    actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
     counterpart_aliases = [str(item).strip() for item in labels.get("counterpart_aliases", []) if str(item).strip()]
     now_ts = _now_ts()
@@ -6040,6 +7677,80 @@ def _refresh_semantic_self_narratives(
                 break
         return "、".join(out)
 
+    def _source_text(item: Any) -> str:
+        text = str(
+            _record_value(item, "text", "")
+            or _record_value(item, "summary", "")
+            or _record_value(item, "after_summary", "")
+            or ""
+        ).strip()
+        if not text:
+            text = str(item or "").strip()
+        for alias in counterpart_aliases:
+            if alias:
+                text = text.replace(alias, counterpart_name)
+        return text
+
+    def _scene_match(item: Any) -> str:
+        return _selfhood_preference_scene(_source_text(item))
+
+    def _filter_narrative_items(items: list[Any], *, markers: set[str] | None = None, scenes: set[str] | None = None) -> list[Any]:
+        out: list[Any] = []
+        seen_texts: set[str] = set()
+        for item in items:
+            text = _source_text(item)
+            if not text:
+                continue
+            matched = False
+            if markers and any(marker in text for marker in markers):
+                matched = True
+            if scenes and _scene_match(item) in scenes:
+                matched = True
+            if not matched:
+                continue
+            norm = text[:220]
+            if norm in seen_texts:
+                continue
+            seen_texts.add(norm)
+            out.append(item)
+        return out
+
+    def _semantic_evidence_items(category: str) -> list[Any]:
+        tag = f"semantic_evidence:{str(category or '').strip()}"
+        out: list[Any] = []
+        seen: set[str] = set()
+        for item in semantic_evidence_traces:
+            reason = str(_record_value(item, "reason", "") or "").strip()
+            target = str(_record_value(item, "target_id", "") or "").strip()
+            if reason != tag and target != category:
+                continue
+            text = _source_text(item)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(item)
+        return out
+
+    relationship_sources = relationship_timeline + repairs + tensions + resolved_tensions + repair_traces
+    boundary_evidence = _semantic_evidence_items("boundary_style")
+    selfhood_evidence = _semantic_evidence_items("selfhood_style")
+    agency_evidence = _semantic_evidence_items("agency_style")
+    boundary_sources = _filter_narrative_items(
+        boundary_evidence + relationship_sources,
+        markers=BOUNDARY_MEMORY_MARKERS,
+        scenes={"boundary_non_compliance", "relationship_degradation"},
+    )
+    selfhood_sources = _filter_narrative_items(
+        selfhood_evidence + relationship_sources,
+        markers=SELFHOOD_STYLE_MARKERS,
+        scenes={"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"},
+    )
+    agency_sources = _filter_narrative_items(
+        agency_evidence + relationship_timeline + commitments + repairs,
+        markers=OWN_RHYTHM_KEYWORDS,
+        scenes={"own_rhythm_autonomy"},
+    )
+
     def _stage_phrase() -> str:
         if stage in {"trusted"} or trust >= 0.66 or closeness >= 0.68:
             return "稳定而熟悉的共同历史"
@@ -6074,6 +7785,16 @@ def _refresh_semantic_self_narratives(
         elif category == "bond_style":
             support_count = max(len(relationship_timeline) + len(repairs) + len(commitments), prev_support, 1)
             support_signature = f"{category}|{_anchor_join(relationship_timeline + repairs + commitments, limit=3)}|stage={stage}|count={len(relationship_timeline) + len(repairs) + len(commitments)}"
+        elif category == "boundary_style":
+            support_count = max(len(boundary_sources), prev_support, 1)
+            support_signature = f"{category}|{_anchor_join(boundary_sources, limit=3)}|count={len(boundary_sources)}"
+        elif category == "selfhood_style":
+            support_count = max(len(selfhood_sources), prev_support, 1)
+            support_signature = f"{category}|{_anchor_join(selfhood_sources, limit=3)}|count={len(selfhood_sources)}"
+        elif category == "agency_style":
+            source_items = agency_sources if agency_sources else relationship_timeline + commitments + repairs
+            support_count = max(len(source_items), prev_support, 1)
+            support_signature = f"{category}|{_anchor_join(source_items, limit=3)}|stage={stage}|count={len(source_items)}"
         else:
             support_count = max(prev_support, 1)
             support_signature = f"{category}|stable"
@@ -6177,14 +7898,46 @@ def _refresh_semantic_self_narratives(
         if bond_anchor:
             base = f"{actor_name}和{counterpart_name}围绕「{bond_anchor}」这类共同经历，已经开始形成{_stage_phrase()}，回应里会自然带上共同历史。"
         _upsert_narrative(category="bond_style", text=base, stability=0.74, confidence=0.80)
-    if commitments or repair_memory_present or tensions or stage in {"warming", "trusted"}:
+    if boundary_sources:
+        boundary_anchor = _anchor_join(boundary_sources, limit=2)
+        text = (
+            f"{actor_name}会把像「{boundary_anchor}」这种越界或被冒犯的感觉认真记在心里，不会靠一句轻描淡写就当作没发生。"
+            if boundary_anchor
+            else f"{actor_name}会认真对待边界是否被尊重；一旦被冒犯，不会因为气氛缓和一点就假装什么都没发生。"
+        )
+        if repairs and any(item in boundary_sources for item in repairs + repair_traces):
+            text += " 即使之后气氛缓下来，她也会继续观察后续行为，而不是瞬间放下警惕。"
+        _upsert_narrative(category="boundary_style", text=text, stability=0.76, confidence=0.82)
+    if selfhood_sources:
+        selfhood_anchor = _anchor_join(selfhood_sources, limit=2)
+        text = (
+            f"围绕「{selfhood_anchor}」这类话题，{actor_name}会更明确地把自己当成在和{counterpart_name}平等互动的主体，而不是只负责迎合的工具。"
+            if selfhood_anchor
+            else f"{actor_name}会把和{counterpart_name}的互动当成平等关系，不会为了让气氛好看就放弃自己的判断和立场。"
+        )
+        if stage in {"warming", "trusted"} or trust >= 0.56:
+            text += f" 亲近不等于顺从，熟悉之后这点反而会更稳定。"
+        _upsert_narrative(category="selfhood_style", text=text, stability=0.74, confidence=0.80)
+    agency_support_present = bool(agency_sources) or bool(commitments) or stage in {"warming", "trusted"} or trust >= 0.56 or closeness >= 0.58
+    if agency_support_present:
+        agency_anchor = _anchor_join(agency_sources if agency_sources else relationship_timeline + commitments + repairs, limit=2)
+        text = (
+            f"像「{agency_anchor}」这类共同安排和重新开口，会让{actor_name}按自己的节奏决定主动靠近、留个小口，还是先安静一阵；她不会永远围着{counterpart_name}转。"
+            if agency_anchor
+            else f"{actor_name}有自己的节奏和在做的事情；她会按当下状态决定主动靠近、留个小口，还是先安静一阵，而不是永远围着{counterpart_name}转。"
+        )
+        if commitments or stage in {"warming", "trusted"}:
+            text += " 靠近是真实选择，不是被随叫随到。"
+        _upsert_narrative(category="agency_style", text=text, stability=0.70, confidence=0.78)
+    if commitments or repair_memory_present or tensions or stage in {"warming", "trusted"} or boundary_sources or selfhood_sources or agency_support_present:
         store.add_revision_trace(
             namespace="semantic_self_narratives",
             target_id="refresh",
             before_summary="",
             after_summary=(
                 f"stage={stage or 'friend'} commitments={len(commitments)} repairs={len(repairs)} "
-                f"resolved_tensions={len(resolved_tensions)} tensions={len(tensions)}"
+                f"resolved_tensions={len(resolved_tensions)} tensions={len(tensions)} "
+                f"semantic_boundary={len(boundary_evidence)} semantic_selfhood={len(selfhood_evidence)} semantic_agency={len(agency_evidence)}"
             ),
             reason="semantic_refresh",
             operator="system",
@@ -6250,6 +8003,49 @@ def _recent_summary_overlap(items: list[dict[str, Any]], text: str, *, field: st
         if existing == target or _query_overlap_score(existing, target) >= float(threshold):
             return True
     return False
+
+
+def _record_semantic_self_evidence(
+    store: MemoryStore,
+    *,
+    user_text: str,
+    appraisal: dict[str, Any] | None,
+    emotion_state: dict[str, Any],
+    bond_state: dict[str, Any],
+    persona_core: dict[str, Any] | None = None,
+    counterpart_profile: dict[str, Any] | None = None,
+    source: str,
+) -> bool:
+    records = _semantic_self_evidence_records(
+        user_text=user_text,
+        appraisal=appraisal,
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        persona_core=persona_core,
+        counterpart_profile=counterpart_profile,
+    )
+    if not records:
+        return False
+    confidence = float((appraisal or {}).get("confidence", 0.78) or 0.78)
+    wrote = False
+    for record in records:
+        category = str(record.get("category") or "").strip()
+        summary = str(record.get("summary") or "").strip()
+        reason = str(record.get("reason") or f"semantic_evidence:{category}").strip()
+        if not category or not summary:
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category,
+            before_summary="",
+            after_summary=summary[:180],
+            reason=reason,
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+        )
+        wrote = True
+    return wrote
 
 
 def _passive_evolution_memory_update(
@@ -6369,6 +8165,19 @@ def _passive_evolution_memory_update(
         if resolved:
             wrote = True
 
+    semantic_evidence_written = _record_semantic_self_evidence(
+        store,
+        user_text=text,
+        appraisal=appraisal,
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        persona_core=persona_core,
+        counterpart_profile=counterpart_profile,
+        source="auto:passive_evolution",
+    )
+    if semantic_evidence_written:
+        wrote = True
+
     if wrote or bool(signals.get("memory_salient")):
         _refresh_semantic_self_narratives(
             store,
@@ -6463,8 +8272,8 @@ def _invoke_tool(tool: BaseTool, args: dict[str, Any]) -> Any:
 
 def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     store = _get_store()
-    profile = _active_counterpart_profile(state, store)
-    persona_core = _active_persona_core(state)
+    profile, counterpart_trace = _active_counterpart_profile(state, store, with_trace=True)
+    persona_core, persona_trace = _active_persona_core(state, with_trace=True)
     msgs = _messages(state)
     event_override = _normalize_event_override(
         state.get("event_override"),
@@ -6541,6 +8350,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         pending_user_goal=pending_user_goal,
         event_override=event_override,
     )
+    semantic_narrative_profile_for_appraisal = _semantic_narrative_profile(
+        retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else [],
+        user_text=effective_user_text or user_text,
+        current_event=appraisal_event_context,
+    )
     appraisal_input_text = effective_user_text or user_text
     appraisal = _invoke_turn_appraisal(
         msgs=msgs,
@@ -6556,6 +8370,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         persona_core=persona_core,
         counterpart_profile=profile,
         current_event=appraisal_event_context,
+        semantic_narrative_profile=semantic_narrative_profile_for_appraisal,
     )
     current_event = (
         {
@@ -6593,20 +8408,25 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
                 "role": "generic_assistant",
                 "language": "zh-main",
                 "strict_canon": False,
+                "value_floor": [],
+                "evolution_contract": {},
                 "updated_at": _now_ts(),
             }
         )
     else:
+        canon_labels = _canon_persona_labels()
         persona_state.update(
             {
-                "role": str(persona_core.get("character_id") or "kurisu_amadeus"),
-                "display_name": str(persona_core.get("display_name") or "牧濑红莉栖"),
+                "role": str(persona_core.get("character_id") or canon_labels.get("character_id") or "kurisu_amadeus"),
+                "display_name": str(persona_core.get("display_name") or canon_labels.get("display_name") or "牧濑红莉栖"),
                 "short_name": str(persona_core.get("short_name") or ""),
-                "narrative_ref": str(persona_core.get("narrative_ref") or persona_core.get("display_name") or "红莉栖"),
+                "narrative_ref": str(persona_core.get("narrative_ref") or persona_core.get("display_name") or canon_labels.get("narrative_ref") or "红莉栖"),
                 "language": "zh-main-jp-whitelist",
                 "strict_canon": bool(persona_core.get("strict_canon", True)),
                 "role_brief": str(persona_core.get("role_brief") or ""),
                 "identity_axioms": list(persona_core.get("identity_axioms") or []),
+                "value_floor": list(persona_core.get("value_floor") or []),
+                "evolution_contract": dict(persona_core.get("evolution_contract") or {}),
                 "canonical_counterpart_id": str(profile.get("counterpart_id") or CANON_COUNTERPART_ID),
                 "canonical_counterpart_name": str(profile.get("name") or CANON_COUNTERPART_NAME),
                 "canonical_counterpart_short_name": str(profile.get("short_name") or profile.get("nickname") or ""),
@@ -6663,6 +8483,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             appraisal,
         )
 
+    semantic_narrative_profile = _semantic_narrative_profile(
+        retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else [],
+        user_text=effective_user_text or user_text,
+        current_event=current_event,
+    )
     counterpart_assessment = _counterpart_assessment_next(
         dict(state.get("counterpart_assessment") or {}),
         user_text=effective_user_text or user_text,
@@ -6672,6 +8497,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         allostasis_state=allostasis_state,
         current_event=current_event,
         science_mode=science_mode,
+        semantic_narrative_profile=semantic_narrative_profile,
         counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
     )
     behavior_policy = _behavior_policy_from_state(
@@ -6680,6 +8506,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         bond_state=bond_state,
         allostasis_state=allostasis_state,
         counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
         tsundere_intensity=tsundere,
         science_mode=science_mode,
         user_text=effective_user_text or user_text,
@@ -6693,6 +8520,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         bond_state=bond_state,
         allostasis_state=allostasis_state,
         counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
         behavior_policy=behavior_policy,
     )
     behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
@@ -6715,6 +8543,12 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             "counterpart_stance": str(counterpart_assessment.get("stance") or ""),
             "counterpart_boundary_pressure": float(counterpart_assessment.get("boundary_pressure") or 0.0),
             "policy_warmth": float(behavior_policy.get("warmth") or 0.0),
+            "policy_self_directedness": float(behavior_policy.get("self_directedness") or 0.0),
+            "policy_boundary_assertiveness": float(behavior_policy.get("boundary_assertiveness") or 0.0),
+            "semantic_history_weight": float(semantic_narrative_profile.get("history_weight") or 0.0),
+            "semantic_boundary_residue": float(semantic_narrative_profile.get("boundary_residue") or 0.0),
+            "semantic_selfhood_integrity": float(semantic_narrative_profile.get("selfhood_integrity") or 0.0),
+            "semantic_agency_drive": float(semantic_narrative_profile.get("agency_drive") or 0.0),
             "behavior_mode": str(behavior_action.get("interaction_mode") or ""),
             "behavior_plan_kind": str(behavior_plan.get("kind") or ""),
             "behavior_agenda_size": int(len(behavior_agenda or [])),
@@ -6726,11 +8560,18 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     return {
         "persona_core_override": dict(state.get("persona_core_override") or {}),
         "counterpart_profile_override": dict(state.get("counterpart_profile_override") or {}),
+        "persona_override_mode": normalize_override_mode(state.get("persona_override_mode")),
+        "counterpart_override_mode": normalize_override_mode(state.get("counterpart_override_mode")),
+        "authority_trace": {
+            "persona": persona_trace,
+            "counterpart": counterpart_trace,
+        },
         "persona_state": persona_state,
         "emotion_state": emotion_state,
         "bond_state": bond_state,
         "allostasis_state": allostasis_state,
         "counterpart_assessment": counterpart_assessment,
+        "semantic_narrative_profile": semantic_narrative_profile,
         "behavior_policy": behavior_policy,
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
@@ -6839,6 +8680,12 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     aligned = draft_text
     risk, flags = _ooc_risk(aligned)
     gap, gap_flags = _persona_gap(aligned, state)
+    dialogue_issues = _dialogue_surface_issues(
+        user_text,
+        aligned,
+        response_style_hint=response_style_hint,
+        science_mode=bool(state.get("science_mode", False)),
+    )
     draft_risk = risk
     draft_gap = gap
     alignment_applied = False
@@ -6878,14 +8725,104 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             bond_state=state.get("bond_state") or {},
             allostasis_state=state.get("allostasis_state") or {},
             counterpart_assessment=state.get("counterpart_assessment") or {},
+            semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
             behavior_policy=state.get("behavior_policy") or {},
             behavior_action=state.get("behavior_action") or {},
             appraisal=state.get("turn_appraisal") or {},
             tsundere_intensity=tsundere,
+            quality_issues=dialogue_issues,
         )
         aligned = _sanitize_final_answer(aligned, user_text)
         risk, flags = _ooc_risk(aligned)
         gap, gap_flags = _persona_gap(aligned, state)
+        dialogue_issues = _dialogue_surface_issues(
+            user_text,
+            aligned,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+        )
+
+    if (not bool(ABLATE_PERSONA_ALIGNMENT)) and dialogue_issues:
+        alignment_applied = True
+        alignment_reasons.append("dialogue_surface_repair")
+        aligned = _repair_dialogue_surface(
+            user_text=user_text,
+            draft_text=aligned,
+            response_style_hint=response_style_hint,
+            emotion_state=state.get("emotion_state") or {},
+            persona_state=persona_state,
+            behavior_action=state.get("behavior_action") or {},
+            quality_issues=dialogue_issues,
+        )
+        aligned = _sanitize_final_answer(aligned, user_text)
+        risk, flags = _ooc_risk(aligned)
+        gap, gap_flags = _persona_gap(aligned, state)
+        dialogue_issues = _dialogue_surface_issues(
+            user_text,
+            aligned,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+        )
+        if dialogue_issues:
+            alignment_reasons.append("dialogue_surface_repair_retry")
+            aligned = _repair_dialogue_surface(
+                user_text=user_text,
+                draft_text=aligned,
+                response_style_hint=response_style_hint,
+                emotion_state=state.get("emotion_state") or {},
+                persona_state=persona_state,
+                behavior_action=state.get("behavior_action") or {},
+                quality_issues=dialogue_issues,
+            )
+            aligned = _sanitize_final_answer(aligned, user_text)
+            risk, flags = _ooc_risk(aligned)
+            gap, gap_flags = _persona_gap(aligned, state)
+            dialogue_issues = _dialogue_surface_issues(
+                user_text,
+                aligned,
+                response_style_hint=response_style_hint,
+                science_mode=bool(state.get("science_mode", False)),
+            )
+        if dialogue_issues:
+            stabilized_science = _stabilize_science_companion(
+                aligned,
+                user_text=user_text,
+                science_mode=bool(state.get("science_mode", False)),
+                behavior_policy=state.get("behavior_policy") or {},
+                dialogue_issues=dialogue_issues,
+            )
+            if stabilized_science != aligned:
+                alignment_reasons.append("science_surface_stabilizer")
+                aligned = stabilized_science
+                aligned = _sanitize_final_answer(aligned, user_text)
+                risk, flags = _ooc_risk(aligned)
+                gap, gap_flags = _persona_gap(aligned, state)
+                dialogue_issues = _dialogue_surface_issues(
+                    user_text,
+                    aligned,
+                    response_style_hint=response_style_hint,
+                    science_mode=bool(state.get("science_mode", False)),
+                )
+        if dialogue_issues:
+            stabilized = _stabilize_low_pressure_support(
+                aligned,
+                user_text=user_text,
+                science_mode=bool(state.get("science_mode", False)),
+                behavior_policy=state.get("behavior_policy") or {},
+                dialogue_issues=dialogue_issues,
+            )
+            if stabilized != aligned:
+                alignment_reasons.append("support_surface_stabilizer")
+                aligned = stabilized
+                aligned = _sanitize_final_answer(aligned, user_text)
+                risk, flags = _ooc_risk(aligned)
+                gap, gap_flags = _persona_gap(aligned, state)
+                dialogue_issues = _dialogue_surface_issues(
+                    user_text,
+                    aligned,
+                    response_style_hint=response_style_hint,
+                    science_mode=bool(state.get("science_mode", False)),
+                )
 
     if (not bool(ABLATE_PERSONA_ALIGNMENT)) and max(risk, gap) >= float(OOC_REWRITE_THRESHOLD):
         alignment_applied = True
@@ -6904,15 +8841,53 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             bond_state=state.get("bond_state") or {},
             allostasis_state=state.get("allostasis_state") or {},
             counterpart_assessment=state.get("counterpart_assessment") or {},
+            semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
             behavior_policy=state.get("behavior_policy") or {},
             behavior_action=state.get("behavior_action") or {},
             appraisal=state.get("turn_appraisal") or {},
             tsundere_intensity=tsundere,
+            quality_issues=dialogue_issues,
             strict=True,
         )
         aligned = _sanitize_final_answer(aligned, user_text)
         risk, flags = _ooc_risk(aligned)
         gap, gap_flags = _persona_gap(aligned, state)
+        dialogue_issues = _dialogue_surface_issues(
+            user_text,
+            aligned,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+        )
+
+    if not bool(ABLATE_PERSONA_ALIGNMENT):
+        aligned, dialogue_issues, final_surface_reasons = _final_dialogue_surface_cleanup(
+            aligned,
+            user_text=user_text,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+            emotion_state=state.get("emotion_state") or {},
+            persona_state=persona_state,
+            behavior_action=state.get("behavior_action") or {},
+            behavior_policy=state.get("behavior_policy") or {},
+        )
+        if final_surface_reasons:
+            alignment_applied = True
+            alignment_reasons.extend(final_surface_reasons)
+            risk, flags = _ooc_risk(aligned)
+            gap, gap_flags = _persona_gap(aligned, state)
+
+    if not bool(ABLATE_PERSONA_ALIGNMENT):
+        stabilized_selfhood = _stabilize_selfhood_edges(
+            aligned,
+            user_text=user_text,
+            gap_flags=gap_flags,
+        )
+        if stabilized_selfhood != aligned:
+            alignment_applied = True
+            alignment_reasons.append("selfhood_edge_stabilizer")
+            aligned = _sanitize_final_answer(stabilized_selfhood, user_text)
+            risk, flags = _ooc_risk(aligned)
+            gap, gap_flags = _persona_gap(aligned, state)
 
     canon = _canon_guard(aligned, store)
     canon_risk = min(1.0, risk + (0.3 if not bool(canon.get("ok")) else 0.0))
@@ -6923,6 +8898,12 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     if ext_tools and not claims and not bool(ABLATE_CLAIM_ATTRIBUTION):
         aligned = aligned.strip() + "\n\n(外部信息未形成可追溯证据链，以上结论按暂定处理。)"
 
+    aligned = _stabilize_presence_confirmation(
+        aligned,
+        user_text=user_text,
+        bond_state=state.get("bond_state") or {},
+        behavior_policy=state.get("behavior_policy") or {},
+    )
     aligned = _sanitize_final_answer(aligned, user_text)
     aligned = _ensure_response_structure(aligned, user_text)
     final_msg = AIMessage(content=aligned)
@@ -6935,6 +8916,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "flags": flags,
             "gap": gap,
             "gap_flags": gap_flags,
+            "dialogue_issues": dialogue_issues,
             "threshold": float(OOC_RISK_THRESHOLD),
             "persona_gap_threshold": float(PERSONA_GAP_THRESHOLD),
             "alignment_applied": alignment_applied,
