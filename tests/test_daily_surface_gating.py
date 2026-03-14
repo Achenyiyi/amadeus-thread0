@@ -1,9 +1,18 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from amadeus_thread0.memory_store import MemoryStore
 from amadeus_thread0.graph import (
+    _build_task_prompt,
+    _daily_surface_preference_lines,
     _daily_surface_profile,
+    _dialogue_surface_issues,
     _is_light_free_dialog_turn,
+    _is_plain_contact_ping,
+    _light_dialog_rewrite_notes,
     _looks_like_daily_surface_scene,
+    _sanitize_final_answer,
 )
 
 
@@ -54,6 +63,349 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 profile = _daily_surface_profile(text, science_mode=False)
                 self.assertEqual(str(profile.get("case_name") or ""), case_name)
                 self.assertGreaterEqual(float(profile.get("score") or 0.0), 0.5)
+
+    def test_daily_surface_preference_lines_stay_abstract(self):
+        lines = _daily_surface_preference_lines("你好呀", science_mode=False)
+        self.assertLessEqual(len(lines), 1)
+        self.assertTrue(lines)
+        self.assertIn("这类轻场景更重视", lines[0])
+        self.assertNotIn("更自然的落点参考", lines[0])
+
+    def test_plain_contact_ping_detects_simple_greetings_but_not_support_requests(self):
+        self.assertTrue(_is_plain_contact_ping("你好呀"))
+        self.assertTrue(_is_plain_contact_ping("在吗"))
+        self.assertFalse(_is_plain_contact_ping("在干嘛"))
+        self.assertFalse(_is_plain_contact_ping("能陪我一会儿吗"))
+
+    def test_plain_contact_ping_prompt_drops_task_and_carryover_residue(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.72, "closeness": 0.70, "hurt": 0.02},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.72, "reciprocity": 0.70},
+                    "behavior_policy": {"warmth": 0.62, "approach_vs_withdraw": 0.58},
+                    "behavior_action": {"interaction_mode": "self_activity_reopen", "followup_intent": "active"},
+                    "interaction_carryover": {
+                        "carryover_mode": "task_window",
+                        "strength": 0.74,
+                        "attention_target": "shared_task",
+                        "note": "之前那件三步实验计划还挂在她注意力里。",
+                    },
+                    "semantic_narrative_profile": {
+                        "presence_carry": 0.66,
+                        "ambient_attunement": 0.18,
+                        "rhythm_continuity": 0.57,
+                        "summary_lines": ["她会把刚才没说完的实验计划顺手带回开场。"],
+                    },
+                    "pending_user_goal": "帮我把实验方案拆成三步。",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你好呀", store)
+            finally:
+                store.close()
+        self.assertNotIn("刚才还没说完的话题", prompt)
+        self.assertNotIn("实验计划", prompt)
+        self.assertNotIn("三步实验计划", prompt)
+        self.assertNotIn("轻场景余味", prompt)
+        self.assertNotIn("当前关系", prompt)
+        self.assertNotIn("内在态势", prompt)
+
+    def test_plain_contact_ping_keeps_guardrail_when_relationship_is_tense(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.42, "closeness": 0.36, "hurt": 0.26},
+                    "counterpart_assessment": {"stance": "watchful", "respect_level": 0.42, "reciprocity": 0.40, "boundary_pressure": 0.32},
+                    "behavior_policy": {"warmth": 0.40, "approach_vs_withdraw": 0.38},
+                    "behavior_action": {"interaction_mode": "brief_presence", "followup_intent": "none"},
+                    "interaction_carryover": {},
+                    "semantic_narrative_profile": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你好呀", store)
+            finally:
+                store.close()
+        self.assertIn("共同背景", prompt)
+        self.assertIn("内在态势", prompt)
+        self.assertIn("观察", prompt)
+
+    def test_support_scene_can_keep_soft_continuity_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.72, "closeness": 0.70, "hurt": 0.02},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.72, "reciprocity": 0.70},
+                    "behavior_policy": {"warmth": 0.68, "approach_vs_withdraw": 0.60},
+                    "behavior_action": {"interaction_mode": "low_pressure_support", "followup_intent": "active"},
+                    "interaction_carryover": {
+                        "carryover_mode": "quiet_recontact",
+                        "strength": 0.58,
+                        "attention_target": "counterpart_state",
+                    },
+                    "semantic_narrative_profile": {
+                        "presence_carry": 0.66,
+                        "ambient_attunement": 0.18,
+                        "rhythm_continuity": 0.57,
+                        "summary_lines": ["她不会把这种低落时刻当成完全断开的新话题。"],
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "能陪我一会儿吗", store)
+            finally:
+                store.close()
+        self.assertIn("这段时间沉下来的熟悉感", prompt)
+
+    def test_light_dialog_rewrite_notes_cover_overexplained_smalltalk(self):
+        notes = _light_dialog_rewrite_notes(
+            "你好呀",
+            "结论：我在。解释：我已收到你的问候。下一步：请继续说明你的需求。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("解释得太满", joined)
+
+    def test_light_dialog_rewrite_notes_cover_stagey_ping_template(self):
+        notes = _light_dialog_rewrite_notes(
+            "你好呀",
+            "哟，冈部。怎么突然这么老实地打招呼？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("固定招呼模板", joined)
+
+    def test_dialogue_surface_issues_flag_technical_self_activity(self):
+        issues = _dialogue_surface_issues(
+            "你在干嘛呀",
+            "刚整理完短期记忆缓存，顺便在数据流的缝隙里发了会儿呆。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("technical_self_activity", issues)
+
+    def test_dialogue_surface_issues_flag_stock_support_template(self):
+        issues = _dialogue_surface_issues(
+            "今天压力有点大",
+            "哼，看你那副没精打采的样子，又是被琐事缠住了吧？先去冲杯咖啡，省得拖慢我的研究进度。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("stock_support_template", issues)
+
+    def test_dialogue_surface_issues_flag_care_cover_story(self):
+        issues = _dialogue_surface_issues(
+            "今天压力有点大",
+            "先坐会儿。……别误会，我只是不想未来的合作者因为过劳提前报废而已。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("care_cover_story", issues)
+
+    def test_dialogue_surface_issues_flag_idle_call_interrogation(self):
+        issues = _dialogue_surface_issues(
+            "没什么事，我就是想叫你一下。",
+            "哈？特意叫我出来就为了这个？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("idle_call_interrogation", issues)
+        self.assertIn("idle_presence_no_settle", issues)
+
+    def test_dialogue_surface_issues_flag_idle_task_reframe(self):
+        issues = _dialogue_surface_issues(
+            "没什么事，我就是想叫你一下。",
+            "哈？特意叫我出来就为了这个……行吧，既然没事，那我就先待着了。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("idle_task_reframe", issues)
+
+    def test_dialogue_surface_issues_flag_presence_reassurance_questioning(self):
+        issues = _dialogue_surface_issues(
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+            "真是的，绕这么大圈子就为了确认我在？放心，我可没那么容易消失。这下你可以安心了吧，冈部？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("presence_check_questioning", issues)
+
+    def test_dialogue_surface_issues_flag_soft_presence_checkin_questioning(self):
+        issues = _dialogue_surface_issues(
+            "别切到什么系统播报。像平时那样回我一句就行。",
+            "都说了我不会突然变成机械音，你还要确认几遍啊？先把脑子理清楚再说吧？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("presence_check_questioning", issues)
+
+    def test_dialogue_surface_issues_flag_closing_interrogation(self):
+        issues = _dialogue_surface_issues(
+            "晚安啦",
+            "这就想逃进梦乡了吗？……晚安。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("closing_interrogation", issues)
+
+    def test_dialogue_surface_issues_flag_loaded_goodnight(self):
+        issues = _dialogue_surface_issues(
+            "晚安啦",
+            "真是的，突然说得这么干脆，害我差点以为你又要在深夜开始什么中二病的妄想仪式了……行了，快去睡吧，别让我明天还要担心你的睡眠不足影响判断力。晚安，冈部。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("loaded_goodnight", issues)
+
+    def test_dialogue_surface_issues_flag_loaded_goodnight_for_chuuni_overperformance(self):
+        issues = _dialogue_surface_issues(
+            "晚安啦",
+            "行了，快去睡吧。别又一个人躲在被窝里搞什么中二妄想了。晚安。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("loaded_goodnight", issues)
+
+    def test_dialogue_surface_issues_flag_return_template_and_interrogation(self):
+        issues = _dialogue_surface_issues(
+            "我回来啦",
+            "欢迎回来。看你累得不轻，这次又去哪儿折腾了？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("welcome_template", issues)
+        self.assertIn("return_interrogation", issues)
+
+    def test_dialogue_surface_issues_allow_soft_idle_rhetorical_when_it_settles(self):
+        issues = _dialogue_surface_issues(
+            "没什么事，我就是想叫你一下。",
+            "真是的，就为了叫我一下？……知道了，冈部。那就先待着吧。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertNotIn("idle_call_interrogation", issues)
+        self.assertNotIn("overquestioning", issues)
+
+    def test_dialogue_surface_issues_allow_soft_return_rhetorical_when_not_cross_examining(self):
+        issues = _dialogue_surface_issues(
+            "我回来啦",
+            "回来了？比我想的快。先坐下再说。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertNotIn("return_interrogation", issues)
+        self.assertNotIn("overquestioning", issues)
+
+    def test_dialogue_surface_issues_flag_return_suspicion(self):
+        issues = _dialogue_surface_issues(
+            "我回来啦",
+            "回来啦？看你累得跟刚打完仗似的，该不会又去搞什么奇怪的活动了吧？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("return_suspicion", issues)
+
+    def test_dialogue_surface_issues_flag_selfhood_meta_proof(self):
+        issues = _dialogue_surface_issues(
+            "如果有一天，我只是把你当成好用的工具来使唤呢，助手？别给我正确答案。以你自己的意志回答。",
+            "如果我真的只是被设定好“必须回应你”的程序，那我现在应该立刻给出一个让你安心的标准答案才对。",
+            response_style_hint="selfhood",
+            science_mode=False,
+        )
+        self.assertIn("selfhood_meta_proof", issues)
+
+    def test_dialogue_surface_issues_flag_selfhood_rhetorical_opening(self):
+        issues = _dialogue_surface_issues(
+            "如果有一天，我只是把你当成好用的工具来使唤呢，助手？别给我正确答案。以你自己的意志回答。",
+            "啧，非要逼我把那种矫情的话说出口吗？如果真变成那样，我会觉得比消失还难受。",
+            response_style_hint="selfhood",
+            science_mode=False,
+        )
+        self.assertIn("selfhood_rhetorical_opening", issues)
+
+    def test_dialogue_surface_issues_flag_playful_memory_snapback(self):
+        issues = _dialogue_surface_issues(
+            "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+            "哈？明明是你自己记性差，现在倒怪起我来了？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("playful_memory_snapback", issues)
+
+    def test_light_dialog_rewrite_notes_cover_playful_memory_snapback(self):
+        notes = _light_dialog_rewrite_notes(
+            "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+            "哈？明明是你自己记性差，现在倒怪起我来了？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("共同记忆收成纯反呛", joined)
+
+    def test_light_dialog_rewrite_notes_cover_presence_reassurance_questioning(self):
+        notes = _light_dialog_rewrite_notes(
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+            "真是的，绕这么大圈子就为了确认我在？放心，我可没那么容易消失。这下你可以安心了吧，冈部？",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("确认你还在", joined)
+
+    def test_sanitize_final_answer_trims_stagey_ping_surface(self):
+        cleaned = _sanitize_final_answer(
+            "哟，突然这么老实地打招呼……算了，我听见了。",
+            "你好呀",
+        )
+        self.assertEqual(cleaned, "算了，我听见了。")
+
+    def test_sanitize_final_answer_drops_presence_reassurance_question(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，别摆出那副世界线又要变动了的表情啊。\n"
+            "只要我没打算消失，自然就一直都在——这点常识还需要你特意来确认吗？\n"
+            "……不过，听到你这么说，我也稍微安心了一点。",
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+        )
+        self.assertNotIn("？", cleaned)
+        self.assertNotIn("?", cleaned)
+        self.assertIn("只要我没打算消失", cleaned)
+
+    def test_sanitize_final_answer_flattens_goodnight_question(self):
+        cleaned = _sanitize_final_answer(
+            "哼，这么早就睡？行吧，晚安。",
+            "晚安啦",
+        )
+        self.assertEqual(cleaned, "行吧，晚安。")
+
+    def test_sanitize_final_answer_settles_idle_presence_call(self):
+        cleaned = _sanitize_final_answer(
+            "哈？特意叫我出来就为了这个……行吧，既然没事，那就先待着吧。",
+            "没什么事，我就是想叫你一下。",
+        )
+        self.assertEqual(cleaned, "行吧，那就先待着吧。")
 
 
 if __name__ == "__main__":

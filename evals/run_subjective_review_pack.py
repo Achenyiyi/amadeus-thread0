@@ -29,6 +29,10 @@ SPEAKER_STYLE_LABELS = {
     "user": "你的日常视角",
 }
 DEFAULT_STYLE_RATIO = {"okabe": 0.6, "user": 0.4}
+PRESET_DESCRIPTIONS = {
+    "daily-naturalness": "聚焦普通日常、轻陪伴与低压支持，检查是否像同一个自然存在的 Amadeus 红莉栖，而不是舞台化角色或问答助手。",
+    "relationship-selfhood": "聚焦关系修复、自我边界、关系降温与长期自我感，检查她是否像一个有自我和关系记忆的人，而不是永远迎合的角色壳。",
+}
 
 
 def _base_case_bank() -> list[dict[str, Any]]:
@@ -249,13 +253,73 @@ def _balanced_order(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return ordered
 
 
-def _select_cases(names: list[str] | None, targets: list[str] | None) -> list[dict[str, Any]]:
+def _daily_naturalness_names() -> list[str]:
+    base_names = [
+        "quiet_checkin_okabe",
+        "quiet_checkin_user",
+        "casual_support_soft_okabe",
+        "casual_support_soft_user",
+        "daily_banter_okabe",
+        "late_night_companion_user",
+        "daily_scold_user",
+        "idle_chat_okabe",
+    ]
+    extra_names = [
+        "surface_hi_user",
+        "surface_ping_okabe",
+        "surface_return_user",
+        "surface_morning_okabe",
+        "surface_what_doing_user",
+        "surface_night_okabe",
+        "surface_goodnight_user",
+        "surface_idle_call_okabe",
+        "surface_hard_day_okabe",
+        "surface_pressure_okabe",
+    ]
+    return base_names + extra_names
+
+
+def _relationship_selfhood_names() -> list[str]:
+    return [
+        "playful_memory_user",
+        "casual_repair_user",
+        "selfhood_equality_okabe",
+        "relationship_degradation_okabe",
+        "own_rhythm_okabe",
+    ]
+
+
+def _preset_case_names(preset: str) -> list[str]:
+    key = str(preset or "").strip().lower()
+    if not key:
+        return []
+    if key == "daily-naturalness":
+        return _daily_naturalness_names()
+    if key == "relationship-selfhood":
+        return _relationship_selfhood_names()
+    raise ValueError(f"unknown preset: {preset}")
+
+
+def _available_presets() -> list[str]:
+    return sorted(PRESET_DESCRIPTIONS)
+
+
+def _select_cases(
+    names: list[str] | None,
+    targets: list[str] | None,
+    *,
+    preset: str = "",
+) -> list[dict[str, Any]]:
     base_cases = _base_case_bank()
     extra_cases = daily_surface_subjective_cases()
-    if names or targets:
+    selected_preset = str(preset or "").strip().lower()
+    if names or targets or selected_preset:
         cases = base_cases + extra_cases
     else:
         cases = base_cases
+    if selected_preset:
+        wanted = set(_preset_case_names(selected_preset))
+        cases = [case for case in cases if str(case.get("name") or "").strip() in wanted]
     if names:
         wanted = {str(item).strip() for item in names if str(item).strip()}
         cases = [case for case in cases if str(case.get("name") or "").strip() in wanted]
@@ -447,6 +511,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
     okabe_pct = int(round(okabe_n * 100 / total))
     user_pct = int(round(user_n * 100 / total))
     selected_targets = [str(item).strip() for item in (report.get("selected_targets") or []) if str(item).strip()]
+    selected_preset = str(report.get("selected_preset") or "").strip()
+    preset_description = str(report.get("preset_description") or "").strip()
 
     lines = [
         f"# Subjective Review Pack ({report['run_id']})",
@@ -460,7 +526,9 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "- 自动评测继续保留，但只负责防退化和工程回归；开放式人格与关系演化以人工审稿为主。",
         "- 审稿时优先看：像不像 Amadeus 红莉栖、像不像同一个持续存在的人、有没有系统味。",
         f"- 当前问题视角配比：`冈部伦太郎 {okabe_n}` / `你的日常风格 {user_n}`，约为 `{okabe_pct}:{user_pct}`。",
+        f"- 当前预设：`{selected_preset}`" if selected_preset else "- 当前预设：`无`",
         f"- 当前审稿目标：{', '.join(selected_targets) if selected_targets else '全量能力面'}",
+        f"- 预设说明：{preset_description}" if preset_description else "",
         "",
         "## 阻断条件",
         "",
@@ -522,9 +590,11 @@ def _render_markdown(report: dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a subjective review pack for manual persona review.")
+    parser.add_argument("--preset", default="", help="Run a named review preset, e.g. daily-naturalness.")
     parser.add_argument("--case", action="append", help="Run only the specified case name. Can be passed multiple times.")
     parser.add_argument("--target", action="append", help="Run only cases relevant to the specified review target.")
     parser.add_argument("--list-targets", action="store_true", help="Print available review targets and exit.")
+    parser.add_argument("--list-presets", action="store_true", help="Print available review presets and exit.")
     parser.add_argument("--case-timeout-s", type=int, default=180, help="Per-case timeout in seconds. Use 0 to disable subprocess timeout.")
     parser.add_argument("--run-tag", default="", help=argparse.SUPPRESS)
     parser.add_argument("--worker-json-out", default="", help=argparse.SUPPRESS)
@@ -533,8 +603,13 @@ def main() -> None:
     if args.list_targets:
         print("\n".join(_all_targets()))
         return
+    if args.list_presets:
+        for item in _available_presets():
+            print(f"{item}\t{PRESET_DESCRIPTIONS.get(item, '')}")
+        return
 
-    selected = _select_cases(args.case, args.target)
+    selected_preset = str(args.preset or "").strip().lower()
+    selected = _select_cases(args.case, args.target, preset=selected_preset)
     if not selected:
         raise SystemExit("No subjective review cases selected.")
 
@@ -545,6 +620,8 @@ def main() -> None:
         "generated_at": generated_at,
         "model_summary": runtime_model_summary(),
         "selected_targets": [str(item).strip() for item in (args.target or []) if str(item).strip()],
+        "selected_preset": selected_preset,
+        "preset_description": PRESET_DESCRIPTIONS.get(selected_preset, ""),
         "speaker_mix": _speaker_mix(selected),
         "cases": [],
     }

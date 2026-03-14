@@ -4,7 +4,7 @@ import re
 from typing import Any
 
 
-_CONTINUE_MARKERS = ["继续", "接着", "别停", "刚才", "续上", "继续刚才", "打断"]
+_CONTINUE_MARKERS = ["继续", "接着", "别停", "续上", "继续刚才", "打断"]
 _CLEAR_MARKERS = ["重来", "另一个话题", "换个话题", "先不聊这个"]
 _LOW_SIGNAL_USER_TURNS = {
     "好",
@@ -142,14 +142,14 @@ def derive_pending_fragment(
     text = str(user_text or "").strip()
     prev = str(previous_excerpt or "").strip()
     pending = str(pending_fragment or "").strip()
-    has_continue = any(marker in text for marker in _CONTINUE_MARKERS)
+    has_continue = is_continuation_request(text)
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
 
     if has_continue:
-        if prev and not _looks_like_clarification_request(prev):
-            return prev[:240]
         if pending:
             return pending[:240]
+        if prev and _looks_like_unfinished_assistant_reply(prev) and not _looks_like_clarification_request(prev):
+            return prev[:240]
         return ""
     if has_clear:
         return ""
@@ -158,7 +158,54 @@ def derive_pending_fragment(
 
 def is_continuation_request(user_text: str) -> bool:
     text = str(user_text or "").strip()
-    return bool(text) and any(marker in text for marker in _CONTINUE_MARKERS)
+    if not text:
+        return False
+
+    compact = re.sub(r"\s+", "", text)
+    if re.search(r"(不是要你|不要|不用|先别|别继续|别接着|别再).{0,8}(继续|接着|续上|说完|讲完|补完|分析)", compact):
+        return False
+    if compact in {"继续", "接着", "续上", "别停", "继续说", "接着说", "继续讲", "接着讲"}:
+        return True
+
+    direct_patterns = [
+        r"^(继续|接着|续上)(说|讲|来|一下|刚才|那段|那个|前面|往下)?",
+        r"^(别停|不要停|别停下)",
+        r"^(从)?(刚才|上次|前面|那段|那个).{0,10}(继续|接着|续上|说完|讲完|补完)",
+        r"(刚才|上次|前面|那段|那个).{0,10}(被打断|打断了)",
+        r"(继续|接着).{0,10}(刚才|上次|前面|那段|那个)",
+    ]
+    if any(re.search(pattern, compact) for pattern in direct_patterns):
+        return True
+
+    # Mentioning "刚才" alone is often just emotional carry-over, not a request to
+    # resume the assistant's previous unfinished output.
+    if "刚才" in compact and not re.search(r"(继续|接着|续上|说完|讲完|补完|打断)", compact):
+        return False
+
+    return any(marker in compact for marker in _CONTINUE_MARKERS)
+
+
+def _looks_like_unfinished_assistant_reply(text: str) -> bool:
+    t = str(text or "").strip()
+    if not t:
+        return False
+    if _looks_like_clarification_request(t):
+        return False
+    if re.search(r"(因为|所以|但是|不过|然后|而且|如果|只是|先|等下|等一下|比如|像是|除非|要不)$", t):
+        return True
+    if re.search(r"(第[一二三四五六七八九十]|首先|然后|接着|最后)[，、:：]?$", t):
+        return True
+    if re.search(r"(……|\.{3,})$", t):
+        return True
+    if re.search(r"[，、:：;；（(【\[“‘\"'-]$", t):
+        return True
+    if re.search(r"[。！？!?）】」』”’\"']$", t):
+        return False
+    return bool(re.search(r"[\u4e00-\u9fffA-Za-z0-9]$", t) and len(t) >= 12)
+
+
+def has_pending_continuation(*, user_text: str, pending_fragment: str) -> bool:
+    return is_continuation_request(user_text) and bool(str(pending_fragment or "").strip())
 
 
 def _looks_like_resume_goal_reference(text: str) -> bool:
@@ -193,14 +240,18 @@ def derive_pending_user_goal(
     user_text: str,
     previous_user_text: str,
     pending_user_goal: str,
+    pending_fragment: str = "",
 ) -> str:
     text = str(user_text or "").strip()
     prev_user = str(previous_user_text or "").strip()
     pending = str(pending_user_goal or "").strip()
     has_continue = is_continuation_request(text)
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
+    active_continuation = has_pending_continuation(user_text=text, pending_fragment=pending_fragment)
 
     if has_continue:
+        if not active_continuation:
+            return ""
         if pending:
             return pending[:280]
         if prev_user and not is_continuation_request(prev_user):

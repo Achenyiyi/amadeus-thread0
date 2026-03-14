@@ -48,7 +48,7 @@ from .perception_events import (
     list_sense_rows,
 )
 from .session_orchestrator import emotion_to_tts_profile, push_tts_segments
-from .settings import get_settings
+from .settings import configure_runtime_environment, get_settings
 from .tts_io import create_dashscope_realtime_session, get_tts_config
 
 
@@ -392,9 +392,7 @@ def main():
             loaded_path = p
             break
 
-    if str(os.getenv("AMADEUS_CLI_ENABLE_TRACING") or "").strip() != "1":
-        os.environ["LANGCHAIN_TRACING_V2"] = "false"
-        os.environ["LANGSMITH_TRACING"] = "false"
+    configure_runtime_environment()
 
     # 关闭 DashScope/websocket 的“正常断开(1000 Bye)”类提示，避免打断输入行。
     # （这些提示通常来自底层 websocket logger，而不是异常。）

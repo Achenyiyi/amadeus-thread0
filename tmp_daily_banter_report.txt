@@ -1,0 +1,4 @@
+name=daily_banter_okabe
+final_answer=哈？刚才那番感慨还不够“正常”吗？
+final_issues=None
+draft_issues=None
