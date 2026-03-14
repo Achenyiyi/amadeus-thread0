@@ -165,10 +165,10 @@ def transition_allostasis_state(
     engagement = clamp01(bond.get("engagement_drive"), 0.6)
     target = {
         "safety_need": clamp01(0.18 + 0.42 * hurt + 0.26 * irritation + 0.10 * clamp01(world.get("boundary_load"), 0.0)),
-        "closeness_need": clamp01(0.16 + 0.42 * (1.0 - closeness) + 0.12 * clamp01(world.get("companionship_pull"), 0.0)),
-        "competence_need": clamp01(0.34 + 0.38 * clamp01(world.get("task_pull"), 0.0) + (0.10 if science_mode else 0.0)),
-        "autonomy_need": clamp01(0.12 + 0.34 * clamp01(world.get("agency_load"), 0.0) + 0.20 * clamp01(world.get("boundary_load"), 0.0) + 0.12 * irritation),
-        "cognitive_budget": clamp01(0.84 - 0.28 * arousal - 0.16 * clamp01(world.get("tension_load"), 0.0) + 0.10 * trust + 0.06 * engagement, 0.60),
+        "closeness_need": clamp01(0.16 + 0.42 * (1.0 - closeness) + 0.12 * clamp01(world.get("companionship_pull"), 0.0) + 0.10 * clamp01(world.get("presence_residue"), 0.0)),
+        "competence_need": clamp01(0.34 + 0.38 * clamp01(world.get("task_pull"), 0.0) + 0.10 * clamp01(world.get("self_activity_momentum"), 0.0) + (0.10 if science_mode else 0.0)),
+        "autonomy_need": clamp01(0.12 + 0.34 * clamp01(world.get("agency_load"), 0.0) + 0.20 * clamp01(world.get("boundary_load"), 0.0) + 0.14 * clamp01(world.get("self_activity_momentum"), 0.0) + 0.12 * irritation),
+        "cognitive_budget": clamp01(0.84 - 0.28 * arousal - 0.16 * clamp01(world.get("tension_load"), 0.0) + 0.10 * trust + 0.06 * engagement - 0.08 * clamp01(world.get("self_activity_momentum"), 0.0), 0.60),
     }
     app = normalize_appraisal_payload(appraisal)
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
@@ -254,6 +254,13 @@ def transition_counterpart_assessment(
         boundary_pressure = clamp01(boundary_pressure + 0.08)
     if event_kind in {"time_idle", "self_activity_state"}:
         boundary_pressure = clamp01(boundary_pressure - 0.02)
+    if clamp01(world.get("presence_residue"), 0.0) >= 0.42 and event_kind == "user_utterance":
+        respect = clamp01(respect + 0.03)
+        reciprocity = clamp01(reciprocity + 0.04)
+        boundary_pressure = clamp01(boundary_pressure - 0.03)
+    if clamp01(world.get("self_activity_momentum"), 0.0) >= 0.46 and event_kind == "user_utterance":
+        boundary_pressure = clamp01(boundary_pressure + 0.03)
+        reliability = clamp01(reliability + 0.01)
 
     weight = 0.14 if event_kind != "user_utterance" else (_appraisal_weight(appraisal, 0.28, 0.54) or 0.30)
     respect_level = blend(float(prev.get("respect_level", 0.52) or 0.52), respect, weight)
@@ -312,10 +319,10 @@ def transition_latent_state(
         trust_reservoir=clamp01(0.28 + 0.34 * clamp01(bond.get("trust"), 0.5) + 0.18 * clamp01(world.get("relationship_maturity"), 0.5) - 0.12 * clamp01(world.get("boundary_load"), 0.0)),
         attachment_pull=clamp01(0.24 + 0.30 * clamp01(bond.get("closeness"), 0.5) + 0.18 * clamp01(world.get("bond_depth"), 0.0) + 0.10 * clamp01(world.get("memory_gravity"), 0.0)),
         self_coherence=clamp01(0.54 + 0.18 * clamp01(world.get("selfhood_load"), 0.0) + 0.10 * clamp01(world.get("relationship_maturity"), 0.5) - 0.10 * clamp01(world.get("tension_load"), 0.0)),
-        agency_pressure=clamp01(0.18 + 0.34 * clamp01(world.get("agency_load"), 0.0) + 0.18 * clamp01(allostasis.get("autonomy_need"), 0.2) + 0.10 * clamp01(world.get("boundary_load"), 0.0)),
-        reflection_drive=clamp01(0.20 + 0.20 * clamp01(world.get("selfhood_load"), 0.0) + 0.18 * clamp01(world.get("memory_gravity"), 0.0) + 0.14 * arousal),
+        agency_pressure=clamp01(0.18 + 0.34 * clamp01(world.get("agency_load"), 0.0) + 0.18 * clamp01(allostasis.get("autonomy_need"), 0.2) + 0.10 * clamp01(world.get("boundary_load"), 0.0) + 0.12 * clamp01(world.get("self_activity_momentum"), 0.0)),
+        reflection_drive=clamp01(0.20 + 0.20 * clamp01(world.get("selfhood_load"), 0.0) + 0.18 * clamp01(world.get("memory_gravity"), 0.0) + 0.10 * clamp01(world.get("ambient_resonance"), 0.0) + 0.14 * arousal),
         cognitive_stride=clamp01(0.32 + 0.30 * clamp01(allostasis.get("cognitive_budget"), 0.7) + 0.22 * clamp01(world.get("task_pull"), 0.0) - 0.10 * arousal),
-        expression_freedom=clamp01(0.36 + 0.20 * clamp01(bond.get("trust"), 0.5) + 0.16 * clamp01(world.get("bond_depth"), 0.0) - 0.18 * clamp01(world.get("boundary_load"), 0.0)),
+        expression_freedom=clamp01(0.36 + 0.20 * clamp01(bond.get("trust"), 0.5) + 0.16 * clamp01(world.get("bond_depth"), 0.0) + 0.08 * clamp01(world.get("presence_residue"), 0.0) - 0.18 * clamp01(world.get("boundary_load"), 0.0)),
         updated_at=now_ts,
         version=max(1, prev.version + (1 if bool(app.get("used")) else 0)),
     )

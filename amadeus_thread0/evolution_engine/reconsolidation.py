@@ -34,6 +34,9 @@ def build_reconsolidation_snapshot(
             "selfhood_load": clamp01(world.get("selfhood_load"), 0.0),
             "agency_load": clamp01(world.get("agency_load"), 0.0),
             "memory_gravity": clamp01(world.get("memory_gravity"), 0.0),
+            "presence_residue": clamp01(world.get("presence_residue"), 0.0),
+            "ambient_resonance": clamp01(world.get("ambient_resonance"), 0.0),
+            "self_activity_momentum": clamp01(world.get("self_activity_momentum"), 0.0),
         },
         "latent": {
             "self_coherence": clamp01(latent.get("self_coherence"), 0.72),

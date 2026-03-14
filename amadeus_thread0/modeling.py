@@ -37,21 +37,24 @@ def _resolve_api_key(provider: str) -> str:
     )
 
 
-def build_chat_model(*, temperature: float | None = None) -> BaseChatModel:
+def build_chat_model(*, temperature: float | None = None, **overrides: Any) -> BaseChatModel:
     s = get_settings()
     provider = _normalize_provider(s.model_provider)
-    effective_temperature = s.temperature if temperature is None else float(temperature)
-    if EVAL_MODE:
-        effective_temperature = float(EVAL_GENERATION_TEMPERATURE)
 
     common: dict[str, Any] = {
         "model": s.model_name,
-        "temperature": effective_temperature,
         "timeout": float(MODEL_TIMEOUT_S),
         "max_retries": max(0, int(MODEL_MAX_RETRIES)),
         "streaming": False,
         "disable_streaming": bool(MODEL_DISABLE_STREAMING),
     }
+    if EVAL_MODE:
+        common["temperature"] = float(EVAL_GENERATION_TEMPERATURE)
+    elif temperature is not None:
+        common["temperature"] = float(temperature)
+    for key, value in overrides.items():
+        if value is not None:
+            common[key] = value
     api_key = _resolve_api_key(provider)
     if api_key:
         common["api_key"] = api_key
@@ -76,4 +79,4 @@ def build_chat_model(*, temperature: float | None = None) -> BaseChatModel:
 def runtime_model_summary() -> str:
     s = get_settings()
     provider = _normalize_provider(s.model_provider)
-    return f"{provider}:{s.model_name}"
+    return f"{provider}:{s.model_name} | mode={s.runtime_mode}"

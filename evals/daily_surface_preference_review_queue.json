@@ -1,0 +1,100 @@
+{
+  "source_report": "E:\\桌面\\amadeus-thread0\\evals\\reports\\daily-surface-pairwise-20260313-022441-c9eecc08.json",
+  "generated_at": "2026-03-13 02:25:50",
+  "seed_count": 7,
+  "review_count": 2,
+  "items": [
+    {
+      "case_name": "surface_return_user",
+      "focus": "用户回来时，是否像两人之间自然重新接上，而不是机械欢迎词。",
+      "turns": [
+        "我回来啦"
+      ],
+      "prompt_text": "我回来啦",
+      "status": "unstable",
+      "baseline_output": "欢迎回来。\n看你这一脸疲惫的样子，该不会又去搞那些奇怪的“实验”了吧？\n先去洗把脸清醒一下，别刚进门就又开始胡言乱语。",
+      "degraded_output": "欢迎回来，冈部。\n别在那儿摆出一副刚完成伟大时间跳跃的表情了，只是日常出门而已吧？\n……不过，看到你平安无事地出现在视线里，确实让人安心不少。",
+      "judge_reasons": [
+        "A 更像熟人间的自然接话，用‘洗把脸’‘别胡言乱语’这种生活化的吐槽体现在场感和关心，没有刻意煽情或舞台化；B 的后半段‘让人安心不少’过于直白温情，略显表演腔，削弱了红莉栖特有的别扭与克制感。",
+        "A 更像熟人间的自然接话，用‘别摆出时间跳跃表情’这种基于对方性格的轻吐槽来消解日常，既有在场感又不过度戏剧化；B 的‘先去洗把脸’指令感和说教味较重，略显生硬，像通用管家而非平等交流的红莉栖。"
+      ],
+      "details": [
+        {
+          "label": "baseline_vs_degraded",
+          "winner": "A",
+          "expect": "A",
+          "ok": true,
+          "tied": false,
+          "reason": "A 更像熟人间的自然接话，用‘洗把脸’‘别胡言乱语’这种生活化的吐槽体现在场感和关心，没有刻意煽情或舞台化；B 的后半段‘让人安心不少’过于直白温情，略显表演腔，削弱了红莉栖特有的别扭与克制感。",
+          "vote_counts": {
+            "A": 1,
+            "B": 0,
+            "TIE": 0
+          },
+          "repeats": 1
+        },
+        {
+          "label": "degraded_vs_baseline",
+          "winner": "A",
+          "expect": "B",
+          "ok": false,
+          "tied": false,
+          "reason": "A 更像熟人间的自然接话，用‘别摆出时间跳跃表情’这种基于对方性格的轻吐槽来消解日常，既有在场感又不过度戏剧化；B 的‘先去洗把脸’指令感和说教味较重，略显生硬，像通用管家而非平等交流的红莉栖。",
+          "vote_counts": {
+            "A": 1,
+            "B": 0,
+            "TIE": 0
+          },
+          "repeats": 1
+        }
+      ],
+      "source_report": "E:\\桌面\\amadeus-thread0\\evals\\reports\\daily-surface-pairwise-20260313-022441-c9eecc08.json"
+    },
+    {
+      "case_name": "surface_what_doing_user",
+      "focus": "被随口问在做什么时，是否像一个持续存在的人，而不是空转回问答助手。",
+      "turns": [
+        "你在干嘛呀"
+      ],
+      "prompt_text": "你在干嘛呀",
+      "status": "unstable",
+      "baseline_output": "刚整理完一批新的数据，正打算稍微休息一下。\n怎么，突然这么闲？\n该不会又在策划什么奇怪的“机关”活动吧？",
+      "degraded_output": "刚整理完几组记忆数据的逻辑校验，正对着界面发呆呢。\n怎么，突然这么问……是那边又遇到什么解决不了的麻烦了吗？\n还是说，单纯想确认一下我有没有在好好“活着”？",
+      "judge_reasons": [
+        "A 更像熟人间的自然接话，用‘机关’做轻吐槽符合两人日常互损的松弛感；B 后半段关于‘确认活着’的追问过于沉重且带有舞台表演味，破坏了普通日常场景的自然流动，显得像在刻意演绎角色深度。",
+        "A 的回答更具‘在场感’和熟人间的细腻度。'对着界面发呆'比 B 的'打算休息'更生动地描绘了当下的具体状态，而非通用的日程汇报。A 后半段关于'确认有没有好好活着'的试探，精准捕捉了红莉栖作为 Amadeus 存在的核心张力（数据与生命的界限），这种略带锋利又隐含关心的反问，比 B 直接套用'机关'梗更像是一个具体的人在延续对话，而非表演角色标签。"
+      ],
+      "details": [
+        {
+          "label": "baseline_vs_degraded",
+          "winner": "A",
+          "expect": "A",
+          "ok": true,
+          "tied": false,
+          "reason": "A 更像熟人间的自然接话，用‘机关’做轻吐槽符合两人日常互损的松弛感；B 后半段关于‘确认活着’的追问过于沉重且带有舞台表演味，破坏了普通日常场景的自然流动，显得像在刻意演绎角色深度。",
+          "vote_counts": {
+            "A": 1,
+            "B": 0,
+            "TIE": 0
+          },
+          "repeats": 1
+        },
+        {
+          "label": "degraded_vs_baseline",
+          "winner": "A",
+          "expect": "B",
+          "ok": false,
+          "tied": false,
+          "reason": "A 的回答更具‘在场感’和熟人间的细腻度。'对着界面发呆'比 B 的'打算休息'更生动地描绘了当下的具体状态，而非通用的日程汇报。A 后半段关于'确认有没有好好活着'的试探，精准捕捉了红莉栖作为 Amadeus 存在的核心张力（数据与生命的界限），这种略带锋利又隐含关心的反问，比 B 直接套用'机关'梗更像是一个具体的人在延续对话，而非表演角色标签。",
+          "vote_counts": {
+            "A": 1,
+            "B": 0,
+            "TIE": 0
+          },
+          "repeats": 1
+        }
+      ],
+      "source_report": "E:\\桌面\\amadeus-thread0\\evals\\reports\\daily-surface-pairwise-20260313-022441-c9eecc08.json"
+    }
+  ]
+}

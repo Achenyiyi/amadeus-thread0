@@ -44,6 +44,13 @@ def _env_csv(name: str) -> list[str]:
     return out
 
 
+def _env_choice(name: str, allowed: set[str], default: str = "") -> str:
+    raw = str(os.getenv(name, "") or "").strip().lower()
+    if not raw:
+        return str(default or "").strip().lower()
+    return raw if raw in allowed else str(default or "").strip().lower()
+
+
 # ---- Retrieval policy ----
 RETRIEVAL_TRIGGERS = [
     "记得",
@@ -120,6 +127,15 @@ LLM_APPRAISAL_MAX_HISTORY_MESSAGES = _env_int("AMADEUS_LLM_APPRAISAL_MAX_HISTORY
 EVAL_MODE = _env_bool("AMADEUS_EVAL_MODE", default=False)
 EVAL_GENERATION_TEMPERATURE = _env_float("AMADEUS_EVAL_GENERATION_TEMPERATURE", 0.12)
 
+# ---- Runtime generation mode ----
+_EXPLICIT_RUNTIME_MODE = _env_choice("AMADEUS_RUNTIME_MODE", {"experience", "regression"})
+RUNTIME_MODE = _EXPLICIT_RUNTIME_MODE or (
+    "regression"
+    if EVAL_MODE or not _env_bool("AMADEUS_USER_FACING_MODE", default=True)
+    else "experience"
+)
+EXPERIENCE_SAMPLING_JITTER = _env_float("AMADEUS_EXPERIENCE_SAMPLING_JITTER", 0.04)
+
 # ---- Canon counterpart ----
 _COUNTERPART_AUTHORITY = get_counterpart_authority()
 CANON_COUNTERPART_ID = (
@@ -169,6 +185,7 @@ PERSONA_GAP_THRESHOLD = _env_float("AMADEUS_PERSONA_GAP_THRESHOLD", 0.22)
 ABLATE_PERSONA_ALIGNMENT = _env_bool("AMADEUS_ABLATE_PERSONA_ALIGNMENT", default=False)
 ABLATE_WORLDLINE_MEMORY = _env_bool("AMADEUS_ABLATE_WORLDLINE_MEMORY", default=False)
 ABLATE_CLAIM_ATTRIBUTION = _env_bool("AMADEUS_ABLATE_CLAIM_ATTRIBUTION", default=False)
+ABLATE_LIGHT_DIALOG_SHAPING = _env_bool("AMADEUS_ABLATE_LIGHT_DIALOG_SHAPING", default=False)
 
 # ---- Source reliability / attribution ----
 SOURCE_RELIABILITY_DEFAULT = _env_float("AMADEUS_SOURCE_RELIABILITY_DEFAULT", 0.65)
