@@ -1,1 +1,0 @@
-{"ts": 1772798047, "tool": "set_profile", "tool_call_id": "call_34267850", "action": "approve", "args": {"key": "likes", "value": ["猫"], "mode": "merge", "meta": {"confidence": 0.92, "source_text": "我喜欢猫，把它记下来。"}}, "result": {"ok": true, "data": {"key": "likes", "mode": "merge", "action": "update", "meta_saved": true}}}

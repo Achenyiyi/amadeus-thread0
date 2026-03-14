@@ -1,0 +1,44 @@
+{
+  "generated_at": "2026-03-14 15:35:42",
+  "output_path": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_corpus.jsonl",
+  "source_paths": {
+    "manual": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_manual.jsonl",
+    "seed": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_seed.jsonl"
+  },
+  "total_rows": 109,
+  "counts_by_source": {
+    "manual_curated": 102,
+    "seed": 7
+  },
+  "counts_by_case": {
+    "surface_goodnight_user": 13,
+    "surface_hard_day_okabe": 7,
+    "surface_hi_user": 6,
+    "surface_idle_call_okabe": 13,
+    "surface_miss_you_okabe": 4,
+    "surface_morning_okabe": 8,
+    "surface_near_breakdown_okabe": 5,
+    "surface_night_okabe": 8,
+    "surface_not_alone_okabe": 4,
+    "surface_ping_okabe": 10,
+    "surface_presence_reassure_okabe": 3,
+    "surface_pressure_okabe": 5,
+    "surface_return_user": 6,
+    "surface_stay_with_me_okabe": 3,
+    "surface_support_return_okabe": 3,
+    "surface_tired_okabe": 3,
+    "surface_unwell_okabe": 5,
+    "surface_what_doing_user": 3
+  },
+  "skipped": {
+    "invalid": 0,
+    "duplicate_id": 0,
+    "duplicate_fingerprint": 0
+  },
+  "review_queue_case_count": 2,
+  "review_queue_covered_cases": [
+    "surface_return_user",
+    "surface_what_doing_user"
+  ],
+  "review_queue_uncovered_cases": []
+}

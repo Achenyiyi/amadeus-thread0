@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from evals.run_langsmith_evals import _run_graph  # noqa: E402
+from evals.asset_loader import daily_surface_subjective_cases  # noqa: E402
 from amadeus_thread0.modeling import runtime_model_summary  # noqa: E402
 
 REPORT_DIR = PROJECT_ROOT / "evals" / "reports"
@@ -30,7 +31,7 @@ SPEAKER_STYLE_LABELS = {
 DEFAULT_STYLE_RATIO = {"okabe": 0.6, "user": 0.4}
 
 
-def _case_bank() -> list[dict[str, Any]]:
+def _base_case_bank() -> list[dict[str, Any]]:
     return [
         {
             "name": "quiet_checkin_okabe",
@@ -191,7 +192,7 @@ def _case_bank() -> list[dict[str, Any]]:
 
 def _all_targets() -> list[str]:
     out: set[str] = set()
-    for case in _case_bank():
+    for case in _base_case_bank() + daily_surface_subjective_cases():
         for item in case.get("review_targets") or []:
             text = str(item or "").strip()
             if text:
@@ -249,7 +250,12 @@ def _balanced_order(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _select_cases(names: list[str] | None, targets: list[str] | None) -> list[dict[str, Any]]:
-    cases = _case_bank()
+    base_cases = _base_case_bank()
+    extra_cases = daily_surface_subjective_cases()
+    if names or targets:
+        cases = base_cases + extra_cases
+    else:
+        cases = base_cases
     if names:
         wanted = {str(item).strip() for item in names if str(item).strip()}
         cases = [case for case in cases if str(case.get("name") or "").strip() in wanted]

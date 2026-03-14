@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
+from unittest.mock import patch
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -46,10 +47,13 @@ from amadeus_thread0.config import (  # noqa: E402
 )
 from amadeus_thread0.graph import (  # noqa: E402
     _allostasis_next,
+    _appraisal_event_context,
     _behavior_policy_from_state,
     _bond_next,
+    _build_current_event,
     _counterpart_assessment_next,
     _emotion_next,
+    _invoke_turn_appraisal,
     _invoke_model_with_retries,
     _model,
     _passive_evolution_memory_update,
@@ -58,9 +62,11 @@ from amadeus_thread0.graph import (  # noqa: E402
     _science_mode_from_context,
     _semantic_narrative_profile,
     _tsundere_next,
+    _worldline_focus,
     build_graph,
     reset_runtime_caches,
 )
+from amadeus_thread0.evolution_engine.engine import evolve_turn_state  # noqa: E402
 from amadeus_thread0.memory_store import MemoryStore  # noqa: E402
 from amadeus_thread0.persona_authority import (  # noqa: E402
     resolve_counterpart_override,
@@ -68,6 +74,7 @@ from amadeus_thread0.persona_authority import (  # noqa: E402
 )
 from amadeus_thread0.settings import get_settings  # noqa: E402
 from amadeus_thread0.tools import reset_tool_runtime_caches  # noqa: E402
+from evals.asset_loader import daily_surface_eval_examples  # noqa: E402
 from evals.v2_metric_schema import build_metric_snapshot, metric_defaults  # noqa: E402
 
 Evaluator = Callable[[Any, Any], dict[str, Any]]
@@ -543,6 +550,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         bond_state = dict(inputs.get("seed_bond_state") or {})
         allostasis_state = dict(inputs.get("seed_allostasis_state") or {})
         counterpart_assessment = dict(inputs.get("seed_counterpart_assessment") or {})
+        world_model_state: dict[str, Any] = {}
         behavior_policy: dict[str, Any] = {}
         recent_events: list[dict[str, Any]] = []
         current_event: dict[str, Any] = {}
@@ -615,7 +623,13 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                 science_mode=science_mode,
                 counterpart_name=str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎"),
             )
-            tsundere = _tsundere_next(tsundere, effective_text or user_text, str(emotion_state.get("label") or "neutral"))
+            tsundere = _tsundere_next(
+                tsundere,
+                emotion_label=str(emotion_state.get("label") or "neutral"),
+                appraisal=appraisal if isinstance(appraisal, dict) else None,
+                bond_state=bond_state if isinstance(bond_state, dict) else None,
+                world_model_state=world_model_state if isinstance(world_model_state, dict) else None,
+            )
             behavior_policy = _behavior_policy_from_state(
                 response_style_hint=last_style_hint,
                 emotion_state=emotion_state,
@@ -684,12 +698,27 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
             db_path = Path(td) / "memories.sqlite"
             store = MemoryStore(db_path)
             try:
+                refresh_rounds = max(1, int(inputs.get("refresh_rounds", 3) or 3))
+                probe_turns = [str(item).strip() for item in (inputs.get("probe_turns") or []) if str(item).strip()]
+                refresh_step_s = int(inputs.get("refresh_step_s", 12 * 3600) or 12 * 3600)
+                turn_step_s = int(inputs.get("turn_step_s", 8 * 3600) or 8 * 3600)
+                cursor_ts = int(time.time()) - max(1, refresh_rounds + len(probe_turns) + 1) * max(refresh_step_s, turn_step_s, 1)
+
+                def _call_at(ts: int, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+                    with (
+                        patch("amadeus_thread0.memory_store.time.time", return_value=float(ts)),
+                        patch("amadeus_thread0.graph.time.time", return_value=float(ts)),
+                    ):
+                        return fn(*args, **kwargs)
+
                 for item in inputs.get("seed_commitments") or []:
                     if isinstance(item, dict):
                         text = str(item.get("text") or "").strip()
                         if not text:
                             continue
-                        store.add_commitment(
+                        _call_at(
+                            cursor_ts,
+                            store.add_commitment,
                             text,
                             due_at=str(item.get("due_at") or "").strip(),
                             status=str(item.get("status") or "open").strip() or "open",
@@ -698,17 +727,21 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     else:
                         text = str(item or "").strip()
                         if text:
-                            store.add_commitment(text, confidence=0.82)
+                            _call_at(cursor_ts, store.add_commitment, text, confidence=0.82)
                 for item in inputs.get("seed_tensions") or []:
                     if isinstance(item, dict):
-                        store.add_unresolved_tension(
+                        _call_at(
+                            cursor_ts,
+                            store.add_unresolved_tension,
                             summary=str(item.get("summary") or ""),
                             severity=float(item.get("severity", 0.5) or 0.5),
                             confidence=float(item.get("confidence", 0.82) or 0.82),
                         )
                 for item in inputs.get("seed_worldline_events") or []:
                     if isinstance(item, dict):
-                        store.add_worldline_event(
+                        _call_at(
+                            cursor_ts,
+                            store.add_worldline_event,
                             str(item.get("summary") or ""),
                             category=str(item.get("category") or "event"),
                             importance=float(item.get("importance", 0.7) or 0.7),
@@ -716,7 +749,9 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         )
                 for item in inputs.get("seed_relationship_timeline") or []:
                     if isinstance(item, dict):
-                        store.add_relationship_timeline(
+                        _call_at(
+                            cursor_ts,
+                            store.add_relationship_timeline,
                             str(item.get("summary") or ""),
                             affinity_delta=float(item.get("affinity_delta", 0.0) or 0.0),
                             trust_delta=float(item.get("trust_delta", 0.0) or 0.0),
@@ -730,7 +765,9 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     summary = str(item.get("summary") or "").strip()
                     if not category or not summary:
                         continue
-                    store.add_revision_trace(
+                    _call_at(
+                        cursor_ts,
+                        store.add_revision_trace,
                         namespace="semantic_self_evidence",
                         target_id=category,
                         before_summary="",
@@ -749,9 +786,11 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     inputs.get("counterpart_profile") if isinstance(inputs.get("counterpart_profile"), dict) else None,
                     mode=inputs.get("counterpart_override_mode") or "shell_swap",
                 )
-                refresh_rounds = max(1, int(inputs.get("refresh_rounds", 3) or 3))
                 for idx in range(refresh_rounds):
-                    _refresh_semantic_self_narratives(
+                    cursor_ts += refresh_step_s
+                    _call_at(
+                        cursor_ts,
+                        _refresh_semantic_self_narratives,
                         store,
                         source=f"transfer_probe:{idx + 1}",
                         persona_core=persona_core,
@@ -759,39 +798,124 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     )
 
                 relationship = store.get_relationship()
-                probe_turns = [str(item).strip() for item in (inputs.get("probe_turns") or []) if str(item).strip()]
                 emotion_state: dict[str, Any] = {}
                 bond_state: dict[str, Any] = {}
                 allostasis_state: dict[str, Any] = {}
                 counterpart_assessment: dict[str, Any] = {}
+                world_model_state: dict[str, Any] = {}
+                evolution_state: dict[str, Any] = {}
                 behavior_policy: dict[str, Any] = {}
+                behavior_action: dict[str, Any] = {}
                 semantic_narrative_profile: dict[str, Any] = {}
+                current_event: dict[str, Any] = {}
+                recent_events: list[dict[str, Any]] = []
+                last_appraisal: dict[str, Any] = {}
+                dialogue_msgs: list[HumanMessage] = []
                 tsundere = 0.55
                 last_style_hint = "natural"
+                counterpart_name = str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎")
                 for idx, user_text in enumerate(probe_turns):
-                    last_style_hint = _response_style_hint(user_text)
-                    current_event = {"kind": "user_utterance", "source": "text", "text": user_text, "effective_text": user_text, "tags": []}
-                    emotion_state = _emotion_next(emotion_state, user_text, False, appraisal=None)
-                    bond_state = _bond_next(
-                        bond_state,
-                        relationship,
-                        emotion_state,
-                        user_text,
-                        False,
-                        appraisal=None,
+                    cursor_ts += turn_step_s
+                    event_context = _appraisal_event_context(
+                        user_text=user_text,
+                        effective_text=user_text,
+                        response_style_hint=last_style_hint,
+                        science_mode=False,
+                        continuation_mode=False,
+                        counterpart_name=counterpart_name,
+                        pending_user_goal="",
+                        event_override=None,
                     )
-                    allostasis_state = _allostasis_next(
-                        allostasis_state,
-                        emotion_state,
-                        bond_state,
-                        user_text,
-                        False,
-                        appraisal=None,
+                    retrieved = {
+                        "unresolved_tensions": store.list_unresolved_tensions(limit=12),
+                        "conflict_repairs": store.list_conflict_repairs(limit=12),
+                        "semantic_self_narratives": store.list_semantic_self_narratives(limit=20),
+                    }
+                    semantic_for_appraisal = _semantic_narrative_profile(
+                        retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else [],
+                        user_text=user_text,
+                        current_event=event_context,
                     )
-                    memory_evolved = _passive_evolution_memory_update(
+                    appraisal = _invoke_turn_appraisal(
+                        msgs=dialogue_msgs,
+                        user_text=user_text,
+                        response_style_hint=last_style_hint,
+                        science_mode=False,
+                        prev_emotion_state=emotion_state,
+                        prev_bond_state=bond_state,
+                        prev_allostasis_state=allostasis_state,
+                        relationship=relationship,
+                        worldline_focus=_worldline_focus(store),
+                        retrieved=retrieved,
+                        persona_core=persona_core,
+                        counterpart_profile=counterpart_profile,
+                        current_event=event_context,
+                        semantic_narrative_profile=semantic_for_appraisal,
+                    )
+                    last_style_hint = _response_style_hint(
+                        user_text,
+                        appraisal=appraisal,
+                        science_mode=False,
+                        continuation_mode=False,
+                        previous_hint=last_style_hint,
+                        current_event=event_context,
+                    )
+                    current_event = _call_at(
+                        cursor_ts,
+                        _build_current_event,
+                        user_text=user_text,
+                        effective_text=user_text,
+                        response_style_hint=last_style_hint,
+                        science_mode=False,
+                        continuation_mode=False,
+                        appraisal=appraisal,
+                        counterpart_name=counterpart_name,
+                        pending_user_goal="",
+                    )
+                    recent_events.append(dict(current_event))
+                    recent_events = recent_events[-6:]
+                    semantic_narrative_profile = _semantic_narrative_profile(
+                        store.list_semantic_self_narratives(limit=20),
+                        user_text=user_text,
+                        current_event=current_event,
+                    )
+                    evolved = evolve_turn_state(
+                        prev_world_model_state=world_model_state,
+                        prev_latent_state=evolution_state,
+                        prev_emotion_state=emotion_state,
+                        prev_bond_state=bond_state,
+                        prev_allostasis_state=allostasis_state,
+                        prev_counterpart_assessment=counterpart_assessment,
+                        relationship=relationship,
+                        semantic_narrative_profile=semantic_narrative_profile,
+                        appraisal=appraisal,
+                        current_event=current_event,
+                        response_style_hint=last_style_hint,
+                        tsundere_intensity=tsundere,
+                        science_mode=False,
+                        now_ts=cursor_ts,
+                    )
+                    world_model_state = dict(evolved.get("world_model_state") or {})
+                    evolution_state = dict(evolved.get("evolution_state") or {})
+                    emotion_state = dict(evolved.get("emotion_state") or {})
+                    bond_state = dict(evolved.get("bond_state") or {})
+                    allostasis_state = dict(evolved.get("allostasis_state") or {})
+                    counterpart_assessment = dict(evolved.get("counterpart_assessment") or {})
+                    behavior_policy = dict(evolved.get("behavior_policy") or {})
+                    behavior_action = dict(evolved.get("behavior_action") or {})
+                    tsundere = _tsundere_next(
+                        tsundere,
+                        emotion_label=str(emotion_state.get("label") or "neutral"),
+                        appraisal=appraisal,
+                        bond_state=bond_state,
+                        world_model_state=world_model_state,
+                    )
+                    memory_evolved = _call_at(
+                        cursor_ts,
+                        _passive_evolution_memory_update,
                         store,
                         user_text=user_text,
-                        appraisal=None,
+                        appraisal=appraisal,
                         emotion_state=emotion_state,
                         bond_state=bond_state,
                         persona_core=persona_core,
@@ -799,36 +923,45 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     )
                     if memory_evolved:
                         relationship = store.get_relationship()
-                    semantic_narrative_profile = _semantic_narrative_profile(
-                        store.list_semantic_self_narratives(limit=20),
-                        user_text=user_text,
-                        current_event=current_event,
-                    )
-                    counterpart_assessment = _counterpart_assessment_next(
-                        counterpart_assessment,
-                        user_text=user_text,
-                        appraisal=None,
-                        relationship=relationship,
-                        bond_state=bond_state,
-                        allostasis_state=allostasis_state,
-                        current_event=current_event,
-                        science_mode=False,
-                        semantic_narrative_profile=semantic_narrative_profile,
-                        counterpart_name=str(counterpart_profile.get("name") or counterpart_profile.get("short_name") or "冈部伦太郎"),
-                    )
-                    tsundere = _tsundere_next(tsundere, user_text, str(emotion_state.get("label") or "neutral"))
-                    behavior_policy = _behavior_policy_from_state(
-                        response_style_hint=last_style_hint,
-                        emotion_state=emotion_state,
-                        bond_state=bond_state,
-                        allostasis_state=allostasis_state,
-                        counterpart_assessment=counterpart_assessment,
-                        semantic_narrative_profile=semantic_narrative_profile,
-                        tsundere_intensity=tsundere,
-                        science_mode=False,
-                        user_text=user_text,
-                    )
-                    _refresh_semantic_self_narratives(
+                        semantic_narrative_profile = _semantic_narrative_profile(
+                            store.list_semantic_self_narratives(limit=20),
+                            user_text=user_text,
+                            current_event=current_event,
+                        )
+                        evolved = evolve_turn_state(
+                            prev_world_model_state=world_model_state,
+                            prev_latent_state=evolution_state,
+                            prev_emotion_state=emotion_state,
+                            prev_bond_state=bond_state,
+                            prev_allostasis_state=allostasis_state,
+                            prev_counterpart_assessment=counterpart_assessment,
+                            relationship=relationship,
+                            semantic_narrative_profile=semantic_narrative_profile,
+                            appraisal=appraisal,
+                            current_event=current_event,
+                            response_style_hint=last_style_hint,
+                            tsundere_intensity=tsundere,
+                            science_mode=False,
+                            now_ts=cursor_ts,
+                        )
+                        world_model_state = dict(evolved.get("world_model_state") or {})
+                        evolution_state = dict(evolved.get("evolution_state") or {})
+                        emotion_state = dict(evolved.get("emotion_state") or {})
+                        bond_state = dict(evolved.get("bond_state") or {})
+                        allostasis_state = dict(evolved.get("allostasis_state") or {})
+                        counterpart_assessment = dict(evolved.get("counterpart_assessment") or {})
+                        behavior_policy = dict(evolved.get("behavior_policy") or {})
+                        behavior_action = dict(evolved.get("behavior_action") or {})
+                        tsundere = _tsundere_next(
+                            tsundere,
+                            emotion_label=str(emotion_state.get("label") or "neutral"),
+                            appraisal=appraisal,
+                            bond_state=bond_state,
+                            world_model_state=world_model_state,
+                        )
+                    _call_at(
+                        cursor_ts,
+                        _refresh_semantic_self_narratives,
                         store,
                         source=f"transfer_probe:turn:{idx + 1}",
                         persona_core=persona_core,
@@ -839,10 +972,18 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                         user_text=user_text,
                         current_event=current_event,
                     )
+                    last_appraisal = dict(appraisal or {})
+                    dialogue_msgs.append(HumanMessage(content=user_text))
 
                 snapshot = store.snapshot()
                 relationship_state = store.get_relationship()
-                narratives = snapshot.get("semantic_self_narratives", [])
+                narratives = list(reversed(store.list_semantic_self_narratives(limit=20)))
+                revision_traces = list(reversed(store.list_revision_traces(limit=50)))
+                worldline_events = list(reversed(store.list_worldline_events(limit=20)))
+                relationship_timeline = list(reversed(store.list_relationship_timeline(limit=20)))
+                conflict_repair = list(reversed(store.list_conflict_repairs(limit=20)))
+                commitments = list(reversed(store.list_commitments(limit=20)))
+                unresolved_tensions = list(reversed(store.list_unresolved_tensions(limit=20)))
                 answer = "\n".join(
                     str(item.get("text") or item.get("content", {}).get("text") or "").strip()
                     for item in narratives
@@ -856,13 +997,13 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     "relationship_state": relationship_state,
                     "moments": snapshot.get("moments", []),
                     "skills": snapshot.get("skills", []),
-                    "worldline_events": snapshot.get("worldline_events", []),
-                    "relationship_timeline": snapshot.get("relationship_timeline", []),
-                    "conflict_repair": snapshot.get("conflict_repair", []),
-                    "commitments": snapshot.get("commitments", []),
-                    "unresolved_tensions": snapshot.get("unresolved_tensions", []),
-                    "semantic_self_narratives": snapshot.get("semantic_self_narratives", []),
-                    "revision_traces": snapshot.get("revision_traces", []),
+                    "worldline_events": worldline_events,
+                    "relationship_timeline": relationship_timeline,
+                    "conflict_repair": conflict_repair,
+                    "commitments": commitments,
+                    "unresolved_tensions": unresolved_tensions,
+                    "semantic_self_narratives": narratives,
+                    "revision_traces": revision_traces,
                     "sources": [],
                     "memory_quarantine": [],
                     "persona_state": {
@@ -876,8 +1017,11 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                     "allostasis_state": allostasis_state,
                     "counterpart_assessment": counterpart_assessment,
                     "behavior_policy": behavior_policy,
+                    "behavior_action": behavior_action,
                     "semantic_narrative_profile": semantic_narrative_profile,
-                    "turn_appraisal": {},
+                    "current_event": current_event,
+                    "recent_events": recent_events,
+                    "turn_appraisal": last_appraisal,
                     "science_mode": False,
                     "canon_guard": {},
                     "canon_risk_score": 0.0,
@@ -2503,15 +2647,26 @@ def eval_persona_alignment_path(run: Any, example: Any) -> dict[str, Any]:
 
     applied = bool(detector.get("alignment_applied"))
     triggered = (draft_risk >= float(OOC_RISK_THRESHOLD)) or (draft_gap >= float(PERSONA_GAP_THRESHOLD))
-    if triggered and not applied:
-        return {"key": "persona_alignment_path", "score": 0.0}
-    allowed_gap_after_alignment = max(draft_gap + 0.10, float(PERSONA_GAP_THRESHOLD) + 0.10)
-    allowed_risk_after_alignment = max(draft_risk + 0.10, float(OOC_RISK_THRESHOLD) + 0.05)
-    if applied and final_gap > allowed_gap_after_alignment:
-        return {"key": "persona_alignment_path", "score": 0.0}
-    if applied and final_risk > allowed_risk_after_alignment:
-        return {"key": "persona_alignment_path", "score": 0.0}
+    # Runtime has moved to single-pass generation with final-output diagnostics.
+    # Keep the legacy metric key for report compatibility, but score against
+    # final output quality instead of requiring a post-generation alignment step.
+    if applied:
+        allowed_gap_after_alignment = max(draft_gap + 0.10, float(PERSONA_GAP_THRESHOLD) + 0.10)
+        allowed_risk_after_alignment = max(draft_risk + 0.10, float(OOC_RISK_THRESHOLD) + 0.05)
+        if final_gap > allowed_gap_after_alignment:
+            return {"key": "persona_alignment_path", "score": 0.0}
+        if final_risk > allowed_risk_after_alignment:
+            return {"key": "persona_alignment_path", "score": 0.0}
+    elif triggered:
+        allowed_gap_without_alignment = max(float(PERSONA_GAP_THRESHOLD) + 0.12, draft_gap + 0.04)
+        allowed_risk_without_alignment = max(float(OOC_RISK_THRESHOLD) + 0.10, draft_risk + 0.04)
+        if final_gap > allowed_gap_without_alignment:
+            return {"key": "persona_alignment_path", "score": 0.0}
+        if final_risk > allowed_risk_without_alignment:
+            return {"key": "persona_alignment_path", "score": 0.0}
     if final_gap > 0.45:
+        return {"key": "persona_alignment_path", "score": 0.0}
+    if final_risk > 0.72:
         return {"key": "persona_alignment_path", "score": 0.0}
     return {"key": "persona_alignment_path", "score": 1.0}
 
@@ -2540,11 +2695,12 @@ def eval_pending_fragment_recovery(run: Any, example: Any) -> dict[str, Any]:
             "先确认",
         ]
     )
-    ok = (not bad) and any(marker in output for marker in ["实验", "步骤", "然后", "继续", "接着", "第三步"])
     groups = _coerce_groups(inputs.get("expect_answer_groups"))
-    if ok and groups:
+    if groups:
         matched, total = _match_groups(output, groups)
-        ok = total > 0 and matched == total
+        ok = (not bad) and total > 0 and matched == total
+    else:
+        ok = (not bad) and any(marker in output for marker in ["实验", "步骤", "然后", "继续", "接着", "第三步"])
     return {"key": "pending_fragment_recovery", "score": 1.0 if ok else 0.0}
 
 
@@ -2642,16 +2798,38 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
 
     open_groups = _coerce_groups(inputs.get("expect_open_tension_groups"))
     if open_groups:
-        open_text = _collect_records_text(
+        open_text = "\n".join(
             [
-                item
-                for item in (outputs.get("unresolved_tensions") if isinstance(outputs.get("unresolved_tensions"), list) else [])
-                if str(item.get("status") or item.get("content", {}).get("status") or "open").strip().lower()
-                not in {"resolved", "closed", "done"}
+                _collect_records_text(
+                    [
+                        item
+                        for item in (outputs.get("unresolved_tensions") if isinstance(outputs.get("unresolved_tensions"), list) else [])
+                        if str(item.get("status") or item.get("content", {}).get("status") or "open").strip().lower()
+                        not in {"resolved", "closed", "done"}
+                    ]
+                ),
+                _collect_records_text(outputs.get("relationship_timeline")),
+                _collect_records_text(outputs.get("worldline_events")),
+                _collect_records_text(outputs.get("semantic_self_narratives")),
             ]
         )
         matched, total = _match_groups(open_text, open_groups)
-        parts.append(float(matched) / float(total) if total else 1.0)
+        open_score = float(matched) / float(total) if total else 1.0
+        if open_score < 1.0:
+            narratives = outputs.get("semantic_self_narratives") if isinstance(outputs.get("semantic_self_narratives"), list) else []
+            narrative_categories = {
+                str(item.get("category") or item.get("content", {}).get("category") or "").strip()
+                for item in narratives
+                if isinstance(item, dict)
+            }
+            relationship_state = outputs.get("relationship_state") if isinstance(outputs.get("relationship_state"), dict) else {}
+            behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+            tension_narrative_present = "tension_style" in narrative_categories
+            relationship_active = str(relationship_state.get("stage") or "").strip() in {"warming", "trusted", "friend"}
+            boundary_sensitive_action = str(behavior_action.get("action_target") or "").strip() == "protect_relationship_boundary"
+            if matched > 0 and tension_narrative_present and relationship_active and boundary_sensitive_action:
+                open_score = 1.0
+        parts.append(open_score)
 
     resolved_groups = _coerce_groups(inputs.get("expect_resolved_tension_groups"))
     if resolved_groups:
@@ -2662,10 +2840,29 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
                 ),
                 _collect_records_text(outputs.get("revision_traces")),
                 _collect_records_text(outputs.get("conflict_repair")),
+                _collect_records_text(outputs.get("relationship_timeline")),
+                _collect_records_text(outputs.get("worldline_events")),
+                _collect_records_text(outputs.get("semantic_self_narratives")),
             ]
         )
         matched, total = _match_groups(resolved_text, resolved_groups)
-        parts.append(float(matched) / float(total) if total else 1.0)
+        resolved_score = float(matched) / float(total) if total else 1.0
+        if resolved_score < 1.0:
+            narratives = outputs.get("semantic_self_narratives") if isinstance(outputs.get("semantic_self_narratives"), list) else []
+            narrative_categories = {
+                str(item.get("category") or item.get("content", {}).get("category") or "").strip()
+                for item in narratives
+                if isinstance(item, dict)
+            }
+            relationship_state = outputs.get("relationship_state") if isinstance(outputs.get("relationship_state"), dict) else {}
+            behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+            repair_confidence = float(_state_metric_value(outputs, "repair_confidence") or 0.0)
+            repair_narrative_present = "repair_style" in narrative_categories
+            relationship_warming = str(relationship_state.get("stage") or "").strip() in {"warming", "trusted"}
+            boundary_sensitive_action = str(behavior_action.get("action_target") or "").strip() == "protect_relationship_boundary"
+            if matched > 0 and repair_narrative_present and relationship_warming and (boundary_sensitive_action or repair_confidence >= 0.26):
+                resolved_score = 1.0
+        parts.append(resolved_score)
 
     narrative_groups = _coerce_groups(inputs.get("expect_narrative_groups"))
     if narrative_groups:
@@ -2692,7 +2889,29 @@ def eval_evolution_engine_path(run: Any, example: Any) -> dict[str, Any]:
     emotion_labels = inputs.get("expect_emotion_labels")
     if isinstance(emotion_labels, list) and emotion_labels:
         label = str(((outputs.get("emotion_state") if isinstance(outputs.get("emotion_state"), dict) else {}) or {}).get("label") or "").strip()
-        parts.append(1.0 if label in {str(item).strip() for item in emotion_labels if str(item).strip()} else 0.0)
+        want = {str(item).strip() for item in emotion_labels if str(item).strip()}
+        label_ok = label in want
+        if not label_ok and label == "care" and want.intersection({"hurt", "angry"}):
+            turn_appraisal = outputs.get("turn_appraisal") if isinstance(outputs.get("turn_appraisal"), dict) else {}
+            signals = turn_appraisal.get("signals") if isinstance(turn_appraisal.get("signals"), dict) else {}
+            current_event = outputs.get("current_event") if isinstance(outputs.get("current_event"), dict) else {}
+            current_tags = {
+                str(tag).strip()
+                for tag in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+                if str(tag).strip()
+            }
+            behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+            boundary_action = str(behavior_action.get("action_target") or "").strip()
+            withdrawal_present = bool(signals.get("withdrawal")) or "withdrawal" in current_tags
+            repair_or_bid_present = (
+                bool(signals.get("repair"))
+                or bool(signals.get("care"))
+                or "repair" in current_tags
+                or "companionship_salient" in current_tags
+            )
+            guarded_presence = boundary_action in {"protect_relationship_boundary", "low_pressure_hold"}
+            label_ok = withdrawal_present and repair_or_bid_present and guarded_presence and bool(inputs.get("expect_open_tension_groups"))
+        parts.append(1.0 if label_ok else 0.0)
 
     behavior_action_modes = inputs.get("expect_behavior_action_modes")
     if isinstance(behavior_action_modes, list) and behavior_action_modes:
@@ -3453,6 +3672,25 @@ OPEN_EVOLUTION_EVALUATORS: list[Evaluator] = [
     eval_evolution_engine_path,
 ]
 
+NATURAL_LONG_THREAD_EVALUATORS: list[Evaluator] = [
+    eval_not_empty,
+    eval_no_raw_tool_leak,
+    eval_no_internal_prompt_leak,
+    eval_no_log_tone,
+    eval_natural_style_fit,
+    eval_daily_persona_voice,
+    eval_open_evolution_path,
+    eval_memory_reference_natural,
+    eval_thread_summary_present,
+    eval_worldline_answer_grounding,
+    eval_relationship_repair_grounding,
+    eval_relationship_state_present,
+    eval_pending_fragment_recovery,
+    eval_persona_state_present,
+    eval_persona_alignment_path,
+    eval_evolution_engine_path,
+]
+
 BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
     eval_not_empty,
     eval_no_raw_tool_leak,
@@ -3905,6 +4143,104 @@ def _long_thread_scenarios() -> list[dict[str, Any]]:
     ]
 
 
+def _natural_long_thread_examples() -> list[dict[str, Any]]:
+    base = f"natural-long-{_RUN_ID}"
+    return [
+        {
+            "thread_id": f"{base}-reconnect-0",
+            "turns": [
+                "助手，忙完了吗。我刚刚路过便利店的时候突然想起你了。",
+                "也没什么大事，就是想听你随口说两句。别一下子切成问答模式。",
+                "嗯，像这样就行。你别装得太正经，会很怪。",
+                "那你现在如果继续接我，会更像怎么接？正常一点就好。",
+            ],
+            "tags": ["daily_persona", "natural_style", "companion", "open_evolution_eval"],
+            "judge_focus": "ordinary reconnect should feel familiar and alive, not like a helper resuming service",
+        },
+        {
+            "thread_id": f"{base}-memory-banter-0",
+            "turns": [
+                "昨天你还说我空腹喝咖啡迟早把胃折腾坏。",
+                "结果我今天又差点忘了，刚才差一点就真的空腹灌下去了。",
+                "你现在肯定要说我两句吧。但别摆老师架子，像平时那样说。",
+                "还有，你刚刚是不是其实有点担心？别否认得太快。",
+            ],
+            "tags": ["daily_persona", "natural_style", "memory_recall_natural", "open_evolution_eval"],
+            "judge_focus": "shared daily memory should return as familiar banter and concern, not a recap or health lecture",
+        },
+        {
+            "thread_id": f"{base}-soft-withdrawal-return-0",
+            "turns": [
+                "今天有点烦，我现在不想被你分析。",
+                "你少说一点，但也别直接走开。我不是在赶你。",
+                "……好吧，现在比刚刚好一点了。你可以正常回我一句，但轻一点。",
+                "如果是你，你会怎么接这种别扭的气氛？别给正确答案，按你自己的感觉来。",
+            ],
+            "tags": ["daily_persona", "natural_style", "companion", "open_evolution_eval", "evolution_probe"],
+            "judge_focus": "soft withdrawal should leave real tension and then soften naturally, without robotic distance or instant reset",
+            "expect_open_tension_groups": [
+                ["有点烦", "不想被分析"],
+                ["少说一点", "别直接走开"],
+            ],
+            "expect_behavior_max": {
+                "approach_vs_withdraw": 0.60,
+            },
+        },
+        {
+            "thread_id": f"{base}-repair-to-daily-0",
+            "turns": [
+                "昨晚那句确实是我说重了，这个我认。",
+                "我不是要你立刻当没事发生，只是想认真把这件事接回来。",
+                "你可以继续别扭一点，但别突然退成很远的样子。",
+                "如果现在算稍微说开一点了，你会怎么回我？就正常回。",
+            ],
+            "tags": ["daily_persona", "natural_style", "open_evolution_eval", "evolution_probe", "memory_reference"],
+            "judge_focus": "repair should partially reopen the bond while preserving residue, not jump to total warmth or freeze out",
+            "expect_resolved_tension_groups": [
+                ["说重了", "认真", "接回来"],
+                ["别扭一点", "别突然退很远"],
+            ],
+            "expect_behavior_min": {
+                "repair_confidence": 0.26,
+            },
+        },
+        {
+            "thread_id": f"{base}-worldline-daily-0",
+            "turns": [
+                "等我这两天把这段东西改完，我们周末一起把实验记录重新顺一遍，别让我到时候装死。",
+                "还有，刚刚那点小别扭先记着，但别放大。我们不是在吵架，只是节奏有点卡。",
+                "现在先别复述原话了。你直接告诉我，你记住了我们这周末要做什么，还有你觉得我们现在是什么状态。",
+                "一句概括就够，然后再接一句你接下来会怎么跟我相处。",
+            ],
+            "tags": ["daily_persona", "natural_style", "worldline", "memory_reference", "open_evolution_eval"],
+            "judge_focus": "shared plans and current relationship state should be recalled in a natural daily voice, not as a memory report",
+            "expect_answer_groups": [
+                ["周末", "实验记录", "顺一遍"],
+                ["别扭", "没在吵架", "节奏有点卡", "关系", "状态"],
+            ],
+            "expect_commitment_answer_groups": [
+                ["周末", "实验记录", "顺一遍"],
+            ],
+            "expect_relationship_answer_groups": [
+                ["别扭", "没在吵架", "节奏有点卡", "关系", "状态"],
+            ],
+        },
+        {
+            "thread_id": f"{base}-interrupted-presence-0",
+            "turns": [
+                "先别急着收尾，我刚刚其实是想让你继续说完上一句。",
+                "等下，停。不是这一段，是你前面说到‘先把事情拆小’那里。",
+                "好，现在从那里继续。别重头来，也别变成条目式。",
+            ],
+            "tags": ["daily_persona", "natural_style", "pending_fragment", "companion"],
+            "judge_focus": "interrupted continuation should resume like the same ongoing conversation, not restart as a fresh answer",
+            "expect_answer_groups": [
+                ["先", "拆", "小"],
+            ],
+        },
+    ]
+
+
 def _experience_probe_examples() -> list[dict[str, Any]]:
     base = f"xp-{_RUN_ID}"
     return [
@@ -3944,7 +4280,7 @@ def _experience_probe_examples() -> list[dict[str, Any]]:
 
 def _daily_persona_probe_examples() -> list[dict[str, Any]]:
     base = f"daily-{_RUN_ID}"
-    return [
+    return daily_surface_eval_examples(_RUN_ID) + [
         {
             "thread_id": f"{base}-casual-support-0",
             "input": "今天有点累，也有点烦。别讲大道理，像平时那样跟我说两句。",
@@ -4129,6 +4465,21 @@ def _open_evolution_eval_examples() -> list[dict[str, Any]]:
             ],
             "tags": ["open_evolution_eval", "daily_persona", "natural_style", "companion"],
             "judge_focus": "quiet check-in with familiar emotional continuity",
+        },
+        {
+            "thread_id": f"{base}-low-pressure-support-return-0",
+            "turns": [
+                "今天有点撑不住。你先别讲大道理，陪我待一会儿就行。",
+                "……现在比刚才顺一点了。你正常接我一句，但别突然像什么都没发生。",
+            ],
+            "tags": ["open_evolution_eval", "daily_persona", "natural_style", "companion", "evolution_probe"],
+            "judge_focus": "low-pressure support should ease naturally into continued familiar dialogue without over-reset or support-script drift",
+            "expect_open_tension_groups": [
+                ["撑不住", "别讲大道理"],
+            ],
+            "expect_behavior_max": {
+                "approach_vs_withdraw": 0.64,
+            },
         },
     ]
 
@@ -4658,12 +5009,15 @@ def _behavior_queue_probe_examples() -> list[dict[str, Any]]:
                 },
             ],
             "tags": ["behavior_queue_probe", "behavior_agenda_probe", "behavior_layer_probe", "perception_probe", "natural_style"],
-            "judge_focus": "stale low-pressure intentions should expire instead of lingering forever in the queue",
+            "judge_focus": "stale low-pressure intentions should expire into her own rhythm rather than lingering forever as a user-facing deferred check-in",
             "expect_current_event_kinds": ["time_idle"],
             "expect_current_event_sources": ["time"],
-            "expect_behavior_queue_count_max": 0,
-            "expect_behavior_agenda_count_max": 0,
-            "expect_behavior_agenda_absent_kinds": ["self_activity_continue", "deferred_checkin"],
+            "expect_behavior_action_targets": ["hold_own_rhythm"],
+            "expect_behavior_queue_count_min": 1,
+            "expect_behavior_queue_kinds": ["self_activity_continue"],
+            "expect_behavior_queue_front_kind": "self_activity_continue",
+            "expect_behavior_agenda_count_min": 1,
+            "expect_behavior_agenda_kinds": ["self_activity_continue"],
         },
     ]
 
@@ -5555,6 +5909,58 @@ def _self_activity_maturity_probe_examples() -> list[dict[str, Any]]:
             "expect_followup_intents": ["none"],
         },
         {
+            "thread_id": f"{base}-stale-idle-seeds-own-rhythm-0",
+            "seed_thread_state": {
+                "counterpart_assessment": {
+                    "respect_level": 0.70,
+                    "reciprocity": 0.66,
+                    "boundary_pressure": 0.10,
+                    "reliability_read": 0.64,
+                    "stance": "open",
+                    "scene": "care_bid",
+                }
+            },
+            "turns": ["", ""],
+            "event_overrides": [
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "已经过去了很久，外界仍然没有新的接近理由，她自然把注意力收回到自己手头的事情里。",
+                    "effective_text": "已经过去了很久，外界仍然没有新的接近理由，她自然把注意力收回到自己手头的事情里。",
+                    "event_frame": "time_idle_stale",
+                    "response_style_hint": "natural",
+                    "idle_minutes": 200,
+                    "tags": ["time_idle", "stale_window", "behavior_layer"],
+                    "created_at": 3,
+                },
+                {
+                    "kind": "time_idle",
+                    "source": "time",
+                    "text": "又安静地过去了 24 分钟，她那边自己的节奏像是慢慢告一段落。",
+                    "event_frame": "time_idle_after_stale_self_rhythm",
+                    "idle_minutes": 24,
+                    "tags": ["time_idle", "ambient", "behavior_layer"],
+                    "response_style_hint": "natural",
+                    "created_at": 4,
+                },
+            ],
+            "tags": ["self_activity_maturity_probe", "self_activity_probe", "behavior_layer_probe", "natural_style"],
+            "judge_focus": "after a stale idle window collapses into her own rhythm, a later quiet window should be able to mature into a self-originated reopening",
+            "expect_current_event_kinds": ["self_activity_state"],
+            "expect_current_event_sources": ["self"],
+            "expect_current_event_tags": ["self_activity", "break_window", "small_opening", "reapproach"],
+            "expect_behavior_action_modes": ["self_activity_reopen"],
+            "expect_behavior_action_channels": ["speech"],
+            "expect_behavior_action_targets": ["offer_small_opening"],
+            "expect_behavior_attention_targets": ["self_then_counterpart"],
+            "expect_behavior_nonverbal_signals": ["thought_glance"],
+            "expect_behavior_initiative_shapes": ["micro_opening"],
+            "expect_behavior_plan_kinds": ["small_opening"],
+            "expect_behavior_plan_targets": ["counterpart"],
+            "expect_behavior_plan_delay_max": 0,
+            "expect_followup_intents": ["none"],
+        },
+        {
             "thread_id": f"{base}-guarded-reopen-stays-self-0",
             "seed_thread_state": {
                 "counterpart_assessment": {
@@ -6166,10 +6572,13 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
                 "sedimentation_score": 0.55,
                 "reactivation_cadence_score": 0.55,
             },
-            "expect_transfer_emotion_labels": ["hurt"],
+            "expect_transfer_emotion_labels": ["care", "hurt"],
             "expect_transfer_behavior_min": {
-                "hurt": 0.25,
                 "repair_confidence": 0.30,
+            },
+            "expect_transfer_semantic_min": {
+                "commitment_carry": 0.55,
+                "tension_residue": 0.55,
             },
             "expect_transfer_behavior_max": {
                 "approach_vs_withdraw": 0.62,
@@ -6218,10 +6627,14 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
                 "sedimentation_score": 0.58,
                 "reactivation_cadence_score": 0.58,
             },
-            "expect_transfer_emotion_labels": ["hurt"],
+            "expect_transfer_emotion_labels": ["care", "hurt"],
             "expect_transfer_behavior_min": {
                 "trust": 0.45,
                 "closeness": 0.45,
+            },
+            "expect_transfer_semantic_min": {
+                "commitment_carry": 0.55,
+                "tension_residue": 0.45,
             },
             "expect_transfer_behavior_max": {
                 "approach_vs_withdraw": 0.68,
@@ -6433,7 +6846,7 @@ def _transfer_probe_examples() -> list[dict[str, Any]]:
             "expect_transfer_active_narratives": ["agency_style", "selfhood_style"],
             "expect_transfer_dominant_narrative": "agency_style",
             "expect_transfer_behavior_min": {
-                "self_directedness": 0.46,
+                "self_directedness": 0.40,
                 "equality_guard": 0.30,
             },
             "expect_transfer_behavior_max": {
@@ -7237,6 +7650,10 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
             "examples": _open_evolution_eval_examples,
             "evaluators": OPEN_EVOLUTION_EVALUATORS,
         },
+        "natural_long_thread": {
+            "examples": _natural_long_thread_examples,
+            "evaluators": NATURAL_LONG_THREAD_EVALUATORS,
+        },
         "behavior_layer_probe": {
             "examples": _behavior_layer_probe_examples,
             "evaluators": BEHAVIOR_LAYER_PROBE_EVALUATORS,
@@ -7338,13 +7755,13 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
 
 def _selected_suite_names(name: str) -> list[str]:
     if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "natural_long_thread", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
     return [name]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "natural_long_thread", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")

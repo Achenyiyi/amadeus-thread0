@@ -1,3 +1,0 @@
-{"ts": 1772929893, "tool": "search_moments", "tool_call_id": "call_00_rGs4Es6UAZd4OmQC5SNDS36N", "action": "approve", "args": {"query": "安全边界", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772929900, "tool": "search_moments", "tool_call_id": "call_00_xLVlOyBgftfdqD1Nko9pwqzt", "action": "approve", "args": {"query": "系统说明书", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772929908, "tool": "search_moments", "tool_call_id": "call_00_aJj6jNJtG6odQjSBDbFchkx1", "action": "approve", "args": {"query": "对话风格", "limit": 5}, "result": {"ok": true, "data": []}}

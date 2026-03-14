@@ -35,6 +35,9 @@ class WorldModelState:
     memory_gravity: float = 0.0
     task_pull: float = 0.0
     companionship_pull: float = 0.0
+    presence_residue: float = 0.0
+    ambient_resonance: float = 0.0
+    self_activity_momentum: float = 0.0
     updated_at: int = 0
 
     @classmethod
@@ -51,6 +54,9 @@ class WorldModelState:
             memory_gravity=clamp01(data.get("memory_gravity"), 0.0),
             task_pull=clamp01(data.get("task_pull"), 0.0),
             companionship_pull=clamp01(data.get("companionship_pull"), 0.0),
+            presence_residue=clamp01(data.get("presence_residue"), 0.0),
+            ambient_resonance=clamp01(data.get("ambient_resonance"), 0.0),
+            self_activity_momentum=clamp01(data.get("self_activity_momentum"), 0.0),
             updated_at=int(data.get("updated_at") or 0),
         )
 

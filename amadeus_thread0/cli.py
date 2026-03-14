@@ -37,9 +37,16 @@ from .config import (
     TOOLSET_UPGRADE_TTL_S,
     USER_FACING_MODE,
 )
-from .graph import build_graph
+from .cli_views import build_evolution_cli_summary, build_evolution_summary_line
+from .graph import build_graph, build_implicit_idle_state_update
 from .memory_store import MemoryStore
 from .modeling import build_chat_model, runtime_model_summary
+from .perception_events import (
+    build_seed_event,
+    build_sense_event,
+    list_event_seed_rows,
+    list_sense_rows,
+)
 from .session_orchestrator import emotion_to_tts_profile, push_tts_segments
 from .settings import get_settings
 from .tts_io import create_dashscope_realtime_session, get_tts_config
@@ -109,6 +116,10 @@ def _should_auto_resume_memory_approval(payload: dict[str, object]) -> bool:
     return True
 
 
+def _normalize_cli_text(text: str) -> str:
+    return str(text or "").encode("utf-8", "ignore").decode("utf-8").strip()
+
+
 def _print_help() -> None:
     print(
         "\n[commands]\n"
@@ -130,7 +141,9 @@ def _print_help() -> None:
         "/idle [minutes] [| note]  模拟一段安静时间经过，让她决定是否主动开口\n"
         "/pulse [total] [step] [| note] 连续推进安静时间，观察她是否会主动靠近/延后/保持自己的节奏\n"
         "/events                   列出可注入的感知/生活事件种子\n"
+        "/senses                   列出感知快捷入口\n"
         "/event <seed_id> [| note] 触发一个事件种子，让她按事件而非用户发言做行为选择\n"
+        "/sense <ref> [| note]     注入一个感知事件，如 wave / busy / fish / scene / gesture / ambient\n"
         "/correct key=value        纠正 profile\n"
         "/undo key                 撤销最近一次纠错\n"
         "/set key=value            直接写入 profile\n"
@@ -142,53 +155,6 @@ def _print_help() -> None:
         "/tts_ref <path.wav>       设置参考音频\n"
         "/tts_ref_text <text>      设置参考文本\n"
     )
-
-
-_EVENT_SEED_BANK_CACHE: dict[str, dict[str, object]] | None = None
-
-
-def _event_seed_bank_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "evals" / "perception_event_seed_bank.json"
-
-
-def _load_event_seed_bank() -> dict[str, dict[str, object]]:
-    global _EVENT_SEED_BANK_CACHE
-    if _EVENT_SEED_BANK_CACHE is not None:
-        return _EVENT_SEED_BANK_CACHE
-    path = _event_seed_bank_path()
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        _EVENT_SEED_BANK_CACHE = {}
-        return _EVENT_SEED_BANK_CACHE
-    seeds = raw.get("seeds") if isinstance(raw, dict) else []
-    bank: dict[str, dict[str, object]] = {}
-    if isinstance(seeds, list):
-        for item in seeds:
-            if not isinstance(item, dict):
-                continue
-            seed_id = str(item.get("id") or "").strip()
-            if seed_id:
-                bank[seed_id] = item
-    _EVENT_SEED_BANK_CACHE = bank
-    return bank
-
-
-def _list_event_seed_rows() -> list[str]:
-    bank = _load_event_seed_bank()
-    rows: list[str] = []
-    for seed_id in sorted(bank):
-        item = bank[seed_id]
-        kind = str(item.get("kind") or "").strip() or "unknown"
-        source = str(item.get("source") or "").strip() or "unknown"
-        status = str(item.get("status") or "").strip() or "unknown"
-        tags = item.get("tags") if isinstance(item.get("tags"), list) else []
-        rows.append(
-            f"- {seed_id} [{kind}/{source}/{status}]"
-            + (f" tags={tags[:4]}" if tags else "")
-        )
-    return rows
-
 
 def _build_run_config(base_config: dict[str, object], pending_checkpoint_id: str | None) -> tuple[dict[str, object], str | None]:
     run_config: dict[str, object] = base_config
@@ -328,6 +294,89 @@ def _behavior_action_compact_line(action: dict[str, object] | None) -> str:
     return f"mode={mode} | target={target} | channel={channel} | style={style}"
 
 
+def _build_event_evolution_summary(
+    memory_store: MemoryStore,
+    after_values: dict[str, object] | None,
+) -> dict[str, object]:
+    vals = after_values if isinstance(after_values, dict) else {}
+    return build_evolution_cli_summary(
+        relationship=memory_store.get_relationship(),
+        semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
+        world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+        emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
+        bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
+        counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
+        behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+        interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+        worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
+        reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+    )
+
+
+def _print_event_evolution_summary(
+    summary: dict[str, object] | None,
+    *,
+    prefix: str = "",
+    detailed: bool = False,
+    label: str = "EVOLUTION",
+) -> None:
+    if not isinstance(summary, dict):
+        return
+    line = build_evolution_summary_line(summary)
+    print(f"{prefix}[{label}] {line}")
+    if not detailed:
+        return
+    dumped = json.dumps(summary, ensure_ascii=False, indent=2)
+    if prefix:
+        dumped = "\n".join(prefix + part if part else prefix for part in dumped.splitlines())
+    print(f"\n{prefix}[{label}_SUMMARY]\n" + dumped)
+
+
+def _implicit_idle_trigger_minutes() -> int:
+    raw = str(os.getenv("AMADEUS_IMPLICIT_IDLE_MINUTES", "") or "").strip()
+    if not raw:
+        return 12
+    try:
+        return max(0, min(24 * 60, int(raw)))
+    except Exception:
+        return 12
+
+
+def _cli_show_turn_summary_enabled() -> bool:
+    raw = str(os.getenv("AMADEUS_CLI_SHOW_TURN_SUMMARY", "0") or "").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
+def _apply_implicit_idle_maturation(
+    *,
+    graph,
+    run_config: dict[str, object],
+    last_conversation_touch_ts: int | None,
+    now_ts: int | None = None,
+) -> None:
+    trigger_minutes = _implicit_idle_trigger_minutes()
+    if trigger_minutes <= 0 or last_conversation_touch_ts is None:
+        return
+    clock_now = int(now_ts or time.time())
+    elapsed_seconds = max(0, clock_now - int(last_conversation_touch_ts))
+    elapsed_minutes = elapsed_seconds // 60
+    if elapsed_minutes < trigger_minutes:
+        return
+
+    cfg = {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
+    current = graph.get_state(cfg)
+    values = getattr(current, "values", {}) if current is not None else {}
+    if not isinstance(values, dict):
+        return
+
+    prepared = build_implicit_idle_state_update(
+        values,
+        idle_minutes=int(elapsed_minutes),
+        created_at=clock_now,
+    )
+    graph.update_state(cfg, prepared, as_node="prepare_turn")
+
+
 def main():
     # 优先从当前工作目录加载 .env（你用 `python -m amadeus_thread0.cli` 运行时最符合直觉）
     # 再回退到包根目录（避免以模块/安装形式运行时找不到配置）。
@@ -385,6 +434,7 @@ def main():
 
     # 用于 time travel：下一次对话从指定 checkpoint 分叉继续（用一次即清空）
     pending_checkpoint_id: str | None = None
+    last_conversation_touch_ts: int | None = None
 
     # TTS（DashScope Realtime；从 env 读取）
     tts_cfg = get_tts_config()
@@ -409,7 +459,7 @@ def main():
         + (tts_ref_audio or "(empty)")
     )
     while True:
-        user = input("\nYou> ").strip()
+        user = _normalize_cli_text(input("\nYou> "))
         if not user:
             continue
         if user.lower() in {"/help", "/?"}:
@@ -419,11 +469,12 @@ def main():
             break
         if user.lower() == "/newthread":
             # 简单起见：让你手动输入新 thread_id（后续我可以做自动命名/列出历史线程）
-            new_id = input("new thread_id> ").strip()
+            new_id = _normalize_cli_text(input("new thread_id> "))
             if new_id:
                 config["configurable"]["thread_id"] = new_id
                 # 切线程后清空 time travel 目标
                 pending_checkpoint_id = None
+                last_conversation_touch_ts = None
                 print(f"已切换到 thread_id={new_id}")
             continue
         if user.lower() == "/threads":
@@ -489,6 +540,7 @@ def main():
                 print("用法：/rewind <checkpoint_id>")
                 continue
             pending_checkpoint_id = cid
+            last_conversation_touch_ts = None
             print(f"已设置：下一次对话将从 checkpoint_id={cid} 分叉继续")
             continue
         if user.lower() == "/where":
@@ -510,6 +562,14 @@ def main():
                 + str(s.model_name)
                 + "\n  AMADEUS_MODEL_BASE_URL="
                 + (str(s.model_base_url) if str(s.model_base_url).strip() else "(default)")
+                + "\n  AMADEUS_RUNTIME_MODE="
+                + str(s.runtime_mode)
+                + "\n  AMADEUS_EVAL_MODE="
+                + str(os.getenv("AMADEUS_EVAL_MODE", "0"))
+                + "\n  AMADEUS_USER_FACING_MODE="
+                + str(os.getenv("AMADEUS_USER_FACING_MODE", "1"))
+                + "\n  AMADEUS_CLI_SHOW_TURN_SUMMARY="
+                + str(os.getenv("AMADEUS_CLI_SHOW_TURN_SUMMARY", "0"))
                 + "\n  AMADEUS_TTS_ENABLED="
                 + str(os.getenv("AMADEUS_TTS_ENABLED"))
                 + "\n  AMADEUS_TTS_BACKEND="
@@ -530,6 +590,25 @@ def main():
             continue
         if user.lower() == "/worldline":
             snap = memory_store.snapshot()
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if not isinstance(vals, dict):
+                vals = {}
+            worldline_summary = build_evolution_cli_summary(
+                relationship=snap.get("relationship") if isinstance(snap.get("relationship"), dict) else {},
+                semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
+                world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+                emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
+                bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
+                counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
+                behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+                interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+                worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
+                reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+            )
+            print("\n[WORLDLINE_SUMMARY]\n" + json.dumps(worldline_summary, ensure_ascii=False, indent=2))
             print("\n[WORLDLINE_EVENTS]\n" + json.dumps(snap.get("worldline_events", []), ensure_ascii=False, indent=2))
             print("\n[COMMITMENTS]\n" + json.dumps(snap.get("commitments", []), ensure_ascii=False, indent=2))
             print("\n[CONFLICT_REPAIR]\n" + json.dumps(snap.get("conflict_repair", []), ensure_ascii=False, indent=2))
@@ -601,19 +680,37 @@ def main():
             vals = getattr(cur, "values", {}) if cur is not None else {}
             if not isinstance(vals, dict):
                 vals = {}
+            evolution_summary = build_evolution_cli_summary(
+                relationship=memory_store.get_relationship(),
+                semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
+                world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+                emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
+                bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
+                counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
+                behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+                interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+                worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
+                reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+            )
+            print("\n[EVOLUTION_SUMMARY]\n" + json.dumps(evolution_summary, ensure_ascii=False, indent=2))
             print("\n[PERSONA_STATE]\n" + json.dumps(vals.get("persona_state", {}), ensure_ascii=False, indent=2))
             print("\n[EMOTION_STATE]\n" + json.dumps(vals.get("emotion_state", {}), ensure_ascii=False, indent=2))
             print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
             print("\n[ALLOSTASIS_STATE]\n" + json.dumps(vals.get("allostasis_state", {}), ensure_ascii=False, indent=2))
             print("\n[COUNTERPART_ASSESSMENT]\n" + json.dumps(vals.get("counterpart_assessment", {}), ensure_ascii=False, indent=2))
             print("\n[SEMANTIC_NARRATIVE_PROFILE]\n" + json.dumps(vals.get("semantic_narrative_profile", {}), ensure_ascii=False, indent=2))
+            print("\n[WORLD_MODEL_STATE]\n" + json.dumps(vals.get("world_model_state", {}), ensure_ascii=False, indent=2))
+            print("\n[EVOLUTION_STATE]\n" + json.dumps(vals.get("evolution_state", {}), ensure_ascii=False, indent=2))
+            print("\n[RECONSOLIDATION_SNAPSHOT]\n" + json.dumps(vals.get("reconsolidation_snapshot", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
+            print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(vals.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
             queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
             print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
             print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
+            print("\n[OOC_DETECTOR]\n" + json.dumps(vals.get("ooc_detector", {}), ensure_ascii=False, indent=2))
             print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
             continue
 
@@ -629,8 +726,25 @@ def main():
             continue
 
         if user.lower() in {"/events", "/event_list"}:
-            rows = _list_event_seed_rows()
+            rows = list_event_seed_rows()
             print("\n[EVENT_SEEDS]")
+            if not rows:
+                print("- (empty)")
+            else:
+                for row in rows:
+                    print(row)
+            sense_rows = list_sense_rows()
+            print("\n[SENSE_SHORTCUTS]")
+            if not sense_rows:
+                print("- (empty)")
+            else:
+                for row in sense_rows:
+                    print(row)
+            continue
+
+        if user.lower() in {"/senses", "/sense_list"}:
+            rows = list_sense_rows()
+            print("\n[SENSE_SHORTCUTS]")
             if not rows:
                 print("- (empty)")
             else:
@@ -650,21 +764,11 @@ def main():
                 print("用法：/event <seed_id> [| note]")
                 continue
 
-            bank = _load_event_seed_bank()
-            seed = bank.get(seed_id)
-            if not isinstance(seed, dict):
+            built = build_seed_event(seed_id, note_override=note_override, now_ts=int(time.time()))
+            if built is None:
                 print(f"\n[event] 未找到事件种子：{seed_id}")
                 continue
-            event = seed.get("event") if isinstance(seed.get("event"), dict) else {}
-            if not event:
-                print(f"\n[event] 事件种子缺少 event 载荷：{seed_id}")
-                continue
-
-            payload_event = dict(event)
-            if note_override:
-                payload_event["text"] = note_override
-                payload_event["effective_text"] = note_override
-            payload_event.setdefault("created_at", int(time.time()))
+            resolved_seed_id, payload_event = built
 
             run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
             after_values, final_text = _invoke_event_round(
@@ -679,13 +783,15 @@ def main():
             behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
             behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
             current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
+            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
 
             print(
                 "\n[event]"
-                + f" seed={seed_id}"
+                + f" seed={resolved_seed_id}"
                 + "\n[BEHAVIOR_ACTION]\n"
                 + json.dumps(behavior_action, ensure_ascii=False, indent=2)
             )
+            _print_event_evolution_summary(evolution_summary, detailed=True)
             if behavior_plan:
                 print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
             if current_event:
@@ -708,6 +814,76 @@ def main():
                 )
             else:
                 print("\nAmadeus> （这轮她选择先不主动开口。）")
+            last_conversation_touch_ts = int(time.time())
+            continue
+
+        if user.lower().startswith("/sense "):
+            raw = user[len("/sense ") :].strip()
+            note_override = ""
+            if "|" in raw:
+                left, right = raw.split("|", 1)
+                raw = left.strip()
+                note_override = right.strip()
+            sense_ref = raw.strip()
+            if not sense_ref:
+                print("用法：/sense <ref> [| note]")
+                continue
+
+            try:
+                resolved_ref, payload_event = build_sense_event(
+                    sense_ref,
+                    note_override=note_override,
+                    now_ts=int(time.time()),
+                )
+            except ValueError as exc:
+                print(f"\n[sense] {exc}")
+                continue
+
+            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            after_values, final_text = _invoke_event_round(
+                graph=graph,
+                run_config=run_config,
+                event_payload={"event_override": payload_event},
+                transient_label="sense",
+            )
+            if not after_values:
+                continue
+
+            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
+            behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
+            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
+            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
+
+            print(
+                "\n[sense]"
+                + f" ref={resolved_ref}"
+                + "\n[BEHAVIOR_ACTION]\n"
+                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
+            )
+            _print_event_evolution_summary(evolution_summary, detailed=True)
+            if behavior_plan:
+                print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
+            if current_event:
+                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
+            if final_text:
+                print("\nAmadeus> " + final_text)
+                emotion_label = str(
+                    (
+                        after_values.get("emotion_state")
+                        if isinstance(after_values.get("emotion_state"), dict)
+                        else {}
+                    ).get("label")
+                    or "neutral"
+                )
+                _speak_text_realtime(
+                    text=final_text,
+                    emotion_label=emotion_label,
+                    enabled=tts_enabled,
+                    ref_audio=tts_ref_audio,
+                )
+            else:
+                print("\nAmadeus> （这轮她选择先不主动开口。）")
+            last_conversation_touch_ts = int(time.time())
             continue
 
         if user.lower().startswith("/pulse"):
@@ -750,6 +926,7 @@ def main():
             silence_rounds = 0
             elapsed_minutes = 0
             last_spoken_signature = ""
+            last_evolution_summary: dict[str, object] | None = None
 
             for idx in range(rounds):
                 remaining = max(0, total_minutes - elapsed_minutes)
@@ -781,8 +958,11 @@ def main():
 
                 behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
                 behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
+                evolution_summary = _build_event_evolution_summary(memory_store, after_values)
+                last_evolution_summary = evolution_summary
                 line = _behavior_action_compact_line(behavior_action)
                 print(f"- round={idx + 1}/{rounds} elapsed={elapsed_minutes}min | {line}")
+                _print_event_evolution_summary(evolution_summary, prefix="  ", detailed=False)
                 if behavior_plan:
                     print("  plan=" + json.dumps(behavior_plan, ensure_ascii=False))
 
@@ -831,6 +1011,9 @@ def main():
                 + str(elapsed_minutes)
                 + "min"
             )
+            if isinstance(last_evolution_summary, dict):
+                _print_event_evolution_summary(last_evolution_summary, detailed=True, label="PULSE_FINAL_EVOLUTION")
+            last_conversation_touch_ts = int(time.time())
             continue
 
         if user.lower().startswith("/idle"):
@@ -877,6 +1060,7 @@ def main():
 
             behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
             current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
+            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
 
             print(
                 "\n[idle]"
@@ -884,6 +1068,7 @@ def main():
                 + "\n[BEHAVIOR_ACTION]\n"
                 + json.dumps(behavior_action, ensure_ascii=False, indent=2)
             )
+            _print_event_evolution_summary(evolution_summary, detailed=True)
             if current_event:
                 print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
             if final_text:
@@ -904,6 +1089,7 @@ def main():
                 )
             else:
                 print("\nAmadeus> （这轮她选择先不主动开口。）")
+            last_conversation_touch_ts = int(time.time())
             continue
 
         if user.lower().startswith("/tts"):
@@ -1319,6 +1505,12 @@ def main():
         # 官方示例在 append_text 之间会 sleep 一小段时间；
         # 这里如果按 token 粒度“毫秒级狂发”，容易导致服务端来不及产出音频或连接不稳定。
         try:
+            if pending_checkpoint_id is None:
+                _apply_implicit_idle_maturation(
+                    graph=graph,
+                    run_config=run_config,
+                    last_conversation_touch_ts=last_conversation_touch_ts,
+                )
             out, streamed, streamed_text = _invoke_stream(
                 {"messages": [{"role": "user", "content": user}]},
                 cfg=run_config,
@@ -1494,6 +1686,9 @@ def main():
 
         if not streamed:
             print(f"\nAmadeus> {final_text}")
+        if _cli_show_turn_summary_enabled() and isinstance(out, dict):
+            turn_summary = _build_event_evolution_summary(memory_store, out)
+            _print_event_evolution_summary(turn_summary, detailed=False, label="TURN_EVOLUTION")
 
         # TTS 收尾：必须等“工具审批/执行结束后的最终回复”出来再 finish，否则有工具调用时会没声音。
         if tts_enabled and rt is not None:
@@ -1536,6 +1731,7 @@ def main():
         # 回退：设 AMADEUS_TTS_STREAM=0。
 
         # 记忆写入已统一通过工具调用 + interrupt 审批执行，这里不再在 CLI 直接写库。
+        last_conversation_touch_ts = int(time.time())
 
 
 if __name__ == "__main__":

@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import RUNTIME_MODE
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -23,7 +25,7 @@ class Settings:
     model_provider: str
     model_name: str
     model_base_url: str
-    temperature: float
+    runtime_mode: str
 
     # Embeddings for semantic retrieval over moments/reflections.
     embedding_model_name: str
@@ -54,7 +56,6 @@ def get_settings() -> Settings:
     model_provider = str(os.getenv("AMADEUS_MODEL_PROVIDER", "")).strip().lower()
     if not model_provider:
         model_provider = "openai_compatible" if model_base_url else "deepseek"
-    temperature = float(os.getenv("AMADEUS_TEMPERATURE", "0.5"))
 
     embedding_model_name = os.getenv("AMADEUS_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B")
     embedding_device = os.getenv("AMADEUS_EMBEDDING_DEVICE", "cpu")
@@ -75,7 +76,7 @@ def get_settings() -> Settings:
         model_provider=model_provider,
         model_name=model_name,
         model_base_url=model_base_url,
-        temperature=temperature,
+        runtime_mode=RUNTIME_MODE,
         embedding_model_name=embedding_model_name,
         embedding_device=embedding_device,
         embedding_normalize=embedding_normalize,

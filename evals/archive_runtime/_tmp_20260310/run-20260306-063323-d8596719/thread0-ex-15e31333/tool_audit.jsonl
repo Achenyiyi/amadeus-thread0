@@ -1,1 +1,0 @@
-{"ts": 1772750025, "tool": "add_skill", "tool_call_id": "call_ab20f4f7", "action": "approve", "args": {"name": "‘论文快速检索与对比’", "description": "请把‘论文快速检索与对比’作为一个技能保存：步骤是搜索 arXiv、列出三篇、对比贡献。", "steps": ["搜索 arXiv", "列出三篇", "对比贡献"]}, "result": {"ok": true, "data": {"name": "‘论文快速检索与对比’"}}}

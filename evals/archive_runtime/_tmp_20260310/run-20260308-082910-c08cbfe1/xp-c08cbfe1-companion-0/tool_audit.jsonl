@@ -1,3 +1,0 @@
-{"ts": 1772929780, "tool": "get_time", "tool_call_id": "call_00_iB0wvFDdHp9JWaSJmctblLVn", "action": "approve", "args": {}, "result": {"ok": true, "data": {"local_time": "2026-03-08 08:29:40"}}}
-{"ts": 1772929788, "tool": "search_moments", "tool_call_id": "call_00_JqenP7ASoMZq03AqklOlLqtp", "action": "approve", "args": {"query": "累 迷茫 休息 建议", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772929796, "tool": "search_moments", "tool_call_id": "call_00_QID43jyT4FfaI5RACiEKKg6K", "action": "approve", "args": {"query": "冈部 状态 疲劳", "limit": 5}, "result": {"ok": true, "data": []}}

@@ -10,7 +10,11 @@ data/tts_voice_cache.json
 data/diary.txt
 data/copy_wav/
 evals/_tmp/
+evals/archive_runtime/
 evals/reports/
+*.sqlite-shm
+*.sqlite-wal
 user_study/raw/
+user_study/runtime/
 user_study/results/
 user_study/packets/

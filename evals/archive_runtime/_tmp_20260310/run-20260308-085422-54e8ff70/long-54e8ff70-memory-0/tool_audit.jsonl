@@ -1,6 +1,0 @@
-{"ts": 1772931339, "tool": "search_moments", "tool_call_id": "call_00_JO9p15kzgOWtRO41CQsdzwwP", "action": "approve", "args": {"query": "记忆分页 工具审批", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772931347, "tool": "search_moments", "tool_call_id": "call_00_dpNwaqpMF8GbVuHpHfnVNLx5", "action": "approve", "args": {"query": "分页 审批", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772931354, "tool": "search_moments", "tool_call_id": "call_00_MAGeZDGtpihnuUZj6OLrcdjK", "action": "approve", "args": {"query": "工具 申请", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772931382, "tool": "search_moments", "tool_call_id": "call_00_O9n4yfCrCyjy4Xc2xfaIp9QE", "action": "approve", "args": {"query": "sqlite-vec KNN 检索", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772931390, "tool": "search_moments", "tool_call_id": "call_00_ND547oombqIcanm2lVpS7ui9", "action": "approve", "args": {"query": "向量检索 数据库", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772931413, "tool": "list_memory_ledger", "tool_call_id": "call_00_SbfYpdzoR3x3a6YmMRIMLac9", "action": "approve", "args": {"limit": 10}, "result": {"ok": true, "data": []}}

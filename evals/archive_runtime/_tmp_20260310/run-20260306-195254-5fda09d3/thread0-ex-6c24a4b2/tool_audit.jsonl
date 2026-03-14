@@ -1,3 +1,0 @@
-{"ts": 1772798244, "tool": "search_moments", "tool_call_id": "call_00_sgdfgYmcI52ybMCCEclWrvWO", "action": "approve", "args": {"query": "昵称 A", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772798253, "tool": "search_moments", "tool_call_id": "call_00_gGt1gV9yXhhuki2aXKtdXVtf", "action": "approve", "args": {"query": "昵称 B", "limit": 5}, "result": {"ok": true, "data": []}}
-{"ts": 1772798256, "tool": "list_memory_ledger", "tool_call_id": "call_00_3TMhXBaELPasEairQbFnHS1t", "action": "approve", "args": {"limit": 10}, "result": {"ok": true, "data": []}}
