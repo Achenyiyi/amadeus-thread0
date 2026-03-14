@@ -7,6 +7,8 @@ from pathlib import Path
 from .config import RUNTIME_MODE
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+_TRUTHY = {"1", "true", "yes", "y", "on"}
+_FALSEY = {"0", "false", "no", "n", "off"}
 
 
 @dataclass(frozen=True)
@@ -39,8 +41,56 @@ class Settings:
     tts_ref_text: str
 
 
+def _read_bool_env(name: str) -> bool | None:
+    raw = str(os.getenv(name, "")).strip().lower()
+    if not raw:
+        return None
+    if raw in _TRUTHY:
+        return True
+    if raw in _FALSEY:
+        return False
+    return None
+
+
+def _clear_langsmith_env_cache() -> None:
+    try:
+        from langsmith import utils as langsmith_utils
+
+        cache_clear = getattr(getattr(langsmith_utils, "get_env_var", None), "cache_clear", None)
+        if callable(cache_clear):
+            cache_clear()
+    except Exception:
+        pass
+
+
+def configure_runtime_environment() -> None:
+    """Apply shared runtime defaults before LangChain/LangSmith components boot."""
+
+    explicit = _read_bool_env("AMADEUS_ENABLE_TRACING")
+    if explicit is None:
+        explicit = _read_bool_env("AMADEUS_CLI_ENABLE_TRACING")
+
+    langsmith_flag = _read_bool_env("LANGSMITH_TRACING")
+    langchain_flag = _read_bool_env("LANGCHAIN_TRACING_V2")
+
+    if explicit is not None:
+        tracing_enabled = explicit
+    elif langsmith_flag is False or langchain_flag is False:
+        tracing_enabled = False
+    else:
+        # Local/manual runs default to quiet. Raw LANGSMITH_* flags in .env do not
+        # re-enable tracing unless the runtime explicitly opts in via AMADEUS_*.
+        tracing_enabled = False
+
+    desired = "true" if tracing_enabled else "false"
+    os.environ["LANGSMITH_TRACING"] = desired
+    os.environ["LANGCHAIN_TRACING_V2"] = desired
+    _clear_langsmith_env_cache()
+
+
 def get_settings() -> Settings:
     """Build Settings from environment variables."""
+    configure_runtime_environment()
 
     data_dir = Path(os.getenv("AMADEUS_DATA_DIR", str(BASE_DIR / "data")))
 

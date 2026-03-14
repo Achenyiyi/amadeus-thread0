@@ -30,6 +30,7 @@ _EVAL_DIR = _EVAL_TMP_ROOT / f"run-{time.strftime('%Y%m%d-%H%M%S')}-{_RUN_ID}"
 os.environ.setdefault("AMADEUS_DATA_DIR", str(_EVAL_DIR))
 os.environ.setdefault("AMADEUS_EVAL_MODE", "1")
 os.environ.setdefault("AMADEUS_EVAL_GENERATION_TEMPERATURE", "0.05")
+os.environ.setdefault("AMADEUS_ENABLE_TRACING", "0")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 os.environ.setdefault("LANGSMITH_TRACING", "false")
 ABLATE_TRANSFER_SEMANTIC_EVIDENCE = os.getenv("AMADEUS_ABLATE_TRANSFER_SEMANTIC_EVIDENCE", "0").strip() == "1"
@@ -7773,6 +7774,7 @@ def main() -> None:
     load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
 
     if args.local_only:
+        os.environ["AMADEUS_ENABLE_TRACING"] = "0"
         os.environ["LANGSMITH_TRACING"] = "false"
         os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
@@ -7785,6 +7787,7 @@ def main() -> None:
         print("[eval] LANGSMITH_API_KEY not set; running local report only.")
 
     if use_langsmith:
+        os.environ["AMADEUS_ENABLE_TRACING"] = "1"
         os.environ.setdefault("LANGSMITH_TRACING", "true")
         os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
         os.environ.setdefault("LANGSMITH_PROJECT", os.environ.get("LANGSMITH_PROJECT", "amadeus-thread0"))

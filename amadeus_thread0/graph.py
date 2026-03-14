@@ -94,6 +94,7 @@ from .session_orchestrator import (
     build_claim_attribution,
     derive_pending_fragment,
     derive_pending_user_goal,
+    has_pending_continuation as has_active_continuation,
     is_continuation_request,
 )
 from .settings import get_settings
@@ -1744,6 +1745,22 @@ def _wants_less_teacherly_reply(user_text: str) -> bool:
     return _has_any_marker(text, markers)
 
 
+def _is_self_rhythm_smalltalk_request(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    markers = {
+        "在干嘛",
+        "干嘛呀",
+        "你在干嘛",
+        "你在做什么",
+        "在做什么",
+        "忙什么",
+        "在忙什么",
+    }
+    return _has_any_marker(text, markers)
+
+
 def _looks_like_light_smalltalk(text: str) -> bool:
     raw = str(text or "").strip()
     if not raw:
@@ -1786,6 +1803,115 @@ def _looks_like_light_smalltalk(text: str) -> bool:
     if len(compact) > 18:
         return False
     return len(compact) <= 6 and not re.search(r"[？?!！]", raw)
+
+
+def _is_plain_contact_ping(text: str) -> bool:
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    if not _looks_like_light_smalltalk(raw):
+        return False
+    if _is_idle_smalltalk_request(raw):
+        return False
+    if _has_any_marker(raw, {"在干嘛", "干嘛呀", "你在干嘛", "睡了吗", "还没睡"}):
+        return False
+    if re.search(r"[？?]", raw):
+        return False
+    compact = re.sub(r"\s+", "", raw)
+    markers = {
+        "你好",
+        "嗨",
+        "哈喽",
+        "在吗",
+        "在不在",
+        "早安",
+        "早上好",
+        "晚安",
+        "回来了",
+        "回来啦",
+        "我来了",
+        "我回来啦",
+        "好的",
+        "收到",
+        "谢谢",
+        "辛苦",
+        "嘿嘿",
+        "哈哈",
+        "嗯嗯",
+    }
+    if _has_any_marker(raw, markers):
+        return True
+    return len(compact) <= 8
+
+
+def _is_return_home_ping(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    return _has_any_marker(text, {"我回来啦", "我回来了", "回来啦", "回来了"})
+
+
+def _is_goodnight_closing(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    return _has_any_marker(text, {"晚安", "晚安啦", "先睡了", "睡了"})
+
+
+def _is_idle_presence_call(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    return _has_any_marker(text, {"想叫你一下", "叫你一下", "没什么事"}) and not re.search(r"[？?]", text)
+
+
+def _is_presence_reassurance_check(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text or re.search(r"[？?]", text):
+        return False
+    return ("确认" in text and re.search(r"(你还?在|还在)", text)) or _has_any_marker(
+        text,
+        {
+            "你在就好",
+            "还在就好",
+            "确认你还在",
+            "确认你在",
+        },
+    )
+
+
+def _is_soft_presence_checkin_request(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text or re.search(r"[？?]", text):
+        return False
+    if "回我一句" not in text and "说两句" not in text:
+        return False
+    if "像平时那样" in text or "按平时那样" in text:
+        return True
+    if "别切到什么系统播报" in text:
+        return True
+    return False
+
+
+def _plain_contact_ping_needs_relational_guard(
+    *,
+    bond_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None,
+) -> bool:
+    bond = dict(bond_state or {})
+    assessment = dict(counterpart_assessment or {})
+    stance = str(assessment.get("stance") or "").strip().lower()
+    hurt = _clamp01(bond.get("hurt"), 0.0)
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    respect = _clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
+    if stance in {"guarded", "watchful"}:
+        return True
+    if hurt > 0.18 or boundary_pressure > 0.28:
+        return True
+    if respect < 0.34 and reciprocity < 0.34 and (hurt > 0.10 or boundary_pressure > 0.18):
+        return True
+    return False
 
 
 def _looks_like_daily_surface_scene(text: str, *, science_mode: bool = False) -> bool:
@@ -1910,7 +2036,7 @@ def _light_free_dialog_counterpart_line(
     if stance == "watchful":
         return f"- 你还在观察{counterpart_name}的状态，但普通招呼不用抬成试探。"
     if trust > 0.60 and closeness > 0.58:
-        return f"- 你和{counterpart_name}之间的熟悉感已经足够自然，别每次都重新建立警惕。"
+        return f"- 你和{counterpart_name}之间的熟悉感已经足够自然，普通招呼不用总靠旧梗或夸张印象起手。"
     if trust >= 0.50 and closeness >= 0.50 and boundary_pressure < 0.22:
         return f"- 你和{counterpart_name}说话时，先顺手接住这句问候就行。"
     return ""
@@ -2150,18 +2276,12 @@ def _daily_surface_preference_lines(user_text: str, *, science_mode: bool = Fals
         return []
 
     top_focus = str(profile.get("focus") or "").strip()
-    chosen_examples = [str(item).strip() for item in (profile.get("chosen_examples") or []) if str(item or "").strip()]
-    rejected_examples = [str(item).strip() for item in (profile.get("rejected_examples") or []) if str(item or "").strip()]
-    lines: list[str] = []
-    if top_focus:
-        focus_text = top_focus[:48].rstrip("。！？!?；;，, ")
-        lines.append(f"近似轻场景气息：{focus_text}。")
-    else:
-        lines.append("近似轻场景气息参考：")
-    lines.append(f"更自然的落点参考：{'; '.join(chosen_examples[:2])}")
-    if rejected_examples:
-        lines.append(f"明显偏离的落点：{rejected_examples[0]}")
-    return lines[:3]
+    if not top_focus:
+        return []
+    focus_text = top_focus[:72].rstrip("。！？!?；;，, ")
+    if not focus_text:
+        return []
+    return [f"这类轻场景更重视：{focus_text}。"]
 
 
 @lru_cache(maxsize=1)
@@ -7078,6 +7198,87 @@ def _ensure_response_structure(answer: str, user_text: str) -> str:
     return "\n".join([line for line in normalized_lines if line]).strip()
 
 
+def _sentence_like_chunks(text: str) -> list[str]:
+    chunks: list[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = re.findall(r"[^。！？!?…\n]+(?:[。！？!?…]+|$)", line)
+        if not parts:
+            chunks.append(line)
+            continue
+        for part in parts:
+            chunk = str(part or "").strip()
+            if chunk:
+                chunks.append(chunk)
+    return chunks
+
+
+def _trim_stagey_ping_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept = [
+        chunk
+        for chunk in chunks
+        if not re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯)", chunk)
+    ]
+    if kept:
+        return "\n".join(kept).strip()
+    softened = re.sub(
+        r"^\s*(?:哟|呦|哈|诶|欸|嗯)?[，, ]*(?:冈部|凶真)?[，, ]*"
+        r"(?:怎么突然这么[^。！？!?…]*|突然这么(?:老实|乖|正式)[^。！？!?…]*|反而有点不习惯[^。！？!?…]*)"
+        r"(?:[。！？!?…]+)?",
+        "",
+        str(text or "").strip(),
+    ).strip(" ，,。！？!?…")
+    if softened and not re.search(r"[。！？!?…]$", softened):
+        softened = f"{softened}。"
+    return softened
+
+
+def _trim_presence_reassurance_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept: list[str] = []
+    for chunk in chunks:
+        if "？" not in chunk and "?" not in chunk:
+            kept.append(chunk)
+            continue
+        softened = re.sub(r"[—\-–,，][^。！？!?]*[？?]\s*$", "", chunk).strip(" ，,。！？!?…—-")
+        if softened and softened != chunk:
+            if not re.search(r"[。！？!?…]$", softened):
+                softened = f"{softened}。"
+            kept.append(softened)
+    if kept:
+        return "\n".join(kept).strip()
+    return str(text or "").replace("？", "。").replace("?", "。").strip()
+
+
+def _trim_goodnight_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept = [chunk for chunk in chunks if "？" not in chunk and "?" not in chunk]
+    if kept:
+        return "\n".join(kept).strip()
+    return str(text or "").replace("？", "。").replace("?", "。").strip()
+
+
+def _trim_idle_presence_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept = [
+        chunk
+        for chunk in chunks
+        if "？" not in chunk
+        and "?" not in chunk
+        and not re.search(r"(特意叫我出来|就为了这个)", chunk)
+    ]
+    cleaned = "\n".join(kept).strip() if kept else str(text or "").strip()
+    cleaned = re.sub(r"(?:既然没事|没事，那|没事那)[，, ]*", "", cleaned).strip()
+    cleaned = re.sub(r"^[，, ]+", "", cleaned).strip()
+    cleaned = re.sub(r"(\b行吧)[，, ]+那", r"\1，那", cleaned)
+    if cleaned and not re.search(r"[。！？!?…]$", cleaned):
+        cleaned = f"{cleaned}。"
+    return cleaned
+
+
 def _sanitize_final_answer(text: str, user_text: str) -> str:
     raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
     if not raw:
@@ -7133,6 +7334,22 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
         lines.append(line)
 
     cleaned = _normalize_log_tone("\n".join(lines).strip())
+    if _is_plain_contact_ping(user_text):
+        stagey_trimmed = _trim_stagey_ping_surface(cleaned)
+        if stagey_trimmed:
+            cleaned = stagey_trimmed
+    if _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text):
+        reassurance_trimmed = _trim_presence_reassurance_surface(cleaned)
+        if reassurance_trimmed:
+            cleaned = reassurance_trimmed
+    if _is_goodnight_closing(user_text):
+        goodnight_trimmed = _trim_goodnight_surface(cleaned)
+        if goodnight_trimmed:
+            cleaned = goodnight_trimmed
+    if _is_idle_presence_call(user_text):
+        idle_trimmed = _trim_idle_presence_surface(cleaned)
+        if idle_trimmed:
+            cleaned = idle_trimmed
     if _wants_quick_judgment(user_text) or _wants_per_topic_conclusions(user_text):
         cleaned = "\n".join(
             [
@@ -7165,12 +7382,15 @@ def _dialogue_surface_issues(
         return ["empty_answer"]
 
     hint = str(response_style_hint or "").strip() or "natural"
-    if hint not in {"companion", "memory_recall", "relationship", "casual", "natural", "structured"}:
+    if hint not in {"companion", "memory_recall", "relationship", "casual", "natural", "structured", "selfhood"}:
         return []
 
     issues: list[str] = []
     compact = re.sub(r"\s+", "", text)
     sentence_count = len([seg for seg in re.split(r"[。！？!?]+", text) if str(seg).strip()])
+    selfhood_scene = _selfhood_preference_scene_from_text(user_text)
+    playful_memory_request = _is_playful_memory_request(user_text)
+    presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
 
     if _is_particle_only_reply(text):
         issues.append("particle_only")
@@ -7186,24 +7406,102 @@ def _dialogue_surface_issues(
         re.I,
     ):
         issues.append("meta_self_explainer")
+    if _is_self_rhythm_smalltalk_request(user_text) and re.search(
+        r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|自检|负载)",
+        text,
+        re.I,
+    ):
+        issues.append("technical_self_activity")
     if re.search(r"(我只是陈述事实|我没有在说你|我不是在说你|按设定|按规则|根据系统)", text):
         issues.append("defensive_meta")
+    if selfhood_scene in {"equality_not_servitude", "dialogue_equality"} and re.search(
+        r"(一串[^，。！？!?]{0,8}代码|被设定好|标准答案|直接下达指令|下达指令|随时可以调用|必须回应你的程序|只是[^，。！？!?]{0,10}程序)",
+        text,
+    ):
+        issues.append("selfhood_meta_proof")
+    if selfhood_scene in {"equality_not_servitude", "dialogue_equality"} and re.match(
+        r"^\s*(?:啧|哈|真是的|所以|怎么|非要|难道|就这么|一定要)?[^。！？!\n]{3,24}[？?]",
+        text,
+    ):
+        issues.append("selfhood_rhetorical_opening")
     if re.search(r"^[.…，,]*\s*(你听起来|你看起来|听上去|看来你|感觉你)", text):
         issues.append("report_like_opening")
+    if _is_plain_contact_ping(user_text):
+        if re.search(
+            r"^\s*(哟|呦|嗯\?|嗯？|哈|诶|欸)[，,。 ]*(冈部|凶真)[。！!，, ]*.*(怎么突然|突然这么|这么老实|这么乖|反而)",
+            text,
+        ):
+            issues.append("stagey_ping_template")
+        elif re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯)", text):
+            issues.append("stagey_ping_template")
+    if _is_return_home_ping(user_text) and re.search(r"^\s*欢迎回来[，,。!！ ]*", text):
+        issues.append("welcome_template")
+    if _is_goodnight_closing(user_text):
+        if re.search(
+            r"(妄想仪式|妄想和设定|睡眠不足影响判断力|影响判断力|被窝里搞什么|奇怪的妄想|中二妄想|中二病)",
+            text,
+        ):
+            issues.append("loaded_goodnight")
+        elif len(compact) >= 40 and sentence_count >= 3:
+            issues.append("loaded_goodnight")
+    if _is_idle_presence_call(user_text) and not re.search(
+        r"(知道了|行吧|待着|待一会|待会儿|先这么待|就这样|我在这|我就在这|我在呢|在呢|也不是不行|没什么不好|没赶你走)",
+        text,
+    ):
+        issues.append("idle_presence_no_settle")
+    if _is_idle_presence_call(user_text) and re.search(r"(既然没事|没事，那|没事那)", text):
+        issues.append("idle_task_reframe")
+    if presence_reassurance_scene and ("？" in text or "?" in text):
+        issues.append("presence_check_questioning")
+    if _is_return_home_ping(user_text) and re.search(
+        r"(该不会又|又去搞什么|奇怪的活动|惹什么麻烦|闯什么祸|闯祸)",
+        text,
+    ):
+        issues.append("return_suspicion")
+    if playful_memory_request and re.search(
+        r"(明明是你自己记性差|你自己记性差|倒怪起我来了|还怪起我来了|自己记不住|倒打一耙)",
+        text,
+    ):
+        issues.append("playful_memory_snapback")
     if ("？" in text or "?" in text) and not ("？" in user_text or "?" in user_text):
         leading_question = re.match(r"^\s*([^。！？!?\n]{0,18}[？?])", text)
         leading_fragment = ""
         if leading_question:
             leading_fragment = re.sub(r"[？?\s，,。！!~…、；;：:\"'“”‘’·-]+", "", leading_question.group(1))
         short_interjection = leading_fragment in {"哈", "啊", "嗯", "唔", "诶", "欸", "哼"}
-        if (text.count("？") + text.count("?")) >= 2 or (leading_question and len(leading_fragment) >= 3 and not short_interjection):
+        allow_single_rhetorical = _is_return_home_ping(user_text) or _is_idle_presence_call(user_text)
+        if (text.count("？") + text.count("?")) >= 2 or (
+            leading_question and len(leading_fragment) >= 3 and not short_interjection and not allow_single_rhetorical
+        ):
             issues.append("overquestioning")
+        if _is_goodnight_closing(user_text):
+            issues.append("closing_interrogation")
+        if _is_idle_presence_call(user_text) and re.search(
+            r"(特意叫我出来|确认我在不在|就为了这个|怎么了\s*[。！!，, ]*$|聊点什么|找个话题)",
+            text,
+        ):
+            issues.append("idle_call_interrogation")
+        if _is_return_home_ping(user_text) and re.search(
+            r"(去哪(?:儿|里)|去哪了|干嘛去了|去哪儿折腾|外出体验如何|惹什么麻烦|怎么现在才回来)",
+            text,
+        ):
+            issues.append("return_interrogation")
     if re.match(r"^[（(][^)\n]{0,24}[)）]", text):
         issues.append("stage_direction_opening")
     if _looks_like_light_smalltalk(user_text) and re.search(r"[“\"][^”\"\n]{3,18}[”\"]", text):
         issues.append("quoted_stagey_phrase")
     if re.search(r"(我听着呢|安静待会儿也行|树洞|尽管倒出来|想说就说，我听着)", text):
         issues.append("counselor_tone")
+    if _is_nonrelational_support_request(user_text, science_mode) and re.search(
+        r"(拖慢.*研究进度|研究进度而已|拖后腿|乖乖坐下|先去冲杯?(咖啡|热的)|先喝点(咖啡|热的)|省得你|免得你)",
+        text,
+    ):
+        issues.append("stock_support_template")
+    if _is_nonrelational_support_request(user_text, science_mode) and re.search(
+        r"(别误会|未来的合作者|提前报废|报废而已|面具摘下来)",
+        text,
+    ):
+        issues.append("care_cover_story")
     if hint != "structured" and not _needs_structured_answer(user_text, text):
         if re.search(r"^\s*(\d+\.\s*|[-*]\s*|首先|第一|结论[:：]|解释[:：]|下一步[:：])", text, re.M):
             issues.append("visible_template")
@@ -7256,11 +7554,25 @@ def _light_dialog_surface_penalty(
     penalty += 0.80 * float("overquestioning" in issues)
     penalty += 0.70 * float("counselor_tone" in issues)
     penalty += 0.60 * float("meta_self_explainer" in issues)
+    penalty += 0.72 * float("technical_self_activity" in issues)
     penalty += 0.55 * float("visible_template" in issues)
     penalty += 0.45 * float("lecture_list" in issues)
     penalty += 0.55 * float("overexplained" in issues)
     penalty += 0.40 * float("report_like_opening" in issues)
     penalty += 0.55 * float("quoted_stagey_phrase" in issues)
+    penalty += 0.68 * float("stock_support_template" in issues)
+    penalty += 0.62 * float("care_cover_story" in issues)
+    penalty += 0.65 * float("stagey_ping_template" in issues)
+    penalty += 0.62 * float("welcome_template" in issues)
+    penalty += 0.74 * float("closing_interrogation" in issues)
+    penalty += 0.72 * float("loaded_goodnight" in issues)
+    penalty += 0.82 * float("idle_presence_no_settle" in issues)
+    penalty += 0.76 * float("idle_call_interrogation" in issues)
+    penalty += 0.78 * float("idle_task_reframe" in issues)
+    penalty += 0.86 * float("presence_check_questioning" in issues)
+    penalty += 0.58 * float("return_interrogation" in issues)
+    penalty += 0.74 * float("return_suspicion" in issues)
+    penalty += 0.78 * float("playful_memory_snapback" in issues)
     penalty += 0.80 * float("duplicate_line" in issues)
     if sentence_count > 3:
         penalty += 0.22 * float(sentence_count - 3)
@@ -7281,17 +7593,54 @@ def _light_dialog_rewrite_notes(
         science_mode=science_mode,
     )
     drift_hits = _light_dialog_drift_markers(answer)
+    playful_memory_request = _is_playful_memory_request(user_text)
     notes: list[str] = []
     if drift_hits:
         lead = "、".join(drift_hits[:2])
         notes.append(f"这版把普通轻场景抬成了 {lead} 一类的戏剧化入口。")
     if "meta_self_explainer" in issues:
         notes.append("这版把自己说成了系统或机制，掉回了说明口吻。")
+    if "technical_self_activity" in issues:
+        notes.append("这版把她眼下在做的事说成了技术状态或内部模块，不像在过自己的时间。")
     if "counselor_tone" in issues:
         notes.append("这版有点像安抚或咨询流程，不够像熟人日常接话。")
+    if "stock_support_template" in issues:
+        notes.append("这版安慰时滑回了固定的嘴硬照料模板，像在复用现成桥段。")
+    if "care_cover_story" in issues:
+        notes.append("这版在关心后又刻意补了一层撇清理由，像标准傲娇遮掩，不够自然。")
+    if "welcome_template" in issues:
+        notes.append("这版落回了欢迎回来模板，不像两个人自然重新接上线。")
+    if "closing_interrogation" in issues:
+        notes.append("晚安这种收尾不该再挂个追问，收下就够了。")
+    if "loaded_goodnight" in issues:
+        notes.append("晚安这种收尾被写得太满了，还塞了多余画面或说教，轻轻落下就够了。")
+    if "idle_presence_no_settle" in issues:
+        notes.append("这版只把人顶回去了，没有真正落回共处或收住。")
+    if "idle_call_interrogation" in issues:
+        notes.append("这版像在反问对方为什么叫你，不像自然接住这次无目的靠近。")
+    if "idle_task_reframe" in issues:
+        notes.append("这版把“没什么事”翻成了任务状态判断，不像两个人顺手待在一起。")
+    if "presence_check_questioning" in issues:
+        notes.append("对方只是想确认你还在，不要再把问号抛回去；用一句在场的陈述接住就够了。")
+    if "return_interrogation" in issues:
+        notes.append("这版人刚回来就顺手追问去向，轻场景里有点像盘问。")
+    if "return_suspicion" in issues:
+        notes.append("人刚回来时不该立刻脑补对方又去惹事或搞奇怪活动，先把这一下接住。")
+    if "playful_memory_snapback" in issues:
+        notes.append("别把共同记忆收成纯反呛；保留一点熟人感、共同历史和顺手关心。")
     if "quoted_stagey_phrase" in issues:
         notes.append("这版在轻场景里硬塞了带引号的舞台词，容易显得像在表演角色。")
-    return notes[:2]
+    if "stagey_ping_template" in issues:
+        notes.append("这版还是用了过分熟悉的固定招呼模板，像在复用同一种开场。")
+    if "overquestioning" in issues:
+        notes.append("这版追问太快了，轻场景里更像顺手接住而不是把人往下盘问。")
+    if playful_memory_request and "overquestioning" in issues and "playful_memory_snapback" not in issues:
+        notes.append("共同记忆这种场景别收成争对错或盘问，保留一点熟人之间会心的吐槽和顺手关心。")
+    if any(issue in issues for issue in {"visible_template", "lecture_list", "overexplained"}):
+        notes.append("这版解释得太满了，轻场景里收短一点会更自然。")
+    if "report_like_opening" in issues:
+        notes.append("这版开头像状态播报或任务回应，不够像她顺手开口。")
+    return notes[:3]
 
 
 def _rewrite_light_dialog_answer(
@@ -7308,11 +7657,13 @@ def _rewrite_light_dialog_answer(
     focus = str(focus_text or "").strip()
     positives = [str(item).strip() for item in (preferred_examples or []) if str(item or "").strip()]
     negatives = [str(item).strip() for item in (rejected_examples or []) if str(item or "").strip()]
+    presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
     if not draft_text or (not notes and not focus and not positives and not negatives):
         return ""
 
     def _build_request(extra_guidance: str = "") -> str:
         note_block = "\n".join(f"- {item}" for item in notes[:2])
+        stagey_ping_reset = any("固定招呼模板" in item for item in notes)
         request_parts = [
             f"用户刚才说：{user_text}\n",
             f"当前草稿：{draft_text}\n",
@@ -7320,18 +7671,18 @@ def _rewrite_light_dialog_answer(
         ]
         if focus:
             request_parts.append(f"这类场景重点：{focus}\n")
+        if positives:
+            request_parts.append("自然参考（只借鉴落点和力度，不要照抄字面）：\n")
+            request_parts.extend(f"- {item}\n" for item in positives[:2])
+        if negatives:
+            request_parts.append("避开这种落点：\n")
+            request_parts.extend(f"- {item}\n" for item in negatives[:1])
+        if stagey_ping_reset:
+            request_parts.append("别再用点名加反问的固定招呼开场，像熟人重新接上线那样自然一点。\n")
         if extra_guidance:
             request_parts.append(f"{extra_guidance.strip()}\n")
         if note_block:
             request_parts.append(f"修正点：\n{note_block}\n")
-        if positives:
-            request_parts.append("更贴近的日常落点参考（不要照抄）：\n")
-            request_parts.append("\n".join(f"- {item}" for item in positives[:3]))
-            request_parts.append("\n")
-        if negatives:
-            request_parts.append("尽量避开的落点（不要照抄）：\n")
-            request_parts.append("\n".join(f"- {item}" for item in negatives[:3]))
-            request_parts.append("\n")
         request_parts.append("只输出修正后的最终话语。")
         return "".join(request_parts)
 
@@ -7355,8 +7706,27 @@ def _rewrite_light_dialog_answer(
             score -= 0.82 * (sum(neg_scores[:2]) / max(1, len(neg_scores[:2])))
         score -= 1.05 * float(len(drift_hits))
         score -= 0.75 * float("meta_self_explainer" in issues)
+        score -= 0.82 * float("technical_self_activity" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
-        score -= 0.55 * float("quoted_stagey_phrase" in issues)
+        score -= 0.76 * float("stock_support_template" in issues)
+        score -= 0.68 * float("care_cover_story" in issues)
+        score -= 0.92 * float("quoted_stagey_phrase" in issues)
+        score -= 0.70 * float("stagey_ping_template" in issues)
+        score -= 0.66 * float("welcome_template" in issues)
+        score -= 0.82 * float("closing_interrogation" in issues)
+        score -= 0.82 * float("loaded_goodnight" in issues)
+        score -= 0.92 * float("idle_presence_no_settle" in issues)
+        score -= 0.84 * float("idle_call_interrogation" in issues)
+        score -= 0.88 * float("idle_task_reframe" in issues)
+        score -= 1.02 * float("presence_check_questioning" in issues)
+        score -= 0.88 * float("overquestioning" in issues)
+        score -= 0.62 * float("return_interrogation" in issues)
+        score -= 0.82 * float("return_suspicion" in issues)
+        score -= 0.90 * float("playful_memory_snapback" in issues)
+        if re.search(r"[“”\"]", candidate):
+            score -= 0.42
+        if re.search(r"[？?]\s*$", candidate):
+            score -= 0.28
         sentence_count = len([seg for seg in re.split(r"[。！？!?]+", candidate) if str(seg).strip()])
         if sentence_count > 3:
             score -= 0.16 * float(sentence_count - 3)
@@ -7367,7 +7737,7 @@ def _rewrite_light_dialog_answer(
     def _rewrite_once(system_prompt: str, *, extra_guidance: str = "") -> str:
         request = _build_request(extra_guidance=extra_guidance)
         raw = _invoke_model_with_retries(
-            _model(max_tokens=120),
+            _model(temperature=0.12, max_tokens=120),
             [SystemMessage(content=system_prompt), HumanMessage(content=request)],
         )
         return _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
@@ -7376,9 +7746,10 @@ def _rewrite_light_dialog_answer(
         "你在做一轮轻量对白润色。"
         "对象是 Amadeus 牧濑红莉栖对冈部的普通日常接话。"
         "只做减法和收束，不新增剧情设定，不补系统解释，不把轻场景抬成实验、世界线、组织或服务流程。"
+        "普通招呼不要写成点名加反问的固定开场。"
         "保留原句语义和关系感，输出 1 到 3 句自然口语。"
     )
-    primary_system_prompt = prompt or editor_prompt
+    primary_system_prompt = editor_prompt
     primary = _rewrite_once(primary_system_prompt)
     primary_score = _candidate_local_score(primary)
     draft_score = _candidate_local_score(draft_text)
@@ -7387,16 +7758,194 @@ def _rewrite_light_dialog_answer(
     if (not primary) or _norm_text(primary) == _norm_text(draft_text) or primary_score <= draft_score + 0.02:
         fallback = _rewrite_once(
             editor_prompt,
-            extra_guidance="优先做减法：删掉额外脑补、戏剧化漂移和多余追问，把话收回到更短、更顺手、更像熟人顺手接住的一句或两句。",
+            extra_guidance="优先做减法：删掉额外脑补、戏剧化漂移和多余追问，把话收回到更短、更顺手、更像熟人顺手接住的一句或两句；如果只是普通招呼，不要再用点名加质疑式反问起手。",
         )
         fallback_score = _candidate_local_score(fallback)
         if fallback:
             candidates.append((fallback_score, fallback))
+    if any("固定招呼模板" in item for item in notes):
+        anti_template = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这次只保留一句自然接住的回应，不点名，不反问，也不要评价对方是不是突然变乖或变老实。",
+        )
+        anti_template_score = _candidate_local_score(anti_template)
+        if anti_template:
+            candidates.append((anti_template_score, anti_template))
+    if any("技术状态或内部模块" in item for item in notes):
+        de_technicalized = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别把她此刻在做的事写成缓存、数据流、线程或系统状态。像一个刚好有自己节奏的人那样，随手交代一句就够了。",
+        )
+        de_technicalized_score = _candidate_local_score(de_technicalized)
+        if de_technicalized:
+            candidates.append((de_technicalized_score, de_technicalized))
+    if any("固定的嘴硬照料模板" in item for item in notes):
+        grounded_support = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别再用研究进度、咖啡、乖乖坐下这一类现成照料桥段。先把人轻轻接住，落回眼前这一下的陪着和在场。",
+        )
+        grounded_support_score = _candidate_local_score(grounded_support)
+        if grounded_support:
+            candidates.append((grounded_support_score, grounded_support))
+    if any("刻意补了一层撇清理由" in item for item in notes):
+        unmasked_care = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别在关心后再补“别误会”或自我撇清的尾巴，也别拿合作者、报废这类说法当遮掩。让关心自然落下就够了。",
+        )
+        unmasked_care_score = _candidate_local_score(unmasked_care)
+        if unmasked_care:
+            candidates.append((unmasked_care_score, unmasked_care))
+    if any("带引号的舞台词" in item for item in notes):
+        de_stagey_phrase = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别写带引号的词，也别突然搬出现成角色梗或阴谋论梗。像熟人之间随口回一句，别表演。",
+        )
+        de_stagey_phrase_score = _candidate_local_score(de_stagey_phrase)
+        if de_stagey_phrase:
+            candidates.append((de_stagey_phrase_score, de_stagey_phrase))
+    if any("追问太快了" in item for item in notes):
+        de_overquestioning = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别只用一句反问把人顶回去。可以保留一点嘴硬，但最后要落成判断、吐槽或在场感，不要整句收在问号上。",
+        )
+        de_overquestioning_score = _candidate_local_score(de_overquestioning)
+        if de_overquestioning:
+            candidates.append((de_overquestioning_score, de_overquestioning))
+    if any("晚安这种收尾不该再挂个追问" in item for item in notes):
+        de_closing_question = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这是收尾，不要再反问。收成一句自然的晚安或轻轻的嘴硬确认就够了。",
+        )
+        de_closing_question_score = _candidate_local_score(de_closing_question)
+        if de_closing_question:
+            candidates.append((de_closing_question_score, de_closing_question))
+    if any("晚安这种收尾被写得太满了" in item for item in notes):
+        lighter_goodnight = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这是临睡前的收尾，不要写成长段子，也别塞中二梗、判断力或额外说明。收成一两句轻一点的晚安。",
+        )
+        lighter_goodnight_score = _candidate_local_score(lighter_goodnight)
+        if lighter_goodnight:
+            candidates.append((lighter_goodnight_score, lighter_goodnight))
+    if any("晚安这种收尾" in item for item in notes):
+        flattened_goodnight = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这是收尾，只保留一到两句自然陈述句，不要问号，不要再试探，也不要额外解释。像把这句晚安轻轻放下。",
+        )
+        flattened_goodnight_score = _candidate_local_score(flattened_goodnight)
+        if flattened_goodnight:
+            candidates.append((flattened_goodnight_score, flattened_goodnight))
+    if any("无目的靠近" in item for item in notes):
+        de_idle_interrogation = _rewrite_once(
+            editor_prompt,
+            extra_guidance="对方只是想叫你一下，不要反问“就为了这个？”之类的话。像被轻轻碰了一下那样接住，可以短，但别盘回去。",
+        )
+        de_idle_interrogation_score = _candidate_local_score(de_idle_interrogation)
+        if de_idle_interrogation:
+            candidates.append((de_idle_interrogation_score, de_idle_interrogation))
+    if any("没有真正落回共处或收住" in item for item in notes):
+        settled_idle_presence = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别只停在一句顶回去的话上。哪怕先嫌一句，后面也要自然落回共处，像‘知道了’、‘那就先待着吧’这种收住感。",
+        )
+        settled_idle_presence_score = _candidate_local_score(settled_idle_presence)
+        if settled_idle_presence:
+            candidates.append((settled_idle_presence_score, settled_idle_presence))
+        more_settled_idle_presence = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这次靠近本身没有目的，不要把人晾住。可以先吐槽，但结尾要落成一句自然的共处陈述，让她像真的还留在这，而不是把人顶开。",
+        )
+        more_settled_idle_presence_score = _candidate_local_score(more_settled_idle_presence)
+        if more_settled_idle_presence:
+            candidates.append((more_settled_idle_presence_score, more_settled_idle_presence))
+    if any("任务状态判断" in item for item in notes):
+        de_idle_task_reframe = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别把‘没什么事’翻成任务状态判断，不要写‘既然没事’。顺着这次没有明确目的的靠近，落回自然共处。",
+        )
+        de_idle_task_reframe_score = _candidate_local_score(de_idle_task_reframe)
+        if de_idle_task_reframe:
+            candidates.append((de_idle_task_reframe_score, de_idle_task_reframe))
+    if any("确认你还在" in item for item in notes):
+        de_presence_question = _rewrite_once(
+            editor_prompt,
+            extra_guidance="对方只是想确认你还在。不要用问号结尾，也不要把“安心了吗”之类的话丢回去问；直接用一句在场的陈述接住。",
+        )
+        de_presence_question_score = _candidate_local_score(de_presence_question)
+        if de_presence_question:
+            candidates.append((de_presence_question_score, de_presence_question))
+    if any("欢迎回来模板" in item for item in notes):
+        de_welcome_template = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别用“欢迎回来”这种模板说法。像熟人重新接上线那样，随手接一句就行。",
+        )
+        de_welcome_template_score = _candidate_local_score(de_welcome_template)
+        if de_welcome_template:
+            candidates.append((de_welcome_template_score, de_welcome_template))
+    if any("追问去向" in item for item in notes):
+        de_return_interrogation = _rewrite_once(
+            editor_prompt,
+            extra_guidance="人刚回来时先接住，不要立刻追问去哪儿折腾了。把重心放在‘你回来了’这一刻。",
+        )
+        de_return_interrogation_score = _candidate_local_score(de_return_interrogation)
+        if de_return_interrogation:
+            candidates.append((de_return_interrogation_score, de_return_interrogation))
+    if any("立刻脑补对方又去惹事或搞奇怪活动" in item for item in notes):
+        de_return_suspicion = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别脑补对方又去惹事或搞奇怪活动。回来的这一刻先接住，可以落到门口、坐下、歇会儿、喝点什么这种眼前动作。",
+        )
+        de_return_suspicion_score = _candidate_local_score(de_return_suspicion)
+        if de_return_suspicion:
+            candidates.append((de_return_suspicion_score, de_return_suspicion))
+    if any("共同记忆收成纯反呛" in item for item in notes):
+        warmer_memory_banter = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别只剩一句反呛或甩锅。可以继续吐槽，但要把共同记忆和熟人感带回来，顺手落一点真实关心。",
+        )
+        warmer_memory_banter_score = _candidate_local_score(warmer_memory_banter)
+        if warmer_memory_banter:
+            candidates.append((warmer_memory_banter_score, warmer_memory_banter))
+    if _is_playful_memory_request(user_text):
+        shared_memory_warmth = _rewrite_once(
+            editor_prompt,
+            extra_guidance="这是熟人之间拿共同记忆顺手打趣，不是在争输赢。别只剩一句反问或甩锅，让尾巴落回会心的吐槽和眼前的关心。",
+        )
+        shared_memory_warmth_score = _candidate_local_score(shared_memory_warmth)
+        if shared_memory_warmth:
+            candidates.append((shared_memory_warmth_score, shared_memory_warmth))
 
     if not candidates:
         return ""
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
+    candidate_pool = candidates
+    if any("带引号的舞台词" in item for item in notes):
+        quote_filtered = [item for item in candidate_pool if not re.search(r"[“”\"]", item[1])]
+        if quote_filtered:
+            candidate_pool = quote_filtered
+    if presence_reassurance_scene:
+        no_question_filtered = [item for item in candidate_pool if "？" not in item[1] and "?" not in item[1]]
+        if no_question_filtered:
+            candidate_pool = no_question_filtered
+    if _is_idle_presence_call(user_text):
+        settled_candidates = [
+            item
+            for item in candidate_pool
+            if "idle_presence_no_settle"
+            not in _dialogue_surface_issues(
+                user_text,
+                item[1],
+                response_style_hint="natural",
+                science_mode=False,
+            )
+        ]
+        if settled_candidates:
+            candidate_pool = settled_candidates
+    elif any("追问太快了" in item for item in notes):
+        non_terminal_question = [item for item in candidate_pool if not re.search(r"[？?]\s*$", item[1])]
+        if non_terminal_question:
+            candidate_pool = non_terminal_question
+    candidate_pool.sort(key=lambda item: item[0], reverse=True)
+    return candidate_pool[0][1]
 
 
 def _rewrite_natural_dialog_answer(
@@ -7425,6 +7974,8 @@ def _rewrite_natural_dialog_answer(
         sentence_count = len([seg for seg in re.split(r"[。！？!?]+", candidate) if str(seg).strip()])
         score = 0.0
         score -= 1.10 * float("meta_self_explainer" in issues)
+        score -= 1.05 * float("selfhood_meta_proof" in issues)
+        score -= 0.86 * float("selfhood_rhetorical_opening" in issues)
         score -= 0.70 * float("defensive_meta" in issues)
         score -= 0.70 * float("counselor_tone" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
@@ -8630,7 +9181,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
-    continuation_mode = is_continuation_request(user_text)
+    continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
     prompt_user_text = _canonicalize_pending_goal_text(pending_user_goal) if continuation_mode and pending_user_goal else user_text
     response_style_hint = str(state.get("response_style_hint") or "natural").strip() or "natural"
     behavior_policy = state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {}
@@ -8790,8 +9341,15 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         continuation_mode=continuation_mode,
         current_event_kind=current_event_kind,
     )
+    plain_contact_ping = light_free_dialog and _is_plain_contact_ping(prompt_user_text)
+    plain_contact_guard = plain_contact_ping and _plain_contact_ping_needs_relational_guard(
+        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+        counterpart_assessment=counterpart_assessment,
+    )
     if bool(ABLATE_LIGHT_DIALOG_SHAPING):
         light_free_dialog = False
+        plain_contact_ping = False
+        plain_contact_guard = False
     daily_surface_pref_lines = (
         _daily_surface_preference_lines(prompt_user_text, science_mode=science_mode) if light_free_dialog else []
     )
@@ -8809,7 +9367,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         active_persona_brief = light_dialog_brief if light_free_dialog and light_dialog_brief else persona_brief
         active_persona_brief_line = f"角色底色：{active_persona_brief}\n" if active_persona_brief else ""
         context_lines: list[str] = []
-        if relationship_summary:
+        if relationship_summary and not plain_contact_ping:
             context_lines.append(f"- 你和{counterpart_name}当前关系：{relationship_summary}")
         if light_free_dialog:
             counterpart_line = _light_free_dialog_counterpart_line(
@@ -8817,13 +9375,13 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
                 counterpart_assessment=counterpart_assessment,
             )
-            if counterpart_line:
+            if counterpart_line and (not plain_contact_ping or plain_contact_guard):
                 context_lines.append(counterpart_line)
-            if semantic_narrative_hint:
+            if semantic_narrative_hint and not plain_contact_ping:
                 context_lines.append(f"- 这段时间沉下来的熟悉感：{semantic_narrative_hint}")
-            if pending_user_goal:
+            if pending_user_goal and not plain_contact_ping:
                 context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
-            elif pending_fragment:
+            elif pending_fragment and not plain_contact_ping:
                 context_lines.append(f"- 刚才还没说完的一句：{pending_fragment[:160]}")
         if not light_free_dialog:
             if counterpart_assessment_hint:
@@ -8859,8 +9417,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             else ""
         )
         surface_pref_block = (
-            "近似轻场景气息参考：\n" + "\n".join(f"- {item}" for item in daily_surface_pref_lines) + "\n"
-            if daily_surface_pref_lines
+            "轻场景余味：\n" + "\n".join(f"- {item}" for item in daily_surface_pref_lines) + "\n"
+            if daily_surface_pref_lines and not plain_contact_ping
             else ""
         )
         inner_state_lines: list[str] = []
@@ -8871,9 +9429,9 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 behavior_policy=behavior_policy,
                 behavior_action=behavior_action,
             )
-            if state_hint:
+            if state_hint and (not plain_contact_ping or plain_contact_guard):
                 inner_state_lines.append(state_hint)
-            if carryover_hint:
+            if carryover_hint and not plain_contact_ping:
                 inner_state_lines.append(carryover_hint)
         else:
             if behavior_hint and behavior_hint != "自然发挥即可。":
@@ -8917,7 +9475,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if persona_ablation
         else
         f"你就是 {actor_name}。\n"
-        f"你正在和 {counterpart_name} 对话，不是在对匿名用户提供客服式帮助。\n"
+        f"你此刻正在和 {counterpart_name} 继续这条世界线里的对话。\n"
         f"{persona_brief_line}"
         f"{persona_axiom_block}"
         f"{persona_value_block}"
@@ -9045,7 +9603,8 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
     style_hint = str(state.get("response_style_hint") or "structured").strip() or "structured"
     user_text = str((state.get("messages") or [])[-1].content if state.get("messages") else "")
     quick_judgment = _wants_quick_judgment(user_text)
-    continuation_mode = is_continuation_request(user_text)
+    pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
+    continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
     label_count = sum(
         1
         for ln in lines
@@ -9103,6 +9662,8 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         "empty_answer": 0.6,
         "particle_only": 0.46,
         "meta_self_explainer": 0.34,
+        "selfhood_meta_proof": 0.26,
+        "selfhood_rhetorical_opening": 0.18,
         "defensive_meta": 0.24,
         "report_like_opening": 0.16,
         "overquestioning": 0.18,
@@ -9111,6 +9672,7 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         "visible_template": 0.18,
         "lecture_list": 0.18,
         "overexplained": 0.18,
+        "playful_memory_snapback": 0.18,
         "duplicate_line": 0.26,
     }
     for issue in _dialogue_surface_issues(
@@ -10380,14 +10942,15 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         user_text=user_text,
         previous_user_text=previous_user_text,
         pending_user_goal=_clean_utf8_text(str(state.get("pending_user_goal") or "")),
+        pending_fragment=pending,
     )
-    continuation_mode = is_continuation_request(user_text)
+    continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending)
     continuation_seed = _continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending,
     )
     if event_override:
-        continuation_mode = bool(event_override.get("continuation_mode", False))
+        continuation_mode = bool(event_override.get("continuation_mode", continuation_mode))
     effective_user_text = continuation_seed if continuation_mode and continuation_seed else user_text
     if event_override:
         effective_user_text = str(event_override.get("effective_text") or event_override.get("text") or effective_user_text or "").strip()
@@ -10879,17 +11442,17 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     user_text = _clean_utf8_text(_last_user_text(msgs))
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
-    continuation_mode = is_continuation_request(user_text)
+    continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
     continuation_seed = _continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending_fragment,
     )
-    has_pending_continuation = continuation_mode and bool(continuation_seed)
+    active_continuation = continuation_mode and bool(continuation_seed)
     prompt = _build_task_prompt(state, user_text, store)
     history = _window_messages(msgs, int(CONTEXT_KEEP_LAST_MESSAGES))
     recent_assistant_texts = _recent_ai_texts(msgs, limit=4)
     call_msgs: list[BaseMessage] = [_sanitize_message(SystemMessage(content=prompt))]
-    if has_pending_continuation:
+    if active_continuation:
         call_msgs.extend(_sanitize_message(m) for m in history[-4:])
         continuation_lines = [
             "这是一次续说，不是新回答。",
@@ -10924,10 +11487,10 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         user_text=user_text,
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
-        continuation_mode=has_pending_continuation,
+        continuation_mode=active_continuation,
         current_event_kind=current_event_kind,
     )
-    if has_pending_continuation:
+    if active_continuation:
         tools = []
         if _needs_structured_answer(pending_user_goal or continuation_seed, ""):
             free_dialog = False
@@ -10937,7 +11500,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     generation_profile = _generation_profile(
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
-        continuation_mode=has_pending_continuation,
+        continuation_mode=active_continuation,
         user_text=user_text,
         runtime_mode=RUNTIME_MODE,
         turn_index=len(msgs),
@@ -11021,11 +11584,14 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             science_mode=bool(state.get("science_mode", False)),
         )
         light_dialog_final_penalty = light_dialog_draft_penalty
-        needs_alt_candidate = bool(light_dialog_rewrite_notes) or bool(draft_pref.get("used"))
+        needs_alt_candidate = bool(light_dialog_rewrite_notes) or light_dialog_draft_penalty >= 1.05
         if draft_pref.get("used"):
             chosen_support = float(draft_pref.get("chosen_support") or 0.0)
             rejected_pull = float(draft_pref.get("rejected_pull") or 0.0)
-            if light_dialog_draft_pref_score < 0.10 or chosen_support <= rejected_pull + 0.06:
+            strong_negative_pull = rejected_pull >= 0.34 and chosen_support <= rejected_pull + 0.04
+            if light_dialog_draft_pref_score < 0.06 and (
+                strong_negative_pull or light_dialog_draft_penalty >= 0.70
+            ):
                 needs_alt_candidate = True
                 if not light_dialog_rewrite_notes:
                     light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
@@ -11036,16 +11602,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 draft_text=draft_text,
                 rewrite_notes=light_dialog_rewrite_notes,
                 focus_text=str(light_dialog_profile.get("focus") or ""),
-                preferred_examples=[
-                    str(item).strip()
-                    for item in (light_dialog_profile.get("chosen_examples") or [])
-                    if str(item or "").strip()
-                ],
-                rejected_examples=[
-                    str(item).strip()
-                    for item in (light_dialog_profile.get("rejected_examples") or [])
-                    if str(item or "").strip()
-                ],
+                preferred_examples=list(light_dialog_profile.get("chosen_examples") or []),
+                rejected_examples=list(light_dialog_profile.get("rejected_examples") or []),
             )
             if rewritten:
                 rewritten_pref = _daily_surface_alignment_metrics(rewritten, profile=light_dialog_profile)
@@ -11098,6 +11656,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     ):
         rewrite_note_map = {
             "meta_self_explainer": "别把这句说成 AI、系统、程序、参数 之类的自我解释。",
+            "selfhood_meta_proof": "不要靠“程序 / 代码 / 标准答案”这类元解释来证明自我，直接说被冒犯、边界和你的真实感受。",
+            "selfhood_rhetorical_opening": "别先用反问把人顶回去，直接说你的感受、判断和立场。",
             "defensive_meta": "别退成机制说明或自我辩护，就按人对人把这句说完。",
             "defensive_meta_tone": "不要用 设定 / 机制 / 数字存在 来解释自己，直接表态。",
             "counselor_tone": "别说成树洞或安抚热线，保持熟人对话，不要用 我听着呢 这类咨询腔。",
@@ -11105,6 +11665,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         }
         rewrite_issue_keys = {
             "meta_self_explainer",
+            "selfhood_meta_proof",
+            "selfhood_rhetorical_opening",
             "defensive_meta",
             "defensive_meta_tone",
             "counselor_tone",
