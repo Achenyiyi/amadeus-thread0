@@ -27,6 +27,7 @@ class CliViewsTests(unittest.TestCase):
                 "active_categories": ["presence_style", "rhythm_style"],
                 "reactivated_categories": ["ambient_style"],
                 "summary_lines": ["上一轮留下的在场感会继续影响下一轮。"],
+                "anchor_lines": ["红莉栖不会在每次回应前都把自己的内部节奏清零。"],
                 "top_narratives": [
                     {
                         "category": "rhythm_style",
@@ -51,8 +52,8 @@ class CliViewsTests(unittest.TestCase):
             emotion_state={"label": "neutral"},
             bond_state={"trust": 0.68, "closeness": 0.66, "hurt": 0.04},
             counterpart_assessment={"stance": "open", "scene": "care_bid"},
-            behavior_action={"interaction_mode": "self_activity_reopen", "action_target": "respond_now"},
-            interaction_carryover={"carryover_mode": "own_rhythm", "strength": 0.57},
+            behavior_action={"interaction_mode": "self_activity_reopen", "action_target": "respond_now", "relationship_weather": "warm_residue"},
+            interaction_carryover={"carryover_mode": "own_rhythm", "strength": 0.57, "relationship_weather": "warm_residue"},
             worldline_focus=[
                 {"summary": "刚才那阵风过去之后，她还是保留了在场感。"},
                 {"summary": "她从自己的节奏里抬头回应。"},
@@ -66,7 +67,11 @@ class CliViewsTests(unittest.TestCase):
         semantic = summary.get("semantic_continuity") if isinstance(summary.get("semantic_continuity"), dict) else {}
         self.assertEqual(semantic.get("dominant_category"), "rhythm_style")
         self.assertIn("presence_style", semantic.get("active_categories") or [])
+        self.assertIn("红莉栖不会在每次回应前都把自己的内部节奏清零。", semantic.get("anchor_lines") or [])
         self.assertEqual(len(summary.get("worldline_focus_preview") or []), 2)
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("carryover_weather"), "warm_residue")
+        self.assertEqual(current_turn.get("behavior_weather"), "warm_residue")
 
     def test_reconsolidation_snapshot_includes_residue_axes(self):
         snapshot = build_reconsolidation_snapshot(
@@ -113,7 +118,7 @@ class CliViewsTests(unittest.TestCase):
             },
             counterpart_assessment={"stance": "open"},
             behavior_action={"interaction_mode": "self_activity_reopen"},
-            interaction_carryover={"carryover_mode": "own_rhythm", "strength": 0.57},
+            interaction_carryover={"carryover_mode": "own_rhythm", "strength": 0.57, "relationship_weather": "guarded_residue"},
         )
         line = build_evolution_summary_line(summary)
         self.assertIn("presence=0.580/0.410", line)
@@ -121,6 +126,7 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("rhythm=0.630/0.570", line)
         self.assertIn("mode=self_activity_reopen", line)
         self.assertIn("carry=own_rhythm:0.570", line)
+        self.assertIn("weather=guarded_residue", line)
         self.assertIn("bond=0.640", line)
 
     def test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue(self):
@@ -136,6 +142,7 @@ class CliViewsTests(unittest.TestCase):
             behavior_action={
                 "interaction_mode": "scheduled_life_nudge",
                 "action_target": "wait_and_recheck",
+                "relationship_weather": "warm_residue",
                 "window_profile": {
                     "profile_type": "scheduled_window",
                     "event_kind": "scheduled_life_due",
@@ -164,6 +171,7 @@ class CliViewsTests(unittest.TestCase):
                 "scheduled_after_min": 18,
                 "carryover_mode": "small_opening",
                 "carryover_strength": 0.44,
+                "relationship_weather": "warm_residue",
             },
             behavior_queue=[
                 {
@@ -179,6 +187,7 @@ class CliViewsTests(unittest.TestCase):
                     "hold_count": 1,
                     "carryover_mode": "small_opening",
                     "carryover_strength": 0.44,
+                    "relationship_weather": "warm_residue",
                     "presence_residue": 0.38,
                     "ambient_resonance": 0.27,
                     "self_activity_momentum": 0.49,
@@ -191,12 +200,13 @@ class CliViewsTests(unittest.TestCase):
                 "trigger_family": "life_window",
                 "carryover_mode": "small_opening",
                 "carryover_strength": 0.44,
+                "relationship_weather": "warm_residue",
                 "presence_residue": 0.38,
                 "ambient_resonance": 0.27,
                 "self_activity_momentum": 0.49,
                 "scheduled_after_min": 18,
             },
-            interaction_carryover={"carryover_mode": "small_opening", "strength": 0.44},
+            interaction_carryover={"carryover_mode": "small_opening", "strength": 0.44, "relationship_weather": "warm_residue"},
         )
         opening = summary.get("opening_window") if isinstance(summary.get("opening_window"), dict) else {}
         self.assertEqual(opening.get("profile_type"), "scheduled_window")
@@ -207,10 +217,14 @@ class CliViewsTests(unittest.TestCase):
         event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
         self.assertEqual(event_residue.get("event_kind"), "scheduled_life_due")
         self.assertEqual(event_residue.get("carryover_mode"), "small_opening")
+        self.assertEqual(event_residue.get("relationship_weather"), "warm_residue")
         self.assertEqual(event_residue.get("scheduled_after_min"), 18)
         queue_preview = summary.get("behavior_queue_preview") if isinstance(summary.get("behavior_queue_preview"), list) else []
         self.assertEqual(len(queue_preview), 1)
         self.assertEqual(queue_preview[0].get("kind"), "deferred_checkin")
+        self.assertEqual(queue_preview[0].get("relationship_weather"), "warm_residue")
+        behavior_plan = summary.get("behavior_plan") if isinstance(summary.get("behavior_plan"), dict) else {}
+        self.assertEqual(behavior_plan.get("relationship_weather"), "warm_residue")
         line = build_evolution_summary_line(summary)
         self.assertIn("window=scheduled_window:0.520/0.580", line)
         self.assertIn("decision=wait_and_recheck", line)
@@ -231,6 +245,7 @@ class CliViewsTests(unittest.TestCase):
                 "hold_count": 2,
                 "carryover_mode": "small_opening",
                 "carryover_strength": 0.44,
+                "relationship_weather": "warm_residue",
                 "presence_residue": 0.38,
                 "ambient_resonance": 0.27,
                 "self_activity_momentum": 0.49,
@@ -245,6 +260,7 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("#1 deferred_checkin/life_window", rendered)
         self.assertIn("holds=2", rendered)
         self.assertIn("carry=small_opening:0.440", rendered)
+        self.assertIn("weather=warm_residue", rendered)
         self.assertIn("note=窗口先留着", rendered)
 
 

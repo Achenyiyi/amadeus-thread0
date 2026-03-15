@@ -87,6 +87,7 @@ def evolve_turn_state(
         counterpart_assessment=counterpart_assessment,
         world_model_state=world_model_state,
         latent_state=latent_state,
+        semantic_narrative_profile=semantic_narrative_profile,
         tsundere_intensity=tsundere_intensity,
         science_mode=science_mode,
     )
@@ -100,6 +101,7 @@ def evolve_turn_state(
         counterpart_assessment=counterpart_assessment,
         world_model_state=world_model_state,
         latent_state=latent_state,
+        semantic_narrative_profile=semantic_narrative_profile,
         behavior_policy=behavior_policy,
     )
     reconsolidation_snapshot = build_reconsolidation_snapshot(

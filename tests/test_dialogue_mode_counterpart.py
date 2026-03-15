@@ -1,6 +1,7 @@
 import unittest
 
 from amadeus_thread0.evolution_engine.engine import evolve_turn_state
+from amadeus_thread0.evolution_engine.state import transition_counterpart_assessment
 from amadeus_thread0.graph import (
     _allostasis_next,
     _behavior_action_from_state,
@@ -111,7 +112,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.life_window_due_event = {
             "kind": "scheduled_life_due",
             "source": "scheduler",
-            "text": "到了你之前随口提过的那个生活小窗口。",
+            "text": "到了你之前随口提过的那点生活上的小事。",
             "event_frame": "scheduled_life_window",
             "response_style_hint": "companion",
             "tags": ["scheduled_due", "life_window"],
@@ -416,7 +417,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
                 "strength": 0.44,
                 "attention_target": "shared_window",
                 "nonverbal_signal": "nudge_presence",
-                "note": "前面那扇共同窗口还没有完全关上。",
+                "note": "前面那点还能接着说下去的空当还没完全过去。",
             },
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "companion_reply")
@@ -475,7 +476,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
                 "strength": 0.46,
                 "attention_target": "counterpart_state",
                 "nonverbal_signal": "quiet_glance",
-                "note": "前面那个生活上的小窗口还留着一点余温。",
+                "note": "前面那点生活上的惦记还留着一点余温。",
             },
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "companion_reply")
@@ -659,7 +660,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "scheduled_life_nudge")
         self.assertEqual(str(action.get("channel") or ""), "speech")
-        self.assertEqual(str(action.get("action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(action.get("action_target") or ""), "light_life_nudge")
         self.assertEqual(str(action.get("attention_target") or ""), "counterpart_state")
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
 
@@ -721,7 +722,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "scheduled_life_nudge")
         self.assertEqual(str(action.get("channel") or ""), "speech")
-        self.assertEqual(str(action.get("action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(action.get("action_target") or ""), "light_life_nudge")
         self.assertEqual(str(action.get("attention_target") or ""), "counterpart_state")
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
 
@@ -783,7 +784,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "scheduled_life_nudge")
         self.assertEqual(str(action.get("channel") or ""), "speech")
-        self.assertEqual(str(action.get("action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(action.get("action_target") or ""), "light_life_nudge")
         self.assertEqual(str(action.get("attention_target") or ""), "counterpart_state")
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
 
@@ -792,10 +793,10 @@ class DialogueModeCounterpartTests(unittest.TestCase):
             current_event={
                 "kind": "scheduled_checkin_due",
                 "source": "scheduler",
-                "text": "她还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了她一下。",
-                "effective_text": "她还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了她一下。",
-                "semantic_goal": "她仍在自己的节奏里，但没说出口的确认感又回到注意力里。",
-                "event_frame": "她不是专门停下手头的事来找你，只是注意力又短暂偏了回来。",
+                "text": "你还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了你一下。",
+                "effective_text": "你还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了你一下。",
+                "semantic_goal": "你仍在自己的节奏里，但没说出口的确认感又回到注意力里。",
+                "event_frame": "你不是专门停下手头的事来找对方，只是注意力又短暂偏了回来。",
                 "trigger_family": "light_checkin",
                 "scheduled_after_min": 18,
                 "response_style_hint": "companion",
@@ -855,10 +856,10 @@ class DialogueModeCounterpartTests(unittest.TestCase):
             current_event={
                 "kind": "scheduled_checkin_due",
                 "source": "scheduler",
-                "text": "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。",
-                "effective_text": "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。",
-                "semantic_goal": "共同窗口重新浮回她的注意力里。",
-                "event_frame": "她不是专门停下手头的事来找你，只是注意力又短暂偏了回来。",
+                "text": "你们刚才顺手留出来的那点空当还没完全过去，过了一会儿你又想起了对方。",
+                "effective_text": "你们刚才顺手留出来的那点空当还没完全过去，过了一会儿你又想起了对方。",
+                "semantic_goal": "你又想起你们刚才那点还能一起接着做点什么的空当。",
+                "event_frame": "你不是专门停下手头的事来找对方，只是注意力又短暂偏了回来。",
                 "trigger_family": "shared_activity",
                 "scheduled_after_min": 18,
                 "response_style_hint": "companion",
@@ -921,10 +922,10 @@ class DialogueModeCounterpartTests(unittest.TestCase):
             current_event={
                 "kind": "scheduled_life_due",
                 "source": "scheduler",
-                "text": "她还在自己的节奏里，但前面那点生活上的小挂念又轻轻浮了上来。",
-                "effective_text": "她还在自己的节奏里，但前面那点生活上的小挂念又轻轻浮了上来。",
-                "semantic_goal": "生活上的小窗口重新浮回她的注意力里。",
-                "event_frame": "她不是专门停下手头的事来找你，只是注意力又短暂偏了回来。",
+                "text": "你还在自己的节奏里，但又忽然想起对方前面提过的那点生活上的事。",
+                "effective_text": "你还在自己的节奏里，但又忽然想起对方前面提过的那点生活上的事。",
+                "semantic_goal": "你又想起前面提过的那点生活上的事。",
+                "event_frame": "你不是专门停下手头的事来找对方，只是注意力又短暂偏了回来。",
                 "response_style_hint": "companion",
                 "tags": ["scheduled_due", "life_window", "from_own_rhythm"],
                 "carryover_mode": "own_rhythm",
@@ -973,7 +974,7 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "scheduled_life_nudge")
         self.assertEqual(str(action.get("channel") or ""), "speech")
-        self.assertEqual(str(action.get("action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(action.get("action_target") or ""), "light_life_nudge")
         self.assertEqual(str(action.get("attention_target") or ""), "counterpart_state")
         self.assertEqual(str(action.get("nonverbal_signal") or ""), "thought_glance")
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
@@ -995,6 +996,90 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(next_state.get("stance") or ""), "guarded")
         self.assertEqual(str(next_state.get("scene") or ""), "relationship_degradation")
         self.assertGreater(float(next_state.get("boundary_pressure") or 0.0), 0.35)
+
+    def test_transition_counterpart_assessment_guarded_repair_stays_watchful(self):
+        next_state = transition_counterpart_assessment(
+            prev_state={
+                **self.guarded_counterpart,
+                "scene": "boundary_non_compliance",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.94,
+                "signals": {
+                    "repair": True,
+                    "withdrawal": False,
+                    "care": False,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.12,
+                "irritation": 0.08,
+                "repair_confidence": 0.70,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.34,
+                "autonomy_need": 0.20,
+            },
+            world_model_state={
+                "boundary_load": 0.26,
+                "tension_load": 0.14,
+                "presence_residue": 0.08,
+            },
+            current_event=self.companion_event,
+        )
+        self.assertEqual(str(next_state.get("stance") or ""), "watchful")
+        self.assertEqual(str(next_state.get("scene") or ""), "repair_attempt")
+        self.assertGreaterEqual(float(next_state.get("boundary_pressure") or 0.0), 0.24)
+        self.assertLessEqual(float(next_state.get("reliability_read") or 1.0), 0.64)
+
+    def test_transition_counterpart_assessment_watchful_repair_does_not_jump_to_open(self):
+        next_state = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.55,
+                "reciprocity": 0.54,
+                "boundary_pressure": 0.34,
+                "reliability_read": 0.52,
+                "stance": "watchful",
+                "scene": "friction",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.90,
+                "signals": {
+                    "repair": True,
+                    "withdrawal": False,
+                    "care": False,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.10,
+                "irritation": 0.06,
+                "repair_confidence": 0.74,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.28,
+                "autonomy_need": 0.18,
+            },
+            world_model_state={
+                "boundary_load": 0.18,
+                "tension_load": 0.12,
+                "presence_residue": 0.10,
+            },
+            current_event=self.companion_event,
+        )
+        self.assertEqual(str(next_state.get("stance") or ""), "watchful")
+        self.assertEqual(str(next_state.get("scene") or ""), "repair_attempt")
 
     def test_canon_okabe_recontact_baseline_is_familiar_but_not_overheated(self):
         baseline = _canon_okabe_recontact_baseline(
@@ -1153,6 +1238,38 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertGreater(float(snapshot.get("trust_score") or 0.0), 0.04)
         self.assertIn("旧日熟悉感", str(snapshot.get("notes") or ""))
 
+    def test_relationship_runtime_snapshot_absorbs_semantic_continuity_into_warming_state(self):
+        snapshot = _relationship_runtime_snapshot(
+            relationship={"stage": "friend", "notes": "", "affinity_score": 0.0, "trust_score": 0.0, "derived": True},
+            bond_state={
+                "trust": 0.52,
+                "closeness": 0.53,
+                "hurt": 0.04,
+                "irritation": 0.02,
+            },
+            world_model_state={
+                "relationship_maturity": 0.18,
+                "bond_depth": 0.10,
+                "repair_load": 0.04,
+                "tension_load": 0.02,
+                "boundary_load": 0.03,
+            },
+            counterpart_assessment={"boundary_pressure": 0.04},
+            semantic_narrative_profile={
+                "history_weight": 0.72,
+                "bond_depth": 0.66,
+                "presence_carry": 0.64,
+                "commitment_carry": 0.48,
+                "repair_residue": 0.32,
+                "tension_residue": 0.10,
+                "boundary_residue": 0.08,
+            },
+        )
+        self.assertEqual(str(snapshot.get("stage") or ""), "warming")
+        self.assertGreaterEqual(float(snapshot.get("affinity_score") or 0.0), 0.10)
+        self.assertGreaterEqual(float(snapshot.get("trust_score") or 0.0), 0.08)
+        self.assertIn("熟悉感", str(snapshot.get("notes") or ""))
+
     def test_prefer_refreshed_relationship_state_uses_memory_refresh_after_negative_shift(self):
         current = {
             "stage": "warming",
@@ -1205,6 +1322,62 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("action_target") or ""), "respond_now")
         self.assertEqual(str(action.get("disclosure_posture") or ""), "open")
         self.assertIn(str(action.get("followup_intent") or ""), {"soft", "active"})
+
+    def test_engine_behavior_policy_receives_semantic_narrative_profile(self):
+        appraisal = {
+            "used": True,
+            "confidence": 0.90,
+            "emotion_label": "neutral",
+            "emotion": {"valence": 0.20, "arousal": 0.12, "linger": 1, "recovery_rate": 0.9, "volatility": 0.06},
+            "bond_delta": {"trust": 0.04, "closeness": 0.04, "hurt": -0.01, "irritation": -0.01, "engagement_drive": 0.05, "repair_confidence": 0.02},
+            "allostasis_delta": {"safety_need": -0.04, "closeness_need": 0.04, "competence_need": 0.0, "autonomy_need": 0.04, "cognitive_budget": 0.04},
+            "signals": {"repair": False, "withdrawal": False, "care": True, "conflict": False, "memory_salient": True},
+            "interaction_frame": "companion",
+            "salience": {"task": 0.04, "relationship": 0.50, "memory": 0.28, "selfhood": 0.14, "companionship": 0.72},
+        }
+        plain = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment=self.open_counterpart,
+            relationship=self.relationship,
+            semantic_narrative_profile={},
+            appraisal=appraisal,
+            current_event=self.companion_event,
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        infused = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment=self.open_counterpart,
+            relationship=self.relationship,
+            semantic_narrative_profile={
+                "bond_depth": 0.64,
+                "presence_carry": 0.62,
+                "commitment_carry": 0.54,
+                "selfhood_integrity": 0.58,
+                "agency_drive": 0.70,
+                "history_weight": 0.72,
+            },
+            appraisal=appraisal,
+            current_event=self.companion_event,
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        plain_policy = dict(plain.get("behavior_policy") or {})
+        infused_policy = dict(infused.get("behavior_policy") or {})
+        self.assertGreater(float(infused_policy.get("self_directedness") or 0.0), float(plain_policy.get("self_directedness") or 0.0))
+        self.assertGreater(float(infused_policy.get("history_weight") or 0.0), float(plain_policy.get("history_weight") or 0.0))
 
     def test_engine_guarded_companion_scene_stays_guarded(self):
         appraisal = {

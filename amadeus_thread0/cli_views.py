@@ -127,6 +127,7 @@ def _event_residue_summary(current_event: Any) -> dict[str, Any]:
         "trigger_family": str(current_event.get("trigger_family") or "").strip(),
         "carryover_mode": str(current_event.get("carryover_mode") or "").strip(),
         "carryover_strength": _metric(current_event.get("carryover_strength"), 0.0),
+        "relationship_weather": str(current_event.get("relationship_weather") or "").strip(),
         "presence_residue": _metric(current_event.get("presence_residue"), 0.0),
         "ambient_resonance": _metric(current_event.get("ambient_resonance"), 0.0),
         "self_activity_momentum": _metric(current_event.get("self_activity_momentum"), 0.0),
@@ -160,6 +161,7 @@ def build_behavior_queue_cli_summary(queue: Any, *, limit: int = 3) -> list[dict
                 "last_recheck_at_min": _int_metric(item.get("last_recheck_at_min"), 0),
                 "carryover_mode": str(item.get("carryover_mode") or "").strip(),
                 "carryover_strength": _metric(item.get("carryover_strength"), 0.0),
+                "relationship_weather": str(item.get("relationship_weather") or "").strip(),
                 "presence_residue": _metric(item.get("presence_residue"), 0.0),
                 "ambient_resonance": _metric(item.get("ambient_resonance"), 0.0),
                 "self_activity_momentum": _metric(item.get("self_activity_momentum"), 0.0),
@@ -197,6 +199,8 @@ def render_behavior_queue_cli_text(queue: Any, *, limit: int = 3) -> str:
             + f"{_metric(row.get('ambient_resonance'), 0.0):.3f}/"
             + f"{_metric(row.get('self_activity_momentum'), 0.0):.3f}"
         )
+        if row.get("relationship_weather"):
+            residue += f" weather={row['relationship_weather']}"
         if row.get("attention_target"):
             residue += f" target={row['attention_target']}"
         lines.append(residue)
@@ -262,6 +266,7 @@ def build_evolution_cli_summary(
             "active_categories": _clean_list(semantic.get("active_categories"), limit=6),
             "reactivated_categories": _clean_list(semantic.get("reactivated_categories"), limit=6),
             "summary_lines": _clean_list(semantic.get("summary_lines"), limit=3),
+            "anchor_lines": _clean_list(semantic.get("anchor_lines"), limit=3),
             "top_narratives": _top_narrative_preview(semantic.get("top_narratives"), limit=3),
         },
         "world_dynamics": {
@@ -283,8 +288,10 @@ def build_evolution_cli_summary(
             "counterpart_scene": str(counterpart.get("scene") or "").strip(),
             "behavior_mode": str(behavior.get("interaction_mode") or "").strip(),
             "action_target": str(behavior.get("action_target") or "").strip(),
+            "behavior_weather": str(behavior.get("relationship_weather") or "").strip(),
             "carryover_mode": str(carryover.get("carryover_mode") or "").strip(),
             "carryover_strength": _metric(carryover.get("strength"), 0.0),
+            "carryover_weather": str(carryover.get("relationship_weather") or "").strip(),
             "recon_event_kind": str(recon.get("event_kind") or "").strip(),
             "recon_interaction_frame": str(recon.get("interaction_frame") or "").strip(),
         },
@@ -297,6 +304,7 @@ def build_evolution_cli_summary(
             "scheduled_after_min": _int_metric(behavior_plan.get("scheduled_after_min"), 0),
             "carryover_mode": str(behavior_plan.get("carryover_mode") or "").strip(),
             "carryover_strength": _metric(behavior_plan.get("carryover_strength"), 0.0),
+            "relationship_weather": str(behavior_plan.get("relationship_weather") or "").strip(),
         },
         "behavior_queue_preview": queue_preview,
         "worldline_focus_preview": _focus_preview(worldline_focus, limit=3),
@@ -328,6 +336,9 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     carry_mode = str(current_turn.get("carryover_mode") or "").strip()
     if carry_mode:
         parts.append(f"carry={carry_mode}:{_metric(current_turn.get('carryover_strength'), 0.0):.3f}")
+    carry_weather = str(current_turn.get("carryover_weather") or "").strip()
+    if carry_weather:
+        parts.append(f"weather={carry_weather}")
     stance = str(current_turn.get("counterpart_stance") or "").strip()
     if stance:
         parts.append(f"stance={stance}")

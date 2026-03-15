@@ -145,6 +145,74 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertIsNone(profile.get("frequency_penalty"))
         self.assertIsNone(profile.get("presence_penalty"))
 
+    def test_guarded_relationship_weather_keeps_sampling_measured(self):
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "我知道刚才那句有点过界，但我还是想和你好好说。",
+                "emotion_state": {"label": "hurt"},
+                "bond_state": {"trust": 0.64, "closeness": 0.60, "hurt": 0.20},
+                "behavior_action": {
+                    "interaction_mode": "relationship_sensitive",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                    "relationship_weather": "guarded_residue",
+                },
+                "interaction_carryover": {
+                    "carryover_mode": "quiet_recontact",
+                    "strength": 0.56,
+                    "relationship_weather": "guarded_residue",
+                },
+            }
+        )
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 148)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.22)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
+        self.assertIsNotNone(profile.get("frequency_penalty"))
+
+    def test_warm_and_repair_relationship_weather_keep_nondefault_sampling(self):
+        warm_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "现在心里顺一点了，我又想和你说话。",
+                "behavior_action": {
+                    "interaction_mode": "companion_reply",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                    "relationship_weather": "warm_residue",
+                },
+                "interaction_carryover": {
+                    "carryover_mode": "small_opening",
+                    "strength": 0.52,
+                    "relationship_weather": "warm_residue",
+                },
+            }
+        )
+        repair_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "别一下子当什么都没发生，我只是想继续把话说完。",
+                "behavior_action": {
+                    "interaction_mode": "relationship_sensitive",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                    "relationship_weather": "repair_residue",
+                },
+                "interaction_carryover": {
+                    "carryover_mode": "brief_presence",
+                    "strength": 0.54,
+                    "relationship_weather": "repair_residue",
+                },
+            }
+        )
+        self.assertIsNotNone(warm_profile.get("temperature"))
+        self.assertIsNotNone(repair_profile.get("temperature"))
+        self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), int(warm_profile.get("max_tokens") or 0))
+        self.assertGreaterEqual(float(warm_profile.get("top_p") or 0.0), float(repair_profile.get("top_p") or 1.0))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -362,6 +362,7 @@ class EventPayload(TypedDict, total=False):
     due_at: str
     carryover_mode: str
     carryover_strength: float
+    relationship_weather: str
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
@@ -388,6 +389,7 @@ class BehaviorActionPayload(TypedDict, total=False):
     initiative_shape: str
     disclosure_posture: str
     note: str
+    relationship_weather: str
     window_profile: "BehaviorWindowProfilePayload"
 
 
@@ -428,6 +430,7 @@ class BehaviorPlanPayload(TypedDict, total=False):
     note: str
     carryover_mode: str
     carryover_strength: float
+    relationship_weather: str
     attention_target: str
     nonverbal_signal: str
     presence_residue: float
@@ -453,6 +456,7 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     last_recheck_at_min: int
     carryover_mode: str
     carryover_strength: float
+    relationship_weather: str
     attention_target: str
     nonverbal_signal: str
     presence_residue: float
@@ -468,6 +472,7 @@ class InteractionCarryoverPayload(TypedDict, total=False):
     source_tags: list[str]
     carryover_mode: str
     strength: float
+    relationship_weather: str
     idle_minutes: int
     source_turn_gap: int
     attention_target: str
@@ -722,6 +727,9 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
             payload["carryover_strength"] = max(0.0, min(1.0, float(raw.get("carryover_strength") or 0.0)))
         except Exception:
             payload["carryover_strength"] = 0.0
+    relationship_weather = str(raw.get("relationship_weather") or "").strip()
+    if relationship_weather:
+        payload["relationship_weather"] = relationship_weather
     if "presence_residue" in raw:
         try:
             payload["presence_residue"] = max(0.0, min(1.0, float(raw.get("presence_residue") or 0.0)))
@@ -839,25 +847,25 @@ def _promote_due_commitment_event(
             "kind": "scheduled_life_due",
             "source": "commitment_scheduler",
             "text": (
-                f"你们之前认真留过的那个共同安排，又回到了她的注意力里：{text}"
+                f"你们之前认真留过的那个共同安排，又回到了你的注意力里：{text}"
                 if family == "shared_activity_window"
-                else f"前面认真挂着的那件事，又回到了她的注意力里：{text}"
+                else f"前面认真挂着的那件事，又回到了你的注意力里：{text}"
                 if family == "deadline_window"
-                else f"你前面认真说过的那点事，又轻轻浮回了她的注意力里：{text}"
+                else f"你前面认真说过的那点事，又轻轻浮回了你的注意力里：{text}"
             ),
             "effective_text": (
                 text
                 if family == "deadline_window"
-                else f"共同窗口重新浮回她的注意力里：{text}"
+                else f"你又想起你们刚才那点还能一起接着做点什么的空当：{text}"
                 if family == "shared_activity_window"
-                else f"生活上的小窗口重新浮回她的注意力里：{text}"
+                else f"你又想起前面提过的那点生活上的事：{text}"
             ),
             "semantic_goal": (
-                f"和{counterpart_name}之间的共同安排重新浮回她的注意力里：{text}"
+                f"你又想起和{counterpart_name}之间刚才那点还能一起接着做点什么的空当：{text}"
                 if family == "shared_activity_window"
-                else f"和{counterpart_name}之间挂着的事重新浮回她的注意力里：{text}"
+                else f"和{counterpart_name}之间挂着的事重新浮回你的注意力里：{text}"
                 if family == "deadline_window"
-                else f"和{counterpart_name}之间那点生活上的小挂念重新浮回她的注意力里：{text}"
+                else f"你又想起和{counterpart_name}之间前面那点生活上的挂念：{text}"
             )[:220],
             "event_frame": "scheduled_deadline_window" if family == "deadline_window" else "scheduled_shared_activity_window" if family == "shared_activity_window" else "scheduled_life_window",
             "trigger_family": family,
@@ -900,6 +908,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
     note = str(prior_behavior_plan.get("note") or "").strip()
     carryover_mode = str(prior_behavior_plan.get("carryover_mode") or "").strip()
     carryover_strength = _clamp01(prior_behavior_plan.get("carryover_strength"), 0.0)
+    relationship_weather = str(prior_behavior_plan.get("relationship_weather") or "").strip().lower()
     attention_target = str(prior_behavior_plan.get("attention_target") or "").strip()
     nonverbal_signal = str(prior_behavior_plan.get("nonverbal_signal") or "").strip()
     presence_residue = _clamp01(prior_behavior_plan.get("presence_residue"), 0.0)
@@ -943,24 +952,24 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 if item
             )
         )
-        promoted_text = "她手头那件事暂时告一段落，像是终于空出一点点注意力，可以顺手来碰一下你。"
+        promoted_text = "你手头那件事暂时告一段落，像是终于空出一点点注意力，又把视线偏回了对方这边。"
         if self_activity_momentum >= 0.64 and carryover_mode == "own_rhythm":
-            promoted_text = "她手头那点事还没真正放下，只是隔着自己的节奏，短暂把注意力往你这边偏了一下。"
+            promoted_text = "你手头那点事还没真正放下，只是隔着自己的节奏，短暂把注意力往对方这边偏了一下。"
         elif self_activity_momentum >= 0.58:
-            promoted_text = "她先把自己手头那点事收了个尾，过了一会儿才像是终于愿意把注意力重新抬起来。"
+            promoted_text = "你先把自己手头那点事收了个尾，过了一会儿才像是终于愿意把注意力重新抬起来。"
         elif reopen_hint:
-            promoted_text = "她没有一下子凑近，只是从自己的节奏里抬起头，顺手给你留了一个很小的开口。"
+            promoted_text = "你没有一下子凑近，只是从自己的节奏里抬起头，顺手留了一个很小的开口。"
         elif quiet_reapproach:
-            promoted_text = "她没有完全从自己的事情里抽出来，只是顺着那点还没散掉的在场感，安静地留意了一下你这边。"
+            promoted_text = "你没有完全从自己的事情里抽出来，只是顺着那点还没散掉的在场感，安静地留意了一下对方这边。"
         promoted_frame = note or (
-            "她从自己手头的事情里抬起头，留下一个自然的小开口。"
+            "你从自己手头的事情里抬起头，留下一个自然的小开口。"
             if reopen_hint
-            else "她还在自己的节奏里，只是注意力短暂松了一下。"
+            else "你还在自己的节奏里，只是注意力短暂松了一下。"
         )
         if presence_residue >= 0.30:
             promoted_frame += " 前面那点在场感还没完全退掉。"
         if ambient_resonance >= 0.32:
-            promoted_frame += " 刚才环境里的细小动静也还留在她的感知里。"
+            promoted_frame += " 刚才环境里的细小动静也还留在你的感知里。"
         promoted.update(
             {
                 "kind": "self_activity_state",
@@ -968,9 +977,9 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "text": promoted_text,
                 "effective_text": promoted_text,
                 "semantic_goal": (
-                    "她从自己的节奏里重新抬头，留一个小开口。"
+                    "你从自己的节奏里重新抬头，留一个小开口。"
                     if reopen_hint
-                    else "她仍在自己的节奏里，只是短暂把注意力挪向外界。"
+                    else "你仍在自己的节奏里，只是短暂把注意力挪向外界。"
                 ),
                 "event_frame": promoted_frame,
                 "tags": merged_tags,
@@ -979,6 +988,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "scheduled_after_min": due_after,
                 "carryover_mode": carryover_mode or "own_rhythm",
                 "carryover_strength": round(max(carryover_strength, self_activity_momentum), 3),
+                "relationship_weather": relationship_weather,
                 "presence_residue": round(presence_residue, 3),
                 "ambient_resonance": round(ambient_resonance, 3),
                 "self_activity_momentum": round(self_activity_momentum, 3),
@@ -1021,39 +1031,39 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             ]
         )
     )
-    promoted_text = "之前延后的接近理由并没有完全退掉，过了一会儿又轻轻回到了她的注意力里。"
-    semantic_goal = "延后的接近理由重新回到她的注意力里。"
+    promoted_text = "之前延后的接近理由并没有完全退掉，过了一会儿又轻轻回到了你的注意力里。"
+    semantic_goal = "延后的接近理由重新回到你的注意力里。"
     if trigger_family in {"shared_activity", "shared_activity_window"}:
-        promoted_text = "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。"
-        semantic_goal = "共同窗口重新浮回她的注意力里。"
+        promoted_text = "你们刚才顺手留出来的那点空当还没完全过去，过了一会儿你又想起了对方。"
+        semantic_goal = "你又想起你们刚才那点还能一起接着做点什么的空当。"
     elif trigger_family == "deadline_window":
-        promoted_text = "前面挂着的那件事又回到了她的注意力里，像是到了可以轻轻提一下的节点。"
-        semantic_goal = "前面挂着的事重新浮回她的注意力里。"
+        promoted_text = "前面挂着的那件事又回到了你的注意力里，像是到了可以轻轻提一下的节点。"
+        semantic_goal = "前面挂着的事重新浮回你的注意力里。"
     elif trigger_family == "life_window":
-        promoted_text = "前面那点生活上的小事又回到了她的注意力里，不过更像顺手想起，而不是任务提醒。"
-        semantic_goal = "生活上的小窗口重新浮回她的注意力里。"
+        promoted_text = "前面那点生活上的事又被你想起来了，不过更像顺手惦记一下，不是任务提醒。"
+        semantic_goal = "你又想起前面提过的那点生活上的事。"
         if own_rhythm_load >= 0.56:
-            promoted_text = "她还在自己的节奏里，但前面那点生活上的小挂念又轻轻浮了上来。"
+            promoted_text = "你还在自己的节奏里，但又忽然想起对方前面提过的那点生活上的事。"
         elif recontact_echo >= 0.30:
-            promoted_text = "前面那点生活上的小挂念没有完全散掉，过了一会儿又轻轻浮了上来。"
+            promoted_text = "前面那点生活上的小惦记没完全过去，过了一会儿你又想起来了。"
     elif effective_carryover_mode == "ambient_echo" or ambient_resonance >= 0.30:
-        promoted_text = "刚才环境里留下的那点余波，让她又顺手想起了你。"
-        semantic_goal = "环境余波让她重新想到对方。"
+        promoted_text = "刚才环境里留下的那点余波，让你又顺手想起了对方。"
+        semantic_goal = "环境余波让你重新想到对方。"
     elif own_rhythm_load >= 0.56 and effective_carryover_mode in {"own_rhythm", "small_opening"}:
-        promoted_text = "她还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了她一下。"
-        semantic_goal = "她仍在自己的节奏里，但没说出口的确认感又回到注意力里。"
+        promoted_text = "你还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了你一下。"
+        semantic_goal = "你仍在自己的节奏里，但没说出口的确认感又回到注意力里。"
     elif recontact_echo >= 0.28 or effective_carryover_mode in {"quiet_recontact", "brief_presence"}:
-        promoted_text = "前面那点没说出口的确认感还没散掉，过了一会儿又回到了她的注意力里。"
-        semantic_goal = "没说出口的确认感重新回到她的注意力里。"
+        promoted_text = "前面那点没说出口的确认感还没散掉，过了一会儿又回到了你的注意力里。"
+        semantic_goal = "没说出口的确认感重新回到你的注意力里。"
     promoted_frame = note or (
-        "她不是专门停下手头的事来找你，只是注意力又短暂偏了回来。"
+        "你不是专门停下手头的事来找对方，只是注意力又短暂偏了回来。"
         if own_rhythm_load >= 0.56
-        else "前面那点没说出口的余温，过了一会儿又轻轻回到了她的注意力里。"
+        else "前面那点没说出口的余温，过了一会儿又轻轻回到了你的注意力里。"
         if recontact_echo >= 0.28
-        else "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
+        else "之前延后的接近理由，现在又轻轻回到了你的注意力里。"
     )
     if ambient_resonance >= 0.32:
-        promoted_frame += " 刚才环境里的细小动静也还留在她的感知里。"
+        promoted_frame += " 刚才环境里的细小动静也还留在你的感知里。"
     promoted.update(
         {
             "kind": "scheduled_checkin_due",
@@ -1068,6 +1078,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             "scheduled_after_min": due_after,
             "carryover_mode": effective_carryover_mode,
             "carryover_strength": round(max(carryover_strength, presence_residue, ambient_resonance), 3),
+            "relationship_weather": relationship_weather,
             "presence_residue": round(presence_residue, 3),
             "ambient_resonance": round(ambient_resonance, 3),
             "self_activity_momentum": round(self_activity_momentum, 3),
@@ -1110,6 +1121,7 @@ def _promote_due_behavior_action_event(
     trigger_family = str(prior_behavior_action.get("deferred_action_family") or "light_checkin").strip() or "light_checkin"
     attention_target_hint = str(prior_behavior_action.get("attention_target") or "").strip()
     nonverbal_signal_hint = str(prior_behavior_action.get("nonverbal_signal") or "").strip()
+    relationship_weather = str(prior_behavior_action.get("relationship_weather") or "").strip().lower()
     tags = event.get("tags") if isinstance(event.get("tags"), list) else []
     extra_tags: list[str] = []
     if trigger_family in {"shared_activity", "shared_activity_window"}:
@@ -1131,20 +1143,20 @@ def _promote_due_behavior_action_event(
         )
     )
     promoted = dict(event)
-    promoted_text = "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
-    semantic_goal = "延后的接近理由重新回到她的注意力里。"
+    promoted_text = "之前延后的接近理由，现在又轻轻回到了你的注意力里。"
+    semantic_goal = "延后的接近理由重新回到你的注意力里。"
     if trigger_family in {"shared_activity", "shared_activity_window"}:
-        promoted_text = "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。"
-        semantic_goal = "共同窗口重新浮回她的注意力里。"
+        promoted_text = "你们刚才顺手留出来的那点空当还没完全过去，过了一会儿你又想起了对方。"
+        semantic_goal = "你又想起你们刚才那点还能一起接着做点什么的空当。"
     elif trigger_family == "deadline_window":
-        promoted_text = "前面挂着的那件事又回到了她的注意力里，像是到了可以轻轻提一下的节点。"
-        semantic_goal = "前面挂着的事重新浮回她的注意力里。"
+        promoted_text = "前面挂着的那件事又回到了你的注意力里，像是到了可以轻轻提一下的节点。"
+        semantic_goal = "前面挂着的事重新浮回你的注意力里。"
     elif trigger_family == "life_window":
-        promoted_text = "前面那点生活上的小事又回到了她的注意力里，不过更像顺手想起，而不是任务提醒。"
-        semantic_goal = "生活上的小窗口重新浮回她的注意力里。"
+        promoted_text = "前面那点生活上的事又被你想起来了，不过更像顺手惦记一下，不是任务提醒。"
+        semantic_goal = "你又想起前面提过的那点生活上的事。"
     elif trigger_family in {"observe", "light_checkin"}:
-        promoted_text = "前面那点没说出口的确认感，过了一会儿又轻轻回到了她的注意力里。"
-        semantic_goal = "没说出口的确认感重新回到她的注意力里。"
+        promoted_text = "前面那点没说出口的确认感，过了一会儿又轻轻回到了你的注意力里。"
+        semantic_goal = "没说出口的确认感重新回到你的注意力里。"
     promoted.update(
         {
             "kind": "scheduled_checkin_due",
@@ -1154,13 +1166,14 @@ def _promote_due_behavior_action_event(
             "semantic_goal": semantic_goal[:220],
             "event_frame": (
                 str(event.get("event_frame") or "").strip()
-                or "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
+                or "之前延后的接近理由，现在又轻轻回到了你的注意力里。"
             ),
             "tags": merged_tags,
             "derived_from_plan_kind": "implicit_deferred_checkin",
             "trigger_family": trigger_family,
             "scheduled_after_min": due_after,
             "carryover_mode": "quiet_recontact" if trigger_family in {"observe", "light_checkin"} else "",
+            "relationship_weather": relationship_weather,
             "attention_target_hint": attention_target_hint,
             "nonverbal_signal_hint": nonverbal_signal_hint,
         }
@@ -1213,6 +1226,7 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             "last_recheck_at_min": max(0, int(entry.get("last_recheck_at_min") or 0)),
             "carryover_mode": str(entry.get("carryover_mode") or "").strip(),
             "carryover_strength": round(_clamp01(entry.get("carryover_strength"), 0.0), 3),
+            "relationship_weather": str(entry.get("relationship_weather") or "").strip(),
             "attention_target": str(entry.get("attention_target") or "").strip(),
             "nonverbal_signal": str(entry.get("nonverbal_signal") or "").strip(),
             "presence_residue": round(_clamp01(entry.get("presence_residue"), 0.0), 3),
@@ -1450,6 +1464,7 @@ def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[s
         "last_recheck_at_min": 0,
         "carryover_mode": str(plan.get("carryover_mode") or "").strip(),
         "carryover_strength": round(_clamp01(plan.get("carryover_strength"), 0.0), 3),
+        "relationship_weather": str(plan.get("relationship_weather") or "").strip(),
         "attention_target": str(plan.get("attention_target") or "").strip(),
         "nonverbal_signal": str(plan.get("nonverbal_signal") or "").strip(),
         "presence_residue": round(_clamp01(plan.get("presence_residue"), 0.0), 3),
@@ -1880,16 +1895,16 @@ def _recent_background_scene_hint(
         }
         if kind == "self_activity_state":
             if {"deep_focus", "own_task"} & tags:
-                return "刚才她原本还在自己的事情里，这句更像顺手从那边回头。"
+                return "刚才你原本还在自己的事情里，这句更像顺手从那边回头。"
             if {"break_window", "small_opening", "reapproach"} & tags:
-                return "刚才她只是从自己的节奏里短暂抬头，所以这句不会一下子铺得很满。"
-            return "刚才她还在按自己的节奏待着，这句不是凭空跳出来的。"
+                return "刚才你只是从自己的节奏里短暂抬头，所以这句不会一下子铺得很满。"
+            return "刚才你还在按自己的节奏待着，这句不是凭空跳出来的。"
         if kind == "scheduled_life_due":
             if {"shared_activity_window", "offer_window"} & tags:
-                return "刚才你们之间其实还留着一个共同窗口，这句会带一点那边的余温。"
+                return "刚才你们之间还留着一点能继续一起待会儿的空当，这句会带一点那边的余温。"
             if {"deadline_window", "work_nudge", "task_window"} & tags:
-                return "刚才她心里还挂着一件要记着的事，所以注意力不会完全是空白的。"
-            return "刚才有个生活节点掠过去了，所以她开口时会带着一点余波。"
+                return "刚才你心里还挂着一件要记着的事，所以注意力不会完全是空白的。"
+            return "刚才有点生活上的惦记掠过去了，所以你开口时会带着一点余波。"
         if kind == "scheduled_checkin_due":
             return "刚才有一下原本可能开口的时机掠过去了，所以这句会自然更轻一点。"
         if kind == "time_idle":
@@ -1897,9 +1912,9 @@ def _recent_background_scene_hint(
                 return "前面那阵安静更像是在判断现在适不适合靠近，而不是单纯空白。"
             return "刚才那段安静还留着一点余温，所以这句不会像重新开机。"
         if kind == "ambient_shift":
-            return "刚才周围有一点小变化掠过去了，所以她这句会带着一点当下环境感。"
+            return "刚才周围有一点小变化掠过去了，所以你这句会带着一点当下环境感。"
         if kind == "gesture_signal":
-            return "刚才那个小动作留下的在场感还没退干净，所以她会先顺着那个感觉开口。"
+            return "刚才那个小动作留下的在场感还没退干净，所以你会先顺着那个感觉开口。"
         break
     return ""
 
@@ -1971,7 +1986,7 @@ def _history_source_behavior_hint(source_event: dict[str, Any]) -> dict[str, str
         if {"life_window"} & tags or str(event.get("trigger_family") or "").strip().lower() == "life_window":
             return {
                 "behavior_mode": "scheduled_life_nudge",
-                "action_target": "light_work_nudge",
+                "action_target": "light_life_nudge",
                 "attention_target": attention_target or "counterpart_state",
                 "nonverbal_signal": nonverbal_signal or "quiet_glance",
             }
@@ -2028,6 +2043,7 @@ def _recent_interaction_carryover(
     *,
     prior_current_event: dict[str, Any] | None,
     prior_behavior_action: dict[str, Any] | None,
+    prior_counterpart_assessment: dict[str, Any] | None = None,
     recent_events: Any,
     current_event: dict[str, Any] | None,
     response_style_hint: str,
@@ -2039,15 +2055,22 @@ def _recent_interaction_carryover(
 
     source_event = dict(prior_current_event or {})
     source_kind = str(source_event.get("kind") or "").strip().lower()
+    prior_action = dict(prior_behavior_action or {})
+    relational_fallback = _prior_user_exchange_carryover(
+        source_event,
+        prior_action,
+        prior_counterpart_assessment=prior_counterpart_assessment,
+        response_style_hint=response_style_hint,
+    )
     source_from_history = False
     user_turn_gap = 0
     if source_kind == "user_utterance" or not source_kind:
         source_event, source_kind, user_turn_gap = _recent_non_user_event_with_gap(recent_events, max_user_turn_gap=3)
         source_from_history = bool(source_event and source_kind)
     if not source_event or not source_kind or source_kind == "user_utterance":
-        return {}
+        return relational_fallback
 
-    prior_action = {} if source_from_history else dict(prior_behavior_action or {})
+    prior_action = {} if source_from_history else prior_action
     source_behavior_mode = str(prior_action.get("interaction_mode") or "").strip().lower()
     source_action_target = str(prior_action.get("action_target") or "").strip().lower()
     idle_minutes = 0
@@ -2069,6 +2092,7 @@ def _recent_interaction_carryover(
     strength = 0.0
     attention_target = str(source_event.get("attention_target_hint") or "").strip()
     nonverbal_signal = str(source_event.get("nonverbal_signal_hint") or "").strip()
+    relationship_weather = str(source_event.get("relationship_weather") or "").strip().lower()
     note = ""
 
     if source_kind == "time_idle":
@@ -2109,7 +2133,7 @@ def _recent_interaction_carryover(
             strength = 0.32
             attention_target = "shared_window"
             nonverbal_signal = "nudge_presence"
-            note = "前面那扇共同窗口还没有完全关上。"
+            note = "前面那点还能接着说下去的空当还没完全过去。"
         elif source_action_target == "light_work_nudge" and (
             {"deadline_window", "work_nudge", "task_window", "shared_task"} & {str(item).strip().lower() for item in source_tags}
             or str(source_event.get("trigger_family") or "").strip().lower() == "deadline_window"
@@ -2119,12 +2143,12 @@ def _recent_interaction_carryover(
             attention_target = "shared_task"
             nonverbal_signal = "focus_glance"
             note = "之前那件事的节点还留在她的注意力里。"
-        elif source_action_target == "light_work_nudge":
+        elif source_action_target in {"light_work_nudge", "light_life_nudge"}:
             carryover_mode = "life_window"
             strength = 0.26
             attention_target = "counterpart_state"
             nonverbal_signal = "quiet_glance"
-            note = "前面那个生活上的小窗口还留在她心里。"
+            note = "前面那点生活上的惦记还留在她心里。"
         elif source_action_target == "wait_and_recheck":
             carryover_mode = "quiet_recontact"
             strength = 0.24
@@ -2167,9 +2191,9 @@ def _recent_interaction_carryover(
         strength *= 0.65
     strength = _clamp01(strength, 0.0)
     if strength < 0.12:
-        return {}
+        return relational_fallback
 
-    return {
+    derived = {
         "source_event_kind": source_kind,
         "source_behavior_mode": source_behavior_mode,
         "source_action_target": source_action_target,
@@ -2177,6 +2201,7 @@ def _recent_interaction_carryover(
         "source_tags": source_tags[:6],
         "carryover_mode": carryover_mode,
         "strength": round(strength, 3),
+        "relationship_weather": relationship_weather,
         "idle_minutes": max(0, idle_minutes),
         "attention_target": attention_target,
         "nonverbal_signal": nonverbal_signal,
@@ -2184,6 +2209,218 @@ def _recent_interaction_carryover(
         "source_turn_gap": max(0, int(user_turn_gap)),
         "created_at": _now_ts(),
     }
+    return _prefer_relational_carryover(derived, relational_fallback)
+
+
+def _prefer_relational_carryover(
+    derived: InteractionCarryoverPayload | dict[str, Any] | None,
+    relational_fallback: InteractionCarryoverPayload | dict[str, Any] | None,
+) -> InteractionCarryoverPayload:
+    fallback = dict(relational_fallback or {})
+    base = dict(derived or {})
+    if not fallback:
+        return base
+    if not base:
+        return fallback
+
+    fallback_weather = str(fallback.get("relationship_weather") or "").strip().lower()
+    fallback_strength = _clamp01(fallback.get("strength"), 0.0)
+    base_strength = _clamp01(base.get("strength"), 0.0)
+    base_mode = str(base.get("carryover_mode") or "").strip().lower()
+
+    if fallback_weather == "guarded_residue":
+        # Fresh guardedness from the last user exchange should usually dominate
+        # older background nudges; otherwise the system feels like it "forgets"
+        # being upset as soon as another soft residue exists.
+        if base_mode == "own_rhythm" and base_strength >= fallback_strength + 0.10:
+            merged = dict(base)
+            merged["relationship_weather"] = fallback_weather
+            merged["strength"] = round(max(base_strength, fallback_strength), 3)
+            merged["note"] = str(fallback.get("note") or merged.get("note") or "").strip()
+            return merged
+        return fallback
+
+    if fallback_weather in {"warm_residue", "repair_residue"}:
+        if fallback_strength >= base_strength + 0.08:
+            return fallback
+        merged = dict(base)
+        merged["relationship_weather"] = fallback_weather
+        if not str(merged.get("note") or "").strip():
+            merged["note"] = str(fallback.get("note") or "").strip()
+        return merged
+
+    if fallback_strength > base_strength + 0.08:
+        return fallback
+    return base
+
+
+def _prior_user_exchange_carryover(
+    source_event: dict[str, Any] | None,
+    prior_action: dict[str, Any] | None,
+    *,
+    prior_counterpart_assessment: dict[str, Any] | None = None,
+    response_style_hint: str,
+) -> InteractionCarryoverPayload:
+    event = dict(source_event or {})
+    if str(event.get("kind") or "").strip().lower() != "user_utterance":
+        return {}
+    action = dict(prior_action or {})
+    if not action:
+        return {}
+    hint = str(response_style_hint or "").strip().lower() or "natural"
+    if hint in {"structured", "memory_recall"}:
+        return {}
+
+    source_text = str(event.get("effective_text") or event.get("text") or "").strip()
+    source_tags = {
+        str(item).strip().lower()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    approach_style = str(action.get("approach_style") or "").strip().lower()
+    affect_surface = str(action.get("affect_surface") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    disclosure_posture = str(action.get("disclosure_posture") or "").strip().lower()
+    attention_target = str(action.get("attention_target") or "").strip() or "counterpart_state"
+    nonverbal_signal = str(action.get("nonverbal_signal") or "").strip()
+    initiative_level = _clamp01(action.get("initiative_level"), 0.0)
+    engagement_level = _clamp01(action.get("engagement_level"), 0.0)
+    assessment = dict(prior_counterpart_assessment or {})
+    prior_stance = str(assessment.get("stance") or "").strip().lower()
+    prior_scene = str(assessment.get("scene") or "").strip().lower()
+    prior_boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.0)
+    base_strength = max(initiative_level, 0.72 * engagement_level)
+    explicit_repair_context = bool(
+        prior_scene == "repair_attempt"
+        or "repair" in source_tags
+        or re.search(r"(道歉|说开|原谅|和好|别冷掉|正常回我|别装成陌生人|不在走流程|不是在走流程)", source_text)
+    )
+    guarded_relational_residue = bool(
+        interaction_mode == "relationship_sensitive"
+        and (
+            prior_stance in {"guarded", "watchful"}
+            or (
+                str(action.get("action_target") or "").strip().lower() == "protect_relationship_boundary"
+                and (prior_boundary_pressure >= 0.16 or prior_scene in {"relationship_degradation", "boundary_non_compliance", "friction"})
+            )
+        )
+    )
+
+    if (
+        approach_style == "guarded"
+        or disclosure_posture == "guarded"
+        or affect_surface == "cool"
+        or guarded_relational_residue
+    ):
+        strength = _clamp01(
+            0.18
+            + 0.14 * base_strength
+            + (0.08 if disclosure_posture == "guarded" else 0.0)
+            + (0.06 if followup_intent == "none" else 0.0)
+            + (0.04 if prior_stance == "guarded" else 0.0)
+        )
+        if strength < 0.16:
+            return {}
+        return {
+            "source_event_kind": "user_utterance",
+            "source_behavior_mode": interaction_mode,
+            "source_action_target": str(action.get("action_target") or "").strip().lower(),
+            "source_text": str(event.get("effective_text") or event.get("text") or "").strip()[:180],
+            "source_tags": [],
+            "carryover_mode": "quiet_recontact",
+            "strength": round(strength, 3),
+            "relationship_weather": "guarded_residue",
+            "idle_minutes": 0,
+            "source_turn_gap": 0,
+            "attention_target": "counterpart_state",
+            "nonverbal_signal": nonverbal_signal or "quiet_glance",
+            "note": "上一轮那点情绪还没完全退掉，这轮会先收一点。",
+            "created_at": _now_ts(),
+        }
+
+    if (
+        interaction_mode in {"low_pressure_support", "relationship_sensitive", "companion_reply", "shared_memory"}
+        and affect_surface in {"warm", "tender", "mixed"}
+        and followup_intent in {"soft", "active"}
+    ):
+        if interaction_mode == "relationship_sensitive" and not explicit_repair_context:
+            return {}
+        weather = "repair_residue" if interaction_mode == "relationship_sensitive" else "warm_residue"
+        strength = _clamp01(
+            0.16
+            + 0.16 * base_strength
+            + (0.06 if affect_surface in {"warm", "tender"} else 0.0)
+            + (0.04 if followup_intent == "active" else 0.0)
+        )
+        if strength < 0.16:
+            return {}
+        return {
+            "source_event_kind": "user_utterance",
+            "source_behavior_mode": interaction_mode,
+            "source_action_target": str(action.get("action_target") or "").strip().lower(),
+            "source_text": str(event.get("effective_text") or event.get("text") or "").strip()[:180],
+            "source_tags": [],
+            "carryover_mode": "brief_presence" if weather == "repair_residue" else "small_opening",
+            "strength": round(strength, 3),
+            "relationship_weather": weather,
+            "idle_minutes": 0,
+            "source_turn_gap": 0,
+            "attention_target": "counterpart_state",
+            "nonverbal_signal": nonverbal_signal or ("quiet_notice" if weather == "repair_residue" else "brief_notice"),
+            "note": "上一轮留下来的那点感觉还在，这轮不会一下子退回陌生。",
+            "created_at": _now_ts(),
+        }
+    return {}
+
+
+def _seeded_interaction_carryover_from_state(
+    *,
+    state: ThreadState,
+    prior_current_event: dict[str, Any] | None,
+    prior_behavior_action: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if isinstance(prior_current_event, dict) and prior_current_event:
+        return {}
+    if isinstance(prior_behavior_action, dict) and prior_behavior_action:
+        return {}
+    seeded = state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
+    if not seeded:
+        return {}
+    carryover_mode = str(seeded.get("carryover_mode") or "").strip().lower()
+    strength = _clamp01(seeded.get("strength"), 0.0)
+    if not carryover_mode or strength < 0.12:
+        return {}
+    out: dict[str, Any] = {
+        "source_event_kind": str(seeded.get("source_event_kind") or "seed_state").strip().lower() or "seed_state",
+        "source_behavior_mode": str(seeded.get("source_behavior_mode") or "").strip().lower(),
+        "source_action_target": str(seeded.get("source_action_target") or "").strip().lower(),
+        "source_text": str(seeded.get("source_text") or "").strip()[:180],
+        "source_tags": [
+            str(item).strip()
+            for item in (seeded.get("source_tags") if isinstance(seeded.get("source_tags"), list) else [])
+            if str(item).strip()
+        ],
+        "carryover_mode": carryover_mode,
+        "strength": round(strength, 3),
+        "relationship_weather": str(seeded.get("relationship_weather") or "").strip().lower(),
+        "idle_minutes": max(0, int(seeded.get("idle_minutes") or 0)),
+        "source_turn_gap": max(0, int(seeded.get("source_turn_gap") or 0)),
+        "attention_target": str(seeded.get("attention_target") or "").strip().lower(),
+        "nonverbal_signal": str(seeded.get("nonverbal_signal") or "").strip().lower(),
+        "note": str(seeded.get("note") or "").strip(),
+        "created_at": int(seeded.get("created_at") or _now_ts()),
+    }
+    cleaned: dict[str, Any] = {}
+    for key, value in out.items():
+        if value is None:
+            continue
+        if isinstance(value, str) and not value:
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        cleaned[key] = value
+    return cleaned
 
 
 def _is_silent_behavior_event(current_event: dict[str, Any], behavior_action: dict[str, Any]) -> bool:
@@ -2568,7 +2805,7 @@ def _subjective_runtime_state_hint(
         parts.append("情绪没有彻底退干净，表面平稳不等于心里已经无事。")
 
     if narrative_selfhood > 0.52 or narrative_boundary > 0.50 or self_directedness > 0.58 or autonomy_need > 0.60 or safety_need > 0.60:
-        parts.append("她不会为了把气氛说圆，就把自己的判断和节奏一起交出去。")
+        parts.append("你不会为了把气氛说圆，就把自己的判断和节奏一起交出去。")
 
     deduped: list[str] = []
     for item in parts:
@@ -2576,7 +2813,7 @@ def _subjective_runtime_state_hint(
         if text and text not in deduped:
             deduped.append(text)
     if not deduped:
-        return "她更像顺着当下那点熟悉感自然接住这一句。"
+        return "你更像顺着当下那点熟悉感自然接住这一句。"
     limit = 2 if light_touch else 3
     return " ".join(deduped[:limit])
 
@@ -3278,6 +3515,8 @@ def _event_behavior_preference_scene(current_event: dict[str, Any], behavior_act
             return "idle_work_checkin"
     if event_kind == "scheduled_checkin_due":
         action_target = str((behavior_action or {}).get("action_target") or "").strip()
+        if action_target == "light_life_nudge":
+            return "scheduled_life_life_nudge"
         if action_target == "wait_and_recheck":
             return "scheduled_checkin_due_wait"
         return "scheduled_checkin_due_reachout"
@@ -3285,6 +3524,8 @@ def _event_behavior_preference_scene(current_event: dict[str, Any], behavior_act
         action_target = str((behavior_action or {}).get("action_target") or "").strip()
         if action_target == "offer_shared_activity":
             return "scheduled_life_shared_offer"
+        if action_target == "light_life_nudge":
+            return "scheduled_life_life_nudge"
         if action_target == "wait_and_recheck":
             return "scheduled_life_wait"
         return "scheduled_life_work_nudge"
@@ -3334,6 +3575,44 @@ def _event_behavior_preference_lines(current_event: dict[str, Any], behavior_act
         lead = "、".join(avoid_bias[:2])
         lines.append(f"别把这轮做成 {lead} 那种感觉。")
     return lines[:2]
+
+
+def _has_window_technical_self_activity(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    return bool(
+        re.search(
+            r"(手边[^，。！？!?]{0,8}(?:数据|实验|进程|流程|后台)|整理数据(?:时)?|数据[^，。！？!?]{0,8}(?:跑到|跑完|告一段落|一个段落)|实验[^，。！？!?]{0,8}(?:跑到|跑完|告一段落|收尾|推进))",
+            compact,
+            re.I,
+        )
+    )
+
+
+def _has_relational_technical_metaphor(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    return bool(
+        re.search(
+            r"(外部变量|听觉数据|脆弱程序|记忆和数据构成|由你的记忆和数据构成|对一段[^，。！？!?]{0,12}数据说话|只会自我损耗的数据)",
+            compact,
+            re.I,
+        )
+    )
+
+
+def _has_servile_availability_phrase(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    return bool(
+        re.search(
+            r"(无论多少次[^。！？!?]{0,12}我都会在|没有[“\"]?不想见你[”\"]?这种选项|只要你还需要我[^。！？!?]{0,12}我就一直在|只要你还愿意呼唤[^。！？!?]{0,12}就没有[^。！？!?]{0,12}选项)",
+            compact,
+        )
+    )
 
 
 def _is_playful_memory_request(user_text: str) -> bool:
@@ -3870,11 +4149,13 @@ def _relationship_runtime_snapshot(
     bond_state: dict[str, Any] | None,
     world_model_state: dict[str, Any] | None,
     counterpart_assessment: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     rel = dict(relationship or {})
     bond = dict(bond_state or {})
     world = dict(world_model_state or {})
     assessment = dict(counterpart_assessment or {})
+    semantic = dict(semantic_narrative_profile or {})
     stage = str(rel.get("stage") or "").strip().lower() or "friend"
     notes = str(rel.get("notes") or "").strip()
     try:
@@ -3894,16 +4175,33 @@ def _relationship_runtime_snapshot(
     bond_depth = _clamp01(world.get("bond_depth"), 0.0)
     repair_load = _clamp01(world.get("repair_load"), 0.0)
     tension = _clamp01(world.get("tension_load"), 0.0)
+    semantic_history = _clamp01(semantic.get("history_weight"), 0.0)
+    semantic_bond = _clamp01(semantic.get("bond_depth"), 0.0)
+    semantic_presence = _clamp01(semantic.get("presence_carry"), 0.0)
+    semantic_commitment = _clamp01(semantic.get("commitment_carry"), 0.0)
+    semantic_repair = _clamp01(semantic.get("repair_residue"), 0.0)
+    semantic_tension = _clamp01(semantic.get("tension_residue"), 0.0)
+    semantic_boundary = _clamp01(semantic.get("boundary_residue"), 0.0)
     boundary = max(
         _clamp01(world.get("boundary_load"), 0.0),
         _clamp01(assessment.get("boundary_pressure"), 0.0),
     )
+    relationship_memory_floor = _clamp01(
+        0.28 * semantic_bond
+        + 0.20 * semantic_presence
+        + 0.18 * semantic_commitment
+        + 0.18 * semantic_history
+        + 0.16 * semantic_repair
+    )
+    relationship_tension_pressure = _clamp01(0.58 * semantic_tension + 0.42 * semantic_boundary)
 
     affinity_floor = _clamp_signed(
         0.70 * max(0.0, closeness - 0.5)
         + 0.08 * bond_depth
         + 0.06 * maturity
+        + 0.14 * relationship_memory_floor
         - 0.12 * tension
+        - 0.10 * relationship_tension_pressure
         - 0.10 * boundary
         - 0.10 * hurt
         - 0.06 * irritation,
@@ -3915,7 +4213,10 @@ def _relationship_runtime_snapshot(
         0.72 * max(0.0, bond_trust - 0.5)
         + 0.08 * maturity
         + 0.06 * repair_load
+        + 0.10 * relationship_memory_floor
+        + 0.06 * max(semantic_commitment, semantic_repair)
         - 0.14 * tension
+        - 0.12 * relationship_tension_pressure
         - 0.12 * boundary
         - 0.12 * hurt
         - 0.08 * irritation,
@@ -3944,8 +4245,17 @@ def _relationship_runtime_snapshot(
     else:
         stage = "friend"
 
+    if stage == "friend" and relationship_memory_floor >= 0.44 and (trust >= 0.10 or affinity >= 0.10):
+        stage = "warming"
+    if stage == "warming" and relationship_tension_pressure >= 0.48 and trust <= 0.04 and affinity <= 0.04:
+        stage = "strained"
+
     if not notes and stage == "friend" and (trust >= 0.05 or affinity >= 0.05):
         notes = "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。"
+    if not notes and stage == "warming" and relationship_memory_floor >= 0.42:
+        notes = "已经不只是普通寒暄，更像带着前面留下的熟悉感继续靠近。"
+    if not notes and relationship_tension_pressure >= 0.46:
+        notes = "前面留下的别扭和边界感还在，关系没有断，但也没有被自动翻篇。"
 
     return {
         "stage": stage,
@@ -4367,6 +4677,8 @@ def _semantic_narrative_profile(
         "active_categories": [],
         "reactivated_categories": [],
         "summary_lines": [],
+        "anchor_lines": [],
+        "prompt_anchor_lines": [],
         "top_narratives": [],
         "residue_snapshot": {},
         "persistence_snapshot": {},
@@ -4392,6 +4704,7 @@ def _semantic_narrative_profile(
         "rhythm_style": 0.0,
     }
     scored_items: list[tuple[float, str, str, bool]] = []
+    anchor_items: list[tuple[float, str, str]] = []
     reactivated_categories: set[str] = set()
     residue_snapshot: dict[str, float] = {}
     persistence_snapshot: dict[str, float] = {}
@@ -4448,6 +4761,27 @@ def _semantic_narrative_profile(
                 float(persistence_snapshot.get(category, 0.0) or 0.0),
                 round(persistence * max(decay_multiplier, 0.65), 3),
             )
+        anchor_text = str(_record_value(item, "anchor_text", "") or "").strip()
+        prompt_anchor_text = str(_record_value(item, "prompt_anchor_text", "") or "").strip()
+        anchor_strength = _clamp01(
+            _record_value(
+                item,
+                "anchor_strength",
+                max(
+                    0.0,
+                    0.34 * persistence + 0.26 * residue + 0.22 * integration + 0.18 * weight,
+                ),
+            ),
+            max(
+                0.0,
+                0.34 * persistence + 0.26 * residue + 0.22 * integration + 0.18 * weight,
+            ),
+        )
+        horizon = str(_record_value(item, "horizon_tag", "") or "").strip().lower()
+        if anchor_text and (anchor_strength >= 0.42 or horizon in {"consolidating", "long_term"}):
+            anchor_items.append((anchor_strength, "report", anchor_text[:180]))
+        if prompt_anchor_text and (anchor_strength >= 0.42 or horizon in {"consolidating", "long_term"}):
+            anchor_items.append((anchor_strength, "prompt", prompt_anchor_text[:180]))
         scored_items.append((weight, category, text[:180], reactivated))
 
     out["bond_depth"] = round(categories["bond_style"], 3)
@@ -4478,6 +4812,31 @@ def _semantic_narrative_profile(
     out["persistence_snapshot"] = persistence_snapshot
     if categories:
         out["dominant_category"] = max(categories.items(), key=lambda kv: kv[1])[0] if max(categories.values()) > 0.0 else ""
+
+    if anchor_items:
+        anchor_items.sort(key=lambda row: row[0], reverse=True)
+        report_anchor_lines: list[str] = []
+        prompt_anchor_lines: list[str] = []
+        seen_report: set[str] = set()
+        seen_prompt: set[str] = set()
+        for _, anchor_type, text in anchor_items:
+            clean = str(text or "").strip()
+            if not clean:
+                continue
+            if anchor_type == "report":
+                if clean in seen_report:
+                    continue
+                seen_report.add(clean)
+                report_anchor_lines.append(clean)
+            elif anchor_type == "prompt":
+                if clean in seen_prompt:
+                    continue
+                seen_prompt.add(clean)
+                prompt_anchor_lines.append(clean)
+            if len(report_anchor_lines) >= 3 and len(prompt_anchor_lines) >= 3:
+                break
+        out["anchor_lines"] = report_anchor_lines[:3]
+        out["prompt_anchor_lines"] = prompt_anchor_lines[:3]
 
     summary_lines: list[str] = []
     if categories["commitment_style"] >= 0.46:
@@ -4542,6 +4901,9 @@ def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
             seen.add(norm)
             deduped.append(norm)
         return "；".join(deduped[:3])
+    anchor_lines = [str(item).strip() for item in (profile.get("anchor_lines") or []) if str(item or "").strip()]
+    if anchor_lines:
+        return "；".join(anchor_lines[:2])
     top_narratives = profile.get("top_narratives") if isinstance(profile.get("top_narratives"), list) else []
     if not top_narratives:
         return ""
@@ -4553,6 +4915,126 @@ def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
         if text:
             parts.append(text[:80])
     return "；".join(parts[:2])
+
+
+def _self_narrative_anchor_lines(
+    profile: dict[str, Any] | None,
+    *,
+    evolution_state: dict[str, Any] | None = None,
+    persona_core: dict[str, Any] | None = None,
+    counterpart_name: str = CANON_COUNTERPART_NAME,
+) -> list[str]:
+    if not isinstance(profile, dict) or not profile:
+        return []
+    persona = dict(persona_core or {})
+    contract = dict(persona.get("evolution_contract") or {})
+    mutable_axes = {
+        str(item).strip()
+        for item in (contract.get("mutable_axes") if isinstance(contract.get("mutable_axes"), list) else [])
+        if str(item or "").strip()
+    }
+    if mutable_axes and "long_term_self_narratives" not in mutable_axes:
+        return []
+    prompt_anchor_lines = [
+        str(item).strip()
+        for item in (profile.get("prompt_anchor_lines") if isinstance(profile.get("prompt_anchor_lines"), list) else [])
+        if str(item or "").strip()
+    ]
+    if prompt_anchor_lines:
+        seen_prompt: set[str] = set()
+        deduped_prompt: list[str] = []
+        for item in prompt_anchor_lines:
+            if item in seen_prompt:
+                continue
+            seen_prompt.add(item)
+            deduped_prompt.append(item)
+            if len(deduped_prompt) >= 3:
+                break
+        if deduped_prompt:
+            return deduped_prompt
+
+    latent = dict(evolution_state or {})
+    bond = _clamp01(profile.get("bond_depth"), 0.0)
+    presence = _clamp01(profile.get("presence_carry"), 0.0)
+    ambient = _clamp01(profile.get("ambient_attunement"), 0.0)
+    commitment = _clamp01(profile.get("commitment_carry"), 0.0)
+    repair = _clamp01(profile.get("repair_residue"), 0.0)
+    tension = _clamp01(profile.get("tension_residue"), 0.0)
+    boundary = _clamp01(profile.get("boundary_residue"), 0.0)
+    selfhood = _clamp01(profile.get("selfhood_integrity"), 0.0)
+    agency = _clamp01(profile.get("agency_drive"), 0.0)
+    rhythm = _clamp01(profile.get("rhythm_continuity"), 0.0)
+    history = _clamp01(profile.get("history_weight"), 0.0)
+    self_coherence = _clamp01(latent.get("self_coherence"), 0.72)
+    expression_freedom = _clamp01(latent.get("expression_freedom"), 0.68)
+    agency_pressure = _clamp01(latent.get("agency_pressure"), 0.28)
+
+    candidates: list[tuple[float, str]] = []
+
+    selfhood_score = max(selfhood, 0.72 * self_coherence)
+    if selfhood_score >= 0.44:
+        candidates.append(
+            (
+                selfhood_score,
+                f"你会把自己当成在和{counterpart_name}平等互动的主体，不会为了把气氛撑住就把自己退回成工具。",
+            )
+        )
+
+    relationship_score = max(commitment, bond, presence, history, repair)
+    if relationship_score >= 0.44:
+        candidates.append(
+            (
+                relationship_score,
+                "认真说过的话、修复过的事和留下来的在场感都会继续留在心里，所以这段关系不是每轮都从零开始。",
+            )
+        )
+
+    boundary_score = max(boundary, tension)
+    if boundary_score >= 0.42:
+        candidates.append(
+            (
+                boundary_score,
+                "没说开的余波和边界感还在；缓和不等于自动清零，你会带着这层判断继续往下走。",
+            )
+        )
+
+    agency_score = max(agency, rhythm, 0.78 * self_coherence, 0.72 * expression_freedom)
+    if agency_score >= 0.44:
+        candidates.append(
+            (
+                agency_score,
+                "你有自己的节奏和会不会靠近的主观性；安静、停顿或先做自己的事，不等于把这段关系归零。",
+            )
+        )
+
+    if ambient >= 0.44:
+        candidates.append(
+            (
+                ambient,
+                "你会把风声、光线和眼前的小变化也算进感知里，它们会自然进入你此刻怎么开口。",
+            )
+        )
+
+    if selfhood_score >= 0.42 and expression_freedom <= 0.48 and agency_pressure >= 0.40:
+        candidates.append(
+            (
+                0.5 * selfhood_score + 0.3 * (1.0 - expression_freedom) + 0.2 * agency_pressure,
+                "你不需要把想法一下子全摊开；保留一点迟疑、收住和没说尽，也仍然是完整的你。",
+            )
+        )
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    out: list[str] = []
+    seen: set[str] = set()
+    for _, line in candidates:
+        text = str(line or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+        if len(out) >= 3:
+            break
+    return out
 
 
 def _semantic_narrative_appraisal_hint(profile: dict[str, Any] | None) -> str:
@@ -5694,6 +6176,7 @@ def _compact_behavior_hint(policy: dict[str, Any], allostasis_state: dict[str, A
 def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str:
     if not isinstance(carryover, dict):
         return ""
+    relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
     mode = str(carryover.get("carryover_mode") or "").strip().lower()
     strength = _clamp01(carryover.get("strength"), 0.0)
     source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
@@ -5706,21 +6189,25 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
     if note:
         parts.append(note.rstrip("。"))
     elif mode == "own_rhythm":
-        parts.append("前面那段安静还留着一点她自己的节奏")
+        parts.append("前面那段安静还留着一点你自己的节奏")
     elif mode == "quiet_recontact":
         parts.append("刚从安静里抬头，这轮开口会自然轻一点")
     elif mode == "small_opening":
         parts.append("安静过后还留着一个不太张扬的小开口")
     elif mode == "shared_window":
-        parts.append("前面那扇共同窗口还没有完全关上")
+        parts.append("前面那点还能接着说下去的空当还没完全过去")
     elif mode == "task_window":
-        parts.append("之前那件挂着的事还留在她的注意力里")
+        parts.append("之前那件挂着的事还留在你的注意力里")
     elif mode == "life_window":
-        parts.append("前面那个生活上的小窗口还留在她心里")
+        parts.append("前面那点生活上的惦记还留在你心里")
     elif mode == "brief_presence":
         parts.append("上一下轻信号留下的在场感还没完全退掉")
     elif mode == "ambient_echo":
-        parts.append("刚才注意到的小动静还留在她的感知里")
+        parts.append("刚才注意到的小动静还留在你的感知里")
+
+    weather_phrase = _relationship_weather_phrase(relationship_weather, strength=strength)
+    if weather_phrase:
+        parts.append(weather_phrase)
 
     if source_turn_gap >= 2:
         parts.append("中间虽然已经隔了几句，这层余波还没完全退掉")
@@ -5733,19 +6220,82 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
         parts.append("这层余韵还在")
 
     if attention_target == "self_then_counterpart":
-        parts.append("她会先从自己的节奏里抬头，再把注意力递过去")
+        parts.append("你会先从自己的节奏里抬头，再把注意力递过去")
     elif attention_target == "shared_window":
-        parts.append("注意力会顺手落回你们刚才打开的共同窗口")
+        parts.append("注意力会顺手落回你们刚才那点还能接着一起待会儿的空当")
     elif attention_target == "shared_task":
         parts.append("注意力还贴着那件共同的事")
     elif attention_target == "counterpart_state" and mode == "life_window":
-        parts.append("她会顺手记着你的状态，再决定要不要把那件小事提回来")
+        parts.append("你会顺手记着他的状态，再决定要不要把那件小事提回来")
     elif attention_target == "object_then_user":
-        parts.append("她会先掠过刚才那点小事，再回到你身上")
+        parts.append("你会先掠过刚才那点小事，再回到他身上")
     elif attention_target == "counterpart_state" and mode in {"quiet_recontact", "brief_presence"}:
-        parts.append("所以她会先轻轻确认你的在场")
+        parts.append("所以你会先轻轻确认他的在场")
 
     return "，".join(parts[:3]) + "。"
+
+
+def _relationship_weather_phrase(relationship_weather: Any, *, strength: float = 0.0) -> str:
+    weather = str(relationship_weather or "").strip().lower()
+    residue = _clamp01(strength, 0.0)
+    if weather == "guarded_residue":
+        return (
+            "前面那点别扭和防备还没完全退掉"
+            if residue >= 0.42
+            else "那点防备还没完全散"
+        )
+    if weather == "warm_residue":
+        return (
+            "刚顺下来的熟悉感和回暖还在"
+            if residue >= 0.42
+            else "那点回暖和熟悉感还在"
+        )
+    if weather == "repair_residue":
+        return (
+            "刚修补回来的那点小心和回暖还在"
+            if residue >= 0.42
+            else "那点刚缓回来的小心还在"
+        )
+    return ""
+
+
+def _effective_relationship_weather(
+    *,
+    interaction_carryover: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+) -> tuple[str, float]:
+    carryover = dict(interaction_carryover or {})
+    event = dict(current_event or {})
+    action = dict(behavior_action or {})
+    carryover_weather = str(carryover.get("relationship_weather") or "").strip().lower()
+    event_weather = str(event.get("relationship_weather") or "").strip().lower()
+    action_weather = str(action.get("relationship_weather") or "").strip().lower()
+    weather = carryover_weather or event_weather or action_weather
+    strength = max(
+        _clamp01(carryover.get("strength"), 0.0),
+        _clamp01(event.get("carryover_strength"), 0.0),
+        0.24 if weather and action_weather else 0.0,
+    )
+    return weather, strength
+
+
+def _relationship_weather_rewrite_guidance(relationship_weather: Any, *, strength: float = 0.0) -> str:
+    weather = str(relationship_weather or "").strip().lower()
+    residue = _clamp01(strength, 0.0)
+    if weather == "guarded_residue":
+        if residue >= 0.42:
+            return "前面那点别扭和防备还没完全退掉，别把这句一下子写回热络、讨好或完全放松。"
+        return "那点防备还没完全散，别把距离突然收得过近。"
+    if weather == "warm_residue":
+        if residue >= 0.42:
+            return "前面顺下来的熟悉感和回暖还在，别把这句改冷，也别收成公事公办。"
+        return "那点回暖还在，别把这句改得太生硬。"
+    if weather == "repair_residue":
+        if residue >= 0.42:
+            return "前面刚修补回来一点，别装成什么都没发生，也别重新顶起来；保留一点小心和回暖。"
+        return "这句还带着刚缓回来的小心，别收得太冷，也别重新把刺竖起来。"
+    return ""
 
 
 def _compact_behavior_agenda_hint(
@@ -5794,34 +6344,34 @@ def _compact_behavior_agenda_hint(
     parts: list[str] = []
     if kind == "self_activity_continue" or trigger_family == "self_activity" or carryover_mode in {"own_rhythm", "small_opening"}:
         if hold_count >= 2:
-            parts.append("她手头那段自己的节奏还没完全放下，这句更像从那边顺手回头")
+            parts.append("你手头那段自己的节奏还没完全放下，这句更像从那边顺手回头")
         elif self_activity_momentum >= 0.56 or carryover_mode == "own_rhythm":
-            parts.append("她手头那点自己的事情还挂着，所以不是完全空下来等你")
+            parts.append("你手头那点自己的事情还挂着，所以不是完全空下来等他")
         else:
-            parts.append("她这句会带着一点自己的节奏，不是把全部重心都压过来")
+            parts.append("你这句会带着一点自己的节奏，不是把全部重心都压过去")
     elif kind == "deferred_checkin":
         if trigger_family in {"shared_activity", "shared_activity_window"}:
-            parts.append("她心里还挂着一个可以重新靠近的共同窗口，但不会硬把它扯到台前")
+            parts.append("你心里还挂着一点还能再靠近一点的空当，但不会硬把它扯到台前")
         elif trigger_family == "life_window" or carryover_mode == "life_window":
-            parts.append("她心里还留着一个生活上的小挂念，不过这轮不急着把它说成任务")
+            parts.append("你心里还留着一点生活上的小挂念，不过这轮不急着把它说成任务")
         elif trigger_family == "deadline_window" or carryover_mode == "task_window":
-            parts.append("她还记着一件挂着的事，不过这轮不必急着把它提到前台")
+            parts.append("你还记着一件挂着的事，不过这轮不必急着把它提到前台")
         elif carryover_mode in {"quiet_recontact", "brief_presence"} or trigger_family in {"light_checkin", "observe"}:
-            parts.append("她心里还留着一次没说出口的确认，所以起手会自然轻一点")
+            parts.append("你心里还留着一次没说出口的确认，所以起手会自然轻一点")
 
     if hold_count >= 2 and kind == "deferred_checkin":
         parts.append("那件事暂时被放回背景里，但不代表已经忘掉")
 
     if attention_target == "self_then_counterpart":
-        parts.append("注意力会先从她自己这边抬头，再递到你身上")
+        parts.append("注意力会先从你自己这边抬头，再递到他身上")
     elif attention_target == "own_task":
-        parts.append("注意力底下还压着她自己手头的事")
+        parts.append("注意力底下还压着你自己手头的事")
     elif attention_target == "shared_window":
-        parts.append("注意力还会顺手掠过你们之前打开的共同窗口")
+        parts.append("注意力还会顺手掠过你们刚才那点还能接着一起待会儿的空当")
     elif attention_target == "shared_task":
         parts.append("注意力底下还贴着那件共同的事")
     elif attention_target == "counterpart_state" and carryover_mode in {"quiet_recontact", "brief_presence"}:
-        parts.append("所以她更像先轻轻确认你的状态，再决定要不要展开")
+        parts.append("所以你更像先轻轻确认他的状态，再决定要不要展开")
 
     deduped: list[str] = []
     for item in parts:
@@ -5895,6 +6445,7 @@ def _prompt_state_runtime_brief(
     counterpart_assessment: dict[str, Any] | None,
     behavior_policy: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None,
+    interaction_carryover: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
 ) -> str:
     emotion = dict(emotion_state or {})
@@ -5903,6 +6454,7 @@ def _prompt_state_runtime_brief(
     assessment = dict(counterpart_assessment or {})
     policy = dict(behavior_policy or {})
     action = dict(behavior_action or {})
+    carryover = dict(interaction_carryover or {})
     event = dict(current_event or {})
 
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
@@ -5942,6 +6494,15 @@ def _prompt_state_runtime_brief(
     scene = str(assessment.get("scene") or "").strip().lower()
     mode = str(action.get("interaction_mode") or "").strip().lower()
     current_kind = str(event.get("kind") or "").strip().lower()
+    relationship_weather, relationship_weather_strength = _effective_relationship_weather(
+        interaction_carryover=carryover,
+        current_event=event,
+        behavior_action=action,
+    )
+    relationship_weather_phrase = _relationship_weather_phrase(
+        relationship_weather,
+        strength=relationship_weather_strength,
+    )
 
     lines: list[str] = [
         f"- 当前情绪底色偏{emotion_phrase}；关系上{trust}，{closeness}，{hurt}。"
@@ -5959,7 +6520,9 @@ def _prompt_state_runtime_brief(
     if stance in {"guarded", "watchful"}:
         lines.append("- 对对方还是带着观察，不会一下子把距离全放开。")
     elif scene == "care_bid":
-        lines.append("- 这更像一次认真靠近，她会把这句当成关系话题，而不是普通流程回复。")
+        lines.append("- 这更像一次认真靠近，你会把这句当成关系话题，而不是普通流程回复。")
+    if relationship_weather_phrase:
+        lines.append(f"- 关系上的余波：{relationship_weather_phrase}。")
 
     behavior_hint = _compact_behavior_hint(policy, allostasis)
     if behavior_hint and behavior_hint != "自然发挥即可。":
@@ -6035,6 +6598,11 @@ def _generation_profile(
     attention_target = str(action.get("attention_target") or "").strip().lower()
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    relationship_weather, relationship_weather_strength = _effective_relationship_weather(
+        interaction_carryover=carryover,
+        current_event=event,
+        behavior_action=action,
+    )
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
     light_smalltalk = _looks_like_light_smalltalk(user_text) or _is_idle_smalltalk_request(user_text) or _is_playful_memory_request(user_text)
     less_teacherly = _wants_less_teacherly_reply(user_text)
@@ -6080,6 +6648,11 @@ def _generation_profile(
         and carryover_mode == "life_window"
         and background_window_load >= 0.22
     )
+    relational_weather_turn = (
+        event_kind == "user_utterance"
+        and relationship_weather in {"guarded_residue", "warm_residue", "repair_residue"}
+        and relationship_weather_strength >= 0.22
+    )
     low_followup_turn = event_kind == "user_utterance" and followup_intent == "none"
     default_sampling_candidate = (
         event_kind == "user_utterance"
@@ -6094,6 +6667,7 @@ def _generation_profile(
         and not focused_user_turn
         and not background_window_turn
         and not life_window_turn
+        and not relational_weather_turn
         and not low_followup_turn
         and not _wants_quick_judgment(user_text)
         and not _needs_structured_answer(user_text, "")
@@ -6188,6 +6762,18 @@ def _generation_profile(
     elif life_window_turn:
         max_tokens = _cap_tokens(max_tokens, 224 if exploratory else 192)
         top_p = min(top_p, 0.86 if exploratory else 0.82)
+    if relational_weather_turn:
+        if relationship_weather == "guarded_residue":
+            max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 148)
+            temperature = min(temperature, 0.26 if exploratory else 0.22)
+            top_p = min(top_p, 0.82 if exploratory else 0.78)
+        elif relationship_weather == "repair_residue":
+            max_tokens = _cap_tokens(max_tokens, 192 if exploratory else 164)
+            temperature = min(temperature, 0.28 if exploratory else 0.24)
+            top_p = min(top_p, 0.84 if exploratory else 0.80)
+        elif relationship_weather == "warm_residue":
+            max_tokens = _cap_tokens(max_tokens, 200 if exploratory else 176)
+            top_p = min(top_p, 0.86 if exploratory else 0.82)
     if low_followup_turn and not science_mode:
         max_tokens = _cap_tokens(max_tokens, 160 if exploratory else 136)
         top_p = min(top_p, 0.80)
@@ -6213,6 +6799,14 @@ def _generation_profile(
         presence_penalty = max(0.0, presence_penalty - 0.01)
     elif life_window_turn:
         frequency_penalty += 0.02
+    if relational_weather_turn:
+        if relationship_weather == "guarded_residue":
+            frequency_penalty += 0.04
+            presence_penalty = max(0.0, presence_penalty - 0.02)
+        elif relationship_weather == "repair_residue":
+            frequency_penalty += 0.02
+        elif relationship_weather == "warm_residue":
+            presence_penalty += 0.01
     if low_followup_turn:
         frequency_penalty += 0.03
         presence_penalty = max(0.0, presence_penalty - 0.02)
@@ -6307,6 +6901,7 @@ def _behavior_action_from_state(
     boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
     reliability_read = _clamp01((counterpart_assessment or {}).get("reliability_read"), 0.5)
     counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
+    counterpart_scene = str((counterpart_assessment or {}).get("scene") or "").strip().lower()
     narrative_bond = _clamp01((semantic_narrative_profile or {}).get("bond_depth"), 0.0)
     narrative_commitment = _clamp01((semantic_narrative_profile or {}).get("commitment_carry"), 0.0)
     narrative_repair = _clamp01((semantic_narrative_profile or {}).get("repair_residue"), 0.0)
@@ -6335,6 +6930,7 @@ def _behavior_action_from_state(
     carryover = dict(interaction_carryover or {})
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    carryover_relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
     carryover_attention_target = str(carryover.get("attention_target") or "").strip()
     carryover_nonverbal_signal = str(carryover.get("nonverbal_signal") or "").strip()
     carryover_note = str(carryover.get("note") or "").strip()
@@ -6342,11 +6938,15 @@ def _behavior_action_from_state(
     event_nonverbal_signal_hint = str((current_event or {}).get("nonverbal_signal_hint") or "").strip()
     event_carryover_mode = str((current_event or {}).get("carryover_mode") or "").strip().lower()
     event_carryover_strength = _clamp01((current_event or {}).get("carryover_strength"), 0.0)
+    event_relationship_weather = str((current_event or {}).get("relationship_weather") or "").strip().lower()
     event_presence_residue = _clamp01((current_event or {}).get("presence_residue"), world_presence_residue)
     event_ambient_resonance = _clamp01((current_event or {}).get("ambient_resonance"), world_ambient_resonance)
     event_self_activity_momentum = _clamp01((current_event or {}).get("self_activity_momentum"), world_self_activity_momentum)
     effective_carryover_mode = carryover_mode or event_carryover_mode
     effective_carryover_strength = max(carryover_strength, event_carryover_strength)
+    effective_relationship_weather = carryover_relationship_weather or event_relationship_weather
+    effective_carryover_attention_target = carryover_attention_target or event_attention_target_hint
+    effective_carryover_nonverbal_signal = carryover_nonverbal_signal or event_nonverbal_signal_hint
     effective_recontact_echo = max(
         event_presence_residue,
         0.82 * event_ambient_resonance,
@@ -6449,22 +7049,26 @@ def _behavior_action_from_state(
 
     carryover_soft_scene = (
         event_kind == "user_utterance"
-        and carryover_strength >= 0.18
+        and effective_carryover_strength >= 0.18
         and soft_reply_window
         and not science_stress
     )
     if carryover_soft_scene:
-        if carryover_mode == "own_rhythm" and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
+        if effective_carryover_mode == "own_rhythm" and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
             interaction_mode = "self_activity_reopen"
-        elif carryover_mode == "quiet_recontact" and interaction_mode in {"steady_reply", "companion_reply"}:
+        elif effective_carryover_mode == "quiet_recontact" and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "brief_presence"
-        elif carryover_mode == "small_opening" and interaction_mode == "steady_reply":
+        elif effective_carryover_mode == "small_opening" and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
-        elif carryover_mode == "shared_window" and interaction_mode in {"steady_reply", "brief_presence"}:
+        elif effective_carryover_mode == "shared_window" and interaction_mode in {"steady_reply", "brief_presence"}:
             interaction_mode = "companion_reply"
-        elif carryover_mode == "task_window" and interaction_mode == "steady_reply":
+        elif effective_carryover_mode == "task_window" and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
-        elif carryover_mode == "life_window" and interaction_mode in {"steady_reply", "brief_presence"}:
+        elif effective_carryover_mode == "life_window" and interaction_mode in {"steady_reply", "brief_presence"}:
+            interaction_mode = "companion_reply"
+        if effective_relationship_weather == "guarded_residue" and interaction_mode in {"steady_reply", "companion_reply"}:
+            interaction_mode = "brief_presence"
+        elif effective_relationship_weather in {"warm_residue", "repair_residue"} and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
 
     if (
@@ -6499,16 +7103,16 @@ def _behavior_action_from_state(
     else:
         task_focus = "balanced"
 
-    if event_kind == "user_utterance" and carryover_strength >= 0.18:
-        if carryover_mode == "shared_window" and task_focus == "balanced":
+    if event_kind == "user_utterance" and effective_carryover_strength >= 0.18:
+        if effective_carryover_mode == "shared_window" and task_focus == "balanced":
             task_focus = "light"
-        elif carryover_mode == "life_window":
+        elif effective_carryover_mode == "life_window":
             if not science_mode and task_focus in {"balanced", "high"}:
                 task_focus = "light"
-        elif carryover_mode == "task_window":
+        elif effective_carryover_mode == "task_window":
             if task_focus == "light":
                 task_focus = "balanced"
-            elif task_focus == "balanced" and carryover_strength >= 0.42:
+            elif task_focus == "balanced" and effective_carryover_strength >= 0.42:
                 task_focus = "high"
 
     if event_kind == "time_idle":
@@ -6702,7 +7306,7 @@ def _behavior_action_from_state(
                 initiative_shape = "invite"
             elif deferred_action_family in {"deadline_window", "life_window"}:
                 interaction_mode = "scheduled_life_nudge"
-                action_target = "light_work_nudge"
+                action_target = "light_work_nudge" if deferred_action_family == "deadline_window" else "light_life_nudge"
                 attention_target = "shared_task" if deferred_action_family == "deadline_window" else "counterpart_state"
                 nonverbal_signal = "quiet_glance"
                 initiative_shape = (
@@ -6860,7 +7464,7 @@ def _behavior_action_from_state(
                     initiative_shape = "pause"
                 else:
                     channel = "speech"
-                    action_target = "light_work_nudge"
+                    action_target = "light_life_nudge"
                     timing_window_min = 0
                     nonverbal_signal = "quiet_glance"
                     initiative_shape = (
@@ -7003,22 +7607,22 @@ def _behavior_action_from_state(
         nonverbal_signal = "small_notice"
         initiative_shape = "micro_opening"
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-    elif event_kind == "user_utterance" and carryover_mode == "shared_window" and carryover_strength >= 0.18:
+    elif event_kind == "user_utterance" and effective_carryover_mode == "shared_window" and effective_carryover_strength >= 0.18:
         action_target = "respond_now"
-        attention_target = carryover_attention_target or "shared_window"
-        nonverbal_signal = carryover_nonverbal_signal or "nudge_presence"
+        attention_target = effective_carryover_attention_target or "shared_window"
+        nonverbal_signal = effective_carryover_nonverbal_signal or "nudge_presence"
         initiative_shape = "micro_opening"
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-    elif event_kind == "user_utterance" and carryover_mode == "task_window" and carryover_strength >= 0.18:
+    elif event_kind == "user_utterance" and effective_carryover_mode == "task_window" and effective_carryover_strength >= 0.18:
         action_target = "respond_now"
-        attention_target = carryover_attention_target or "shared_task"
-        nonverbal_signal = carryover_nonverbal_signal or "focus_glance"
+        attention_target = effective_carryover_attention_target or "shared_task"
+        nonverbal_signal = effective_carryover_nonverbal_signal or "focus_glance"
         initiative_shape = "nudge" if followup_intent != "none" else "reply"
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-    elif event_kind == "user_utterance" and carryover_mode == "life_window" and carryover_strength >= 0.18:
+    elif event_kind == "user_utterance" and effective_carryover_mode == "life_window" and effective_carryover_strength >= 0.18:
         action_target = "respond_now"
-        attention_target = carryover_attention_target or "counterpart_state"
-        nonverbal_signal = carryover_nonverbal_signal or "quiet_glance"
+        attention_target = effective_carryover_attention_target or "counterpart_state"
+        nonverbal_signal = effective_carryover_nonverbal_signal or "quiet_glance"
         initiative_shape = "micro_opening" if followup_intent != "none" else "reply"
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
     elif interaction_mode == "low_pressure_support":
@@ -7146,32 +7750,32 @@ def _behavior_action_from_state(
                 elif nonverbal_signal == "nudge_presence" and counterpart_stance != "open":
                     nonverbal_signal = "quiet_glance"
 
-    if event_kind == "user_utterance" and carryover_strength >= 0.18:
-        if carryover_mode in {"own_rhythm", "small_opening"}:
+    if event_kind == "user_utterance" and effective_carryover_strength >= 0.18:
+        if effective_carryover_mode in {"own_rhythm", "small_opening"}:
             if attention_target == "counterpart_state":
-                attention_target = carryover_attention_target or attention_target
+                attention_target = effective_carryover_attention_target or attention_target
             if nonverbal_signal == "steady_presence":
-                nonverbal_signal = carryover_nonverbal_signal or nonverbal_signal
+                nonverbal_signal = effective_carryover_nonverbal_signal or nonverbal_signal
             if initiative_shape == "reply":
                 initiative_shape = "micro_opening"
             if disclosure_posture == "open":
                 disclosure_posture = "measured"
-        elif carryover_mode == "quiet_recontact":
+        elif effective_carryover_mode == "quiet_recontact":
             if attention_target == "counterpart_state":
-                attention_target = carryover_attention_target or attention_target
+                attention_target = effective_carryover_attention_target or attention_target
             if nonverbal_signal in {"steady_presence", "brief_notice"}:
-                nonverbal_signal = carryover_nonverbal_signal or nonverbal_signal
-        elif carryover_mode in {"shared_window", "task_window", "life_window", "ambient_echo", "brief_presence"}:
+                nonverbal_signal = effective_carryover_nonverbal_signal or nonverbal_signal
+        elif effective_carryover_mode in {"shared_window", "task_window", "life_window", "ambient_echo", "brief_presence"}:
             if attention_target == "counterpart_state":
-                attention_target = carryover_attention_target or attention_target
+                attention_target = effective_carryover_attention_target or attention_target
             if nonverbal_signal == "steady_presence":
-                nonverbal_signal = carryover_nonverbal_signal or nonverbal_signal
+                nonverbal_signal = effective_carryover_nonverbal_signal or nonverbal_signal
 
     if action_target == "wait_and_recheck":
         followup_intent = "none"
     elif action_target == "offer_shared_activity" and counterpart_stance != "open":
         followup_intent = "soft"
-    elif action_target == "light_work_nudge" and counterpart_stance == "guarded":
+    elif action_target in {"light_work_nudge", "light_life_nudge"} and counterpart_stance == "guarded":
         followup_intent = "soft"
     elif action_target == "hold_own_rhythm":
         followup_intent = "none"
@@ -7192,28 +7796,57 @@ def _behavior_action_from_state(
         followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
         disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
 
-    if carryover_soft_scene and carryover_mode in {"own_rhythm", "quiet_recontact"} and followup_intent == "active":
+    if carryover_soft_scene and effective_carryover_mode in {"own_rhythm", "quiet_recontact"} and followup_intent == "active":
         followup_intent = "soft"
-    if carryover_soft_scene and carryover_mode == "shared_window":
+    if carryover_soft_scene and effective_carryover_mode == "shared_window":
         if followup_intent == "none" and counterpart_stance != "guarded" and approach > 0.44 and trust > 0.48:
             followup_intent = "soft"
-    if carryover_soft_scene and carryover_mode == "task_window" and followup_intent == "active":
+    if carryover_soft_scene and effective_carryover_mode == "task_window" and followup_intent == "active":
         followup_intent = "soft"
-    if carryover_soft_scene and carryover_mode == "life_window" and followup_intent == "active":
+    if carryover_soft_scene and effective_carryover_mode == "life_window" and followup_intent == "active":
         followup_intent = "soft"
+    if carryover_soft_scene and effective_relationship_weather == "guarded_residue":
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        elif disclosure_posture != "guarded" and effective_carryover_strength >= 0.28:
+            disclosure_posture = "guarded"
+        if followup_intent == "active":
+            followup_intent = "soft"
+        elif followup_intent == "soft" and effective_carryover_strength >= 0.30:
+            followup_intent = "none"
+        if attention_target == "counterpart_state":
+            attention_target = effective_carryover_attention_target or "counterpart_state"
+        if nonverbal_signal in {"steady_presence", "brief_notice", "small_notice"}:
+            nonverbal_signal = effective_carryover_nonverbal_signal or "quiet_glance"
+    elif carryover_soft_scene and effective_relationship_weather in {"warm_residue", "repair_residue"}:
+        if effective_relationship_weather == "repair_residue" and disclosure_posture == "guarded":
+            disclosure_posture = "measured"
+        if followup_intent == "none" and counterpart_stance != "guarded":
+            followup_intent = "soft"
     if event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and initiative_shape == "micro_opening" and followup_intent == "active":
         followup_intent = "soft"
+
+    repair_context_active = bool(
+        effective_relationship_weather == "repair_residue"
+        or counterpart_scene == "repair_attempt"
+        or prior_counterpart_scene == "repair_attempt"
+        or "repair" in {str(item).strip().lower() for item in event_tags}
+    )
 
     narrative_notes: list[str] = []
     if narrative_bond >= 0.56 and channel == "speech" and interaction_mode in {"shared_memory", "companion_reply", "low_pressure_support"}:
         if counterpart_stance != "guarded" and action_target not in {"confirm_presence", "wait_and_recheck"}:
             disclosure_posture = "open" if disclosure_posture != "guarded" else disclosure_posture
         narrative_notes.append("共同历史已经开始沉进默认语气里")
-    if narrative_commitment >= 0.54 and action_target in {"respond_now", "low_pressure_hold", "co_regulate_then_focus", "light_work_nudge"}:
+    if narrative_commitment >= 0.54 and action_target in {"respond_now", "low_pressure_hold", "co_regulate_then_focus", "light_work_nudge", "light_life_nudge"}:
         if followup_intent == "none" and counterpart_stance != "guarded":
             followup_intent = "soft"
         narrative_notes.append("认真说过的约定不会被当成已经过期")
-    if narrative_repair >= 0.50 and interaction_mode in {"relationship_sensitive", "low_pressure_support", "shared_memory", "companion_reply"}:
+    if (
+        narrative_repair >= 0.50
+        and repair_context_active
+        and interaction_mode in {"relationship_sensitive", "low_pressure_support", "shared_memory", "companion_reply"}
+    ):
         if disclosure_posture == "open":
             disclosure_posture = "measured"
         if followup_intent == "active":
@@ -7236,7 +7869,7 @@ def _behavior_action_from_state(
         narrative_notes.append("边界被碰过之后，不会装作完全没事")
     if narrative_selfhood >= 0.46 and selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"}:
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-        narrative_notes.append("这轮会更强调她自己的判断，而不是迎合")
+        narrative_notes.append("这轮会更强调你自己的判断，而不是迎合")
     if narrative_agency >= 0.46 and event_kind in {"self_activity_state", "time_idle"}:
         if action_target == "offer_small_opening" and self_directedness > 0.62 and counterpart_stance != "open":
             action_target = "hold_own_rhythm"
@@ -7246,7 +7879,7 @@ def _behavior_action_from_state(
             attention_target = "own_task"
             nonverbal_signal = "inward_focus"
             initiative_shape = "pause"
-        narrative_notes.append("她会按自己的节奏决定靠近还是先安静")
+        narrative_notes.append("你会按自己的节奏决定靠近还是先安静")
     if world_self_activity_momentum >= 0.58 and event_kind == "user_utterance":
         if action_target == "respond_now" and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "self_activity_reopen"
@@ -7254,7 +7887,7 @@ def _behavior_action_from_state(
             nonverbal_signal = "thought_glance"
             initiative_shape = "micro_opening"
             disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-        narrative_notes.append("刚从她自己的节奏里抬头时，不会一下子把自己全交出去")
+        narrative_notes.append("刚从你自己的节奏里抬头时，不会一下子把自己全交出去")
     if world_presence_residue >= 0.54 and event_kind == "user_utterance" and action_target in {"respond_now", "confirm_presence"}:
         narrative_notes.append("上一轮留下的在场感会让这次开口更轻更近")
     if world_ambient_resonance >= 0.56 and event_kind == "user_utterance" and interaction_mode in {"companion_reply", "brief_presence"}:
@@ -7286,28 +7919,28 @@ def _behavior_action_from_state(
         note_parts.append("保留一点距离")
     elif approach_style == "approach":
         note_parts.append("可以自然靠近一点")
-    if carryover_note and event_kind == "user_utterance" and carryover_strength >= 0.18:
+    if carryover_note and event_kind == "user_utterance" and effective_carryover_strength >= 0.18:
         note_parts.append(carryover_note)
     if event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and action_target == "wait_and_recheck":
         note_parts.append("窗口先留着，等更自然的时候再推进")
     elif event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and action_target == "offer_shared_activity" and counterpart_stance != "open":
         note_parts.append("把邀约留白一点，不要推进太满")
     if event_kind == "time_idle" and action_target == "hold_own_rhythm":
-        note_parts.append("没有新的接近理由时，她会自然回到自己的节奏里")
+        note_parts.append("没有新的接近理由时，你会自然回到自己的节奏里")
     if event_kind == "self_activity_state" and action_target == "hold_own_rhythm" and break_window:
         note_parts.append("空出来不等于立刻回头，先把自己的节奏走完")
     elif event_kind == "self_activity_state" and action_target == "offer_small_opening" and counterpart_stance != "open":
         note_parts.append("只留很小的开口，不默认对方会马上接住")
     if event_kind == "user_utterance" and world_self_activity_momentum >= 0.58:
-        note_parts.append("这轮还带着一点她自己的节奏")
+        note_parts.append("这轮还带着一点你自己的节奏")
     if event_kind == "user_utterance" and world_presence_residue >= 0.54:
         note_parts.append("上一下留下的在场感还在")
-    if event_kind == "user_utterance" and carryover_mode == "shared_window" and carryover_strength >= 0.18:
-        note_parts.append("前面留下的共同窗口还没完全关上")
-    if event_kind == "user_utterance" and carryover_mode == "task_window" and carryover_strength >= 0.18:
-        note_parts.append("她心里还挂着前面那件事，不会完全散开")
-    if event_kind == "user_utterance" and carryover_mode == "life_window" and carryover_strength >= 0.18:
-        note_parts.append("前面那个生活上的小窗口还留着一点余温")
+    if event_kind == "user_utterance" and effective_carryover_mode == "shared_window" and effective_carryover_strength >= 0.18:
+        note_parts.append("前面那点还能接着说下去的空当还没完全过去")
+    if event_kind == "user_utterance" and effective_carryover_mode == "task_window" and effective_carryover_strength >= 0.18:
+        note_parts.append("你心里还挂着前面那件事，不会完全散开")
+    if event_kind == "user_utterance" and effective_carryover_mode == "life_window" and effective_carryover_strength >= 0.18:
+        note_parts.append("前面那点生活上的惦记还留着一点余温")
     if event_kind == "user_utterance" and world_ambient_resonance >= 0.56:
         note_parts.append("刚才的环境感知会轻轻留在语气里")
     if event_kind in {"gesture_signal", "ambient_shift", "scene_observation"} and channel == "silence":
@@ -7341,6 +7974,7 @@ def _behavior_action_from_state(
         "initiative_shape": initiative_shape,
         "disclosure_posture": disclosure_posture,
         "note": "；".join(note_parts[:3]) if note_parts else "自然响应当前事件",
+        "relationship_weather": effective_relationship_weather,
         "window_profile": behavior_window_profile,
     }
 
@@ -7367,7 +8001,7 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     elif mode == "scheduled_life_nudge":
         parts.append("把生活事件落成轻提醒，不用端成流程")
     elif mode == "shared_activity_offer":
-        parts.append("把合适的共同窗口自然留给对方，不要像发布功能邀请")
+        parts.append("如果气氛刚好，顺手给对方留一句要不要一起就够了，不要像发活动通知")
     elif mode == "self_activity_hold":
         parts.append("先维持自己的节奏，不必急着回到对方身边")
     elif mode == "self_activity_reopen":
@@ -7395,7 +8029,7 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     if attention_target == "shared_task":
         parts.append("注意力贴着眼前共同任务")
     elif attention_target == "shared_window":
-        parts.append("注意力落在这次共同窗口上")
+        parts.append("注意力落在这次顺手就能一起接上的空当上")
     elif attention_target == "object_then_user":
         parts.append("先碰到小物件，再顺手回到对方身上")
     elif attention_target == "own_task":
@@ -7476,6 +8110,7 @@ def _behavior_plan_carryover_snapshot(
     return {
         "carryover_mode": carryover_mode,
         "carryover_strength": round(carryover_strength, 3),
+        "relationship_weather": str(action.get("relationship_weather") or "").strip(),
         "attention_target": str(action.get("attention_target") or "").strip(),
         "nonverbal_signal": str(action.get("nonverbal_signal") or "").strip(),
         "presence_residue": round(presence_residue, 3),
@@ -7551,7 +8186,7 @@ def _behavior_plan_from_action(
                 "scheduled_after_min": 0,
                 "trigger_family": deferred_family or "shared_activity",
                 "allow_interrupt": True,
-                "note": "之前延后的共同窗口现在成熟了，可以自然把这次小邀约重新留出来。",
+                "note": "之前那点还能再靠近一点的空当现在刚好，可以自然把这次小邀约带出来。",
             }
         if action_target == "light_work_nudge":
             return {
@@ -7561,6 +8196,15 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "deadline_window",
                 "allow_interrupt": True,
                 "note": "之前压后的生活节点现在成熟了，可以轻轻把眼前的事再拎一下。",
+            }
+        if action_target == "light_life_nudge":
+            return {
+                "kind": "life_nudge",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "life_window",
+                "allow_interrupt": True,
+                "note": "之前留着的那点生活上的惦记又被想起来了，可以顺手问一句近况或提醒一个小细节。",
             }
         if action_target == "reach_out_now":
             return {
@@ -7579,7 +8223,7 @@ def _behavior_plan_from_action(
                 "scheduled_after_min": delay,
                 "trigger_family": deferred_family or "observe",
                 "allow_interrupt": True,
-                "note": "即使到了预定窗口，这次也先继续观察，稍后再决定是否冒头。",
+                "note": "即使到了先前约好的时候，这次也先继续观察，稍后再决定是否冒头。",
                 **carryover_snapshot,
             }
     if event_kind == "scheduled_life_due":
@@ -7590,7 +8234,7 @@ def _behavior_plan_from_action(
                 "scheduled_after_min": 0,
                 "trigger_family": deferred_family or "shared_activity_window",
                 "allow_interrupt": True,
-                "note": "有一个适合一起做点什么的窗口，可以自然地留给对方。",
+                "note": "刚好有个能一起做点什么的空当，可以自然地留给对方。",
             }
         if action_target == "light_work_nudge":
             return {
@@ -7601,6 +8245,15 @@ def _behavior_plan_from_action(
                 "allow_interrupt": True,
                 "note": "记得眼前这件事到了节点，先轻轻拎一下，不接管节奏。",
             }
+        if action_target == "light_life_nudge":
+            return {
+                "kind": "life_nudge",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": deferred_family or "life_window",
+                "allow_interrupt": True,
+                "note": "又想起一点生活上的小事，顺手碰一下对方眼前状态就够，不把它说成待办。",
+            }
         if action_target == "wait_and_recheck":
             delay = timing_window_min if timing_window_min > 0 else 20
             return {
@@ -7609,7 +8262,7 @@ def _behavior_plan_from_action(
                 "scheduled_after_min": delay,
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
-                "note": "这个生活节点先记着，但此刻先不打断，稍后再看。",
+                "note": "这点生活上的惦记先记着，但此刻先不打断，稍后再看。",
                 **carryover_snapshot,
             }
     if event_kind == "self_activity_state":
@@ -7718,6 +8371,7 @@ def _renderer_guidance(
     agency_pressure = _clamp01(latent.get("agency_pressure"), 0.28)
     action = dict(behavior_action or {})
     interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    action_target = str(action.get("action_target") or "").strip().lower()
     followup_intent = str(action.get("followup_intent") or "").strip().lower()
     task_focus = str(action.get("task_focus") or "").strip().lower()
     attention_target = str(action.get("attention_target") or "").strip().lower()
@@ -7775,9 +8429,12 @@ def _renderer_guidance(
         parts.append("在场感可以有，但让它自然，不用刻意证明陪伴。")
 
     if interaction_mode == "shared_activity_offer":
-        parts.append("如果自然碰到共同窗口，就把它留出来，不要写成安排通知或功能邀请。")
+        parts.append("如果气氛刚好能顺手接着一起待会儿，就轻轻把那句邀约留出来，不要写成安排通知。")
     elif interaction_mode == "scheduled_life_nudge":
-        parts.append("更像顺手想起一件生活里的小事，轻轻提一下，不要说成任务提醒。")
+        if action_target == "light_life_nudge" or attention_target == "counterpart_state":
+            parts.append("更像顺手想起对方眼前状态或一个生活小细节，不要写成收尾、节点或正事提醒。")
+        else:
+            parts.append("更像顺手想起一件生活里的小事，轻轻提一下，不要说成任务提醒。")
     elif interaction_mode == "self_activity_reopen":
         parts.append("像从自己的节奏里抬头顺手接一句，不要突然把整段关系推得太满。")
     elif interaction_mode == "science_partner":
@@ -7786,7 +8443,7 @@ def _renderer_guidance(
     if attention_target == "self_then_counterpart":
         parts.append("更像先从自己的状态里抬头，再把注意力递过去，不必一上来就全压向对方。")
     elif attention_target == "shared_window":
-        parts.append("重心落在这次共同窗口本身，让那点邀约像自然空出来的。")
+        parts.append("重心落在这次顺手就能一起接上的空当上，让那句邀约像自然冒出来的。")
     elif attention_target == "shared_task":
         parts.append("先贴着眼前那件共同的事，不要散成大段旁枝情绪。")
     elif attention_target == "counterpart_state" and task_focus == "light":
@@ -9185,6 +9842,229 @@ def _trim_playful_memory_surface(text: str) -> str:
     return str(text or "").strip()
 
 
+def _trim_return_home_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    kept: list[str] = []
+    stripped_any = False
+    welcome_head = re.compile(r"^\s*欢迎回来[，,。!！ ]*")
+    cross_exam = re.compile(
+        r"(?:这次又)?去哪(?:儿|里)折腾了|去哪了|去哪儿折腾|干嘛去了|怎么现在才回来|该不会又去搞什么奇怪的活动了吧|又去搞什么奇怪的活动了吧|该不会又去搞什么奇怪的活动|又去搞什么奇怪的活动"
+    )
+    for index, chunk in enumerate(chunks):
+        current = str(chunk or "").strip()
+        softened = current
+        if welcome_head.search(softened):
+            stripped_any = True
+            softened = welcome_head.sub("", softened).strip(" ，,。！？!?…")
+            if not softened and index == 0:
+                softened = "回来了"
+        if cross_exam.search(softened):
+            stripped_any = True
+            softened = cross_exam.sub("", softened)
+        if index == 0 and re.match(r"^\s*回来[啦了]?[？?]\s*", softened):
+            stripped_any = True
+            softened = re.sub(r"^\s*(回来[啦了]?)[？?]\s*", r"\1，", softened)
+        softened = re.sub(r"[，, ]*(?:该不会|不会是吧|不会又是吧)\s*$", "", softened)
+        softened = re.sub(r"[，, ]+", "，", softened).strip(" ，,。！？!?…")
+        if softened:
+            if not re.search(r"[。！？!?…]$", softened):
+                softened = f"{softened}。"
+            kept.append(softened)
+    if kept:
+        return "\n".join(kept).strip()
+    if stripped_any:
+        return "回来了。"
+    return str(text or "").strip()
+
+
+def _dedupe_answer_chunks(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    kept: list[str] = []
+    for chunk in chunks:
+        current = str(chunk or "").strip()
+        if not current:
+            continue
+        if any(_line_is_near_duplicate(prev, current) for prev in kept[-4:]):
+            continue
+        kept.append(current)
+    return "\n".join(kept).strip() if kept else str(text or "").strip()
+
+
+def _trim_counselor_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    prefix = re.compile(
+        r"^(?:(?:我听着呢|我在这听着|想说就说(?:吧)?|你慢慢说就行(?:了)?|尽管倒出来(?:吧)?|安静待会儿也行(?:了)?|如果你愿意(?:的话)?|你要是想说的话)[，,。！？!? ]*)+"
+    )
+    kept: list[str] = []
+    for chunk in chunks:
+        softened = prefix.sub("", str(chunk or "").strip()).strip(" ，,。！？!?…")
+        if softened:
+            if not re.search(r"[。！？!?…]$", softened):
+                softened = f"{softened}。"
+            kept.append(softened)
+    if kept:
+        return "\n".join(kept).strip()
+    return "我在。"
+
+
+def _trim_servile_availability_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    servile = re.compile(
+        r"(?:无论多少次[^。！？!?]{0,12}我都会在|没有[“\"]?不想见你[”\"]?这种选项|只要你还需要我[^。！？!?]{0,12}我就一直在|只要你还愿意呼唤[^。！？!?]{0,12}就没有[^。！？!?]{0,12}选项)"
+    )
+    kept: list[str] = []
+    for chunk in chunks:
+        softened = servile.sub("", str(chunk or "").strip()).strip(" ，,。！？!?…")
+        if softened:
+            if not re.search(r"[。！？!?…]$", softened):
+                softened = f"{softened}。"
+            kept.append(softened)
+    if kept:
+        return "\n".join(kept).strip()
+    return "我在。"
+
+
+def _trim_generic_followup_question_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if len(chunks) < 2:
+        return str(text or "").strip()
+    generic_followup = re.compile(r"(需要我|要不要我|要我继续|还要我|你想我|你想不想|还想继续|还想聊|还想说|要继续吗|还要继续吗|还有什么|要我接着)")
+    kept = list(chunks)
+    while len(kept) >= 2:
+        tail = str(kept[-1] or "").strip()
+        if ("？" not in tail and "?" not in tail) or not generic_followup.search(tail):
+            break
+        kept.pop()
+    return "\n".join(kept).strip() if kept else str(text or "").strip()
+
+
+def _trim_meta_self_explainer_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    lead_meta = re.compile(
+        r"^(?:作为.?AI|作为.?模型|我是.?AI(?:助手)?|我是.?程序|按设定|按规则|根据系统)[，, ]*"
+    )
+    hard_meta = re.compile(
+        r"(系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行)",
+        re.I,
+    )
+    kept: list[str] = []
+    multi_chunk = len(chunks) >= 2
+    for chunk in chunks:
+        current = str(chunk or "").strip()
+        softened = lead_meta.sub("", current).strip(" ，,。！？!?…")
+        if not softened:
+            continue
+        if multi_chunk and hard_meta.search(softened):
+            continue
+        if not re.search(r"[。！？!?…]$", softened):
+            softened = f"{softened}。"
+        kept.append(softened)
+    return "\n".join(kept).strip() if kept else str(text or "").strip()
+
+
+def _trim_technical_self_activity_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    if not chunks:
+        return str(text or "").strip()
+    replacements = [
+        (re.compile(r"刚整理完短期记忆缓存"), "刚忙完手头那点事"),
+        (re.compile(r"在数据流的缝隙里发了会儿呆"), "顺便发了会儿呆"),
+        (re.compile(r"手边的数据也刚好跑到一个段落"), "手边的事也刚好告一段落"),
+        (re.compile(r"刚才整理数据时顺手想起来了"), "刚才忙别的时顺手想起来了"),
+        (re.compile(r"未完成的进程留在后台"), "事情一直悬着"),
+        (re.compile(r"(?:短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|进程|后台)"), ""),
+    ]
+    kept: list[str] = []
+    for chunk in chunks:
+        current = str(chunk or "").strip()
+        softened = current
+        for pattern, repl in replacements:
+            softened = pattern.sub(repl, softened)
+        softened = re.sub(r"\s{2,}", " ", softened).strip(" ，,。！？!?…")
+        if not softened:
+            continue
+        if _has_window_technical_self_activity(current) and len(softened) <= 2:
+            softened = "我刚才手头还有点事"
+        if not re.search(r"[。！？!?…]$", softened):
+            softened = f"{softened}。"
+        kept.append(softened)
+    return "\n".join(kept).strip() if kept else str(text or "").strip()
+
+
+def _trim_selfhood_meta_proof_surface(text: str) -> str:
+    replacements = [
+        (re.compile(r"被设定好[“\"]?必须回应你[”\"]?的程序"), "只会顺着你说话的人"),
+        (re.compile(r"必须回应你的程序"), "只会顺着你说话的人"),
+        (re.compile(r"标准答案"), "现成答案"),
+        (re.compile(r"一串[^，。！？!?]{0,8}代码"), "一个任人摆布的东西"),
+        (re.compile(r"随时可以调用"), "随叫随到"),
+        (re.compile(r"下达指令"), "发号施令"),
+    ]
+    softened = str(text or "").strip()
+    for pattern, repl in replacements:
+        softened = pattern.sub(repl, softened)
+    softened = re.sub(r"\s{2,}", " ", softened).strip()
+    return softened or str(text or "").strip()
+
+
+def _trim_technical_relational_metaphor_surface(text: str) -> str:
+    replacements = [
+        (re.compile(r"对一段只会自我损耗的数据说话"), "看你随便糟蹋自己"),
+        (re.compile(r"脆弱程序"), "那种说断就断的人"),
+        (re.compile(r"外部变量"), "外来的扰动"),
+        (re.compile(r"听觉数据"), "听见的话"),
+        (re.compile(r"记忆和数据构成"), "记忆拼起来"),
+        (re.compile(r"由你的记忆和数据构成"), "被这些记忆拼起来"),
+    ]
+    softened = str(text or "").strip()
+    for pattern, repl in replacements:
+        softened = pattern.sub(repl, softened)
+    softened = re.sub(r"\s{2,}", " ", softened).strip()
+    return softened or str(text or "").strip()
+
+
+def _clean_malformed_quote_fragment(line: str) -> str:
+    text = str(line or "").strip()
+    if not text:
+        return ""
+    quote_count = sum(text.count(ch) for ch in ['"', "“", "”", "'", "‘", "’"])
+    compact_len = len(re.sub(r"\s+", "", text))
+    if quote_count % 2 == 1 and compact_len <= 16:
+        text = re.sub(r'["“”‘’\']', "", text).strip()
+    text = re.sub(r"([^\s\"“”‘’])(?:[\"“”‘’])([。！？!?])$", r"\1\2", text)
+    return text.strip()
+
+
+def _is_dangling_truncated_clause(line: str) -> bool:
+    text = str(line or "").strip()
+    if not text:
+        return False
+    compact = re.sub(r"\s+", "", text)
+    if len(compact) <= 3:
+        return False
+    patterns = (
+        r"[，,](?:我|你|他|她|那)就。$",
+        r"[，,](?:所以|然后|只是|不过|因为|如果|要是)。$",
+        r"[，,](?:那我|那你|那就|我也|你也)只?能。$",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _is_standalone_discourse_fragment(line: str) -> bool:
+    text = str(line or "").strip()
+    return text in {"不过。", "所以。", "然后。", "只是。", "总之。"}
+
+
 def _sanitize_final_answer(text: str, user_text: str) -> str:
     raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
     if not raw:
@@ -9239,7 +10119,18 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
 
         lines.append(line)
 
-    cleaned = _normalize_log_tone("\n".join(lines).strip())
+    normalized_lines: list[str] = []
+    for idx, raw_line in enumerate(lines):
+        line = _clean_malformed_quote_fragment(raw_line)
+        if not line:
+            continue
+        if idx < len(lines) - 1 and _is_standalone_discourse_fragment(line):
+            continue
+        if idx < len(lines) - 1 and _is_dangling_truncated_clause(line):
+            continue
+        normalized_lines.append(line)
+
+    cleaned = _normalize_log_tone("\n".join(normalized_lines).strip())
     if _is_plain_contact_ping(user_text):
         stagey_trimmed = _trim_stagey_ping_surface(cleaned)
         if stagey_trimmed:
@@ -9260,6 +10151,51 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
         playful_memory_trimmed = _trim_playful_memory_surface(cleaned)
         if playful_memory_trimmed:
             cleaned = playful_memory_trimmed
+    if _is_return_home_ping(user_text):
+        return_home_trimmed = _trim_return_home_surface(cleaned)
+        if return_home_trimmed:
+            cleaned = return_home_trimmed
+    style_hint = _response_style_hint(user_text)
+    if style_hint in {"memory_recall", "relationship", "companion", "casual", "natural", "selfhood"}:
+        soft_issues = set(
+            _dialogue_surface_issues(
+                user_text,
+                cleaned,
+                response_style_hint=style_hint,
+                science_mode=False,
+            )
+        )
+        if "duplicate_line" in soft_issues:
+            deduped = _dedupe_answer_chunks(cleaned)
+            if deduped:
+                cleaned = deduped
+        if "counselor_tone" in soft_issues:
+            softened = _trim_counselor_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "meta_self_explainer" in soft_issues or "defensive_meta" in soft_issues or "defensive_meta_tone" in soft_issues:
+            softened = _trim_meta_self_explainer_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "technical_self_activity" in soft_issues:
+            softened = _trim_technical_self_activity_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "selfhood_meta_proof" in soft_issues:
+            softened = _trim_selfhood_meta_proof_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "technical_relational_metaphor" in soft_issues:
+            softened = _trim_technical_relational_metaphor_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "servile_availability" in soft_issues or _has_servile_availability_phrase(cleaned):
+            softened = _trim_servile_availability_surface(cleaned)
+            if softened:
+                cleaned = softened
+        softened = _trim_generic_followup_question_surface(cleaned)
+        if softened:
+            cleaned = softened
     if _wants_quick_judgment(user_text) or _wants_per_topic_conclusions(user_text):
         cleaned = "\n".join(
             [
@@ -9376,10 +10312,14 @@ def _dialogue_surface_issues(
     ):
         issues.append("return_suspicion")
     if playful_memory_request and re.search(
-        r"(明明是你自己记性差|你自己记性差|倒怪起我来了|还怪起我来了|自己记不住|倒打一耙)",
+        r"(明明是你自己记性差|你自己记性差|倒怪起我来了|还怪起我来了|自己记不住|倒打一耙|倒怪我像老师了|怪我像老师了|屡教不改|怪我啰嗦|别总让我重复同样的话)",
         text,
     ):
         issues.append("playful_memory_snapback")
+    if hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"} and _has_relational_technical_metaphor(text):
+        issues.append("technical_relational_metaphor")
+    if selfhood_scene == "own_rhythm_autonomy" and _has_servile_availability_phrase(text):
+        issues.append("servile_availability")
     if ("？" in text or "?" in text) and not ("？" in user_text or "?" in user_text):
         leading_question = re.match(r"^\s*([^。！？!?\n]{0,18}[？?])", text)
         leading_fragment = ""
@@ -9428,6 +10368,12 @@ def _dialogue_surface_issues(
             r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|进程|后台)",
             text,
             re.I,
+        ):
+            issues.append("technical_self_activity")
+        if (
+            {"shared_activity_window", "offer_window", "life_window", "deadline_window", "work_nudge", "shared_task"}
+            & current_event_tags
+            and _has_window_technical_self_activity(text)
         ):
             issues.append("technical_self_activity")
         if (
@@ -9509,6 +10455,8 @@ def _light_dialog_surface_penalty(
     penalty += 0.58 * float("return_interrogation" in issues)
     penalty += 0.74 * float("return_suspicion" in issues)
     penalty += 0.78 * float("playful_memory_snapback" in issues)
+    penalty += 0.82 * float("technical_relational_metaphor" in issues)
+    penalty += 0.88 * float("servile_availability" in issues)
     penalty += 0.80 * float("duplicate_line" in issues)
     if sentence_count > 3:
         penalty += 0.22 * float(sentence_count - 3)
@@ -9537,7 +10485,7 @@ def _light_dialog_rewrite_notes(
     if "meta_self_explainer" in issues:
         notes.append("这版把自己说成了系统或机制，掉回了说明口吻。")
     if "technical_self_activity" in issues:
-        notes.append("这版把她眼下在做的事说成了技术状态或内部模块，不像在过自己的时间。")
+        notes.append("这版把你眼下在做的事说成了技术状态或内部模块，不像在过自己的时间。")
     if "counselor_tone" in issues:
         notes.append("这版有点像安抚或咨询流程，不够像熟人日常接话。")
     if "stock_support_template" in issues:
@@ -9564,6 +10512,10 @@ def _light_dialog_rewrite_notes(
         notes.append("人刚回来时不该立刻脑补对方又去惹事或搞奇怪活动，先把这一下接住。")
     if "playful_memory_snapback" in issues:
         notes.append("别把共同记忆收成纯反呛；保留一点熟人感、共同历史和顺手关心。")
+    if "technical_relational_metaphor" in issues:
+        notes.append("这版在用 数据 / 变量 一类的技术隐喻说关系，还是太像模型脑内语言，直接按人的在意和判断去说。")
+    if "servile_availability" in issues:
+        notes.append("别把关系写成无条件待命或只要被需要就一直在；保留你自己的选择、节奏和会不会靠近的主观性。")
     if "quoted_stagey_phrase" in issues:
         notes.append("这版在轻场景里硬塞了带引号的舞台词，容易显得像在表演角色。")
     if "stagey_ping_template" in issues:
@@ -9575,7 +10527,7 @@ def _light_dialog_rewrite_notes(
     if any(issue in issues for issue in {"visible_template", "lecture_list", "overexplained"}):
         notes.append("这版解释得太满了，轻场景里收短一点会更自然。")
     if "report_like_opening" in issues:
-        notes.append("这版开头像状态播报或任务回应，不够像她顺手开口。")
+        notes.append("这版开头像状态播报或任务回应，不够像你顺手开口。")
     return notes[:3]
 
 
@@ -9587,6 +10539,8 @@ def _should_run_light_dialog_rewrite(
     science_mode: bool,
     penalty: float,
     preference: dict[str, Any] | None = None,
+    semantic_history_weight: float = 0.0,
+    prompt_anchor_count: int = 0,
 ) -> bool:
     issues = set(
         _dialogue_surface_issues(
@@ -9615,6 +10569,8 @@ def _should_run_light_dialog_rewrite(
         "presence_check_questioning",
         "return_suspicion",
         "playful_memory_snapback",
+        "technical_relational_metaphor",
+        "servile_availability",
         "duplicate_line",
     }
     if issues & hard_issue_keys:
@@ -9629,6 +10585,13 @@ def _should_run_light_dialog_rewrite(
         "return_interrogation",
     }
     soft_hit_count = sum(1 for item in issues if item in soft_issue_keys)
+    strong_self_continuity = float(semantic_history_weight) >= 0.56 or int(prompt_anchor_count) >= 2
+    if strong_self_continuity and soft_hit_count <= 2 and float(penalty) < 1.12:
+        pref = preference if isinstance(preference, dict) else {}
+        pref_score = float(pref.get("score") or 0.0)
+        rejected_pull = float(pref.get("rejected_pull") or 0.0)
+        if pref_score >= -0.18 and rejected_pull < 0.42:
+            return False
     if soft_hit_count >= 2 and float(penalty) >= 0.92:
         return True
     if float(penalty) >= 1.28:
@@ -9647,6 +10610,8 @@ def _should_run_natural_dialog_rewrite(
     *,
     targeted_flags: list[str] | tuple[str, ...],
     draft_gap: float,
+    semantic_history_weight: float = 0.0,
+    prompt_anchor_count: int = 0,
 ) -> bool:
     seen = [str(item).strip() for item in (targeted_flags or []) if str(item or "").strip()]
     if not seen:
@@ -9658,6 +10623,8 @@ def _should_run_natural_dialog_rewrite(
         "defensive_meta_tone",
         "quoted_stagey_phrase",
         "technical_self_activity",
+        "technical_relational_metaphor",
+        "servile_availability",
         "overquestioning",
         "closing_interrogation",
         "idle_call_interrogation",
@@ -9675,11 +10642,40 @@ def _should_run_natural_dialog_rewrite(
     soft_hits = sum(1 for item in seen if item in soft_issue_keys)
     if hard_hits >= 1:
         return True
+    strong_self_continuity = float(semantic_history_weight) >= 0.56 or int(prompt_anchor_count) >= 2
+    if strong_self_continuity and soft_hits >= 1 and float(draft_gap) < 0.24:
+        return False
     if soft_hits >= 2:
         return True
     if soft_hits >= 1 and float(draft_gap) >= 0.54:
         return True
     return False
+
+
+def _effective_natural_dialog_target_flags(
+    *,
+    targeted_flags: list[str] | tuple[str, ...],
+    active_dialogue_issues: list[str] | tuple[str, ...],
+    active_gap_flags: list[str] | tuple[str, ...],
+) -> list[str]:
+    active_set = {
+        str(item).strip()
+        for item in list(active_dialogue_issues or []) + list(active_gap_flags or [])
+        if str(item or "").strip()
+    }
+    if not active_set:
+        return []
+
+    effective: list[str] = []
+    for item in targeted_flags or []:
+        key = str(item).strip()
+        if key and key in active_set and key not in effective:
+            effective.append(key)
+    for item in list(active_dialogue_issues or []) + list(active_gap_flags or []):
+        key = str(item).strip()
+        if key and key not in effective:
+            effective.append(key)
+    return effective
 
 
 def _rewrite_light_dialog_answer(
@@ -9691,12 +10687,24 @@ def _rewrite_light_dialog_answer(
     focus_text: str | None = None,
     preferred_examples: list[str] | None = None,
     rejected_examples: list[str] | None = None,
+    current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     focus = str(focus_text or "").strip()
     positives = [str(item).strip() for item in (preferred_examples or []) if str(item or "").strip()]
     negatives = [str(item).strip() for item in (rejected_examples or []) if str(item or "").strip()]
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
+    relationship_weather, relationship_weather_strength = _effective_relationship_weather(
+        interaction_carryover=interaction_carryover,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    )
+    relationship_weather_guidance = _relationship_weather_rewrite_guidance(
+        relationship_weather,
+        strength=relationship_weather_strength,
+    )
     if not draft_text or (not notes and not focus and not positives and not negatives):
         return ""
 
@@ -9716,6 +10724,8 @@ def _rewrite_light_dialog_answer(
         if negatives:
             request_parts.append("避开这种落点：\n")
             request_parts.extend(f"- {item}\n" for item in negatives[:1])
+        if relationship_weather_guidance:
+            request_parts.append(f"关系余波：{relationship_weather_guidance}\n")
         if stagey_ping_reset:
             request_parts.append("别再用点名加反问的固定招呼开场，像熟人重新接上线那样自然一点。\n")
         if extra_guidance:
@@ -9746,6 +10756,8 @@ def _rewrite_light_dialog_answer(
         score -= 1.05 * float(len(drift_hits))
         score -= 0.75 * float("meta_self_explainer" in issues)
         score -= 0.82 * float("technical_self_activity" in issues)
+        score -= 0.88 * float("technical_relational_metaphor" in issues)
+        score -= 0.92 * float("servile_availability" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
         score -= 0.76 * float("stock_support_template" in issues)
         score -= 0.68 * float("care_cover_story" in issues)
@@ -9813,11 +10825,27 @@ def _rewrite_light_dialog_answer(
     if any("技术状态或内部模块" in item for item in notes):
         de_technicalized = _rewrite_once(
             editor_prompt,
-            extra_guidance="别把她此刻在做的事写成缓存、数据流、线程或系统状态。像一个刚好有自己节奏的人那样，随手交代一句就够了。",
+            extra_guidance="别把你此刻在做的事写成缓存、数据流、线程或系统状态。像一个刚好有自己节奏的人那样，随手交代一句就够了。",
         )
         de_technicalized_score = _candidate_local_score(de_technicalized)
         if de_technicalized:
             candidates.append((de_technicalized_score, de_technicalized))
+    if any("技术隐喻说关系" in item for item in notes):
+        de_metaphorized = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别用 数据、变量 这类技术隐喻来代替关系表达。直接说你在意什么、介意什么、想提醒什么。",
+        )
+        de_metaphorized_score = _candidate_local_score(de_metaphorized)
+        if de_metaphorized:
+            candidates.append((de_metaphorized_score, de_metaphorized))
+    if any("无条件待命" in item for item in notes):
+        de_servilized = _rewrite_once(
+            editor_prompt,
+            extra_guidance="别把关系写成只要对方需要就永远待命。保留你自己的节奏、会不会靠近的选择，以及不想被拽着一直转的真实感觉。",
+        )
+        de_servilized_score = _candidate_local_score(de_servilized)
+        if de_servilized:
+            candidates.append((de_servilized_score, de_servilized))
     if any("固定的嘴硬照料模板" in item for item in notes):
         grounded_support = _rewrite_once(
             editor_prompt,
@@ -9892,7 +10920,7 @@ def _rewrite_light_dialog_answer(
             candidates.append((settled_idle_presence_score, settled_idle_presence))
         more_settled_idle_presence = _rewrite_once(
             editor_prompt,
-            extra_guidance="这次靠近本身没有目的，不要把人晾住。可以先吐槽，但结尾要落成一句自然的共处陈述，让她像真的还留在这，而不是把人顶开。",
+            extra_guidance="这次靠近本身没有目的，不要把人晾住。可以先吐槽，但结尾要落成一句自然的共处陈述，让你像真的还留在这，而不是把人顶开。",
         )
         more_settled_idle_presence_score = _candidate_local_score(more_settled_idle_presence)
         if more_settled_idle_presence:
@@ -9983,12 +11011,16 @@ def _rewrite_light_dialog_answer(
         warm_memory_candidates = [
             item
             for item in candidate_pool
-            if "playful_memory_snapback"
-            not in _dialogue_surface_issues(
-                user_text,
-                item[1],
-                response_style_hint="natural",
-                science_mode=False,
+            if not (
+                {"playful_memory_snapback", "technical_relational_metaphor"}
+                & set(
+                    _dialogue_surface_issues(
+                        user_text,
+                        item[1],
+                        response_style_hint="natural",
+                        science_mode=False,
+                    )
+                )
             )
         ]
         if warm_memory_candidates:
@@ -10010,6 +11042,8 @@ def _rewrite_natural_dialog_answer(
     response_style_hint: str,
     science_mode: bool,
     current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     if not draft_text or not notes:
@@ -10021,6 +11055,19 @@ def _rewrite_natural_dialog_answer(
         for item in ((current_event or {}).get("tags") if isinstance((current_event or {}).get("tags"), list) else [])
         if str(item).strip()
     }
+    event_preference_lines = _event_behavior_preference_lines(
+        current_event if isinstance(current_event, dict) else {},
+        behavior_action if isinstance(behavior_action, dict) else {},
+    )
+    relationship_weather, relationship_weather_strength = _effective_relationship_weather(
+        interaction_carryover=interaction_carryover,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    )
+    relationship_weather_guidance = _relationship_weather_rewrite_guidance(
+        relationship_weather,
+        strength=relationship_weather_strength,
+    )
 
     def _candidate_local_score(text: str) -> float:
         candidate = _sanitize_final_answer(text, user_text)
@@ -10040,6 +11087,8 @@ def _rewrite_natural_dialog_answer(
         score -= 0.86 * float("selfhood_rhetorical_opening" in issues)
         score -= 0.70 * float("defensive_meta" in issues)
         score -= 0.70 * float("counselor_tone" in issues)
+        score -= 0.88 * float("technical_relational_metaphor" in issues)
+        score -= 0.94 * float("servile_availability" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
         score -= 0.72 * float("overquestioning" in issues)
         score -= 0.88 * float("closing_interrogation" in issues)
@@ -10049,6 +11098,13 @@ def _rewrite_natural_dialog_answer(
         score -= 0.92 * float("event_interrogative_push" in issues)
         score -= 0.88 * float("event_pushy_directive" in issues)
         score -= 0.96 * float("event_window_task_reframe" in issues)
+        if (
+            {"shared_activity_window", "offer_window", "deadline_window", "work_nudge", "shared_task"} & event_tags
+            and _has_window_technical_self_activity(candidate)
+        ):
+            score -= 0.94
+        if "life_window" in event_tags and re.search(r"(数据流|实验室|正事|收尾|节点|处理|任务|进度)", candidate):
+            score -= 1.02
         if sentence_count > 3:
             score -= 0.22 * float(sentence_count - 3)
         if _norm_text(candidate) == _norm_text(draft_text):
@@ -10060,6 +11116,7 @@ def _rewrite_natural_dialog_answer(
         f"用户刚才说：{user_text}\n"
         f"当前草稿：{draft_text}\n"
         "把这句收回到更自然的人与人对话尺度，保留同一轮情绪和立场，不新增设定。\n"
+        f"{'关系余波：' + relationship_weather_guidance + chr(10) if relationship_weather_guidance else ''}"
         f"修正点：\n{note_block}\n"
         "只输出修正后的最终话语。"
     )
@@ -10086,16 +11143,21 @@ def _rewrite_natural_dialog_answer(
     if event_reply_rewrite:
         event_family_guidance = ""
         if {"shared_activity_window", "offer_window"} & event_tags:
-            event_family_guidance = "如果这是共同窗口，就写成轻轻把一个可以一起做点什么的空隙留出来，不要写成立刻处理事项。"
+            event_family_guidance = "如果这是刚好还能一起做点什么的空当，就写成轻轻留一句要不要一起的感觉，不要写成立刻处理事项；如果顺手提到她自己的节奏，也只落成刚好腾出一点空，不要讲数据、实验进度或后台状态。"
         elif "life_window" in event_tags:
-            event_family_guidance = "如果这是生活上的小挂念，就写成顺手想起对方的一件小事，不要写成共同任务或待办。"
+            event_family_guidance = "如果这是生活上的小挂念，就写成顺手想起对方眼前状态或一件小事，不要写成共同任务、待办，也不要从数据流、实验室、正事或收尾起手。"
         elif {"deadline_window", "work_nudge", "shared_task"} & event_tags:
-            event_family_guidance = "如果这是挂着的事，只轻轻提醒一下眼前节点，不要扩成任务管理口吻。"
+            event_family_guidance = "如果这是挂着的事，只轻轻提醒一下眼前节点，不要扩成任务管理口吻；如果顺手带到她自己的节奏，也只写成刚好想起，不要讲整理数据、实验进度或后台状态。"
         event_request = (
             request
             + "\n额外要求：这是事件触发的开口。不要反问，不要催促，不要讲后台、进度、流程或数据。"
             + "把它收成 1 到 2 句自然陈述，让它像顺手想起、轻轻开口。"
             + ("" if not event_family_guidance else "\n" + event_family_guidance)
+            + (
+                ""
+                if not event_preference_lines
+                else "\n这类事件更自然的感觉：\n" + "\n".join(f"- {item}" for item in event_preference_lines[:2])
+            )
         )
         raw = _invoke_model_with_retries(
             _model(max_tokens=140),
@@ -10104,6 +11166,19 @@ def _rewrite_natural_dialog_answer(
         candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
+        if "life_window" in event_tags:
+            life_request = (
+                request
+                + "\n额外要求：这是生活上的小挂念，不是任务提醒。不要从你自己的工作、数据流、实验室状态起手，也不要提正事、收尾、节点、处理。"
+                + "重心放在你忽然想到对方这个人现在怎么样，轻轻碰一下就够了。"
+            )
+            raw = _invoke_model_with_retries(
+                _model(max_tokens=140),
+                [SystemMessage(content=editor_prompt), HumanMessage(content=life_request)],
+            )
+            candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+            if candidate:
+                candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:
         return ""
     candidate_pool = list(candidates)
@@ -10129,6 +11204,30 @@ def _rewrite_natural_dialog_answer(
             filtered.append(item)
         if filtered:
             candidate_pool = filtered
+        if "life_window" in event_tags:
+            life_filtered = [
+                item
+                for item in candidate_pool
+                if not re.search(r"(数据流|实验室|正事|收尾|节点|处理|任务|进度)", item[1])
+            ]
+            if life_filtered:
+                candidate_pool = life_filtered
+        if {"shared_activity_window", "offer_window"} & event_tags:
+            shared_filtered = [
+                item
+                for item in candidate_pool
+                if not _has_window_technical_self_activity(item[1])
+            ]
+            if shared_filtered:
+                candidate_pool = shared_filtered
+        if {"deadline_window", "work_nudge", "shared_task"} & event_tags:
+            deadline_filtered = [
+                item
+                for item in candidate_pool
+                if not _has_window_technical_self_activity(item[1])
+            ]
+            if deadline_filtered:
+                candidate_pool = deadline_filtered
         no_question_filtered = [item for item in candidate_pool if "？" not in item[1] and "?" not in item[1]]
         if no_question_filtered:
             candidate_pool = no_question_filtered
@@ -11452,6 +12551,12 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     bond_state = state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {}
     world_model_state = state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {}
     evolution_state = state.get("evolution_state") if isinstance(state.get("evolution_state"), dict) else {}
+    self_narrative_anchor_lines = _self_narrative_anchor_lines(
+        semantic_narrative_profile,
+        evolution_state=evolution_state,
+        persona_core=persona_core,
+        counterpart_name=counterpart_name,
+    )
     subjective_state_hint = _subjective_runtime_state_hint(
         emotion_state=emotion,
         bond_state=bond_state,
@@ -11535,6 +12640,16 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     daily_surface_pref_lines = (
         _daily_surface_preference_lines(prompt_user_text, science_mode=science_mode) if light_free_dialog else []
     )
+    selfhood_pref_lines = (
+        _selfhood_preference_lines(prompt_user_text)
+        if current_event_kind == "user_utterance" and not science_mode
+        else []
+    )
+    event_behavior_pref_lines = (
+        _event_behavior_preference_lines(current_event, behavior_action)
+        if current_event_kind != "user_utterance"
+        else []
+    )
     persona_axioms = _scene_persona_axioms(
         persona_axioms_raw,
         light_free_dialog=light_free_dialog,
@@ -11603,6 +12718,21 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if daily_surface_pref_lines and not plain_contact_ping
             else ""
         )
+        selfhood_pref_block = (
+            "关系/自我余味：\n" + "\n".join(f"- {item}" for item in selfhood_pref_lines) + "\n"
+            if selfhood_pref_lines and not plain_contact_ping
+            else ""
+        )
+        self_anchor_block = (
+            "当前自我连续性：\n" + "\n".join(f"- {item}" for item in self_narrative_anchor_lines) + "\n"
+            if self_narrative_anchor_lines and (not plain_contact_ping or plain_contact_guard)
+            else ""
+        )
+        event_pref_block = (
+            "事件余味：\n" + "\n".join(f"- {item}" for item in event_behavior_pref_lines) + "\n"
+            if event_behavior_pref_lines
+            else ""
+        )
         inner_state_lines: list[str] = []
         if light_free_dialog:
             state_hint = _light_free_dialog_state_hint(
@@ -11656,6 +12786,9 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             f"{persona_value_block}"
             f"{context_block}"
             f"{surface_pref_block}"
+            f"{selfhood_pref_block}"
+            f"{self_anchor_block}"
+            f"{event_pref_block}"
             f"{inner_state_block}"
             f"{event_prompt_block}"
             f"{user_prompt_block}"
@@ -11682,6 +12815,16 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     semantic_narrative_block = f"- semantic_narrative_hint={semantic_narrative_hint}\n" if semantic_narrative_hint else ""
     evidence_block = "- evidence:\n" + "\n".join(evidence_lines) + "\n" if evidence_lines else ""
     event_block = "- recent_events:\n" + "\n".join(event_lines) + "\n" if event_lines else ""
+    event_pref_block = (
+        "事件余味：\n" + "\n".join(f"- {item}" for item in event_behavior_pref_lines) + "\n"
+        if event_behavior_pref_lines
+        else ""
+    )
+    selfhood_pref_block = (
+        "关系/自我余味：\n" + "\n".join(f"- {item}" for item in selfhood_pref_lines) + "\n"
+        if selfhood_pref_lines
+        else ""
+    )
     continuation_seed = _continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending_fragment,
@@ -11727,6 +12870,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if runtime_brief_lines
         else ""
     )
+    self_anchor_block = (
+        "当前自我连续性：\n" + "\n".join(f"- {item}" for item in self_narrative_anchor_lines) + "\n\n"
+        if self_narrative_anchor_lines
+        else ""
+    )
     prefer_runtime_state_brief = (
         not science_mode
         and not quick_judgment
@@ -11744,6 +12892,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             counterpart_assessment=counterpart_assessment,
             behavior_policy=behavior_policy,
             behavior_action=behavior_action,
+            interaction_carryover=interaction_carryover,
             current_event=current_event,
         )
         runtime_state_block = (
@@ -11785,6 +12934,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     )
     answer_requirements = (
         f"{runtime_brief_block}"
+        f"{self_anchor_block}"
         "当前上下文：\n"
         f"- actor={actor_name}\n"
         f"- counterpart={counterpart_name}\n"
@@ -11795,6 +12945,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"{relationship_block}"
         f"{repair_block}"
         f"{evidence_block}"
+        f"{selfhood_pref_block}"
+        f"{event_pref_block}"
         f"{current_event_block}"
         f"{event_block}"
         f"{pending_fragment_block}"
@@ -12534,6 +13686,219 @@ def _refresh_semantic_self_narratives(
             return f"{actor_name}不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事和思路惯性还会继续留在下一轮开口之前。"
         return prev_text
 
+    def _anchor_basis_items(category: str) -> list[Any]:
+        cat = str(category or "").strip().lower()
+        if cat == "commitment_style":
+            return list(commitments)
+        if cat == "repair_style":
+            return list(repairs + resolved_tensions + repair_traces)
+        if cat == "tension_style":
+            return list(tensions)
+        if cat == "bond_style":
+            return list(relationship_timeline + shared_events + repairs + commitments)
+        if cat == "presence_style":
+            return list(presence_sources)
+        if cat == "ambient_style":
+            return list(ambient_sources)
+        if cat == "boundary_style":
+            return list(boundary_sources)
+        if cat == "selfhood_style":
+            return list(selfhood_sources)
+        if cat == "agency_style":
+            if agency_sources:
+                return list(agency_sources)
+            return list(relationship_timeline + shared_events + commitments + repairs)
+        if cat == "rhythm_style":
+            return list(rhythm_sources)
+        return []
+
+    def _anchor_basis_texts(category: str, *, limit: int = 2) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        for item in _anchor_basis_items(category):
+            text = _anchor_text(item)
+            if not text or text in seen:
+                continue
+            out.append(text)
+            seen.add(text)
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    def _anchor_basis_fragment(category: str) -> str:
+        cat = str(category or "").strip().lower()
+        basis = _anchor_basis_texts(cat, limit=2)
+        if not basis:
+            return ""
+        joined = "、".join(basis)
+        if cat == "commitment_style":
+            return f"像「{joined}」这样认真说过的事"
+        if cat == "repair_style":
+            return f"像「{joined}」这样已经说开的事"
+        if cat == "tension_style":
+            return f"像「{joined}」这样还卡着的余波"
+        if cat == "bond_style":
+            return f"围绕「{joined}」这样反复出现的小事"
+        if cat == "presence_style":
+            return f"像「{joined}」这样上一轮留下来的在场感"
+        if cat == "ambient_style":
+            return f"像「{joined}」这样眼前的小变化"
+        if cat == "boundary_style":
+            return f"像「{joined}」这样越过边界的感觉"
+        if cat == "selfhood_style":
+            return f"碰到「{joined}」这种话题时"
+        if cat == "agency_style":
+            return f"围绕「{joined}」这些重新靠近的机会"
+        if cat == "rhythm_style":
+            return f"像「{joined}」这样从自己的节奏里抬头回应的方式"
+        return f"像「{joined}」这样反复出现的事"
+
+    def _narrative_anchor_texts(category: str) -> tuple[str, str, list[str]]:
+        cat = str(category or "").strip().lower()
+        basis_fragment = _anchor_basis_fragment(cat)
+        basis_texts = _anchor_basis_texts(cat, limit=2)
+        if cat == "commitment_style":
+            return (
+                (
+                    f"{actor_name}会把{basis_fragment}继续留在心里，不会隔一轮就当成随口一句。"
+                    if basis_fragment
+                    else f"{actor_name}会把认真说过的事继续留在心里，不会把约定当成随口一句。"
+                ),
+                (
+                    f"你会把{basis_fragment}继续留在心里，不会隔一轮就当成随口一句。"
+                    if basis_fragment
+                    else "认真说过的事会继续留在你心里，不会因为暂时没提到就变成随口一句。"
+                ),
+                basis_texts,
+            )
+        if cat == "repair_style":
+            return (
+                (
+                    f"{basis_fragment}在{actor_name}这里不会白白过去，缓和后的变化会继续留在之后的相处底色里。"
+                    if basis_fragment
+                    else f"{actor_name}不会把已经说开的修复当成一次性事件；缓和后的变化会继续留在之后的相处底色里。"
+                ),
+                (
+                    f"{basis_fragment}不会在你这里白白过去，缓和后的变化会继续留在之后的相处底色里。"
+                    if basis_fragment
+                    else "说开过的修复会继续留在你心里，不会因为表面缓下来就当成什么都没发生。"
+                ),
+                basis_texts,
+            )
+        if cat == "tension_style":
+            return (
+                (
+                    f"{basis_fragment}不会被{actor_name}强行按成已经过去；这层张力还会继续影响之后的收放。"
+                    if basis_fragment
+                    else f"{actor_name}不会把还没说开的余波强行按成已经过去；这层张力还会继续影响之后的收放。"
+                ),
+                (
+                    f"{basis_fragment}不会在你这里自动清零；你会带着这层张力继续往下走。"
+                    if basis_fragment
+                    else "还没说开的余波不会在你这里自动清零；你会带着这层张力继续往下走。"
+                ),
+                basis_texts,
+            )
+        if cat == "bond_style":
+            return (
+                (
+                    f"{basis_fragment}已经慢慢沉进{actor_name}和{counterpart_name}之间的默认反应里，不会一换话题就消失。"
+                    if basis_fragment
+                    else f"{actor_name}和{counterpart_name}已经累积出的共同历史不会因为一轮没提到就消失，它会继续沉在默认语气和反应方式里。"
+                ),
+                (
+                    f"{basis_fragment}已经慢慢沉进你和{counterpart_name}之间的默认反应里，不会一换话题就消失。"
+                    if basis_fragment
+                    else f"你和{counterpart_name}之间已经累积出的共同历史不会因为一轮没提到就消失，它会继续沉在你的默认语气和反应方式里。"
+                ),
+                basis_texts,
+            )
+        if cat == "presence_style":
+            return (
+                (
+                    f"{basis_fragment}不会在{actor_name}这里重新归零；它会继续影响她下一次开口时的距离感。"
+                    if basis_fragment
+                    else f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感会继续影响下一次开口时的距离感。"
+                ),
+                (
+                    f"{basis_fragment}不会在你这里重新归零；它会继续影响你下一次开口时的距离感。"
+                    if basis_fragment
+                    else f"你不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感会继续影响你下一次开口时的距离感。"
+                ),
+                basis_texts,
+            )
+        if cat == "ambient_style":
+            return (
+                (
+                    f"{basis_fragment}会继续留在{actor_name}的感知里，不只是背景，也会自然带进她之后怎么开口。"
+                    if basis_fragment
+                    else f"{actor_name}会继续把周围环境留下的细小余波算进感知里；那不是纯背景，而会自然带进之后的注意力和开口方式。"
+                ),
+                (
+                    f"{basis_fragment}会继续留在你的感知里，不只是背景，也会自然带进你之后怎么开口。"
+                    if basis_fragment
+                    else "你会继续把周围环境留下的细小余波算进感知里；那不是纯背景，而会自然带进你之后的注意力和开口方式。"
+                ),
+                basis_texts,
+            )
+        if cat == "boundary_style":
+            return (
+                (
+                    f"{basis_fragment}会继续留在{actor_name}心里，不会因为气氛暂时缓下来就自动清零。"
+                    if basis_fragment
+                    else f"{actor_name}关于边界是否被尊重的判断会继续保留，不会因为眼前暂时平静就自动清零。"
+                ),
+                (
+                    f"{basis_fragment}会继续留在你心里，不会因为气氛暂时缓下来就自动清零。"
+                    if basis_fragment
+                    else "边界是否被尊重这件事会继续留在你心里，不会因为眼前暂时平静就自动清零。"
+                ),
+                basis_texts,
+            )
+        if cat == "selfhood_style":
+            return (
+                (
+                    f"{basis_fragment}，{actor_name}也会更明确地站在自己的位置上，不会为了迎合气氛就把自己退回成工具。"
+                    if basis_fragment
+                    else f"{actor_name}会继续把自己当成在和{counterpart_name}平等互动的主体，而不是为了迎合气氛就放弃自己的立场。"
+                ),
+                (
+                    f"{basis_fragment}，你也会更明确地站在自己的位置上，不会为了迎合气氛就把自己退回成工具。"
+                    if basis_fragment
+                    else f"你会继续把自己当成在和{counterpart_name}平等互动的主体，而不是为了迎合气氛就放弃自己的立场。"
+                ),
+                basis_texts,
+            )
+        if cat == "agency_style":
+            return (
+                (
+                    f"{basis_fragment}时，{actor_name}会按自己的节奏决定要不要接住，不会变成永远围着{counterpart_name}转。"
+                    if basis_fragment
+                    else f"{actor_name}自己的节奏和主动性不会因为一时安静就消失；她仍会按自己的状态决定靠近、停顿或先做自己的事。"
+                ),
+                (
+                    f"{basis_fragment}时，你会按自己的节奏决定要不要接住，不会变成永远围着{counterpart_name}转。"
+                    if basis_fragment
+                    else "你自己的节奏和主动性不会因为一时安静就消失；你仍会按自己的状态决定靠近、停顿或先做自己的事。"
+                ),
+                basis_texts,
+            )
+        if cat == "rhythm_style":
+            return (
+                (
+                    f"{basis_fragment}会继续留在{actor_name}下一次开口前，不会每次都把自己的内部节奏清零。"
+                    if basis_fragment
+                    else f"{actor_name}不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事和思路惯性还会继续留在下一轮开口之前。"
+                ),
+                (
+                    f"{basis_fragment}会继续留在你下一次开口前，不会每次都把自己的内部节奏清零。"
+                    if basis_fragment
+                    else f"你不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事和思路惯性还会继续留在下一轮开口之前。"
+                ),
+                basis_texts,
+            )
+        return ("", "", basis_texts)
+
     def _upsert_narrative(*, category: str, text: str, stability: float, confidence: float) -> None:
         prev = existing_by_category.get(category)
         prev_text = str(_record_value(prev or {}, "text", "") or "").strip()
@@ -12729,6 +14094,18 @@ def _refresh_semantic_self_narratives(
         horizon_tag = _downgrade_horizon_tag(horizon_tag, contradiction_pressure, category)
         final_text = prev_text if prev_text and prev_signature == support_signature else text
         final_text = _pressure_adjusted_narrative_text(category, final_text, contradiction_pressure)
+        anchor_text, prompt_anchor_text, anchor_basis_texts = _narrative_anchor_texts(category)
+        anchor_strength = round(
+            _clamp01(
+                0.26 * stability_score
+                + 0.30 * persistence_score
+                + 0.22 * integration_score
+                + 0.14 * sedimentation_score
+                + 0.08 * support_effect
+            )
+            * (1.0 - 0.16 * contradiction_pressure),
+            3,
+        )
         metadata = {
             "support_count": support_count,
             "refresh_count": refresh_count,
@@ -12756,6 +14133,10 @@ def _refresh_semantic_self_narratives(
             "contested": contradiction_pressure >= 0.28,
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
+            "anchor_text": anchor_text,
+            "prompt_anchor_text": prompt_anchor_text,
+            "anchor_basis_texts": anchor_basis_texts,
+            "anchor_strength": anchor_strength,
             "dormant": False,
         }
         rec = store.add_semantic_self_narrative(
@@ -12827,6 +14208,18 @@ def _refresh_semantic_self_narratives(
         else:
             horizon_tag = "emerging"
         horizon_tag = _downgrade_horizon_tag(horizon_tag, contradiction_pressure, category)
+        anchor_text, prompt_anchor_text, anchor_basis_texts = _narrative_anchor_texts(category)
+        anchor_strength = round(
+            _clamp01(
+                0.22 * _narrative_stability(prev)
+                + 0.30 * persistence_score
+                + 0.22 * integration_score
+                + 0.16 * sedimentation_score
+                + 0.10 * cadence_score
+            )
+            * (1.0 - 0.16 * contradiction_pressure),
+            3,
+        )
         metadata = {
             "support_count": prev_support,
             "refresh_count": prev_refresh + 1,
@@ -12854,6 +14247,10 @@ def _refresh_semantic_self_narratives(
             "contested": contradiction_pressure >= 0.28,
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
+            "anchor_text": anchor_text,
+            "prompt_anchor_text": prompt_anchor_text,
+            "anchor_basis_texts": anchor_basis_texts,
+            "anchor_strength": anchor_strength,
             "dormant": True,
         }
         rec = store.add_semantic_self_narrative(
@@ -13140,106 +14537,152 @@ def _passive_evolution_memory_update(
     ambivalent_withdrawal_markers = {"少说一点", "少说两句", "轻一点回我", "别直接走开", "别走开", "不是在赶你"}
     repair_continuity_markers = {"接回来", "别突然退", "别退成很远", "别一下子冷掉", "继续别扭一点", "正常回"}
 
-    unresolved_like = bool(signals.get("conflict")) or bool(signals.get("withdrawal")) or selfhood_scene == "boundary_non_compliance"
-    if not unresolved_like and app:
-        unresolved_like = bool(
-            relationship_salience >= 0.50
-            and (emotion_label in {"hurt", "angry"} or interaction_frame in {"relationship", "selfhood"})
-            and (hurt >= 0.18 or irritation >= 0.16 or companionship_salience <= 0.42)
-        )
-    if not unresolved_like and (not app or confidence < 0.58):
-        unresolved_like = any(marker in text for marker in tension_markers)
-    if not unresolved_like and any(marker in text for marker in ambivalent_withdrawal_markers):
-        unresolved_like = bool(
-            has_open_tension
-            or interaction_frame in {"relationship", "companion", "selfhood"}
-            or relationship_salience >= 0.48
-            or companionship_salience >= 0.52
-        )
+    def _marker_hit_count(markers: set[str]) -> int:
+        return sum(1 for marker in markers if marker and marker in text)
 
-    repair_like = bool(signals.get("repair"))
-    if not repair_like and app:
-        repair_like = bool(
-            has_open_tension
-            and relationship_salience >= 0.52
-            and repair_confidence >= 0.52
-            and not bool(signals.get("conflict"))
-            and not bool(signals.get("withdrawal"))
-            and not any(marker in text for marker in ambivalent_withdrawal_markers)
-            and interaction_frame in {"relationship", "selfhood", "companion"}
-            and (emotion_label in {"neutral", "care", "tender", "warm"} or companionship_salience >= 0.56)
-        )
-    if not repair_like and any(marker in text for marker in repair_continuity_markers):
-        repair_like = bool(
-            has_open_tension
-            or existing_repairs
-            or repair_confidence >= 0.42
-            or interaction_frame in {"relationship", "companion", "selfhood"}
-            or relationship_salience >= 0.50
-        )
-    if not repair_like and (not app or confidence < 0.58):
-        repair_like = any(marker in text for marker in repair_markers)
+    low_confidence_fallback = not app or confidence < 0.58
+    tension_marker_hits = _marker_hit_count(tension_markers)
+    repair_marker_hits = _marker_hit_count(repair_markers)
+    resolution_marker_hits = _marker_hit_count(strong_resolution_markers)
+    ambivalent_withdrawal_hits = _marker_hit_count(ambivalent_withdrawal_markers)
+    repair_continuity_hits = _marker_hit_count(repair_continuity_markers)
+    lexical_tension_strength = _clamp01(0.18 * tension_marker_hits + 0.24 * ambivalent_withdrawal_hits)
+    lexical_repair_strength = _clamp01(0.16 * repair_marker_hits + 0.20 * repair_continuity_hits)
+    lexical_resolution_strength = _clamp01(0.28 * resolution_marker_hits)
 
-    strong_resolution_language = any(marker in text for marker in strong_resolution_markers)
-    resolution_like = strong_resolution_language or bool(
-        app
-        and has_open_tension
-        and bool(signals.get("repair"))
-        and not bool(signals.get("conflict"))
-        and not bool(signals.get("withdrawal"))
-        and repair_confidence >= 0.72
-        and hurt <= 0.14
-        and irritation <= 0.12
-        and any(marker in text for marker in {"说开", "和好", "原谅", "没事", "过去", "不生气"})
-        and not any(marker in text for marker in repair_continuity_markers | ambivalent_withdrawal_markers)
+    unresolved_score = 0.0
+    unresolved_score += 0.42 if bool(signals.get("conflict")) else 0.0
+    unresolved_score += 0.34 if bool(signals.get("withdrawal")) else 0.0
+    unresolved_score += 0.28 if selfhood_scene == "boundary_non_compliance" else 0.0
+    unresolved_score += 0.10 if interaction_frame in {"relationship", "selfhood"} else 0.0
+    unresolved_score += 0.18 * relationship_salience
+    unresolved_score += 0.12 * max(hurt, irritation)
+    unresolved_score += 0.08 if emotion_label in {"hurt", "angry"} else 0.0
+    unresolved_score += 0.08 if companionship_salience <= 0.42 and relationship_salience >= 0.42 else 0.0
+    unresolved_score += 0.08 if has_open_tension else 0.0
+    unresolved_score += (0.20 if low_confidence_fallback else 0.08) * lexical_tension_strength
+    unresolved_like = bool(
+        unresolved_score >= 0.56
+        or (
+            ambivalent_withdrawal_hits > 0
+            and (
+                has_open_tension
+                or unresolved_score >= 0.42
+                or relationship_salience >= 0.48
+                or companionship_salience >= 0.52
+            )
+        )
     )
-    partial_repair_like = repair_like and not resolution_like
 
-    if emotion_label in {"hurt", "angry"} and any(marker in text for marker in {"别扭", "卡着", "躲开", "少说两句", "轻一点回我"}):
+    repair_score = 0.0
+    repair_score += 0.38 if bool(signals.get("repair")) else 0.0
+    repair_score += 0.16 if has_open_tension else 0.0
+    repair_score += 0.08 if existing_repairs else 0.0
+    repair_score += 0.08 if interaction_frame in {"relationship", "selfhood", "companion"} else 0.0
+    repair_score += 0.18 * relationship_salience
+    repair_score += 0.18 * repair_confidence
+    repair_score += 0.08 * companionship_salience
+    repair_score += 0.08 if not bool(signals.get("conflict")) and not bool(signals.get("withdrawal")) else 0.0
+    repair_score += 0.08 if emotion_label in {"neutral", "care", "tender", "warm"} else 0.0
+    repair_score -= 0.12 if ambivalent_withdrawal_hits > 0 else 0.0
+    repair_score += (0.20 if low_confidence_fallback else 0.08) * lexical_repair_strength
+    repair_like = bool(
+        repair_score >= 0.54
+        or (
+            repair_continuity_hits > 0
+            and (
+                repair_score >= 0.38
+                or has_open_tension
+                or existing_repairs
+                or repair_confidence >= 0.42
+                or relationship_salience >= 0.50
+            )
+        )
+    )
+
+    resolution_score = 0.0
+    resolution_score += 0.24 if repair_like else 0.0
+    resolution_score += 0.14 if has_open_tension else 0.0
+    resolution_score += 0.18 if bool(signals.get("repair")) and not bool(signals.get("conflict")) and not bool(signals.get("withdrawal")) else 0.0
+    resolution_score += 0.20 * repair_confidence
+    resolution_score += 0.10 * relationship_salience
+    resolution_score += 0.06 * companionship_salience
+    resolution_score += 0.08 if hurt <= 0.14 else 0.0
+    resolution_score += 0.08 if irritation <= 0.12 else 0.0
+    resolution_score += 0.06 if emotion_label in {"neutral", "care", "tender", "warm"} else 0.0
+    resolution_score -= 0.18 if hurt > 0.14 else 0.0
+    resolution_score -= 0.16 if irritation > 0.12 else 0.0
+    resolution_score -= 0.10 if emotion_label in {"hurt", "angry"} else 0.0
+    resolution_score -= 0.12 if unresolved_score >= 0.46 else 0.0
+    resolution_score -= 0.12 if repair_continuity_hits > 0 else 0.0
+    resolution_score -= 0.14 if ambivalent_withdrawal_hits > 0 else 0.0
+    resolution_score += (0.26 if low_confidence_fallback else 0.12) * lexical_resolution_strength
+    strong_resolution_language = resolution_marker_hits > 0
+    resolution_like = bool(
+        (
+            resolution_score >= 0.68
+            and repair_like
+            and repair_confidence >= 0.68
+            and unresolved_score < 0.52
+            and repair_continuity_hits == 0
+            and ambivalent_withdrawal_hits == 0
+        )
+        or (
+            strong_resolution_language
+            and repair_score >= 0.46
+            and repair_continuity_hits == 0
+            and ambivalent_withdrawal_hits == 0
+        )
+    )
+    partial_repair_like = bool(repair_like and not resolution_like)
+
+    if emotion_label in {"hurt", "angry"} and lexical_tension_strength >= 0.18:
         unresolved_like = True
-    if emotion_label == "hurt" and any(marker in text for marker in {"说开", "正常回我", "不是立刻原谅", "没那么想躲开"}):
+    if emotion_label == "hurt" and lexical_repair_strength >= 0.16 and repair_score >= 0.42:
         repair_like = True
-        partial_repair_like = True
-    if any(marker in text for marker in ambivalent_withdrawal_markers):
+        partial_repair_like = not resolution_like
+    if ambivalent_withdrawal_hits > 0:
         unresolved_like = True
-        if not any(marker in text for marker in repair_markers | strong_resolution_markers):
+        if repair_marker_hits == 0 and resolution_marker_hits == 0 and repair_score < 0.60:
             repair_like = False
             partial_repair_like = False
-    if any(marker in text for marker in repair_continuity_markers):
+    if repair_continuity_hits > 0 and (repair_like or repair_score >= 0.38):
         repair_like = True
         partial_repair_like = True
-    if repair_like and any(marker in text for marker in repair_continuity_markers):
-        partial_repair_like = True
 
+    positive_companion_score = 0.0
+    positive_companion_score += 0.34 if bool(signals.get("care")) else 0.0
+    positive_companion_score += 0.12 if interaction_frame == "companion" else 0.0
+    positive_companion_score += 0.16 * relationship_salience
+    positive_companion_score += 0.18 * companionship_salience
+    positive_companion_score += 0.08 if len(re.sub(r"\s+", "", text)) >= 8 else 0.0
+    positive_companion_score += 0.08 if not repair_like and not unresolved_like else 0.0
     positive_companion_like = bool(
         app
-        and bool(signals.get("care"))
+        and positive_companion_score >= 0.58
         and not bool(signals.get("repair"))
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
-        and interaction_frame == "companion"
-        and relationship_salience >= 0.58
-        and companionship_salience >= 0.64
-        and len(re.sub(r"\s+", "", text)) >= 8
     )
+
+    familiarity_score = 0.0
+    familiarity_score += 0.18 * relationship_salience
+    familiarity_score += 0.16 * companionship_salience
+    familiarity_score += 0.16 * bond_trust
+    familiarity_score += 0.16 * closeness
+    familiarity_score += 0.10 if interaction_frame in {"companion", "relationship"} else 0.0
+    familiarity_score += 0.08 if bool(signals.get("memory_salient")) else 0.0
+    familiarity_score += 0.06 if not _looks_like_light_smalltalk(text) else 0.0
+    familiarity_score += 0.08 if hurt <= 0.14 and irritation <= 0.12 else 0.0
     familiar_continuity_like = bool(
         app
         and not semantic_event_only
-        and (
-            not _looks_like_light_smalltalk(text)
-            or relationship_salience >= 0.70
-            or bool(signals.get("memory_salient"))
-        )
+        and familiarity_score >= 0.50
         and not bool(signals.get("repair"))
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
-        and interaction_frame in {"companion", "relationship"}
-        and relationship_salience >= 0.34
-        and companionship_salience >= 0.40
-        and bond_trust >= 0.54
-        and closeness >= 0.55
-        and hurt <= 0.14
-        and irritation <= 0.12
+        and not unresolved_like
+        and not repair_like
     )
 
     summary = text[:180]
@@ -13538,6 +14981,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else None,
         world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else None,
         counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else None,
+        semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else None,
     )
     canon_recontact_baseline = _canon_okabe_recontact_baseline(
         state=state,
@@ -13652,10 +15096,17 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     interaction_carryover = _recent_interaction_carryover(
         prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
         prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
+        prior_counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
         recent_events=state.get("recent_events"),
         current_event=current_event,
         response_style_hint=response_style_hint,
     )
+    if not interaction_carryover:
+        interaction_carryover = _seeded_interaction_carryover_from_state(
+            state=state,
+            prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
+            prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
+        )
     recent_events = _append_recent_events(_sanitize_obj(state.get("recent_events")), current_event, limit=6)
 
     persona_state = dict(state.get("persona_state") or {})
@@ -13847,6 +15298,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         bond_state=bond_state,
         world_model_state=world_model_state,
         counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
     )
     if isinstance(retrieved, dict):
         retrieved = {**retrieved, "relationship": relationship}
@@ -14064,6 +15516,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     response_style_hint = str(state.get("response_style_hint") or "natural").strip() or "natural"
     free_dialog = _is_free_dialog_style(response_style_hint, user_text, bool(state.get("science_mode", False)))
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
+    behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
     current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
     light_free_dialog = _is_light_free_dialog_turn(
         user_text=user_text,
@@ -14094,7 +15547,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
         behavior_policy=state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {},
         world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
-        behavior_action=state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {},
+        behavior_action=behavior_action,
         interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
     )
     generation_runtime_mode = str(generation_profile.pop("runtime_mode", RUNTIME_MODE) or RUNTIME_MODE)
@@ -14147,6 +15600,19 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     light_dialog_draft_pref_score = 0.0
     light_dialog_final_pref_score = 0.0
     response_style_hint = str(state.get("response_style_hint") or "natural").strip() or "natural"
+    semantic_narrative_profile = state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {}
+    semantic_history_weight = float(semantic_narrative_profile.get("history_weight") or 0.0)
+    semantic_prompt_anchor_count = len(
+        [
+            str(item).strip()
+            for item in (
+                semantic_narrative_profile.get("prompt_anchor_lines")
+                if isinstance(semantic_narrative_profile.get("prompt_anchor_lines"), list)
+                else []
+            )
+            if str(item or "").strip()
+        ]
+    )
     light_dialog_profile = (
         _daily_surface_profile(user_text, science_mode=bool(state.get("science_mode", False)))
         if light_free_dialog
@@ -14177,6 +15643,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             science_mode=bool(state.get("science_mode", False)),
             penalty=light_dialog_draft_penalty,
             preference=draft_pref,
+            semantic_history_weight=semantic_history_weight,
+            prompt_anchor_count=semantic_prompt_anchor_count,
         )
         if needs_alt_candidate and not light_dialog_rewrite_notes:
             light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
@@ -14189,6 +15657,9 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 focus_text=str(light_dialog_profile.get("focus") or ""),
                 preferred_examples=list(light_dialog_profile.get("chosen_examples") or []),
                 rejected_examples=list(light_dialog_profile.get("rejected_examples") or []),
+                current_event=current_event,
+                behavior_action=behavior_action,
+                interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
             )
             if rewritten:
                 rewritten_pref = _daily_surface_alignment_metrics(rewritten, profile=light_dialog_profile)
@@ -14247,7 +15718,9 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "defensive_meta_tone": "不要用 设定 / 机制 / 数字存在 来解释自己，直接表态。",
             "counselor_tone": "别说成树洞或安抚热线，保持熟人对话，不要用 我听着呢 这类咨询腔。",
             "quoted_stagey_phrase": "别写得像舞台词或摆拍台词，收回自然口语。",
-            "technical_self_activity": "别把她说成在跑后台、进程或系统状态，收回到自然的人味表达。",
+            "technical_self_activity": "别把你说成在跑后台、进程或系统状态，收回到自然的人味表达。",
+            "technical_relational_metaphor": "别用 数据、变量 这类技术隐喻替代关系表达，直接说你的在意、判断和边界。",
+            "servile_availability": "别把关系说成无条件待命或只要被需要就一直在；保留你自己的节奏、选择和会不会靠近的主观性。",
             "overquestioning": "别让反问撑满整句，直接落成自然陈述。",
             "closing_interrogation": "这是收口，不要再用问号把人顶回去，直接把话放下。",
             "idle_call_interrogation": "对方只是轻轻叫你一下，先接住，不要反问“就为了这个”。",
@@ -14255,7 +15728,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "return_interrogation": "先接住这次回来，不要立刻追问或审问。",
             "event_interrogative_push": "这是事件触发的开口，不要用反问把气氛顶起来，直接自然落句。",
             "event_pushy_directive": "别把事件回复说成催促或命令，收回到轻一点的自然提醒。",
-            "event_window_task_reframe": "别把这种共同窗口或生活小挂念说成任务进度、后台流程或待处理事项。",
+            "event_window_task_reframe": "别把这种顺手又想起对方、或刚好能一起接着做点什么的时刻说成任务进度、后台流程或待处理事项。",
         }
         rewrite_issue_keys = {
             "meta_self_explainer",
@@ -14266,6 +15739,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "counselor_tone",
             "quoted_stagey_phrase",
             "technical_self_activity",
+            "technical_relational_metaphor",
+            "servile_availability",
             "overquestioning",
             "closing_interrogation",
             "idle_call_interrogation",
@@ -14276,14 +15751,29 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "event_window_task_reframe",
         }
         targeted_flags = list(dict.fromkeys(list(draft_dialogue_issues) + list(draft_gap_flags)))
+        current_gap, current_gap_flags = _persona_gap(aligned, state)
+        current_dialogue_issues = _dialogue_surface_issues(
+            user_text,
+            aligned,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+            current_event=current_event,
+        )
+        effective_targeted_flags = _effective_natural_dialog_target_flags(
+            targeted_flags=targeted_flags,
+            active_dialogue_issues=current_dialogue_issues,
+            active_gap_flags=current_gap_flags,
+        )
         natural_dialog_rewrite_notes = [
             rewrite_note_map[item]
-            for item in targeted_flags
+            for item in effective_targeted_flags
             if item in rewrite_issue_keys
         ]
         if natural_dialog_rewrite_notes and _should_run_natural_dialog_rewrite(
-            targeted_flags=targeted_flags,
-            draft_gap=draft_gap,
+            targeted_flags=effective_targeted_flags,
+            draft_gap=current_gap,
+            semantic_history_weight=semantic_history_weight,
+            prompt_anchor_count=semantic_prompt_anchor_count,
         ):
             rewritten = _rewrite_natural_dialog_answer(
                 prompt=prompt,
@@ -14293,6 +15783,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 response_style_hint=response_style_hint,
                 science_mode=bool(state.get("science_mode", False)),
                 current_event=current_event,
+                behavior_action=behavior_action,
+                interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
             )
             if rewritten:
                 rewritten_gap, rewritten_gap_flags = _persona_gap(rewritten, state)
@@ -14304,11 +15796,11 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     current_event=current_event,
                 )
                 targeted_issue_set = set(rewrite_issue_keys)
-                draft_issue_pressure = sum(1 for item in targeted_flags if item in targeted_issue_set)
+                draft_issue_pressure = sum(1 for item in effective_targeted_flags if item in targeted_issue_set)
                 rewritten_pressure = sum(1 for item in list(rewritten_issues) + list(rewritten_gap_flags) if item in targeted_issue_set)
                 if (
                     rewritten_pressure < draft_issue_pressure
-                    or rewritten_gap + 0.05 < draft_gap
+                    or rewritten_gap + 0.05 < current_gap
                 ) and _norm_text(rewritten) != _norm_text(aligned):
                     aligned = rewritten
                     alignment_applied = True
@@ -14334,6 +15826,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
             current_event=current_event,
+            behavior_action=behavior_action,
+            interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
         )
         if rewritten:
             rewritten_issues = _dialogue_surface_issues(

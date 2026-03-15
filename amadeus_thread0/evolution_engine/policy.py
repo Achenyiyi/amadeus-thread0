@@ -153,6 +153,7 @@ def build_behavior_policy(
     counterpart_assessment: dict[str, Any] | None,
     world_model_state: dict[str, Any] | None,
     latent_state: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     tsundere_intensity: float,
     science_mode: bool,
 ) -> dict[str, Any]:
@@ -162,6 +163,7 @@ def build_behavior_policy(
     assessment = dict(counterpart_assessment or {})
     world = dict(world_model_state or {})
     latent = dict(latent_state or {})
+    narrative = dict(semantic_narrative_profile or {})
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
     trust = clamp01(bond.get("trust"), 0.5)
     closeness = clamp01(bond.get("closeness"), 0.5)
@@ -176,6 +178,15 @@ def build_behavior_policy(
     presence_residue = clamp01(world.get("presence_residue"), 0.0)
     ambient_resonance = clamp01(world.get("ambient_resonance"), 0.0)
     self_activity_momentum = clamp01(world.get("self_activity_momentum"), 0.0)
+    narrative_bond = clamp01(narrative.get("bond_depth"), 0.0)
+    narrative_presence = clamp01(narrative.get("presence_carry"), 0.0)
+    narrative_commitment = clamp01(narrative.get("commitment_carry"), 0.0)
+    narrative_repair = clamp01(narrative.get("repair_residue"), 0.0)
+    narrative_tension = clamp01(narrative.get("tension_residue"), 0.0)
+    narrative_boundary = clamp01(narrative.get("boundary_residue"), 0.0)
+    narrative_selfhood = clamp01(narrative.get("selfhood_integrity"), 0.0)
+    narrative_agency = clamp01(narrative.get("agency_drive"), 0.0)
+    narrative_history = clamp01(narrative.get("history_weight"), 0.0)
 
     warmth = clamp01(0.28 + 0.28 * closeness + 0.18 * trust + 0.08 * clamp01(world.get("bond_depth"), 0.0) + 0.08 * presence_residue - 0.20 * hurt - 0.14 * boundary_pressure - 0.04 * self_activity_momentum)
     sharpness = clamp01(0.18 + 0.30 * clamp01(tsundere_intensity, 0.55) + 0.18 * irritation + 0.10 * clamp01(world.get("boundary_load"), 0.0))
@@ -187,6 +198,17 @@ def build_behavior_policy(
     boundary_assertiveness = clamp01(0.22 + 0.32 * clamp01(world.get("boundary_load"), 0.0) + 0.18 * boundary_pressure + 0.12 * clamp01(latent.get("agency_pressure"), 0.28))
     self_directedness = clamp01(0.16 + 0.28 * autonomy_need + 0.18 * clamp01(world.get("agency_load"), 0.0) + 0.18 * clamp01(latent.get("agency_pressure"), 0.28) + 0.20 * self_activity_momentum + 0.08 * ambient_resonance - 0.06 * presence_residue)
     equality_guard = clamp01(0.16 + 0.20 * clamp01(world.get("selfhood_load"), 0.0) + 0.18 * boundary_pressure + 0.12 * clamp01(latent.get("self_coherence"), 0.72))
+
+    warmth = clamp01(warmth + 0.06 * narrative_bond + 0.03 * narrative_presence + 0.02 * narrative_commitment - 0.05 * narrative_tension - 0.05 * narrative_boundary)
+    sharpness = clamp01(sharpness + 0.04 * narrative_tension + 0.05 * narrative_boundary + 0.04 * narrative_selfhood + 0.02 * narrative_repair)
+    initiative = clamp01(initiative + 0.04 * narrative_commitment + 0.03 * narrative_bond + 0.06 * narrative_agency - 0.04 * narrative_tension - 0.03 * narrative_boundary)
+    disclosure = clamp01(disclosure + 0.05 * narrative_bond + 0.04 * narrative_commitment + 0.03 * narrative_selfhood - 0.05 * narrative_tension - 0.05 * narrative_boundary - 0.02 * narrative_repair)
+    reply_length_bias = clamp01(reply_length_bias + 0.03 * narrative_history + 0.03 * narrative_commitment - 0.03 * narrative_presence)
+    approach_vs_withdraw = clamp01(approach_vs_withdraw + 0.06 * narrative_bond + 0.04 * narrative_presence + 0.03 * narrative_commitment + 0.03 * narrative_agency - 0.08 * narrative_tension - 0.06 * narrative_boundary - 0.03 * narrative_repair)
+    humor_or_tease_bias = clamp01(humor_or_tease_bias + 0.02 * narrative_bond - 0.06 * narrative_tension - 0.05 * narrative_boundary - 0.03 * narrative_repair)
+    boundary_assertiveness = clamp01(boundary_assertiveness + 0.20 * narrative_boundary + 0.14 * narrative_selfhood)
+    self_directedness = clamp01(self_directedness + 0.20 * narrative_agency + 0.10 * narrative_selfhood)
+    equality_guard = clamp01(equality_guard + 0.22 * narrative_selfhood + 0.12 * narrative_boundary)
 
     if counterpart_stance == "guarded":
         warmth = clamp01(warmth - 0.08)
@@ -229,6 +251,7 @@ def build_behavior_policy(
         "boundary_assertiveness": round(boundary_assertiveness, 3),
         "self_directedness": round(self_directedness, 3),
         "equality_guard": round(equality_guard, 3),
+        "history_weight": round(narrative_history, 3),
     }
 
 
@@ -243,6 +266,7 @@ def build_behavior_action(
     counterpart_assessment: dict[str, Any] | None,
     world_model_state: dict[str, Any] | None,
     latent_state: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     behavior_policy: dict[str, Any] | None,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
@@ -254,10 +278,12 @@ def build_behavior_action(
     assessment = dict(counterpart_assessment or {})
     world = dict(world_model_state or {})
     latent = dict(latent_state or {})
+    narrative = dict(semantic_narrative_profile or {})
     emotion = dict(emotion_state or {})
 
     warmth = clamp01(behavior.get("warmth"), 0.5)
     initiative = clamp01(behavior.get("initiative"), 0.5)
+    reply_length_bias = clamp01(behavior.get("reply_length_bias"), 0.5)
     closeness = clamp01(bond.get("closeness"), 0.5)
     trust = clamp01(bond.get("trust"), 0.5)
     hurt = clamp01(bond.get("hurt"), 0.0)
@@ -266,6 +292,18 @@ def build_behavior_action(
     boundary_pressure = clamp01(assessment.get("boundary_pressure"), 0.1)
     counterpart_stance = str(assessment.get("stance") or "").strip().lower()
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
+    narrative_bond = clamp01(narrative.get("bond_depth"), 0.0)
+    narrative_presence = clamp01(narrative.get("presence_carry"), 0.0)
+    narrative_commitment = clamp01(narrative.get("commitment_carry"), 0.0)
+    narrative_repair = clamp01(narrative.get("repair_residue"), 0.0)
+    narrative_tension = clamp01(narrative.get("tension_residue"), 0.0)
+    narrative_boundary = clamp01(narrative.get("boundary_residue"), 0.0)
+    narrative_selfhood = clamp01(narrative.get("selfhood_integrity"), 0.0)
+    narrative_agency = clamp01(narrative.get("agency_drive"), 0.0)
+    narrative_history = clamp01(narrative.get("history_weight"), 0.0)
+    presence_residue = clamp01(world.get("presence_residue"), 0.0)
+    ambient_resonance = clamp01(world.get("ambient_resonance"), 0.0)
+    self_activity_momentum = clamp01(world.get("self_activity_momentum"), 0.0)
 
     interaction_mode = "steady_reply"
     explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
@@ -284,7 +322,24 @@ def build_behavior_action(
     elif response_style_hint == "casual":
         interaction_mode = "brief_presence"
 
-    if clamp01(behavior.get("approach_vs_withdraw"), 0.5) < 0.38 or safety_need > 0.62 or autonomy_need > 0.62 or hurt > 0.40 or boundary_pressure > 0.56 or counterpart_stance == "guarded":
+    soft_reply_window = response_style_hint in {"companion", "casual", "natural", "relationship"}
+    if event_kind == "user_utterance" and soft_reply_window and not science_mode:
+        if (
+            interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}
+            and max(self_activity_momentum, 0.72 * narrative_agency) >= 0.56
+            and clamp01(behavior.get("self_directedness"), 0.25) >= 0.42
+        ):
+            interaction_mode = "self_activity_reopen"
+        elif (
+            interaction_mode in {"steady_reply", "companion_reply"}
+            and max(presence_residue, narrative_presence, 0.78 * narrative_history) >= 0.54
+            and narrative_boundary < 0.48
+        ):
+            interaction_mode = "brief_presence"
+        elif interaction_mode == "steady_reply" and max(ambient_resonance, 0.72 * narrative_presence) >= 0.52:
+            interaction_mode = "companion_reply"
+
+    if clamp01(behavior.get("approach_vs_withdraw"), 0.5) < 0.38 or safety_need > 0.62 or autonomy_need > 0.62 or hurt > 0.40 or boundary_pressure > 0.56 or counterpart_stance == "guarded" or (narrative_boundary > 0.50 and narrative_selfhood > 0.42) or narrative_tension > 0.58:
         approach_style = "guarded"
     elif warmth > 0.62 and trust > 0.58 and closeness > 0.58:
         approach_style = "approach"
@@ -292,8 +347,18 @@ def build_behavior_action(
         approach_style = "steady"
 
     task_focus = "high" if science_mode or clamp01(world.get("task_pull"), 0.0) > 0.62 else "light" if clamp01(world.get("companionship_pull"), 0.0) > 0.56 else "balanced"
+    if task_focus == "balanced" and max(narrative_presence, narrative_history) >= 0.50:
+        task_focus = "light"
+    if max(self_activity_momentum, narrative_agency) >= 0.62 and task_focus == "high" and not science_mode:
+        task_focus = "balanced"
     followup_intent = "soft" if interaction_mode in {"shared_memory", "relationship_sensitive", "science_partner"} else "active" if initiative > 0.66 else "soft" if initiative > 0.46 else "none"
     if event_kind == "time_idle" and (initiative <= 0.48 or approach_style == "guarded"):
+        followup_intent = "none"
+    if interaction_mode == "self_activity_reopen" and max(self_activity_momentum, narrative_agency) >= 0.62:
+        followup_intent = "none" if max(self_activity_momentum, narrative_agency) >= 0.74 else "soft"
+    elif followup_intent == "soft" and narrative_bond + narrative_commitment >= 1.0 and narrative_boundary < 0.42 and narrative_tension < 0.42:
+        followup_intent = "active"
+    if narrative_boundary >= 0.50 or narrative_tension >= 0.58:
         followup_intent = "none"
 
     if emotion_label in {"hurt", "sad"}:
@@ -305,8 +370,19 @@ def build_behavior_action(
     else:
         affect_surface = "mixed"
 
-    silence_ok = bool(event_kind in {"self_activity_state", "time_idle"} and (approach_style == "guarded" or clamp01(latent.get("agency_pressure"), 0.28) > 0.56 or clamp01(behavior.get("self_directedness"), 0.25) > 0.58))
-    proactive_checkin_readiness = clamp01(0.20 + 0.34 * initiative + 0.16 * warmth + 0.12 * closeness + 0.10 * clamp01(latent.get("trust_reservoir"), 0.5) - 0.18 * autonomy_need - 0.16 * boundary_pressure)
+    silence_ok = bool(event_kind in {"self_activity_state", "time_idle"} and (approach_style == "guarded" or clamp01(latent.get("agency_pressure"), 0.28) > 0.56 or clamp01(behavior.get("self_directedness"), 0.25) > 0.58 or narrative_agency > 0.52))
+    proactive_checkin_readiness = clamp01(
+        0.20
+        + 0.34 * initiative
+        + 0.16 * warmth
+        + 0.12 * closeness
+        + 0.10 * clamp01(latent.get("trust_reservoir"), 0.5)
+        + 0.06 * min(narrative_bond, narrative_commitment + narrative_presence)
+        - 0.18 * autonomy_need
+        - 0.16 * boundary_pressure
+        - 0.12 * narrative_boundary
+        - 0.10 * narrative_tension
+    )
 
     action_target = "respond_now"
     deferred_action_family = "none"
@@ -331,7 +407,7 @@ def build_behavior_action(
             initiative_shape = "pause"
             timing_window_min = 12
     elif event_kind == "self_activity_state":
-        if clamp01(latent.get("agency_pressure"), 0.28) > 0.56:
+        if clamp01(latent.get("agency_pressure"), 0.28) > 0.56 or narrative_agency >= 0.52:
             channel = "silence"
             action_target = "hold_own_rhythm"
             deferred_action_family = "self_activity"
@@ -370,6 +446,12 @@ def build_behavior_action(
         nonverbal_signal = "brief_notice"
         initiative_shape = "ping"
         disclosure_posture = "guarded"
+    elif interaction_mode == "self_activity_reopen":
+        action_target = "offer_small_opening"
+        attention_target = "self_then_counterpart"
+        nonverbal_signal = "thought_glance"
+        initiative_shape = "micro_opening"
+        disclosure_posture = "measured" if max(narrative_boundary, narrative_tension) >= 0.42 else "open" if narrative_bond + narrative_presence >= 0.90 else "measured"
 
     mode_profile = _counterpart_dialogue_mode_profile(
         interaction_mode=interaction_mode,
@@ -384,6 +466,12 @@ def build_behavior_action(
     if mode_profile:
         followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
         disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
+
+    if interaction_mode == "self_activity_reopen":
+        if max(narrative_boundary, narrative_tension) >= 0.46:
+            disclosure_posture = "measured"
+        elif disclosure_posture == "measured" and narrative_bond + narrative_presence >= 1.0 and reply_length_bias < 0.54:
+            disclosure_posture = "open"
 
     return {
         "channel": channel,

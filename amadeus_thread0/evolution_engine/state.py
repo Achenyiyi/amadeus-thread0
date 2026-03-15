@@ -264,6 +264,15 @@ def transition_counterpart_assessment(
     safety_need = clamp01(allostasis.get("safety_need"), 0.2)
     autonomy_need = clamp01(allostasis.get("autonomy_need"), 0.2)
     relationship_trust = clamp01(0.5 + 0.18 * float(relationship.get("trust_score", 0.0) or 0.0), 0.5)
+    repair_gain = 1.0
+    if prev_stance == "guarded":
+        repair_gain *= 0.45
+    elif prev_stance == "watchful":
+        repair_gain *= 0.62
+    if prev_scene in {"relationship_degradation", "boundary_non_compliance", "friction"}:
+        repair_gain *= 0.76
+    if hurt > 0.08 or irritation > 0.06 or clamp01(world.get("boundary_load"), 0.0) >= 0.24:
+        repair_gain *= 0.82
 
     respect = clamp01(0.48 + 0.22 * trust + 0.10 * relationship_trust + 0.06 * repair_confidence - 0.16 * hurt - 0.14 * irritation)
     reciprocity = clamp01(0.46 + 0.20 * closeness + 0.14 * engagement + 0.06 * trust - 0.12 * hurt)
@@ -276,10 +285,10 @@ def transition_counterpart_assessment(
         boundary_pressure = clamp01(boundary_pressure - 0.06)
         reliability = clamp01(reliability + 0.03)
     if bool(signals.get("repair")):
-        respect = clamp01(respect + 0.06)
-        reciprocity = clamp01(reciprocity + 0.10)
-        boundary_pressure = clamp01(boundary_pressure - 0.12)
-        reliability = clamp01(reliability + 0.10)
+        respect = clamp01(respect + 0.06 * repair_gain)
+        reciprocity = clamp01(reciprocity + 0.10 * repair_gain)
+        boundary_pressure = clamp01(boundary_pressure - 0.12 * repair_gain)
+        reliability = clamp01(reliability + 0.10 * repair_gain)
     if bool(signals.get("conflict")):
         respect = clamp01(respect - 0.10)
         reciprocity = clamp01(reciprocity - 0.10)
@@ -319,6 +328,16 @@ def transition_counterpart_assessment(
             reliability_level = min(reliability_level, 0.56)
         elif stance == "open":
             stance = "watchful"
+    elif prev_stance in {"guarded", "watchful"} and guarded_hold_event and bool(signals.get("repair")):
+        # A single repair bid can soften the read, but should not instantly erase guarded/watchful residue.
+        if prev_stance == "guarded":
+            if stance == "open":
+                stance = "watchful"
+            boundary_level = max(boundary_level, 0.24)
+            reliability_level = min(reliability_level, 0.64)
+        elif stance == "open":
+            stance = "watchful"
+            boundary_level = max(boundary_level, 0.18)
 
     scene = "neutral"
     if bool(signals.get("repair")):
