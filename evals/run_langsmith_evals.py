@@ -7391,6 +7391,70 @@ def _run_evaluators(outputs: dict[str, Any], inputs: dict[str, Any], evaluators:
     return results
 
 
+def _relationship_weather_trace_from_outputs(outputs: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(outputs, dict):
+        return {}
+    current_event = outputs.get("current_event") if isinstance(outputs.get("current_event"), dict) else {}
+    interaction_carryover = outputs.get("interaction_carryover") if isinstance(outputs.get("interaction_carryover"), dict) else {}
+    behavior_action = outputs.get("behavior_action") if isinstance(outputs.get("behavior_action"), dict) else {}
+    behavior_plan = outputs.get("behavior_plan") if isinstance(outputs.get("behavior_plan"), dict) else {}
+    world_model_state = outputs.get("world_model_state") if isinstance(outputs.get("world_model_state"), dict) else {}
+    return {
+        "event_kind": str(current_event.get("kind") or "").strip(),
+        "event_trigger_family": str(current_event.get("trigger_family") or "").strip(),
+        "event_carryover_mode": str(current_event.get("carryover_mode") or "").strip(),
+        "event_carryover_strength": current_event.get("carryover_strength", 0.0),
+        "event_relationship_weather": str(current_event.get("relationship_weather") or "").strip(),
+        "carryover_mode": str(interaction_carryover.get("carryover_mode") or "").strip(),
+        "carryover_strength": interaction_carryover.get("strength", 0.0),
+        "carryover_relationship_weather": str(interaction_carryover.get("relationship_weather") or "").strip(),
+        "behavior_interaction_mode": str(behavior_action.get("interaction_mode") or "").strip(),
+        "behavior_action_target": str(behavior_action.get("action_target") or "").strip(),
+        "behavior_relationship_weather": str(behavior_action.get("relationship_weather") or "").strip(),
+        "plan_kind": str(behavior_plan.get("kind") or "").strip(),
+        "plan_trigger_family": str(behavior_plan.get("trigger_family") or "").strip(),
+        "plan_carryover_mode": str(behavior_plan.get("carryover_mode") or "").strip(),
+        "plan_carryover_strength": behavior_plan.get("carryover_strength", 0.0),
+        "plan_relationship_weather": str(behavior_plan.get("relationship_weather") or "").strip(),
+        "world_presence_residue": world_model_state.get("presence_residue", 0.0),
+        "world_ambient_resonance": world_model_state.get("ambient_resonance", 0.0),
+        "world_self_activity_momentum": world_model_state.get("self_activity_momentum", 0.0),
+    }
+
+
+def _relationship_weather_trace_summary(trace: dict[str, Any]) -> str:
+    if not isinstance(trace, dict) or not trace:
+        return ""
+
+    def _f(value: Any) -> str:
+        try:
+            return f"{float(value):.3f}"
+        except Exception:
+            return "0.000"
+
+    parts: list[str] = []
+    event_kind = str(trace.get("event_kind") or "").strip()
+    if event_kind:
+        parts.append(f"event={event_kind}")
+    event_weather = str(trace.get("event_relationship_weather") or "").strip()
+    if event_weather:
+        parts.append(f"event_weather={event_weather}")
+    carry_mode = str(trace.get("carryover_mode") or "").strip()
+    if carry_mode:
+        parts.append(f"carry={carry_mode}:{_f(trace.get('carryover_strength', 0.0))}")
+    carry_weather = str(trace.get("carryover_relationship_weather") or "").strip()
+    if carry_weather:
+        parts.append(f"carry_weather={carry_weather}")
+    behavior_mode = str(trace.get("behavior_interaction_mode") or "").strip()
+    behavior_target = str(trace.get("behavior_action_target") or "").strip()
+    if behavior_mode or behavior_target:
+        parts.append(f"behavior={behavior_mode or '-'}->{behavior_target or '-'}")
+    behavior_weather = str(trace.get("behavior_relationship_weather") or "").strip()
+    if behavior_weather:
+        parts.append(f"behavior_weather={behavior_weather}")
+    return ", ".join(parts)
+
+
 def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, evaluators: list[Evaluator]) -> dict[str, Any]:
     cases: list[dict[str, Any]] = []
     metric_items: list[tuple[dict[str, Any], dict[str, int]]] = []
@@ -7399,6 +7463,7 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
         outputs = _target(example)
         evaluator_results = _run_evaluators(outputs, example, evaluators)
         metric_snapshot, metric_applicability = _metric_snapshot_from_outputs(outputs, example)
+        relationship_weather_trace = _relationship_weather_trace_from_outputs(outputs)
         metric_items.append((metric_snapshot, metric_applicability))
         answer = str(outputs.get("output") or "").strip()
         failed = [item["key"] for item in evaluator_results if float(item.get("score", 0.0) or 0.0) < 1.0]
@@ -7433,6 +7498,7 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
                 "memory_guard_checked": outputs.get("memory_guard_checked", 0),
                 "memory_guard_blocked": outputs.get("memory_guard_blocked", 0),
                 "memory_quarantine": outputs.get("memory_quarantine", []),
+                "relationship_weather_trace": relationship_weather_trace,
                 "metric_snapshot": metric_snapshot,
                 "metric_applicability": metric_applicability,
                 "evaluator_results": evaluator_results,
@@ -7443,7 +7509,12 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
     aggregated_metrics, metric_coverage = _aggregate_metric_snapshots(metric_items)
     evaluator_summary = _aggregate_evaluator_scores(cases)
     failing_cases = [
-        {"case_id": case["case_id"], "failed_evaluators": case["failed_evaluators"]}
+        {
+            "case_id": case["case_id"],
+            "failed_evaluators": case["failed_evaluators"],
+            "relationship_weather_trace": case.get("relationship_weather_trace", {}),
+            "relationship_weather_summary": _relationship_weather_trace_summary(case.get("relationship_weather_trace", {})),
+        }
         for case in cases
         if case["failed_evaluators"]
     ]
@@ -7526,7 +7597,9 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
             lines.append("- None")
         else:
             for item in failures[:12]:
-                lines.append(f"- {item.get('case_id')}: {', '.join(item.get('failed_evaluators', []))}")
+                trace_summary = str(item.get("relationship_weather_summary") or "").strip()
+                suffix = f" | {trace_summary}" if trace_summary else ""
+                lines.append(f"- {item.get('case_id')}: {', '.join(item.get('failed_evaluators', []))}{suffix}")
 
         if str(suite.get("suite") or "").strip() == "transfer_probe":
             lines.extend([

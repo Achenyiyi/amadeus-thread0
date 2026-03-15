@@ -19,6 +19,7 @@ data/diary.txt
 data/copy_wav/
 tmp_*_report.txt
 archive_runtime/
+tmp_smoke_runtime/
 evals/_tmp/
 evals/archive_runtime/
 evals/reports/

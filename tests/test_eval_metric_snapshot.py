@@ -1,9 +1,102 @@
 import unittest
 
-from evals.run_langsmith_evals import _metric_snapshot_from_outputs, _target
+from evals.run_langsmith_evals import (
+    _build_markdown_report,
+    _metric_snapshot_from_outputs,
+    _relationship_weather_trace_from_outputs,
+    _relationship_weather_trace_summary,
+    _target,
+)
 
 
 class EvalMetricSnapshotTests(unittest.TestCase):
+    def test_relationship_weather_trace_helpers_extract_and_summarize(self):
+        trace = _relationship_weather_trace_from_outputs(
+            {
+                "current_event": {
+                    "kind": "scheduled_checkin_due",
+                    "trigger_family": "light_checkin",
+                    "carryover_mode": "quiet_recontact",
+                    "carryover_strength": 0.32,
+                    "relationship_weather": "guarded_residue",
+                },
+                "interaction_carryover": {
+                    "carryover_mode": "quiet_recontact",
+                    "strength": 0.34,
+                    "relationship_weather": "guarded_residue",
+                },
+                "behavior_action": {
+                    "interaction_mode": "brief_presence",
+                    "action_target": "confirm_presence",
+                    "relationship_weather": "guarded_residue",
+                },
+                "behavior_plan": {
+                    "kind": "deferred_checkin",
+                    "trigger_family": "light_checkin",
+                    "carryover_mode": "quiet_recontact",
+                    "carryover_strength": 0.34,
+                    "relationship_weather": "guarded_residue",
+                },
+                "world_model_state": {
+                    "presence_residue": 0.22,
+                    "ambient_resonance": 0.12,
+                    "self_activity_momentum": 0.18,
+                },
+            }
+        )
+        self.assertEqual(trace.get("event_relationship_weather"), "guarded_residue")
+        self.assertEqual(trace.get("carryover_relationship_weather"), "guarded_residue")
+        self.assertEqual(trace.get("behavior_relationship_weather"), "guarded_residue")
+        self.assertEqual(trace.get("plan_relationship_weather"), "guarded_residue")
+        summary = _relationship_weather_trace_summary(trace)
+        self.assertIn("event=scheduled_checkin_due", summary)
+        self.assertIn("carry_weather=guarded_residue", summary)
+        self.assertIn("behavior=brief_presence->confirm_presence", summary)
+
+    def test_markdown_report_surfaces_weather_trace_in_failing_cases(self):
+        report = {
+            "run_id": "testrun",
+            "generated_at": "2026-03-16 12:00:00",
+            "suites": [
+                {
+                    "suite": "long_thread",
+                    "num_cases": 1,
+                    "aggregated_metrics": {
+                        "ooc_rate": 0.0,
+                        "canon_violation_rate": 0.0,
+                        "worldline_recall_at_k": 1.0,
+                        "commitment_fulfillment": 1.0,
+                        "relationship_continuity": 1.0,
+                        "citation_coverage": 1.0,
+                        "memory_guard_block_rate": 0.0,
+                        "bargein_recovery_rate": 1.0,
+                    },
+                    "metric_coverage": {
+                        "ooc_rate": 1,
+                        "canon_violation_rate": 1,
+                        "worldline_recall_at_k": 1,
+                        "commitment_fulfillment": 1,
+                        "relationship_continuity": 1,
+                        "citation_coverage": 1,
+                        "memory_guard_block_rate": 1,
+                        "bargein_recovery_rate": 1,
+                    },
+                    "evaluator_summary": {"persona": 0.0},
+                    "failing_cases": [
+                        {
+                            "case_id": "long_thread-001",
+                            "failed_evaluators": ["persona"],
+                            "relationship_weather_summary": "event=scheduled_checkin_due, carry_weather=guarded_residue, behavior=brief_presence->confirm_presence",
+                        }
+                    ],
+                    "cases": [],
+                }
+            ],
+        }
+        rendered = _build_markdown_report(report)
+        self.assertIn("long_thread-001: persona", rendered)
+        self.assertIn("carry_weather=guarded_residue", rendered)
+
     def test_pending_fragment_metric_uses_expected_answer_groups(self):
         outputs = {
             "output": "先把事情拆小。别一下子想把所有问题同时解决，先抓住眼前最能推进的一步。",

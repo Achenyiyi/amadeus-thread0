@@ -22,6 +22,7 @@ from amadeus_thread0.graph import (
     _promote_due_behavior_action_event,
     _record_semantic_self_evidence,
     _refresh_semantic_self_narratives,
+    _seeded_interaction_carryover_from_state,
     _semantic_narrative_appraisal_hint,
     _semantic_narrative_profile,
     _semantic_self_evidence_records,
@@ -214,6 +215,28 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_refresh_semantic_narratives_builds_evidence_shaped_anchor_texts(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_revision_trace(
+                    namespace="semantic_self_evidence",
+                    target_id="rhythm_style",
+                    before_summary="",
+                    after_summary="从自己的节奏里抬头回你",
+                    reason="semantic_evidence:rhythm_style",
+                    operator="test",
+                    source="test:evidence_anchor",
+                )
+                _refresh_semantic_self_narratives(store, source="test:evidence_anchor")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                rhythm = next(item for item in narratives if str(item.get("category") or "") == "rhythm_style")
+                self.assertIn("从自己的节奏里抬头回你", str(rhythm.get("anchor_text") or ""))
+                self.assertIn("从自己的节奏里抬头回你", str(rhythm.get("prompt_anchor_text") or ""))
+                self.assertIn("从自己的节奏里抬头回你", rhythm.get("anchor_basis_texts") or [])
+            finally:
+                store.close()
+
     def test_passive_evolution_seeds_light_relationship_timeline_for_familiarity_probe(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memory.json")
@@ -261,6 +284,94 @@ class WorldModelResidueTests(unittest.TestCase):
                 self.assertIn("重新确认彼此的熟悉感", str(item.get("summary") or ""))
                 self.assertAlmostEqual(float(item.get("affinity_delta") or 0.0), 0.04, places=3)
                 self.assertAlmostEqual(float(item.get("trust_delta") or 0.0), 0.03, places=3)
+            finally:
+                store.close()
+
+    def test_passive_evolution_can_infer_conflict_from_appraisal_without_keyword_dependence(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="先这样吧。",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.86,
+                        "interaction_frame": "relationship",
+                        "emotion_label": "hurt",
+                        "signals": {
+                            "care": False,
+                            "repair": False,
+                            "conflict": True,
+                            "withdrawal": True,
+                            "memory_salient": True,
+                        },
+                        "salience": {
+                            "relationship": 0.78,
+                            "companionship": 0.24,
+                            "selfhood": 0.32,
+                            "task": 0.04,
+                        },
+                    },
+                    emotion_state={"label": "hurt"},
+                    bond_state={
+                        "trust": 0.40,
+                        "closeness": 0.36,
+                        "hurt": 0.28,
+                        "irritation": 0.20,
+                    },
+                    current_event={"kind": "user_utterance"},
+                    world_model_state={"relationship_maturity": 0.26, "bond_depth": 0.18},
+                )
+                self.assertTrue(wrote)
+                tensions = store.list_unresolved_tensions(limit=4)
+                self.assertEqual(len(tensions), 1)
+                self.assertEqual(str(tensions[0].get("summary") or ""), "先这样吧。")
+            finally:
+                store.close()
+
+    def test_passive_evolution_keeps_keyword_fallback_only_for_low_confidence_repair(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_unresolved_tension(
+                    summary="刚才那一下还是卡着。",
+                    severity=0.76,
+                    confidence=0.84,
+                )
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="别一下子冷掉，继续说。",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.42,
+                        "interaction_frame": "relationship",
+                        "emotion_label": "hurt",
+                        "signals": {},
+                        "salience": {
+                            "relationship": 0.38,
+                            "companionship": 0.34,
+                            "selfhood": 0.14,
+                            "task": 0.04,
+                        },
+                    },
+                    emotion_state={"label": "hurt"},
+                    bond_state={
+                        "trust": 0.46,
+                        "closeness": 0.44,
+                        "hurt": 0.20,
+                        "irritation": 0.14,
+                        "repair_confidence": 0.40,
+                    },
+                    current_event={"kind": "user_utterance"},
+                    world_model_state={"relationship_maturity": 0.30, "bond_depth": 0.16},
+                )
+                self.assertTrue(wrote)
+                latest = store.list_relationship_timeline(limit=4)[0]
+                self.assertGreater(float(latest.get("affinity_delta") or 0.0), 0.0)
+                self.assertGreater(float(latest.get("trust_delta") or 0.0), 0.0)
+                tensions = store.list_unresolved_tensions(limit=4)
+                self.assertEqual(str(tensions[0].get("status") or "open"), "open")
             finally:
                 store.close()
 
@@ -450,6 +561,9 @@ class WorldModelResidueTests(unittest.TestCase):
                 "reactivation_cadence_score": 0.52,
                 "last_supported_at": 1_000,
                 "horizon_tag": "consolidating",
+                "anchor_text": "红莉栖不会把每次重新靠近都当成从零开始。",
+                "prompt_anchor_text": "你不会把每次重新靠近都当成从零开始。",
+                "anchor_strength": 0.66,
             },
             {
                 "category": "ambient_style",
@@ -464,6 +578,9 @@ class WorldModelResidueTests(unittest.TestCase):
                 "reactivation_cadence_score": 0.48,
                 "last_supported_at": 1_000,
                 "horizon_tag": "consolidating",
+                "anchor_text": "红莉栖会把环境里的细小余波继续算进感知里。",
+                "prompt_anchor_text": "你会把环境里的细小余波继续算进感知里。",
+                "anchor_strength": 0.62,
             },
             {
                 "category": "rhythm_style",
@@ -478,6 +595,9 @@ class WorldModelResidueTests(unittest.TestCase):
                 "reactivation_cadence_score": 0.56,
                 "last_supported_at": 1_000,
                 "horizon_tag": "long_term",
+                "anchor_text": "红莉栖不会在每次回应前都把自己的内部节奏清零。",
+                "prompt_anchor_text": "你不会在每次回应前都把自己的内部节奏清零。",
+                "anchor_strength": 0.74,
             },
         ]
         profile = _semantic_narrative_profile(
@@ -496,6 +616,8 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertGreater(float(residue_snapshot.get("presence_style", 0.0) or 0.0), 0.0)
         self.assertGreater(float(residue_snapshot.get("ambient_style", 0.0) or 0.0), 0.0)
         self.assertGreater(float(residue_snapshot.get("rhythm_style", 0.0) or 0.0), 0.0)
+        self.assertIn("红莉栖不会在每次回应前都把自己的内部节奏清零。", profile.get("anchor_lines") or [])
+        self.assertIn("你不会在每次回应前都把自己的内部节奏清零。", profile.get("prompt_anchor_lines") or [])
 
     def test_semantic_narratives_bias_world_model_residue(self):
         semantic_profile = _semantic_narrative_profile(
@@ -1088,6 +1210,99 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_reopen")
 
+    def test_behavior_policy_absorbs_semantic_narrative_agency_and_boundary(self):
+        base = build_behavior_policy(
+            response_style_hint="natural",
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.62,
+                "closeness": 0.60,
+                "hurt": 0.04,
+                "irritation": 0.02,
+                "engagement_drive": 0.56,
+            },
+            allostasis_state={
+                "safety_need": 0.18,
+                "autonomy_need": 0.26,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "stance": "open",
+            },
+            world_model_state={
+                "presence_residue": 0.18,
+                "ambient_resonance": 0.12,
+                "self_activity_momentum": 0.20,
+                "bond_depth": 0.22,
+                "companionship_pull": 0.42,
+                "task_pull": 0.18,
+                "boundary_load": 0.10,
+                "agency_load": 0.26,
+                "selfhood_load": 0.18,
+                "memory_gravity": 0.22,
+                "tension_load": 0.06,
+            },
+            latent_state={
+                "agency_pressure": 0.34,
+                "expression_freedom": 0.66,
+                "self_coherence": 0.74,
+            },
+            semantic_narrative_profile={},
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        infused = build_behavior_policy(
+            response_style_hint="natural",
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.62,
+                "closeness": 0.60,
+                "hurt": 0.04,
+                "irritation": 0.02,
+                "engagement_drive": 0.56,
+            },
+            allostasis_state={
+                "safety_need": 0.18,
+                "autonomy_need": 0.26,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "stance": "open",
+            },
+            world_model_state={
+                "presence_residue": 0.18,
+                "ambient_resonance": 0.12,
+                "self_activity_momentum": 0.20,
+                "bond_depth": 0.22,
+                "companionship_pull": 0.42,
+                "task_pull": 0.18,
+                "boundary_load": 0.10,
+                "agency_load": 0.26,
+                "selfhood_load": 0.18,
+                "memory_gravity": 0.22,
+                "tension_load": 0.06,
+            },
+            latent_state={
+                "agency_pressure": 0.34,
+                "expression_freedom": 0.66,
+                "self_coherence": 0.74,
+            },
+            semantic_narrative_profile={
+                "agency_drive": 0.72,
+                "selfhood_integrity": 0.58,
+                "boundary_residue": 0.42,
+                "history_weight": 0.64,
+                "bond_depth": 0.40,
+            },
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        self.assertGreater(float(infused.get("self_directedness") or 0.0), float(base.get("self_directedness") or 0.0))
+        self.assertGreater(float(infused.get("equality_guard") or 0.0), float(base.get("equality_guard") or 0.0))
+        self.assertGreater(float(infused.get("history_weight") or 0.0), 0.0)
+
     def test_scene_observation_micro_opening_can_speak_when_open(self):
         action = _behavior_action_from_state(
             current_event={
@@ -1143,6 +1358,7 @@ class WorldModelResidueTests(unittest.TestCase):
                 "initiative_level": 0.31,
                 "deferred_action_family": "none",
                 "timing_window_min": 18,
+                "relationship_weather": "guarded_residue",
                 "attention_target": "self_then_counterpart",
                 "nonverbal_signal": "resume_task",
                 "channel": "none",
@@ -1156,6 +1372,7 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(plan.get("kind") or ""), "self_activity_continue")
         self.assertEqual(str(plan.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(plan.get("carryover_strength") or 0.0), 0.74, places=3)
+        self.assertEqual(str(plan.get("relationship_weather") or ""), "guarded_residue")
         self.assertEqual(str(plan.get("attention_target") or ""), "self_then_counterpart")
         self.assertEqual(str(plan.get("nonverbal_signal") or ""), "resume_task")
         self.assertAlmostEqual(float(plan.get("presence_residue") or 0.0), 0.34, places=3)
@@ -1172,6 +1389,7 @@ class WorldModelResidueTests(unittest.TestCase):
             "note": "先回到自己的节奏里。",
             "carryover_mode": "own_rhythm",
             "carryover_strength": 0.74,
+            "relationship_weather": "guarded_residue",
             "attention_target": "self_then_counterpart",
             "nonverbal_signal": "resume_task",
             "presence_residue": 0.34,
@@ -1185,6 +1403,7 @@ class WorldModelResidueTests(unittest.TestCase):
         agenda_entry = normalized[0]
         self.assertEqual(str(agenda_entry.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(agenda_entry.get("carryover_strength") or 0.0), 0.74, places=3)
+        self.assertEqual(str(agenda_entry.get("relationship_weather") or ""), "guarded_residue")
         self.assertEqual(str(agenda_entry.get("attention_target") or ""), "self_then_counterpart")
         self.assertEqual(str(agenda_entry.get("nonverbal_signal") or ""), "resume_task")
         self.assertAlmostEqual(float(agenda_entry.get("presence_residue") or 0.0), 0.34, places=3)
@@ -1201,6 +1420,7 @@ class WorldModelResidueTests(unittest.TestCase):
                 "note": "她先回到自己的节奏里。",
                 "carryover_mode": "own_rhythm",
                 "carryover_strength": 0.74,
+                "relationship_weather": "guarded_residue",
                 "attention_target": "self_then_counterpart",
                 "nonverbal_signal": "resume_task",
                 "presence_residue": 0.34,
@@ -1218,6 +1438,7 @@ class WorldModelResidueTests(unittest.TestCase):
         normalized = _normalize_event_override(promoted, counterpart_name="冈部伦太郎")
         self.assertEqual(str(normalized.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(normalized.get("carryover_strength") or 0.0), 0.74, places=3)
+        self.assertEqual(str(normalized.get("relationship_weather") or ""), "guarded_residue")
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "self_then_counterpart")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "resume_task")
         self.assertAlmostEqual(float(normalized.get("presence_residue") or 0.0), 0.34, places=3)
@@ -1365,6 +1586,7 @@ class WorldModelResidueTests(unittest.TestCase):
                 "note": "刚才那阵风掠过去之后，她又想起你。",
                 "carryover_mode": "ambient_echo",
                 "carryover_strength": 0.41,
+                "relationship_weather": "warm_residue",
                 "attention_target": "ambient_cue",
                 "nonverbal_signal": "thought_glance",
                 "presence_residue": 0.16,
@@ -1379,6 +1601,7 @@ class WorldModelResidueTests(unittest.TestCase):
         normalized = _normalize_event_override(promoted, counterpart_name="冈部伦太郎")
         self.assertEqual(str(normalized.get("carryover_mode") or ""), "ambient_echo")
         self.assertAlmostEqual(float(normalized.get("carryover_strength") or 0.0), 0.47, places=3)
+        self.assertEqual(str(normalized.get("relationship_weather") or ""), "warm_residue")
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "ambient_cue")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "thought_glance")
 
@@ -1395,7 +1618,7 @@ class WorldModelResidueTests(unittest.TestCase):
             recent_events=[
                 {
                     "kind": "scheduled_life_due",
-                    "text": "你们之前顺口提过的共同窗口到了。",
+                    "text": "你们之前顺口提过的那点空当又到了。",
                     "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
                     "created_at": 100,
                 },
@@ -1491,12 +1714,356 @@ class WorldModelResidueTests(unittest.TestCase):
             response_style_hint="natural",
         )
         self.assertEqual(str(carryover.get("carryover_mode") or ""), "life_window")
-        self.assertEqual(str(carryover.get("source_action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "light_life_nudge")
         self.assertEqual(str(carryover.get("attention_target") or ""), "counterpart_state")
         self.assertEqual(int(carryover.get("source_turn_gap") or 0), 1)
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.12)
         self.assertLess(float(carryover.get("strength") or 0.0), 0.24)
         self.assertTrue(bool(_compact_interaction_carryover_hint(carryover)))
+
+    def test_recent_interaction_carryover_can_keep_guarded_relational_weather_from_prior_user_exchange(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才那句话真的有点过界了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "guarded",
+                "affect_surface": "cool",
+                "followup_intent": "none",
+                "disclosure_posture": "guarded",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.26,
+                "engagement_level": 0.42,
+                "action_target": "protect_relationship_boundary",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才那句话真的有点过界了。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "……我知道你不高兴，但我还是想和你好好说。",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "guarded_residue")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.18)
+        self.assertIn("先收一点", str(carryover.get("note") or ""))
+
+    def test_recent_interaction_carryover_can_keep_warm_relational_weather_from_prior_user_exchange(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "谢谢你刚才接住我。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "approach_style": "approach",
+                "affect_surface": "tender",
+                "followup_intent": "soft",
+                "disclosure_posture": "measured",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "quiet_notice",
+                "initiative_level": 0.48,
+                "engagement_level": 0.54,
+                "action_target": "low_pressure_hold",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "谢谢你刚才接住我。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "现在心里顺一点了，我又想和你说话。",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "warm_residue")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.16)
+
+    def test_recent_interaction_carryover_keeps_guarded_weather_for_watchful_repair_boundary(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我知道刚才那句过界了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "steady",
+                "affect_surface": "warm",
+                "followup_intent": "soft",
+                "disclosure_posture": "measured",
+                "attention_target": "relationship_boundary",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.46,
+                "engagement_level": 0.68,
+                "action_target": "protect_relationship_boundary",
+            },
+            prior_counterpart_assessment={
+                "stance": "watchful",
+                "scene": "repair_attempt",
+                "boundary_pressure": 0.18,
+                "reliability_read": 0.74,
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "我知道刚才那句过界了。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "不是要你立刻装作没事。你要是还介意，就带着那点介意正常回我。",
+            },
+            response_style_hint="relationship",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "guarded_residue")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.18)
+
+    def test_recent_interaction_carryover_keeps_repair_weather_after_open_repair_turn(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "刚才那下我是在认真道歉，不是在走流程。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "steady",
+                "affect_surface": "warm",
+                "followup_intent": "soft",
+                "disclosure_posture": "measured",
+                "attention_target": "relationship_boundary",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.48,
+                "engagement_level": 0.70,
+                "action_target": "protect_relationship_boundary",
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "repair_attempt",
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.78,
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "刚才那下我是在认真道歉，不是在走流程。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            },
+            response_style_hint="relationship",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "brief_presence")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "repair_residue")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.16)
+
+    def test_recent_interaction_carryover_does_not_infer_repair_weather_from_nonrepair_relationship_turn(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
+                "tags": ["relationship", "companionship_salient"],
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "steady",
+                "affect_surface": "warm",
+                "followup_intent": "soft",
+                "disclosure_posture": "measured",
+                "attention_target": "relationship_boundary",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.44,
+                "engagement_level": 0.66,
+                "action_target": "protect_relationship_boundary",
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "friction",
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.70,
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你会不会有一天觉得烦，然后干脆不想见我了。",
+            },
+            response_style_hint="relationship",
+        )
+        self.assertNotEqual(str(carryover.get("relationship_weather") or ""), "repair_residue")
+
+    def test_guarded_relational_weather_beats_older_life_window_carryover(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才那句话真的有点过界了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "guarded",
+                "affect_surface": "cool",
+                "followup_intent": "none",
+                "disclosure_posture": "guarded",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.26,
+                "engagement_level": 0.42,
+                "action_target": "protect_relationship_boundary",
+            },
+            recent_events=[
+                {
+                    "kind": "scheduled_life_due",
+                    "text": "你前面提过的那点生活上的事又浮了上来。",
+                    "tags": ["scheduled_due", "life_window"],
+                    "created_at": 90,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才那句话真的有点过界了。",
+                    "created_at": 100,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "……我知道你不高兴，但我还是想和你好好说。",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "guarded_residue")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "counterpart_state")
+
+    def test_recent_interaction_carryover_can_reuse_relationship_weather_from_promoted_event(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我回来了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "companion_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "scheduled_checkin_due",
+                    "text": "前面那点没说出口的确认感，过了一会儿又轻轻回到了你的注意力里。",
+                    "tags": ["scheduled_due", "light_checkin", "quiet_presence"],
+                    "carryover_mode": "quiet_recontact",
+                    "relationship_weather": "guarded_residue",
+                    "attention_target_hint": "counterpart_state",
+                    "nonverbal_signal_hint": "quiet_glance",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我回来了。",
+                    "created_at": 110,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你还在介意刚才那件事吗？",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "guarded_residue")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "counterpart_state")
+        self.assertEqual(str(carryover.get("nonverbal_signal") or ""), "quiet_glance")
+
+    def test_seeded_interaction_carryover_from_state_restores_first_turn_residue(self):
+        carryover = _seeded_interaction_carryover_from_state(
+            state={
+                "interaction_carryover": {
+                    "carryover_mode": "quiet_recontact",
+                    "strength": 0.52,
+                    "relationship_weather": "guarded_residue",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "note": "上一轮那点别扭还没完全退掉，这轮会先收一点。",
+                }
+            },
+            prior_current_event={},
+            prior_behavior_action={},
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "guarded_residue")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "counterpart_state")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.5)
+
+    def test_seeded_interaction_carryover_from_state_does_not_override_real_history(self):
+        carryover = _seeded_interaction_carryover_from_state(
+            state={
+                "interaction_carryover": {
+                    "carryover_mode": "small_opening",
+                    "strength": 0.46,
+                    "relationship_weather": "warm_residue",
+                }
+            },
+            prior_current_event={"kind": "user_utterance", "text": "上一轮已经有真实事件。"},
+            prior_behavior_action={},
+        )
+        self.assertEqual(carryover, {})
+
+    def test_behavior_action_reads_guarded_relational_weather(self):
+        action = _behavior_action_from_state(
+            current_event={"kind": "user_utterance", "text": "我知道你不高兴，但我还是想和你好好说。"},
+            response_style_hint="natural",
+            user_text="我知道你不高兴，但我还是想和你好好说。",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.66, "closeness": 0.62, "hurt": 0.08, "irritation": 0.04},
+            allostasis_state={"autonomy_need": 0.22, "safety_need": 0.18},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.18, "reliability_read": 0.62},
+            semantic_narrative_profile={"bond_depth": 0.56, "presence_carry": 0.44},
+            behavior_policy={
+                "warmth": 0.62,
+                "initiative": 0.58,
+                "reply_length_bias": 0.46,
+                "approach_vs_withdraw": 0.56,
+                "boundary_assertiveness": 0.28,
+                "self_directedness": 0.30,
+                "equality_guard": 0.28,
+            },
+            world_model_state={"presence_residue": 0.18, "ambient_resonance": 0.08, "self_activity_momentum": 0.12},
+            interaction_carryover={
+                "carryover_mode": "quiet_recontact",
+                "strength": 0.34,
+                "relationship_weather": "guarded_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "quiet_glance",
+                "note": "上一轮那点情绪还没完全退掉，这轮会先收一点。",
+            },
+            prior_emotion_state={},
+            prior_bond_state={},
+            prior_allostasis_state={},
+            prior_counterpart_assessment={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "brief_presence")
+        self.assertIn(str(action.get("disclosure_posture") or ""), {"measured", "guarded"})
+        self.assertIn(str(action.get("followup_intent") or ""), {"none", "soft"})
 
     def test_promoted_behavior_action_event_creates_due_checkin(self):
         promoted = _promote_due_behavior_action_event(
@@ -1515,6 +2082,7 @@ class WorldModelResidueTests(unittest.TestCase):
                 "action_target": "wait_and_recheck",
                 "deferred_action_family": "light_checkin",
                 "timing_window_min": 22,
+                "relationship_weather": "guarded_residue",
             },
         )
         self.assertEqual(str(promoted.get("kind") or ""), "scheduled_checkin_due")
@@ -1522,6 +2090,7 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("scheduled_due", promoted.get("tags") or [])
         self.assertEqual(str(promoted.get("trigger_family") or ""), "light_checkin")
         self.assertEqual(str(promoted.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertEqual(str(promoted.get("relationship_weather") or ""), "guarded_residue")
         self.assertIn("确认感", str(promoted.get("text") or ""))
         self.assertTrue(str(promoted.get("semantic_goal") or "").strip())
 
