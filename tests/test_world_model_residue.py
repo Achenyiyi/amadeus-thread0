@@ -12,7 +12,9 @@ from amadeus_thread0.graph import (
     _compact_semantic_narrative_hint,
     _normalize_behavior_agenda,
     _normalize_event_override,
+    _passive_evolution_memory_update,
     _promote_due_behavior_plan_event,
+    _promote_due_behavior_action_event,
     _record_semantic_self_evidence,
     _refresh_semantic_self_narratives,
     _semantic_narrative_appraisal_hint,
@@ -22,6 +24,145 @@ from amadeus_thread0.graph import (
 
 
 class WorldModelResidueTests(unittest.TestCase):
+    def test_refresh_semantic_narratives_marks_bond_style_contested_under_negative_evidence(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_semantic_self_narrative(
+                    text="红莉栖和冈部的共同历史已经很稳，会自然带进默认语气里。",
+                    category="bond_style",
+                    stability=0.82,
+                    confidence=0.84,
+                    metadata={
+                        "support_count": 4,
+                        "refresh_count": 4,
+                        "consolidation_count": 4,
+                        "sedimentation_score": 0.80,
+                        "persistence_score": 0.84,
+                        "residue_score": 0.72,
+                        "integration_score": 0.76,
+                        "first_supported_at": 1,
+                        "last_supported_at": 10,
+                        "last_meaningful_refresh_at": 10,
+                        "last_reactivated_at": 10,
+                        "support_span_s": 5 * 24 * 3600,
+                        "reactivation_gap_s": 0,
+                        "reactivation_hits": 2,
+                        "reactivation_rate_per_day": 1.2,
+                        "reactivation_cadence_score": 0.62,
+                        "horizon_tag": "long_term",
+                        "support_signature": "bond_style|old|count=4",
+                        "decay_rate_per_day": 0.045,
+                        "decay_resistance": 0.76,
+                    },
+                )
+                store.add_relationship_timeline("上次那件事我还是很介意。", affinity_delta=-0.28, trust_delta=-0.24, confidence=0.86)
+                store.add_unresolved_tension(summary="这件事还没真正说开。", severity=0.82, confidence=0.88)
+                _refresh_semantic_self_narratives(store, source="test:contradiction")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                bond = next(item for item in narratives if str(item.get("category") or "") == "bond_style")
+                self.assertGreater(float(bond.get("contradiction_pressure") or 0.0), 0.20)
+                self.assertTrue(bool(bond.get("contested")))
+                self.assertIn("open_tension", bond.get("contradiction_factors") or [])
+                self.assertLess(float(bond.get("persistence_score") or 0.0), 0.84)
+            finally:
+                store.close()
+
+    def test_dormant_tension_narrative_weakens_after_repairs(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                tension = store.add_semantic_self_narrative(
+                    text="之前的别扭余波还会继续卡在后面的几轮里。",
+                    category="tension_style",
+                    stability=0.78,
+                    confidence=0.80,
+                    metadata={
+                        "support_count": 3,
+                        "refresh_count": 3,
+                        "consolidation_count": 3,
+                        "sedimentation_score": 0.76,
+                        "persistence_score": 0.80,
+                        "residue_score": 0.70,
+                        "integration_score": 0.72,
+                        "first_supported_at": 1,
+                        "last_supported_at": 10,
+                        "last_meaningful_refresh_at": 10,
+                        "last_reactivated_at": 10,
+                        "support_span_s": 3 * 24 * 3600,
+                        "reactivation_gap_s": 0,
+                        "reactivation_hits": 1,
+                        "reactivation_rate_per_day": 1.0,
+                        "reactivation_cadence_score": 0.56,
+                        "horizon_tag": "long_term",
+                        "support_signature": "tension_style|old|count=3",
+                        "decay_rate_per_day": 0.12,
+                        "decay_resistance": 0.70,
+                    },
+                )
+                store.add_conflict_repair(summary="这次已经认真说开了。", confidence=0.84)
+                store.add_revision_trace(
+                    namespace="unresolved_tensions",
+                    target_id="1",
+                    before_summary="之前卡着的那件事",
+                    after_summary="已经说开",
+                    reason="manual_resolve",
+                    operator="test",
+                    source="test:repair",
+                )
+                _refresh_semantic_self_narratives(store, source="test:repair")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                updated = next(item for item in narratives if int(item.get("id") or 0) == int(tension.get("id") or 0))
+                self.assertGreater(float(updated.get("contradiction_pressure") or 0.0), 0.20)
+                self.assertIn("repair_resolution", updated.get("contradiction_factors") or [])
+                self.assertLess(float(updated.get("persistence_score") or 0.0), 0.80)
+                self.assertIn(str(updated.get("horizon_tag") or ""), {"long_term", "consolidating"})
+            finally:
+                store.close()
+
+    def test_passive_evolution_updates_semantic_narratives_from_self_activity_event(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.82,
+                        "interaction_frame": "companion",
+                        "signals": {},
+                        "salience": {
+                            "relationship": 0.22,
+                            "companionship": 0.36,
+                            "selfhood": 0.18,
+                            "task": 0.28,
+                        },
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.62,
+                        "closeness": 0.60,
+                        "hurt": 0.02,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "own_task", "deep_focus", "small_opening"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.18,
+                        "ambient_resonance": 0.10,
+                        "self_activity_momentum": 0.76,
+                    },
+                )
+                self.assertTrue(wrote)
+                narratives = store.list_semantic_self_narratives(limit=12)
+                categories = {str(item.get("category") or "") for item in narratives}
+                self.assertIn("agency_style", categories)
+                self.assertIn("rhythm_style", categories)
+            finally:
+                store.close()
+
     def test_semantic_self_evidence_emits_presence_ambient_and_rhythm_style(self):
         records = _semantic_self_evidence_records(
             user_text="刚才那阵风过去之后，我还是能感觉到你就在这儿。你是在忙自己的事吗？",
@@ -562,6 +703,52 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_reopen")
 
+    def test_scene_observation_micro_opening_can_speak_when_open(self):
+        action = _behavior_action_from_state(
+            current_event={
+                "kind": "scene_observation",
+                "tags": ["vision", "seen_object", "micro_opening", "playful_memory"],
+            },
+            response_style_hint="natural",
+            user_text="你瞥见桌边晃着一个小鱼挂件，像是冈部顺手丢在那里的。",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                "safety_need": 0.14,
+                "autonomy_need": 0.20,
+                "cognitive_budget": 0.74,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.09,
+                "reliability_read": 0.66,
+                "stance": "open",
+                "respect_level": 0.68,
+                "reciprocity": 0.64,
+            },
+            semantic_narrative_profile={},
+            behavior_policy={
+                "warmth": 0.58,
+                "initiative": 0.49,
+                "reply_length_bias": 0.46,
+                "approach_vs_withdraw": 0.52,
+                "boundary_assertiveness": 0.18,
+                "self_directedness": 0.20,
+                "equality_guard": 0.18,
+            },
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("channel") or ""), "speech")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("attention_target") or ""), "object_then_user")
+
     def test_behavior_plan_captures_carryover_snapshot(self):
         plan = _behavior_plan_from_action(
             {"kind": "time_idle", "event_frame": "idle", "tags": ["quiet_presence"], "idle_minutes": 18},
@@ -668,6 +855,51 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertAlmostEqual(float(normalized.get("carryover_strength") or 0.0), 0.47, places=3)
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "ambient_cue")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "thought_glance")
+
+    def test_promoted_behavior_action_event_creates_due_checkin(self):
+        promoted = _promote_due_behavior_action_event(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 48,
+                "event_frame": "time_idle_due",
+                "tags": ["time_idle", "quiet_work", "light_checkin"],
+            },
+            {
+                "kind": "time_idle",
+                "idle_minutes": 20,
+                "tags": ["time_idle", "respect_space"],
+            },
+            {
+                "action_target": "wait_and_recheck",
+                "deferred_action_family": "light_checkin",
+                "timing_window_min": 22,
+            },
+        )
+        self.assertEqual(str(promoted.get("kind") or ""), "scheduled_checkin_due")
+        self.assertEqual(str(promoted.get("source") or ""), "scheduler")
+        self.assertIn("scheduled_due", promoted.get("tags") or [])
+        self.assertEqual(str(promoted.get("trigger_family") or ""), "light_checkin")
+
+    def test_promoted_behavior_action_event_waits_until_due(self):
+        promoted = _promote_due_behavior_action_event(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 16,
+                "event_frame": "time_idle_space",
+                "tags": ["time_idle", "respect_space"],
+            },
+            {
+                "kind": "time_idle",
+                "idle_minutes": 12,
+                "tags": ["time_idle", "respect_space"],
+            },
+            {
+                "action_target": "wait_and_recheck",
+                "deferred_action_family": "observe",
+                "timing_window_min": 22,
+            },
+        )
+        self.assertEqual(str(promoted.get("kind") or ""), "time_idle")
 
 
 if __name__ == "__main__":

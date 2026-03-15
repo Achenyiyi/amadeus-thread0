@@ -91,6 +91,12 @@ pip install -r requirements.txt
 python -m amadeus_thread0.cli
 ```
 
+做干净演示或新的世界线时，优先用：
+
+```bash
+python -m amadeus_thread0.cli --fresh-thread
+```
+
 CLI 启动后建议先看：
 
 - `/help`
@@ -105,11 +111,12 @@ CLI 启动后建议先看：
 
 - `/help`：查看命令总览
 - `/exit`：退出
-- `/newthread`：切换到新世界线
+- `/newthread [thread_id]`：切换到新世界线；留空自动生成
 - `/threads`：列出已有 thread
 - `/history [n]`：查看 checkpoint 历史
 - `/rewind <checkpoint_id>`：从指定 checkpoint 分叉继续
 - `/where`：查看当前 thread / checkpoint
+- `/runtime`：查看 shared / isolated runtime 数据布局
 - `/env`：查看运行环境摘要
 - `/idle [minutes] [| note]`：模拟一段安静时间经过，让她自行决定是否主动开口
 - `/events`：列出可注入的感知/生活事件种子
@@ -353,6 +360,12 @@ third_party/benchmarks/
 
 不要把真实 `data/` 内容、`.env`、语音输出和评测缓存直接提交到公开仓库。
 
+如果你怀疑 `data/` 里混进了旧 smoke 目录、shared `thread0` 历史或隔离 worldline，可运行：
+
+```bash
+python scripts/inspect_runtime_layout.py
+```
+
 ## 目录结构
 
 - `amadeus_thread0/cli.py`：CLI 与演示入口
@@ -360,8 +373,10 @@ third_party/benchmarks/
 - `amadeus_thread0/memory_store.py`：长期记忆与审计存储
 - `amadeus_thread0/session_orchestrator.py`：claim attribution 与续说恢复辅助逻辑
 - `amadeus_thread0/tools.py`：工具定义
+- `amadeus_thread0/runtime_audit.py`：运行数据布局审计
 - `evals/run_langsmith_evals.py`：正式评测入口
 - `evals/run_backend_reliability_checks.py`：本地可靠性与演化曲线检查
+- `scripts/inspect_runtime_layout.py`：shared / isolated runtime 目录检查
 - `docs/`：技术预发布演示材料
 - `user_study/`：用户研究流程与模板
 

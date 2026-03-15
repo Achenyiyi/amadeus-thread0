@@ -1,4 +1,0 @@
-name=quiet_checkin_user
-final_answer=真是的，明明都让你别那么正式了。我就在这儿听着你那堆中二发言呢，这下可以安心了吧，冈部。
-final_issues=None
-draft_issues=None

@@ -5,6 +5,145 @@ from typing import Any
 from .schemas import clamp01
 
 
+def _has_any_marker(text: str, markers: set[str]) -> bool:
+    raw = str(text or "").strip()
+    return bool(raw and any(marker in raw for marker in markers))
+
+
+def _event_text(event: dict[str, Any]) -> str:
+    return str(event.get("effective_text") or event.get("text") or "").strip()
+
+
+def _is_nonrelational_support_request(user_text: str, science_mode: bool) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    if science_mode and any(token in text for token in {"实验", "代码", "论文", "debug", "报错"}):
+        return False
+    rupture_markers = {
+        "对不起",
+        "抱歉",
+        "原谅",
+        "说开",
+        "还生气",
+        "冷掉",
+    }
+    if _has_any_marker(text, rupture_markers):
+        return False
+    request_markers = {
+        "像平时那样回我",
+        "跟我说两句",
+        "回我一句",
+        "陪我说两句",
+        "陪我一下",
+        "陪我一会儿",
+        "能陪我一会儿",
+        "别讲大道理",
+        "别分析我",
+        "轻一点回我",
+        "正常回我",
+        "别太正式",
+        "别让我一个人待着",
+        "我不想一个人待着",
+    }
+    mood_markers = {
+        "有点累",
+        "有点烦",
+        "有点乱",
+        "有点撑不住",
+        "压力有点大",
+        "有点难受",
+        "差点又崩溃",
+        "崩溃了",
+        "心烦",
+        "睡不着",
+        "不想一个人待着",
+    }
+    if _has_any_marker(text, request_markers):
+        return True
+    if _has_any_marker(text, mood_markers) and _has_any_marker(text, {"说两句", "回我一句", "陪我", "陪我一下"}):
+        return True
+    return _has_any_marker(text, mood_markers) and len(text) <= 24 and ("？" not in text and "?" not in text)
+
+
+def _counterpart_dialogue_mode_profile(
+    *,
+    interaction_mode: str,
+    counterpart_assessment: dict[str, Any] | None,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    initiative: float,
+    approach: float,
+) -> dict[str, Any]:
+    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply"}:
+        return {}
+
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    respect = clamp01(assessment.get("respect_level"), 0.5)
+    reciprocity = clamp01(assessment.get("reciprocity"), 0.5)
+    boundary_pressure = clamp01(assessment.get("boundary_pressure"), 0.1)
+    reliability = clamp01(assessment.get("reliability_read"), 0.5)
+    stance = str(assessment.get("stance") or "").strip().lower() or "open"
+    scene = str(assessment.get("scene") or "").strip().lower()
+
+    openness = clamp01(
+        0.18
+        + 0.14 * trust
+        + 0.12 * closeness
+        + 0.12 * initiative
+        + 0.10 * approach
+        + 0.10 * reliability
+        + 0.06 * respect
+        + 0.06 * reciprocity
+        - 0.18 * boundary_pressure
+        - 0.12 * hurt
+        - 0.08 * safety_need
+    )
+    if stance == "guarded":
+        openness = clamp01(openness - 0.16)
+    elif stance == "watchful":
+        openness = clamp01(openness - 0.06)
+    if scene == "repair_attempt":
+        openness = clamp01(openness + 0.04)
+    elif scene == "care_bid":
+        openness = clamp01(openness + 0.03)
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        openness = clamp01(openness - 0.08)
+    if interaction_mode == "companion_reply" and stance == "open" and scene not in {"boundary_non_compliance", "relationship_degradation"}:
+        openness = clamp01(openness + 0.02)
+
+    if interaction_mode == "shared_memory":
+        if stance == "guarded":
+            return {"followup_intent": "none", "disclosure_posture": "measured"}
+        if stance == "watchful":
+            return {"followup_intent": "soft", "disclosure_posture": "measured"}
+        return {
+            "followup_intent": "active" if openness >= 0.64 and initiative > 0.62 else "soft",
+            "disclosure_posture": "open" if openness >= 0.64 else "measured",
+        }
+
+    if interaction_mode == "relationship_sensitive":
+        if stance == "guarded":
+            return {"followup_intent": "none", "disclosure_posture": "guarded"}
+        if stance == "watchful":
+            return {"followup_intent": "soft", "disclosure_posture": "measured"}
+        return {
+            "followup_intent": "active" if openness >= 0.70 else "soft",
+            "disclosure_posture": "open" if openness >= 0.70 else "measured",
+        }
+
+    if stance == "guarded":
+        return {"followup_intent": "none", "disclosure_posture": "guarded"}
+    if stance == "watchful":
+        return {"followup_intent": "soft", "disclosure_posture": "measured"}
+    return {
+        "followup_intent": "active" if openness >= 0.68 and initiative > 0.58 else "soft",
+        "disclosure_posture": "open" if openness >= 0.66 else "measured",
+    }
+
+
 def build_behavior_policy(
     *,
     response_style_hint: str,
@@ -108,6 +247,7 @@ def build_behavior_action(
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
     event_kind = str(event.get("kind") or "user_utterance").strip().lower()
+    user_text = _event_text(event)
     behavior = dict(behavior_policy or {})
     bond = dict(bond_state or {})
     allostasis = dict(allostasis_state or {})
@@ -128,6 +268,7 @@ def build_behavior_action(
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
 
     interaction_mode = "steady_reply"
+    explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
     if event_kind == "time_idle":
         interaction_mode = "idle_presence"
     elif event_kind in {"gesture_signal", "ambient_shift", "scene_observation"}:
@@ -139,7 +280,7 @@ def build_behavior_action(
     elif science_mode or response_style_hint == "structured":
         interaction_mode = "science_partner"
     elif response_style_hint == "companion":
-        interaction_mode = "low_pressure_support"
+        interaction_mode = "low_pressure_support" if explicit_support_request else "companion_reply"
     elif response_style_hint == "casual":
         interaction_mode = "brief_presence"
 
@@ -229,6 +370,20 @@ def build_behavior_action(
         nonverbal_signal = "brief_notice"
         initiative_shape = "ping"
         disclosure_posture = "guarded"
+
+    mode_profile = _counterpart_dialogue_mode_profile(
+        interaction_mode=interaction_mode,
+        counterpart_assessment=counterpart_assessment,
+        trust=trust,
+        closeness=closeness,
+        hurt=hurt,
+        safety_need=safety_need,
+        initiative=initiative,
+        approach=clamp01(behavior.get("approach_vs_withdraw"), 0.5),
+    )
+    if mode_profile:
+        followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
+        disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
 
     return {
         "channel": channel,

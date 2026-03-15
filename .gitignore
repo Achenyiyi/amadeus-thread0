@@ -4,11 +4,21 @@ __pycache__/
 
 data/*.sqlite
 data/*audit.jsonl
+data/**/checkpoints.sqlite
+data/**/memories.sqlite
+data/**/decision_audit.jsonl
+data/**/mcp_audit.jsonl
+data/**/memory_store_audit.jsonl
+data/**/tool_audit.jsonl
+data/**/diary.txt
 data/tmp_*.json
+data/worldlines/
 data/tts_out/
 data/tts_voice_cache.json
 data/diary.txt
 data/copy_wav/
+tmp_*_report.txt
+archive_runtime/
 evals/_tmp/
 evals/archive_runtime/
 evals/reports/

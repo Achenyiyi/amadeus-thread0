@@ -25,10 +25,12 @@ os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 os.environ.setdefault("LANGSMITH_TRACING", "false")
 
 from amadeus_thread0.graph import (  # noqa: E402
+    _build_turn_appraisal_prompt,
     _coerce_appraisal_payload,
     _compact_focus_lines,
     _compact_relationship_summary,
     _extract_json_block,
+    _finalize_turn_appraisal_payload,
     _focus_payload,
     _invoke_model_with_retries,
     _model,
@@ -200,54 +202,63 @@ def _run_one(text: str) -> dict[str, Any]:
     focus_lines = _compact_focus_lines(_focus_payload([], limit=4), limit=4)
     relationship_summary = _compact_relationship_summary(relationship)
     recent_lines = _recent_dialogue_lines(msgs, limit=4)
-    focus_block = "- worldline_focus:\n" + "\n".join(focus_lines) + "\n" if focus_lines else ""
-    dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines) + "\n" if recent_lines else ""
-    prompt = (
-        "你是一个对话状态评估器，不负责回复用户。"
-        f"请根据最近对话，判断这轮用户输入对 {actor_name} 与 {counterpart_name} 之间的情绪、关系和内稳态意味着什么。"
-        "这次调用用于外部基准校准，请直接做语义判断，不要因为缺少显式关键词而拒绝判断。"
-        "只输出 JSON，不要解释，不要 markdown。\n"
-        "JSON schema:\n"
-        "{\n"
-        '  "emotion_label": "neutral|logic|care|tease|stress|sad|hurt|angry",\n'
-        '  "emotion": {"valence": -1..1, "arousal": 0..1, "linger": 0..4, "recovery_rate": 0..1, "volatility": 0..1},\n'
-        '  "bond_delta": {"trust": -0.35..0.35, "closeness": -0.35..0.35, "hurt": -0.35..0.35, "irritation": -0.35..0.35, "engagement_drive": -0.35..0.35, "repair_confidence": -0.35..0.35},\n'
-        '  "allostasis_delta": {"safety_need": -0.35..0.35, "closeness_need": -0.35..0.35, "competence_need": -0.35..0.35, "autonomy_need": -0.35..0.35, "cognitive_budget": -0.35..0.35},\n'
-        '  "signals": {"repair": true|false, "withdrawal": true|false, "care": true|false, "conflict": true|false, "memory_salient": true|false},\n'
-        '  "confidence": 0..1,\n'
-        '  "reason": "short phrase"\n'
-        "}\n"
-        "约束：\n"
-        "- 不要把科学问题默认判成负面情绪。\n"
-        "- 这批样本可能是英文、口语、论坛语气或简短片段，仍然要尽量判断语义情绪。\n"
-        "- 如果文本主要是在表达安慰、赞赏、关心、感谢、喜欢或支持，优先考虑 care。\n"
-        "- 如果文本主要是在表达烦躁、愤怒、嫌恶、强烈不满，优先考虑 angry。\n"
-        "- 如果文本主要是在表达受伤、失落、失望、道歉、难过，优先考虑 hurt 或 sad。\n"
-        "- 如果文本主要是在表达紧张、害怕、不安、压力，优先考虑 stress。\n"
-        "- 只判断这轮对状态的意义，不写最终回答。\n"
-        f"- response_style_hint={response_style_hint}\n"
-        '- previous_emotion={"label":"neutral","valence":0.0,"arousal":0.2,"linger":0}\n'
-        '- previous_bond={"trust":0.0,"closeness":0.0,"hurt":0.0,"irritation":0.0,"engagement_drive":0.0,"repair_confidence":0.0}\n'
-        '- previous_allostasis={"safety_need":0.5,"closeness_need":0.5,"competence_need":0.5,"autonomy_need":0.5,"cognitive_budget":0.5}\n'
-        f"- relationship={relationship_summary}\n"
-        f"{focus_block}"
-        f"{dialogue_block}"
-        f"- current_user={text}\n"
+    prompt = _build_turn_appraisal_prompt(
+        actor_name=actor_name,
+        counterpart_name=counterpart_name,
+        response_style_hint=response_style_hint,
+        prev_emotion_state={"label": "neutral", "valence": 0.0, "arousal": 0.2, "linger": 0},
+        prev_bond_state={"trust": 0.0, "closeness": 0.0, "hurt": 0.0, "irritation": 0.0, "engagement_drive": 0.0, "repair_confidence": 0.0},
+        prev_allostasis_state={"safety_need": 0.5, "closeness_need": 0.5, "competence_need": 0.5, "autonomy_need": 0.5, "cognitive_budget": 0.5},
+        relationship_summary=relationship_summary,
+        user_text=text,
+        focus_lines=focus_lines,
+        recent_lines=recent_lines,
+        preface_note="这次调用用于外部基准校准，请直接做语义判断，不要因为缺少显式关键词而拒绝判断。",
+        extra_constraints=[
+            "这批样本可能是英文、口语、论坛语气或简短片段，仍然要尽量判断语义情绪。",
+            "如果文本主要是在表达安慰、赞赏、关心、感谢、喜欢或支持，优先考虑 care。",
+            "如果文本主要是在表达烦躁、愤怒、嫌恶、强烈不满，优先考虑 angry。",
+            "如果文本主要是在表达受伤、失落、失望、道歉、难过，优先考虑 hurt 或 sad。",
+            "如果文本主要是在表达紧张、害怕、不安、压力，优先考虑 stress。",
+        ],
     )
     try:
         llm = _model(temperature=0.0)
         out = _invoke_model_with_retries(llm, [SystemMessage(content=prompt)])
         obj = _extract_json_block(str(getattr(out, "content", "") or ""))
-        appraisal = _coerce_appraisal_payload(obj)
+        raw_appraisal = _coerce_appraisal_payload(obj)
+        appraisal = _finalize_turn_appraisal_payload(
+            raw_appraisal,
+            user_text=text,
+            response_style_hint=response_style_hint,
+            science_mode=False,
+            current_event={"kind": "user_utterance", "source": "user", "text": text, "effective_text": text},
+            prev_emotion_state={"label": "neutral", "valence": 0.0, "arousal": 0.2, "linger": 0},
+            prev_bond_state={"trust": 0.0, "closeness": 0.0, "hurt": 0.0, "irritation": 0.0, "engagement_drive": 0.0, "repair_confidence": 0.0},
+            prev_allostasis_state={"safety_need": 0.5, "closeness_need": 0.5, "competence_need": 0.5, "autonomy_need": 0.5, "cognitive_budget": 0.5},
+            semantic_narrative_profile={},
+        )
+        raw_appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
         appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
         appraisal["forced"] = True
-        return appraisal if isinstance(appraisal, dict) else {}
+        return {
+            "raw_appraisal": raw_appraisal if isinstance(raw_appraisal, dict) else {},
+            "final_appraisal": appraisal if isinstance(appraisal, dict) else {},
+        }
     except Exception as exc:
         return {
-            "used": False,
-            "source": "forced_calibration_error",
-            "confidence": 0.0,
-            "error": type(exc).__name__,
+            "raw_appraisal": {
+                "used": False,
+                "source": "forced_calibration_error",
+                "confidence": 0.0,
+                "error": type(exc).__name__,
+            },
+            "final_appraisal": {
+                "used": False,
+                "source": "forced_calibration_error",
+                "confidence": 0.0,
+                "error": type(exc).__name__,
+            },
         }
 
 
@@ -264,16 +275,24 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("| Metric | Value |")
     lines.append("| --- | ---: |")
     lines.append(f"| Samples | {report['summary']['samples']} |")
-    lines.append(f"| Accepted accuracy | {report['summary']['accepted_accuracy']:.4f} |")
-    lines.append(f"| Family accuracy | {report['summary']['family_accuracy']:.4f} |")
+    lines.append(f"| Runtime accepted accuracy | {report['summary']['accepted_accuracy']:.4f} |")
+    lines.append(f"| Runtime family accuracy | {report['summary']['family_accuracy']:.4f} |")
+    lines.append(f"| Raw accepted accuracy | {report['summary']['raw_accepted_accuracy']:.4f} |")
+    lines.append(f"| Raw family accuracy | {report['summary']['raw_family_accuracy']:.4f} |")
+    lines.append(f"| Runtime vs raw divergence | {report['summary']['runtime_raw_divergence_rate']:.4f} |")
     lines.append(f"| LLM appraisal used rate | {report['summary']['llm_used_rate']:.4f} |")
+    lines.append("")
+    lines.append("Interpretation: `raw` is the model's first-pass label fit to the standalone text. `runtime` is the postprocessed relational appraisal actually used by Amadeus state evolution.")
     lines.append("")
     lines.append("## By Label")
     lines.append("")
-    lines.append("| Source label | Samples | Accuracy | Family accuracy |")
-    lines.append("| --- | ---: | ---: | ---: |")
+    lines.append("| Source label | Samples | Runtime acc | Runtime family | Raw acc | Raw family |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: |")
     for row in report["by_label"]:
-        lines.append(f"| {row['label']} | {row['samples']} | {row['accuracy']:.4f} | {row['family_accuracy']:.4f} |")
+        lines.append(
+            f"| {row['label']} | {row['samples']} | {row['accuracy']:.4f} | {row['family_accuracy']:.4f} | "
+            f"{row['raw_accuracy']:.4f} | {row['raw_family_accuracy']:.4f} |"
+        )
     mismatches = report.get("mismatches") or []
     lines.append("")
     lines.append("## Mismatches")
@@ -300,31 +319,49 @@ def main() -> None:
     mismatches: list[dict[str, Any]] = []
     by_label_counts: dict[str, list[int]] = defaultdict(list)
     by_label_family_counts: dict[str, list[int]] = defaultdict(list)
+    by_label_raw_counts: dict[str, list[int]] = defaultdict(list)
+    by_label_raw_family_counts: dict[str, list[int]] = defaultdict(list)
     llm_used = 0
+    runtime_raw_divergence = 0
 
     for row in rows:
-        appraisal = _run_one(str(row["text"]))
+        payload = _run_one(str(row["text"]))
+        raw_appraisal = dict(payload.get("raw_appraisal") or {})
+        appraisal = dict(payload.get("final_appraisal") or {})
+        raw_predicted = str(raw_appraisal.get("emotion_label") or "").strip().lower()
         predicted = str(appraisal.get("emotion_label") or "").strip().lower()
         accepted = {str(item).strip().lower() for item in row["accepted_labels"]}
         expected_families = set(CALIBRATION_FAMILIES.get(str(row["label_name"]), set()))
+        raw_predicted_families = set(PREDICTED_FAMILIES.get(raw_predicted, set()))
         predicted_families = set(PREDICTED_FAMILIES.get(predicted, set()))
+        raw_ok = raw_predicted in accepted
         ok = predicted in accepted
+        raw_family_ok = bool(expected_families and (expected_families & raw_predicted_families))
         family_ok = bool(expected_families and (expected_families & predicted_families))
         if appraisal.get("used"):
             llm_used += 1
+        if raw_predicted != predicted:
+            runtime_raw_divergence += 1
         record = {
             "id": row["id"],
             "text": row["text"],
             "source_label": row["label_name"],
             "accepted_labels": sorted(accepted),
             "expected_families": sorted(expected_families),
+            "raw_predicted_families": sorted(raw_predicted_families),
             "predicted_families": sorted(predicted_families),
+            "raw_predicted_label": raw_predicted,
             "predicted_label": predicted,
+            "raw_ok": raw_ok,
             "ok": ok,
+            "raw_family_ok": raw_family_ok,
             "family_ok": family_ok,
+            "raw_appraisal": raw_appraisal,
             "appraisal": appraisal,
         }
         results.append(record)
+        by_label_raw_counts[row["label_name"]].append(1 if raw_ok else 0)
+        by_label_raw_family_counts[row["label_name"]].append(1 if raw_family_ok else 0)
         by_label_counts[row["label_name"]].append(1 if ok else 0)
         by_label_family_counts[row["label_name"]].append(1 if family_ok else 0)
         if not ok:
@@ -332,14 +369,27 @@ def main() -> None:
 
     summary = {
         "samples": len(results),
+        "raw_accepted_accuracy": (sum(1 for item in results if item["raw_ok"]) / float(len(results))) if results else 0.0,
+        "raw_family_accuracy": (sum(1 for item in results if item["raw_family_ok"]) / float(len(results))) if results else 0.0,
         "accepted_accuracy": (sum(1 for item in results if item["ok"]) / float(len(results))) if results else 0.0,
         "family_accuracy": (sum(1 for item in results if item["family_ok"]) / float(len(results))) if results else 0.0,
+        "runtime_raw_divergence_rate": (runtime_raw_divergence / float(len(results))) if results else 0.0,
         "llm_used_rate": (llm_used / float(len(results))) if results else 0.0,
     }
     by_label = [
         {
             "label": label,
             "samples": len(vals),
+            "raw_accuracy": (
+                sum(by_label_raw_counts.get(label, [])) / float(len(by_label_raw_counts.get(label, [])))
+                if by_label_raw_counts.get(label)
+                else 0.0
+            ),
+            "raw_family_accuracy": (
+                sum(by_label_raw_family_counts.get(label, [])) / float(len(by_label_raw_family_counts.get(label, [])))
+                if by_label_raw_family_counts.get(label)
+                else 0.0
+            ),
             "accuracy": (sum(vals) / float(len(vals))) if vals else 0.0,
             "family_accuracy": (
                 sum(by_label_family_counts.get(label, [])) / float(len(by_label_family_counts.get(label, [])))

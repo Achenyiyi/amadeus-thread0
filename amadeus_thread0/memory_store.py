@@ -438,9 +438,73 @@ class MemoryStore:
         self.conn.commit()
 
     # -------- store (namespace+key) --------
+    _MOJIBAKE_HINT_CHARS = set("鍦鍚鍒鍙浠浣犺繖閭鎴戠殑鐨涓婁笅璇鎯銆傦紵锛岋紒")
+    _MOJIBAKE_HINT_PATTERNS = (
+        "浣犲",
+        "鍦ㄥ",
+        "涓婃",
+        "鎴戜",
+        "璇存",
+        "鐨勬",
+        "鎯宠",
+        "杩欎",
+        "閭ｄ",
+        "銆傞",
+        "锛屼",
+        "浠栦",
+    )
+
+    @classmethod
+    def _mojibake_score(cls, text: str) -> int:
+        raw = str(text or "")
+        if not raw:
+            return 0
+        score = 0
+        for ch in raw:
+            if ch in cls._MOJIBAKE_HINT_CHARS:
+                score += 1
+        for pattern in cls._MOJIBAKE_HINT_PATTERNS:
+            score += raw.count(pattern) * 2
+        score += raw.count("锟")
+        score += raw.count("鈥")
+        return score
+
+    @classmethod
+    def _repair_common_mojibake(cls, text: str) -> str:
+        raw = str(text or "")
+        if not raw:
+            return ""
+        base_score = cls._mojibake_score(raw)
+        if base_score < 2:
+            return raw
+
+        best = raw
+        best_score = base_score
+        min_len = max(2, int(len(raw) * 0.6))
+        for enc in ("gb18030", "gbk"):
+            try:
+                candidate = raw.encode(enc, "ignore").decode("utf-8", "ignore")
+            except Exception:
+                continue
+            candidate = candidate.encode("utf-8", "ignore").decode("utf-8")
+            if not candidate or len(candidate) < min_len:
+                continue
+            score = cls._mojibake_score(candidate)
+            if score < best_score and score <= max(0, base_score - 2):
+                best = candidate
+                best_score = score
+        return best
+
     @staticmethod
     def _sanitize_text(text: str) -> str:
-        return str(text or "").encode("utf-8", "ignore").decode("utf-8")
+        raw = str(text or "").encode("utf-8", "ignore").decode("utf-8")
+        parts = re.split(r"(\s+|\|)", raw)
+        if len(parts) > 1:
+            return "".join(
+                part if idx % 2 == 1 else MemoryStore._repair_common_mojibake(part)
+                for idx, part in enumerate(parts)
+            )
+        return MemoryStore._repair_common_mojibake(raw)
 
     @classmethod
     def _sanitize_obj(cls, value: Any) -> Any:
@@ -460,6 +524,7 @@ class MemoryStore:
     @staticmethod
     def _safe_json_for_db(value: Any) -> str:
         """Serialize JSON safely for sqlite text storage."""
+        value = MemoryStore._sanitize_obj(value)
         try:
             raw = json.dumps(value, ensure_ascii=False)
         except Exception:
@@ -568,6 +633,7 @@ class MemoryStore:
 
     @staticmethod
     def _json_dumps(value: Any) -> str:
+        value = MemoryStore._sanitize_obj(value)
         try:
             raw = json.dumps(value, ensure_ascii=False)
         except Exception:

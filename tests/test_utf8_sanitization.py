@@ -1,5 +1,7 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from langchain_core.messages import AIMessage, SystemMessage
 
@@ -8,6 +10,7 @@ from amadeus_thread0.graph import (
     _normalize_event_override,
     _sanitize_message,
 )
+from amadeus_thread0.memory_store import MemoryStore
 from amadeus_thread0.perception_events import build_sense_event
 
 
@@ -82,6 +85,23 @@ class Utf8SanitizationTests(unittest.TestCase):
         encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.assertEqual(payload.get("text"), "你朝她挥了挥手")
         self.assertNotIn(b"\\udc81", encoded)
+
+    def test_memory_store_sanitize_text_repairs_common_mojibake(self):
+        self.assertEqual(MemoryStore._sanitize_text("浣犲ソ"), "你好")
+
+    def test_memory_store_roundtrip_repairs_mojibake_on_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = MemoryStore(Path(tmp) / "memories.sqlite")
+            try:
+                store.set_profile("thread_summary", "U:浣犲ソ | A:鍦ㄥ悧")
+                profile = store.get_profile()
+                self.assertEqual(profile.get("thread_summary"), "U:你好 | A:在吗")
+            finally:
+                store.close()
+
+    def test_memory_store_sanitize_text_repairs_mixed_summary_fragments(self):
+        raw = "A:正常。 | U:浣犲ソ | A:鍦ㄥ悧"
+        self.assertEqual(MemoryStore._sanitize_text(raw), "A:正常。 | U:你好 | A:在吗")
 
 
 if __name__ == "__main__":
