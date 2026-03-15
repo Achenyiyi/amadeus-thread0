@@ -104,6 +104,122 @@ class MemoryStore:
             return -1.0
         return dot / (math.sqrt(na) * math.sqrt(nb))
 
+    @staticmethod
+    def _clamp_signed(value: Any, low: float = -1.5, high: float = 1.5, default: float = 0.0) -> float:
+        try:
+            v = float(value)
+        except Exception:
+            v = float(default)
+        return max(float(low), min(float(high), v))
+
+    @staticmethod
+    def _recent_item_sort_key(item: dict[str, Any], *time_fields: str) -> tuple[int, int]:
+        ts = 0
+        for field in time_fields:
+            try:
+                ts = int(item.get(field) or 0)
+            except Exception:
+                ts = 0
+            if ts > 0:
+                break
+        try:
+            rid = int(item.get("id") or 0)
+        except Exception:
+            rid = 0
+        return (ts, rid)
+
+    @staticmethod
+    def _relationship_stage_from_scores(
+        affinity_score: float,
+        trust_score: float,
+        *,
+        evidence_density: float = 0.0,
+        positive_count: int = 0,
+        negative_count: int = 0,
+        recent_positive: float = 0.0,
+        recent_negative: float = 0.0,
+        repair_count: int = 0,
+        prior_stage: str = "",
+    ) -> str:
+        affinity = float(affinity_score)
+        trust = float(trust_score)
+        stage = str(prior_stage or "").strip().lower()
+        if affinity <= -0.75 or trust <= -0.75:
+            return "strained"
+        if negative_count >= 2 and recent_negative >= 0.55 and (affinity <= 0.22 or trust <= 0.22):
+            return "strained"
+        if stage in {"warming", "trusted"} and negative_count >= 2 and recent_negative >= 0.62 and (affinity <= 0.32 or trust <= 0.32):
+            return "strained"
+        if affinity >= 1.5 and trust >= 1.5 and evidence_density >= 0.52 and recent_negative <= 0.28:
+            return "trusted"
+        if stage == "trusted" and affinity >= 0.90 and trust >= 0.90 and recent_negative <= 0.34:
+            return "trusted"
+        if stage == "trusted" and (recent_negative >= 0.34 or negative_count >= 2):
+            return "warming"
+        if (
+            (affinity >= 0.45 and trust >= 0.45 and evidence_density >= 0.34)
+            or (positive_count >= 3 and (affinity >= 0.18 or trust >= 0.18))
+            or (evidence_density >= 0.58 and recent_positive >= 0.28 and (affinity >= 0.16 or trust >= 0.16))
+        ):
+            if negative_count >= 2 and recent_negative >= 0.46 and affinity < 0.32 and trust < 0.32:
+                return "friend"
+            return "warming"
+        if stage in {"warming", "trusted"} and (affinity >= 0.18 or trust >= 0.18):
+            if negative_count >= 2 and recent_negative >= 0.48 and affinity < 0.28 and trust < 0.28:
+                return "friend"
+            return "warming"
+        return "friend"
+
+    @staticmethod
+    def _relationship_evidence_stats(
+        timeline: list[dict[str, Any]] | None,
+        *,
+        repair_count: int = 0,
+    ) -> dict[str, float]:
+        items = list(timeline or [])
+        positive_count = 0
+        negative_count = 0
+        weighted_positive = 0.0
+        weighted_negative = 0.0
+        positive_strength = 0.0
+        negative_strength = 0.0
+        for idx, item in enumerate(items):
+            try:
+                affinity_delta = float(item.get("affinity_delta", 0.0) or 0.0)
+            except Exception:
+                affinity_delta = 0.0
+            try:
+                trust_delta = float(item.get("trust_delta", 0.0) or 0.0)
+            except Exception:
+                trust_delta = 0.0
+            signed = 0.5 * affinity_delta + 0.5 * trust_delta
+            magnitude = min(1.0, (abs(affinity_delta) + abs(trust_delta)) / 0.35)
+            recency_weight = max(0.35, 1.0 - 0.12 * idx)
+            if signed >= 0.025:
+                positive_count += 1
+                positive_strength += magnitude
+                weighted_positive += recency_weight * magnitude
+            elif signed <= -0.025:
+                negative_count += 1
+                negative_strength += magnitude
+                weighted_negative += recency_weight * magnitude
+        evidence_density = min(1.0, len(items) / 5.0)
+        positive_density = min(1.0, positive_count / 4.0)
+        negative_density = min(1.0, negative_count / 3.0)
+        recent_positive = min(1.0, weighted_positive / 2.2)
+        recent_negative = min(1.0, weighted_negative / 2.0)
+        return {
+            "evidence_density": evidence_density,
+            "positive_count": float(positive_count),
+            "negative_count": float(negative_count),
+            "positive_density": positive_density,
+            "negative_density": negative_density,
+            "positive_strength": min(1.0, positive_strength / max(1.0, float(positive_count or 1))),
+            "negative_strength": min(1.0, negative_strength / max(1.0, float(negative_count or 1))),
+            "recent_positive": recent_positive,
+            "recent_negative": recent_negative,
+        }
+
     def _audit_log(self, record: dict[str, Any]) -> None:
         """Best-effort audit logging for internal memory-store failures."""
         try:
@@ -792,7 +908,7 @@ class MemoryStore:
 
     def list_memory_quarantine(self, limit: int = 50) -> list[dict[str, Any]]:
         items = self._list_ns_items("memory_quarantine")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: max(1, min(500, int(limit)))]
 
     def add_memory_quarantine(
@@ -892,15 +1008,18 @@ class MemoryStore:
         latest_timeline = timeline[0] if timeline else {}
         latest_repair = repairs[0] if repairs else {}
         notes = str(latest_timeline.get("summary") or latest_repair.get("summary") or "").strip()
-
-        if affinity_score <= -0.75 or trust_score <= -0.75:
-            stage = "strained"
-        elif affinity_score >= 1.5 and trust_score >= 1.5:
-            stage = "trusted"
-        elif affinity_score >= 0.45 or trust_score >= 0.45 or repairs:
-            stage = "warming"
-        else:
-            stage = "friend"
+        stats = self._relationship_evidence_stats(timeline, repair_count=len(repairs))
+        stage = self._relationship_stage_from_scores(
+            affinity_score,
+            trust_score,
+            evidence_density=float(stats.get("evidence_density", 0.0) or 0.0),
+            positive_count=int(stats.get("positive_count", 0.0) or 0.0),
+            negative_count=int(stats.get("negative_count", 0.0) or 0.0),
+            recent_positive=float(stats.get("recent_positive", 0.0) or 0.0),
+            recent_negative=float(stats.get("recent_negative", 0.0) or 0.0),
+            repair_count=len(repairs),
+            prior_stage=str(latest_repair.get("stage") or ""),
+        )
 
         return {
             "stage": stage,
@@ -916,27 +1035,95 @@ class MemoryStore:
         derived = self._derive_relationship_state()
         explicit_stage = str(base.get("stage") or "").strip()
         explicit_notes = str(base.get("notes") or "").strip()
+        try:
+            base_affinity = float(base.get("affinity_score", 0.0) or 0.0)
+        except Exception:
+            base_affinity = 0.0
+        try:
+            base_trust = float(base.get("trust_score", 0.0) or 0.0)
+        except Exception:
+            base_trust = 0.0
+        try:
+            derived_affinity = float(derived.get("affinity_score", 0.0) or 0.0)
+        except Exception:
+            derived_affinity = 0.0
+        try:
+            derived_trust = float(derived.get("trust_score", 0.0) or 0.0)
+        except Exception:
+            derived_trust = 0.0
+        timeline = self.list_relationship_timeline(limit=12)
+        repairs = self.list_conflict_repairs(limit=6)
+        timeline_count = len(timeline)
+        repair_count = len(repairs)
+        stats = self._relationship_evidence_stats(timeline, repair_count=repair_count)
+        evidence_density = float(stats.get("evidence_density", 0.0) or 0.0)
+        positive_count = int(stats.get("positive_count", 0.0) or 0.0)
+        negative_count = int(stats.get("negative_count", 0.0) or 0.0)
+        recent_positive = float(stats.get("recent_positive", 0.0) or 0.0)
+        recent_negative = float(stats.get("recent_negative", 0.0) or 0.0)
 
         use_explicit = bool(explicit_stage and explicit_stage != "friend")
         if explicit_notes and not use_explicit:
             use_explicit = True
 
         if use_explicit:
+            low_anchor = (
+                explicit_stage.lower() in {"", "friend"}
+                and abs(base_affinity) <= 0.24
+                and abs(base_trust) <= 0.24
+            )
+            if timeline_count or repair_count:
+                if low_anchor:
+                    merged_affinity = self._clamp_signed(base_affinity + derived_affinity)
+                    merged_trust = self._clamp_signed(base_trust + derived_trust)
+                else:
+                    absorb = min(
+                        0.62,
+                        0.24
+                        + 0.18 * evidence_density
+                        + 0.06 * min(3, negative_count),
+                    )
+                    merged_affinity = self._clamp_signed(base_affinity + absorb * derived_affinity)
+                    merged_trust = self._clamp_signed(base_trust + absorb * derived_trust)
+            else:
+                merged_affinity = self._clamp_signed(base_affinity)
+                merged_trust = self._clamp_signed(base_trust)
             out = dict(base)
-            out.setdefault("affinity_score", derived.get("affinity_score", 0.0))
-            out.setdefault("trust_score", derived.get("trust_score", 0.0))
+            out["stage"] = self._relationship_stage_from_scores(
+                merged_affinity,
+                merged_trust,
+                evidence_density=evidence_density,
+                positive_count=positive_count,
+                negative_count=negative_count,
+                recent_positive=recent_positive,
+                recent_negative=recent_negative,
+                repair_count=repair_count,
+                prior_stage=explicit_stage,
+            )
+            out["affinity_score"] = round(float(merged_affinity), 3)
+            out["trust_score"] = round(float(merged_trust), 3)
             out.setdefault("derived", False)
             return out
 
         stage = explicit_stage
         if stage in {"", "friend"}:
-            stage = str(derived.get("stage") or "friend")
+            stage = self._relationship_stage_from_scores(
+                derived_affinity,
+                derived_trust,
+                evidence_density=evidence_density,
+                positive_count=positive_count,
+                negative_count=negative_count,
+                recent_positive=recent_positive,
+                recent_negative=recent_negative,
+                repair_count=repair_count,
+                prior_stage=str(derived.get("stage") or "friend"),
+            )
 
         return {
             "stage": stage,
             "notes": explicit_notes or str(derived.get("notes") or ""),
-            "affinity_score": derived.get("affinity_score", 0.0),
-            "trust_score": derived.get("trust_score", 0.0),
+            "affinity_score": round(float(derived_affinity), 3),
+            "trust_score": round(float(derived_trust), 3),
             "derived": True,
         }
 
@@ -992,7 +1179,7 @@ class MemoryStore:
 
     def list_identity_facts(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("identity_facts")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_identity_fact(
@@ -1018,7 +1205,7 @@ class MemoryStore:
 
     def list_shared_events(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("shared_events")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_shared_event(
@@ -1048,7 +1235,7 @@ class MemoryStore:
 
     def list_conflict_repairs(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("conflict_repair")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_conflict_repair(
@@ -1075,7 +1262,7 @@ class MemoryStore:
     # -------- worldline / relationship timeline / commitments / canon facts / sources --------
     def list_worldline_events(self, limit: int = 20) -> list[dict[str, Any]]:
         items = self._list_ns_items("worldline_events")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_worldline_event(
@@ -1128,7 +1315,7 @@ class MemoryStore:
 
     def list_relationship_timeline(self, limit: int = 20) -> list[dict[str, Any]]:
         items = self._list_ns_items("relationship_timeline")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_relationship_timeline(
@@ -1160,7 +1347,7 @@ class MemoryStore:
 
     def list_commitments(self, limit: int = 50) -> list[dict[str, Any]]:
         items = self._list_ns_items("commitments")
-        items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_commitment(
@@ -1220,10 +1407,7 @@ class MemoryStore:
 
     def list_unresolved_tensions(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("unresolved_tensions")
-        items.sort(
-            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
-            reverse=True,
-        )
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "updated_at", "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_unresolved_tension(
@@ -1317,10 +1501,7 @@ class MemoryStore:
 
     def list_semantic_self_narratives(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("semantic_self_narratives")
-        items.sort(
-            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
-            reverse=True,
-        )
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "updated_at", "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_semantic_self_narrative(
@@ -1387,10 +1568,7 @@ class MemoryStore:
 
     def list_revision_traces(self, limit: int = 50) -> list[dict[str, Any]]:
         items = self._list_ns_items("revision_traces")
-        items.sort(
-            key=lambda x: int(x.get("updated_at") or x.get("created_at") or 0),
-            reverse=True,
-        )
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "updated_at", "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_revision_trace(
@@ -1455,10 +1633,7 @@ class MemoryStore:
 
     def list_source_refs(self, limit: int = 30) -> list[dict[str, Any]]:
         items = self._list_ns_items("source_refs")
-        items.sort(
-            key=lambda x: int(x.get("retrieved_at") or x.get("timestamp") or x.get("created_at") or 0),
-            reverse=True,
-        )
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "retrieved_at", "timestamp", "created_at"), reverse=True)
         return items[: int(limit)]
 
     def add_source_ref(

@@ -1,6 +1,11 @@
 import unittest
 
-from amadeus_thread0.cli_views import build_evolution_cli_summary, build_evolution_summary_line
+from amadeus_thread0.cli_views import (
+    build_behavior_queue_cli_summary,
+    build_evolution_cli_summary,
+    build_evolution_summary_line,
+    render_behavior_queue_cli_text,
+)
 from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
 
 
@@ -117,6 +122,130 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("mode=self_activity_reopen", line)
         self.assertIn("carry=own_rhythm:0.570", line)
         self.assertIn("bond=0.640", line)
+
+    def test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue(self):
+        summary = build_evolution_cli_summary(
+            relationship={"stage": "warming", "affinity_score": 0.72, "trust_score": 0.74},
+            world_model_state={
+                "presence_residue": 0.41,
+                "ambient_resonance": 0.32,
+                "self_activity_momentum": 0.57,
+                "bond_depth": 0.64,
+                "tension_load": 0.08,
+            },
+            behavior_action={
+                "interaction_mode": "scheduled_life_nudge",
+                "action_target": "wait_and_recheck",
+                "window_profile": {
+                    "profile_type": "scheduled_window",
+                    "event_kind": "scheduled_life_due",
+                    "family": "life",
+                    "trigger_family": "life_window",
+                    "decision": "wait_and_recheck",
+                    "maturity": 0.52,
+                    "required_maturity": 0.58,
+                    "invite_ready": False,
+                    "recheck_min": 18,
+                    "carryover_mode": "small_opening",
+                    "carryover_strength": 0.44,
+                    "presence_residue": 0.38,
+                    "ambient_resonance": 0.27,
+                    "self_activity_momentum": 0.49,
+                    "recontact_echo": 0.38,
+                    "own_rhythm_load": 0.49,
+                    "continuity_bonus": 0.08,
+                    "continuity_discount": 0.02,
+                },
+            },
+            behavior_plan={
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "life_window",
+                "scheduled_after_min": 18,
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.44,
+            },
+            behavior_queue=[
+                {
+                    "agenda_id": "abc123",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "status": "pending",
+                    "trigger_family": "life_window",
+                    "scheduled_after_min": 18,
+                    "expires_after_min": 180,
+                    "priority": 0.58,
+                    "base_priority": 0.52,
+                    "hold_count": 1,
+                    "carryover_mode": "small_opening",
+                    "carryover_strength": 0.44,
+                    "presence_residue": 0.38,
+                    "ambient_resonance": 0.27,
+                    "self_activity_momentum": 0.49,
+                    "attention_target": "counterpart_state",
+                    "note": "窗口先留着，等更自然的时候再推进",
+                }
+            ],
+            current_event={
+                "kind": "scheduled_life_due",
+                "trigger_family": "life_window",
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.44,
+                "presence_residue": 0.38,
+                "ambient_resonance": 0.27,
+                "self_activity_momentum": 0.49,
+                "scheduled_after_min": 18,
+            },
+            interaction_carryover={"carryover_mode": "small_opening", "strength": 0.44},
+        )
+        opening = summary.get("opening_window") if isinstance(summary.get("opening_window"), dict) else {}
+        self.assertEqual(opening.get("profile_type"), "scheduled_window")
+        self.assertEqual(opening.get("maturity"), 0.52)
+        self.assertEqual(opening.get("required_maturity"), 0.58)
+        self.assertEqual(opening.get("gap"), -0.06)
+        self.assertFalse(opening.get("invite_ready"))
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+        self.assertEqual(event_residue.get("event_kind"), "scheduled_life_due")
+        self.assertEqual(event_residue.get("carryover_mode"), "small_opening")
+        self.assertEqual(event_residue.get("scheduled_after_min"), 18)
+        queue_preview = summary.get("behavior_queue_preview") if isinstance(summary.get("behavior_queue_preview"), list) else []
+        self.assertEqual(len(queue_preview), 1)
+        self.assertEqual(queue_preview[0].get("kind"), "deferred_checkin")
+        line = build_evolution_summary_line(summary)
+        self.assertIn("window=scheduled_window:0.520/0.580", line)
+        self.assertIn("decision=wait_and_recheck", line)
+        self.assertIn("recheck=18m", line)
+
+    def test_render_behavior_queue_cli_text_is_readable(self):
+        queue = [
+            {
+                "agenda_id": "abc123",
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "status": "pending",
+                "trigger_family": "life_window",
+                "scheduled_after_min": 18,
+                "expires_after_min": 180,
+                "priority": 0.58,
+                "base_priority": 0.52,
+                "hold_count": 2,
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.44,
+                "presence_residue": 0.38,
+                "ambient_resonance": 0.27,
+                "self_activity_momentum": 0.49,
+                "attention_target": "counterpart_state",
+                "note": "窗口先留着，等更自然的时候再推进",
+            }
+        ]
+        rows = build_behavior_queue_cli_summary(queue)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].get("hold_count"), 2)
+        rendered = render_behavior_queue_cli_text(queue)
+        self.assertIn("#1 deferred_checkin/life_window", rendered)
+        self.assertIn("holds=2", rendered)
+        self.assertIn("carry=small_opening:0.440", rendered)
+        self.assertIn("note=窗口先留着", rendered)
 
 
 if __name__ == "__main__":

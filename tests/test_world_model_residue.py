@@ -8,11 +8,16 @@ from amadeus_thread0.evolution_engine.worldline import build_world_model_state
 from amadeus_thread0.graph import (
     _behavior_action_from_state,
     _behavior_agenda_entry_from_plan,
+    _behavior_agenda_next_recheck_min,
+    _behavior_agenda_should_release,
     _behavior_plan_from_action,
+    _compact_interaction_carryover_hint,
     _compact_semantic_narrative_hint,
     _normalize_behavior_agenda,
     _normalize_event_override,
     _passive_evolution_memory_update,
+    _recent_interaction_carryover,
+    _promote_due_behavior_agenda_event,
     _promote_due_behavior_plan_event,
     _promote_due_behavior_action_event,
     _record_semantic_self_evidence,
@@ -24,6 +29,52 @@ from amadeus_thread0.graph import (
 
 
 class WorldModelResidueTests(unittest.TestCase):
+    def _run_passive_repair_turn(
+        self,
+        store: MemoryStore,
+        *,
+        user_text: str,
+        hurt: float = 0.24,
+        irritation: float = 0.16,
+        repair_confidence: float = 0.58,
+    ) -> bool:
+        return _passive_evolution_memory_update(
+            store,
+            user_text=user_text,
+            appraisal={
+                "used": True,
+                "confidence": 0.84,
+                "interaction_frame": "relationship",
+                "emotion_label": "hurt" if hurt >= 0.18 else "care",
+                "signals": {
+                    "care": False,
+                    "repair": True,
+                    "conflict": False,
+                    "withdrawal": False,
+                    "memory_salient": True,
+                },
+                "salience": {
+                    "relationship": 0.76,
+                    "companionship": 0.54,
+                    "selfhood": 0.20,
+                    "task": 0.04,
+                },
+            },
+            emotion_state={"label": "hurt" if hurt >= 0.18 else "care"},
+            bond_state={
+                "trust": 0.42,
+                "closeness": 0.40,
+                "hurt": hurt,
+                "irritation": irritation,
+                "repair_confidence": repair_confidence,
+            },
+            current_event={"kind": "user_utterance"},
+            world_model_state={
+                "relationship_maturity": 0.28,
+                "bond_depth": 0.16,
+            },
+        )
+
     def test_refresh_semantic_narratives_marks_bond_style_contested_under_negative_evidence(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memory.json")
@@ -160,6 +211,191 @@ class WorldModelResidueTests(unittest.TestCase):
                 categories = {str(item.get("category") or "") for item in narratives}
                 self.assertIn("agency_style", categories)
                 self.assertIn("rhythm_style", categories)
+            finally:
+                store.close()
+
+    def test_passive_evolution_seeds_light_relationship_timeline_for_familiarity_probe(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="你还记得我吗？",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.84,
+                        "interaction_frame": "companion",
+                        "signals": {
+                            "care": False,
+                            "repair": False,
+                            "conflict": False,
+                            "withdrawal": False,
+                        },
+                        "salience": {
+                            "relationship": 0.42,
+                            "companionship": 0.48,
+                            "selfhood": 0.12,
+                            "task": 0.06,
+                        },
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.556,
+                        "closeness": 0.579,
+                        "hurt": 0.04,
+                        "irritation": 0.02,
+                        "repair_confidence": 0.52,
+                    },
+                    current_event={
+                        "kind": "user_utterance",
+                    },
+                    world_model_state={
+                        "relationship_maturity": 0.34,
+                        "bond_depth": 0.14,
+                    },
+                )
+                self.assertTrue(wrote)
+                timeline = store.list_relationship_timeline(limit=8)
+                self.assertEqual(len(timeline), 1)
+                item = timeline[0]
+                self.assertIn("重新确认彼此的熟悉感", str(item.get("summary") or ""))
+                self.assertAlmostEqual(float(item.get("affinity_delta") or 0.0), 0.04, places=3)
+                self.assertAlmostEqual(float(item.get("trust_delta") or 0.0), 0.03, places=3)
+            finally:
+                store.close()
+
+    def test_partial_repair_does_not_immediately_restore_relationship(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_relationship_timeline(
+                    "上次那件事让我还是有点介意。",
+                    affinity_delta=-0.22,
+                    trust_delta=-0.18,
+                    confidence=0.86,
+                )
+                store.add_unresolved_tension(
+                    summary="那次争执的余波还在。",
+                    severity=0.78,
+                    confidence=0.84,
+                )
+
+                wrote = self._run_passive_repair_turn(
+                    store,
+                    user_text="嗯，这样就好，至少不用像陌生人一样重新试探。",
+                    hurt=0.26,
+                    irritation=0.18,
+                    repair_confidence=0.60,
+                )
+
+                self.assertTrue(wrote)
+                timeline = store.list_relationship_timeline(limit=4)
+                self.assertEqual(len(timeline), 2)
+                latest = timeline[0]
+                self.assertLessEqual(float(latest.get("affinity_delta") or 0.0), 0.08)
+                self.assertLessEqual(float(latest.get("trust_delta") or 0.0), 0.06)
+
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "friend")
+                self.assertLess(float(relationship.get("trust_score") or 0.0), 0.0)
+
+                tensions = store.list_unresolved_tensions(limit=4)
+                self.assertEqual(str(tensions[0].get("status") or "open"), "open")
+            finally:
+                store.close()
+
+    def test_repeated_soft_repairs_improve_relationship_gradually(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_relationship_timeline(
+                    "你前面那句确实有点伤人。",
+                    affinity_delta=-0.24,
+                    trust_delta=-0.22,
+                    confidence=0.88,
+                )
+                store.add_unresolved_tension(
+                    summary="这次的不愉快还没有完全过去。",
+                    severity=0.80,
+                    confidence=0.86,
+                )
+
+                self._run_passive_repair_turn(
+                    store,
+                    user_text="先别把气氛又弄回去，至少现在能继续说话了。",
+                    hurt=0.24,
+                    irritation=0.16,
+                    repair_confidence=0.58,
+                )
+                first = store.get_relationship()
+
+                self._run_passive_repair_turn(
+                    store,
+                    user_text="好吧，继续说，但别又退成那种很远的感觉。",
+                    hurt=0.18,
+                    irritation=0.12,
+                    repair_confidence=0.64,
+                )
+                second = store.get_relationship()
+                second_latest = next(
+                    item
+                    for item in store.list_relationship_timeline(limit=6)
+                    if str(item.get("summary") or "") == "好吧，继续说，但别又退成那种很远的感觉。"
+                )
+
+                self._run_passive_repair_turn(
+                    store,
+                    user_text="至少这次没有把我继续往外推，这点算你补回来一点。",
+                    hurt=0.14,
+                    irritation=0.08,
+                    repair_confidence=0.70,
+                )
+                third = store.get_relationship()
+
+                self.assertEqual(str(first.get("stage") or ""), "friend")
+                self.assertGreater(float(second.get("trust_score") or 0.0), float(first.get("trust_score") or 0.0))
+                self.assertLessEqual(float(second_latest.get("affinity_delta") or 0.0), 0.08)
+                self.assertLessEqual(float(second_latest.get("trust_delta") or 0.0), 0.06)
+                self.assertGreater(float(third.get("trust_score") or 0.0), float(second.get("trust_score") or 0.0))
+                self.assertGreater(float(third.get("affinity_score") or 0.0), float(first.get("affinity_score") or 0.0))
+            finally:
+                store.close()
+
+    def test_only_strong_repair_language_resolves_open_tension(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_relationship_timeline(
+                    "上次那件事确实闹得很僵。",
+                    affinity_delta=-0.26,
+                    trust_delta=-0.22,
+                    confidence=0.90,
+                )
+                store.add_unresolved_tension(
+                    summary="那场争执还卡在关系里。",
+                    severity=0.82,
+                    confidence=0.88,
+                )
+
+                self._run_passive_repair_turn(
+                    store,
+                    user_text="我是在认真道歉，但这件事还没彻底过去。",
+                    hurt=0.22,
+                    irritation=0.14,
+                    repair_confidence=0.62,
+                )
+                tensions = store.list_unresolved_tensions(limit=4)
+                self.assertEqual(str(tensions[0].get("status") or "open"), "open")
+
+                self._run_passive_repair_turn(
+                    store,
+                    user_text="行了，这次是真的说开了，也不用再把那件事卡着了。",
+                    hurt=0.08,
+                    irritation=0.04,
+                    repair_confidence=0.80,
+                )
+                tensions = store.list_unresolved_tensions(limit=4)
+                self.assertEqual(str(tensions[0].get("status") or ""), "resolved")
             finally:
                 store.close()
 
@@ -424,6 +660,155 @@ class WorldModelResidueTests(unittest.TestCase):
                 self.assertGreater(float(profile.get("presence_carry", 0.0) or 0.0), 0.0)
                 self.assertGreater(float(profile.get("ambient_attunement", 0.0) or 0.0), 0.0)
                 self.assertGreater(float(profile.get("rhythm_continuity", 0.0) or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_get_relationship_absorbs_light_timeline_into_low_friend_anchor(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。",
+                        "affinity_score": 0.12,
+                        "trust_score": 0.08,
+                        "derived": False,
+                    }
+                )
+                store.add_relationship_timeline(
+                    "重新确认彼此的熟悉感：你还记得我吗",
+                    affinity_delta=0.04,
+                    trust_delta=0.03,
+                    confidence=0.82,
+                )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "friend")
+                self.assertAlmostEqual(float(relationship.get("affinity_score") or 0.0), 0.16, places=3)
+                self.assertAlmostEqual(float(relationship.get("trust_score") or 0.0), 0.11, places=3)
+                self.assertFalse(bool(relationship.get("derived", True)))
+            finally:
+                store.close()
+
+    def test_get_relationship_only_partially_absorbs_timeline_into_stronger_explicit_state(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "warming",
+                        "notes": "逐渐熟悉起来。",
+                        "affinity_score": 0.72,
+                        "trust_score": 0.74,
+                        "derived": False,
+                    }
+                )
+                store.add_relationship_timeline(
+                    "上次那件事我还是有点介意。",
+                    affinity_delta=-0.28,
+                    trust_delta=-0.24,
+                    confidence=0.86,
+                )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "warming")
+                self.assertGreater(float(relationship.get("affinity_score") or 0.0), 0.55)
+                self.assertGreater(float(relationship.get("trust_score") or 0.0), 0.58)
+                self.assertLess(float(relationship.get("affinity_score") or 0.0), 0.72)
+                self.assertLess(float(relationship.get("trust_score") or 0.0), 0.74)
+            finally:
+                store.close()
+
+    def test_light_positive_timeline_does_not_promote_friend_anchor_too_fast(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。",
+                        "affinity_score": 0.12,
+                        "trust_score": 0.08,
+                        "derived": False,
+                    }
+                )
+                store.add_relationship_timeline(
+                    "重新确认彼此的熟悉感：你还记得我吗",
+                    affinity_delta=0.04,
+                    trust_delta=0.03,
+                    confidence=0.82,
+                )
+                store.add_relationship_timeline(
+                    "轻轻接住了对方抛来的熟悉感试探",
+                    affinity_delta=0.04,
+                    trust_delta=0.03,
+                    confidence=0.82,
+                )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "friend")
+                self.assertGreater(float(relationship.get("affinity_score") or 0.0), 0.18)
+                self.assertLess(float(relationship.get("affinity_score") or 0.0), 0.25)
+            finally:
+                store.close()
+
+    def test_repeated_positive_history_can_promote_friend_anchor_to_warming(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。",
+                        "affinity_score": 0.12,
+                        "trust_score": 0.08,
+                        "derived": False,
+                    }
+                )
+                for summary in (
+                    "重新确认彼此的熟悉感：你还记得我吗",
+                    "轻轻接住了对方抛来的熟悉感试探",
+                    "继续把共同语境顺着聊了下去",
+                ):
+                    store.add_relationship_timeline(
+                        summary,
+                        affinity_delta=0.04,
+                        trust_delta=0.03,
+                        confidence=0.82,
+                    )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "warming")
+                self.assertGreaterEqual(float(relationship.get("affinity_score") or 0.0), 0.24)
+                self.assertGreaterEqual(float(relationship.get("trust_score") or 0.0), 0.17)
+            finally:
+                store.close()
+
+    def test_repeated_negative_history_can_pull_warming_relationship_back_down(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "warming",
+                        "notes": "逐渐熟悉起来。",
+                        "affinity_score": 0.58,
+                        "trust_score": 0.56,
+                        "derived": False,
+                    }
+                )
+                for summary in (
+                    "对方接连踩过边界，让关系明显发紧。",
+                    "即使试图转开话题，压力感也还在。",
+                    "再次被逼迫顺着对方说，信任继续下降。",
+                ):
+                    store.add_relationship_timeline(
+                        summary,
+                        affinity_delta=-0.18,
+                        trust_delta=-0.16,
+                        confidence=0.86,
+                    )
+                relationship = store.get_relationship()
+                self.assertIn(str(relationship.get("stage") or ""), {"friend", "strained"})
+                self.assertLess(float(relationship.get("affinity_score") or 0.0), 0.35)
+                self.assertLess(float(relationship.get("trust_score") or 0.0), 0.32)
             finally:
                 store.close()
 
@@ -825,11 +1210,150 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(promoted.get("kind") or ""), "self_activity_state")
         self.assertIn("self_activity", promoted.get("tags") or [])
+        self.assertIn("deep_focus", promoted.get("tags") or [])
+        self.assertIn("own_task", promoted.get("tags") or [])
+        self.assertNotIn("break_window", promoted.get("tags") or [])
+        self.assertNotIn("small_opening", promoted.get("tags") or [])
+        self.assertNotIn("", promoted.get("tags") or [])
         normalized = _normalize_event_override(promoted, counterpart_name="冈部伦太郎")
         self.assertEqual(str(normalized.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(normalized.get("carryover_strength") or 0.0), 0.74, places=3)
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "self_then_counterpart")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "resume_task")
+        self.assertAlmostEqual(float(normalized.get("presence_residue") or 0.0), 0.34, places=3)
+        self.assertAlmostEqual(float(normalized.get("ambient_resonance") or 0.0), 0.28, places=3)
+        self.assertAlmostEqual(float(normalized.get("self_activity_momentum") or 0.0), 0.74, places=3)
+
+    def test_promoted_self_activity_small_opening_keeps_break_window_tags(self):
+        promoted = _promote_due_behavior_plan_event(
+            {"kind": "time_idle", "idle_minutes": 20, "tags": ["quiet_presence"]},
+            {
+                "kind": "self_activity_continue",
+                "scheduled_after_min": 18,
+                "trigger_family": "self_activity",
+                "note": "她从自己的节奏里抬起头，顺手留了个小开口。",
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.64,
+                "attention_target": "self_then_counterpart",
+                "nonverbal_signal": "thought_glance",
+                "presence_residue": 0.42,
+                "ambient_resonance": 0.18,
+                "self_activity_momentum": 0.34,
+            },
+        )
+        self.assertEqual(str(promoted.get("kind") or ""), "self_activity_state")
+        self.assertIn("break_window", promoted.get("tags") or [])
+        self.assertIn("small_opening", promoted.get("tags") or [])
+        self.assertIn("reapproach", promoted.get("tags") or [])
+
+    def test_self_activity_state_high_own_rhythm_residue_keeps_holding(self):
+        event = _normalize_event_override(
+            {
+                "kind": "self_activity_state",
+                "tags": ["self_activity", "break_window", "small_opening", "deep_focus"],
+                "carryover_mode": "own_rhythm",
+                "carryover_strength": 0.72,
+                "presence_residue": 0.14,
+                "ambient_resonance": 0.10,
+                "self_activity_momentum": 0.82,
+            },
+            counterpart_name="冈部伦太郎",
+        )
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="natural",
+            user_text="",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.56,
+                "closeness": 0.54,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.52,
+            },
+            allostasis_state={
+                "safety_need": 0.20,
+                "autonomy_need": 0.24,
+                "cognitive_budget": 0.70,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.58,
+                "respect_level": 0.60,
+                "reciprocity": 0.58,
+                "stance": "open",
+            },
+            semantic_narrative_profile={"agency_drive": 0.42},
+            behavior_policy={
+                "warmth": 0.58,
+                "initiative": 0.42,
+                "reply_length_bias": 0.44,
+                "approach_vs_withdraw": 0.46,
+                "boundary_assertiveness": 0.18,
+                "self_directedness": 0.36,
+                "equality_guard": 0.20,
+            },
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_hold")
+        self.assertEqual(str(action.get("action_target") or ""), "hold_own_rhythm")
+
+    def test_self_activity_state_small_opening_residue_can_reopen(self):
+        event = _normalize_event_override(
+            {
+                "kind": "self_activity_state",
+                "tags": ["self_activity", "break_window", "small_opening", "quiet_presence"],
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.66,
+                "presence_residue": 0.52,
+                "ambient_resonance": 0.18,
+                "self_activity_momentum": 0.40,
+            },
+            counterpart_name="冈部伦太郎",
+        )
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="natural",
+            user_text="",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.54,
+                "closeness": 0.52,
+                "hurt": 0.04,
+                "irritation": 0.02,
+                "engagement_drive": 0.50,
+            },
+            allostasis_state={
+                "safety_need": 0.22,
+                "autonomy_need": 0.24,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "respect_level": 0.60,
+                "reciprocity": 0.56,
+                "stance": "watchful",
+                "scene": "busy_not_disrespectful",
+            },
+            semantic_narrative_profile={"agency_drive": 0.36},
+            behavior_policy={
+                "warmth": 0.56,
+                "initiative": 0.42,
+                "reply_length_bias": 0.44,
+                "approach_vs_withdraw": 0.46,
+                "boundary_assertiveness": 0.18,
+                "self_directedness": 0.28,
+                "equality_guard": 0.20,
+            },
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_reopen")
+        self.assertEqual(str(action.get("action_target") or ""), "offer_small_opening")
 
     def test_promoted_deferred_checkin_keeps_ambient_carryover(self):
         promoted = _promote_due_behavior_plan_event(
@@ -850,11 +1374,129 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(promoted.get("kind") or ""), "scheduled_checkin_due")
         self.assertIn("ambient_echo", promoted.get("tags") or [])
+        self.assertIn("想起", str(promoted.get("text") or ""))
+        self.assertIn("环境余波", str(promoted.get("semantic_goal") or ""))
         normalized = _normalize_event_override(promoted, counterpart_name="冈部伦太郎")
         self.assertEqual(str(normalized.get("carryover_mode") or ""), "ambient_echo")
         self.assertAlmostEqual(float(normalized.get("carryover_strength") or 0.0), 0.47, places=3)
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "ambient_cue")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "thought_glance")
+
+    def test_recent_interaction_carryover_can_reuse_shared_window_across_two_user_turns(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我刚刚去倒了杯水。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "companion_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "scheduled_life_due",
+                    "text": "你们之前顺口提过的共同窗口到了。",
+                    "tags": ["scheduled_due", "shared_activity_window", "offer_window"],
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我刚刚去倒了杯水。",
+                    "created_at": 110,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "顺便又看了眼手机。",
+                    "created_at": 120,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你在想什么？",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "shared_window")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "offer_shared_activity")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "shared_window")
+        self.assertEqual(int(carryover.get("source_turn_gap") or 0), 2)
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.12)
+        self.assertLess(float(carryover.get("strength") or 0.0), 0.32)
+        hint = _compact_interaction_carryover_hint(carryover)
+        self.assertIn("中间虽然已经隔了几句", hint)
+
+    def test_recent_interaction_carryover_can_reuse_task_window_with_decay(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我回来了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "companion_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "scheduled_life_due",
+                    "text": "先前那件要记着的事到了节点。",
+                    "tags": ["scheduled_due", "deadline_window", "task_window", "work_nudge"],
+                    "created_at": 200,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我回来了。",
+                    "created_at": 210,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你刚才是不是还在忙？",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "task_window")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "shared_task")
+        self.assertEqual(int(carryover.get("source_turn_gap") or 0), 1)
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.12)
+        self.assertLess(float(carryover.get("strength") or 0.0), 0.30)
+
+    def test_recent_interaction_carryover_can_reuse_life_window_with_decay(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我刚去倒了杯水。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "companion_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "scheduled_life_due",
+                    "text": "你前面随口提过的那点生活小事到了可以轻轻接回来的窗口。",
+                    "tags": ["scheduled_due", "life_window"],
+                    "created_at": 300,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我刚去倒了杯水。",
+                    "created_at": 310,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你刚才是不是还在想着那件小事？",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "life_window")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "light_work_nudge")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "counterpart_state")
+        self.assertEqual(int(carryover.get("source_turn_gap") or 0), 1)
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.12)
+        self.assertLess(float(carryover.get("strength") or 0.0), 0.24)
+        self.assertTrue(bool(_compact_interaction_carryover_hint(carryover)))
 
     def test_promoted_behavior_action_event_creates_due_checkin(self):
         promoted = _promote_due_behavior_action_event(
@@ -879,6 +1521,9 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(promoted.get("source") or ""), "scheduler")
         self.assertIn("scheduled_due", promoted.get("tags") or [])
         self.assertEqual(str(promoted.get("trigger_family") or ""), "light_checkin")
+        self.assertEqual(str(promoted.get("carryover_mode") or ""), "quiet_recontact")
+        self.assertIn("确认感", str(promoted.get("text") or ""))
+        self.assertTrue(str(promoted.get("semantic_goal") or "").strip())
 
     def test_promoted_behavior_action_event_waits_until_due(self):
         promoted = _promote_due_behavior_action_event(
@@ -900,6 +1545,202 @@ class WorldModelResidueTests(unittest.TestCase):
             },
         )
         self.assertEqual(str(promoted.get("kind") or ""), "time_idle")
+
+    def test_behavior_agenda_recheck_gap_grows_after_multiple_holds(self):
+        event = {
+            "kind": "time_idle",
+            "idle_minutes": 24,
+            "tags": ["time_idle", "user_busy", "respect_space"],
+        }
+        assessment = {
+            "stance": "watchful",
+            "scene": "busy_not_disrespectful",
+            "boundary_pressure": 0.24,
+        }
+        first_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 0,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        later_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 3,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        self.assertGreater(later_gap, first_gap)
+
+    def test_behavior_agenda_recontact_echo_shortens_recheck_gap(self):
+        event = {
+            "kind": "time_idle",
+            "idle_minutes": 24,
+            "tags": ["time_idle"],
+        }
+        assessment = {
+            "stance": "open",
+            "scene": "neutral",
+            "boundary_pressure": 0.1,
+        }
+        baseline_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "life_window",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "quiet_recontact",
+                "carryover_strength": 0.0,
+                "presence_residue": 0.0,
+                "ambient_resonance": 0.0,
+                "self_activity_momentum": 0.0,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        echo_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "life_window",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "quiet_recontact",
+                "carryover_strength": 0.46,
+                "presence_residue": 0.34,
+                "ambient_resonance": 0.18,
+                "self_activity_momentum": 0.0,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        self.assertLess(echo_gap, baseline_gap)
+
+    def test_behavior_agenda_own_rhythm_load_lengthens_recheck_gap(self):
+        event = {
+            "kind": "time_idle",
+            "idle_minutes": 24,
+            "tags": ["time_idle"],
+        }
+        assessment = {
+            "stance": "open",
+            "scene": "neutral",
+            "boundary_pressure": 0.1,
+        }
+        baseline_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "quiet_recontact",
+                "carryover_strength": 0.24,
+                "presence_residue": 0.12,
+                "ambient_resonance": 0.08,
+                "self_activity_momentum": 0.18,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        own_rhythm_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "own_rhythm",
+                "carryover_strength": 0.68,
+                "presence_residue": 0.12,
+                "ambient_resonance": 0.08,
+                "self_activity_momentum": 0.74,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        self.assertGreater(own_rhythm_gap, baseline_gap)
+
+    def test_behavior_agenda_releases_stale_quiet_recontact_after_repeated_busy_holds(self):
+        event = {
+            "kind": "time_idle",
+            "idle_minutes": 36,
+            "tags": ["time_idle", "user_busy", "respect_space"],
+        }
+        assessment = {
+            "stance": "watchful",
+            "scene": "busy_not_disrespectful",
+            "boundary_pressure": 0.22,
+        }
+        entry = {
+            "agenda_id": "agenda-1",
+            "kind": "deferred_checkin",
+            "trigger_family": "light_checkin",
+            "carryover_mode": "quiet_recontact",
+            "self_activity_momentum": 0.62,
+            "hold_count": 2,
+        }
+        self.assertTrue(
+            _behavior_agenda_should_release(
+                entry,
+                event,
+                36,
+                counterpart_assessment=assessment,
+                next_hold_count=3,
+            )
+        )
+
+    def test_promote_due_behavior_agenda_drops_stale_recontact_instead_of_looping_forever(self):
+        event, agenda = _promote_due_behavior_agenda_event(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 36,
+                "tags": ["time_idle", "user_busy", "respect_space"],
+            },
+            [
+                {
+                    "agenda_id": "agenda-1",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "scheduled_after_min": 22,
+                    "expires_after_min": 90,
+                    "base_priority": 0.52,
+                    "priority": 0.52,
+                    "trigger_family": "light_checkin",
+                    "allow_interrupt": True,
+                    "note": "刚才那下没说出口，先记着。",
+                    "source_event_kind": "time_idle",
+                    "created_at": 1,
+                    "status": "pending",
+                    "hold_count": 2,
+                    "last_recheck_at_min": 24,
+                    "carryover_mode": "quiet_recontact",
+                    "carryover_strength": 0.48,
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "presence_residue": 0.32,
+                    "ambient_resonance": 0.18,
+                    "self_activity_momentum": 0.64,
+                }
+            ],
+            counterpart_assessment={
+                "stance": "watchful",
+                "scene": "busy_not_disrespectful",
+                "boundary_pressure": 0.22,
+            },
+        )
+        self.assertEqual(str(event.get("kind") or ""), "time_idle")
+        self.assertEqual(agenda, [])
 
 
 if __name__ == "__main__":

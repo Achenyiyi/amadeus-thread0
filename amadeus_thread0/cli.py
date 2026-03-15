@@ -16,7 +16,13 @@ from pathlib import Path
 import io
 import math
 
-os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
+os.environ.setdefault("BITSANDBYTES_NOWELCOME", "1")
+logging.getLogger("tensorflow").setLevel(logging.ERROR)
+logging.getLogger("absl").setLevel(logging.ERROR)
+logging.getLogger("bitsandbytes").setLevel(logging.ERROR)
+logging.getLogger("bitsandbytes.cextension").setLevel(logging.ERROR)
 warnings.filterwarnings(
     "ignore",
     message=r".*_register_pytree_node.*deprecated.*",
@@ -26,6 +32,10 @@ warnings.filterwarnings(
     "ignore",
     message=r".*resume_download.*deprecated.*",
     category=FutureWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*sparse_softmax_cross_entropy is deprecated.*",
 )
 
 from dotenv import load_dotenv
@@ -39,7 +49,11 @@ from .config import (
     TOOLSET_UPGRADE_TTL_S,
     USER_FACING_MODE,
 )
-from .cli_views import build_evolution_cli_summary, build_evolution_summary_line
+from .cli_views import (
+    build_evolution_cli_summary,
+    build_evolution_summary_line,
+    render_behavior_queue_cli_text,
+)
 from .graph import build_graph, build_implicit_idle_state_update, reset_runtime_caches
 from .memory_store import MemoryStore
 from .modeling import build_chat_model, runtime_model_summary
@@ -233,6 +247,32 @@ def _apply_worldline_runtime_paths(base_data_dir: Path, thread_id: str) -> Path:
     os.environ["AMADEUS_MEMORY_DB"] = str(runtime_dir / "memories.sqlite")
     os.environ["AMADEUS_DIARY_PATH"] = str(runtime_dir / "diary.txt")
     return runtime_dir
+
+
+def _has_explicit_runtime_path_overrides() -> bool:
+    return any(
+        str(os.getenv(name) or "").strip()
+        for name in {
+            "AMADEUS_DATA_DIR",
+            "AMADEUS_CHECKPOINT_DB",
+            "AMADEUS_MEMORY_DB",
+            "AMADEUS_DIARY_PATH",
+        }
+    )
+
+
+def _should_isolate_startup_runtime(
+    *,
+    startup_thread_id: str,
+    fresh_thread: bool,
+    explicit_runtime_paths: bool,
+) -> bool:
+    thread_id = str(startup_thread_id or "").strip()
+    if fresh_thread:
+        return True
+    if explicit_runtime_paths:
+        return False
+    return bool(thread_id) and thread_id != "thread0"
 
 
 def _repo_default_data_dir() -> Path:
@@ -437,10 +477,24 @@ def _build_event_evolution_summary(
         bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
         counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
         behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+        behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+        behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
         interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+        current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
         worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
         reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
     )
+
+
+def _print_behavior_queue_summary(
+    queue_vals: object,
+    *,
+    prefix: str = "",
+) -> None:
+    rendered = render_behavior_queue_cli_text(queue_vals, limit=3)
+    if prefix:
+        rendered = "\n".join(prefix + part if part else prefix for part in rendered.splitlines())
+    print(f"\n{prefix}[BEHAVIOR_QUEUE_SUMMARY]\n" + rendered)
 
 
 def _print_event_evolution_summary(
@@ -574,7 +628,12 @@ def main():
         fresh_thread_prefix=str(args.fresh_thread_prefix or "thread"),
     )
     isolated_worldline_dir: Path | None = None
-    if bool(args.fresh_thread):
+    explicit_runtime_paths = _has_explicit_runtime_path_overrides()
+    if _should_isolate_startup_runtime(
+        startup_thread_id=startup_thread_id,
+        fresh_thread=bool(args.fresh_thread),
+        explicit_runtime_paths=explicit_runtime_paths,
+    ):
         isolated_worldline_dir = _apply_worldline_runtime_paths(base_data_dir, startup_thread_id)
         s = get_settings()
     shared_runtime_artifacts = _shared_runtime_artifacts(base_data_dir)
@@ -824,7 +883,10 @@ def main():
                 bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
                 counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
                 behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+                behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+                behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
                 interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+                current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
                 worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
                 reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
             )
@@ -849,7 +911,9 @@ def main():
             vals = getattr(cur, "values", {}) if cur is not None else {}
             if not isinstance(vals, dict):
                 vals = {}
-            print("\n[RELATIONSHIP_STATE]\n" + json.dumps(rel, ensure_ascii=False, indent=2))
+            current_rel = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else None
+            rel_out = current_rel if isinstance(current_rel, dict) and current_rel else rel
+            print("\n[RELATIONSHIP_STATE]\n" + json.dumps(rel_out, ensure_ascii=False, indent=2))
             print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
             print("\n[RELATIONSHIP_TIMELINE]")
             if not rs:
@@ -908,7 +972,10 @@ def main():
                 bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
                 counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
                 behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+                behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+                behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
                 interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
+                current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
                 worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
                 reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
             )
@@ -928,6 +995,7 @@ def main():
             print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(vals.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
             queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
             print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
             print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
@@ -953,6 +1021,7 @@ def main():
             if not isinstance(vals, dict):
                 vals = {}
             queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
             continue
 
