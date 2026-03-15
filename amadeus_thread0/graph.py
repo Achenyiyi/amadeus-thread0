@@ -362,6 +362,9 @@ class EventPayload(TypedDict, total=False):
     due_at: str
     carryover_mode: str
     carryover_strength: float
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
     attention_target_hint: str
     nonverbal_signal_hint: str
 
@@ -385,6 +388,35 @@ class BehaviorActionPayload(TypedDict, total=False):
     initiative_shape: str
     disclosure_posture: str
     note: str
+    window_profile: "BehaviorWindowProfilePayload"
+
+
+class BehaviorWindowProfilePayload(TypedDict, total=False):
+    profile_type: str
+    event_kind: str
+    family: str
+    trigger_family: str
+    stance: str
+    scene: str
+    decision: str
+    maturity: float
+    required_maturity: float
+    readiness: float
+    required_readiness: float
+    continuity_bonus: float
+    continuity_discount: float
+    invite_ready: bool
+    reopen_ready: bool
+    recheck_min: int
+    carryover_mode: str
+    carryover_strength: float
+    event_carryover_mode: str
+    event_carryover_strength: float
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+    recontact_echo: float
+    own_rhythm_load: float
 
 
 class BehaviorPlanPayload(TypedDict, total=False):
@@ -437,6 +469,7 @@ class InteractionCarryoverPayload(TypedDict, total=False):
     carryover_mode: str
     strength: float
     idle_minutes: int
+    source_turn_gap: int
     attention_target: str
     nonverbal_signal: str
     note: str
@@ -450,6 +483,7 @@ class ThreadState(TypedDict, total=False):
     persona_override_mode: str
     counterpart_override_mode: str
     authority_trace: dict[str, Any]
+    relationship: dict[str, Any]
     semantic_narrative_profile: dict[str, Any]
     world_model_state: dict[str, Any]
     evolution_state: dict[str, Any]
@@ -688,6 +722,21 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
             payload["carryover_strength"] = max(0.0, min(1.0, float(raw.get("carryover_strength") or 0.0)))
         except Exception:
             payload["carryover_strength"] = 0.0
+    if "presence_residue" in raw:
+        try:
+            payload["presence_residue"] = max(0.0, min(1.0, float(raw.get("presence_residue") or 0.0)))
+        except Exception:
+            payload["presence_residue"] = 0.0
+    if "ambient_resonance" in raw:
+        try:
+            payload["ambient_resonance"] = max(0.0, min(1.0, float(raw.get("ambient_resonance") or 0.0)))
+        except Exception:
+            payload["ambient_resonance"] = 0.0
+    if "self_activity_momentum" in raw:
+        try:
+            payload["self_activity_momentum"] = max(0.0, min(1.0, float(raw.get("self_activity_momentum") or 0.0)))
+        except Exception:
+            payload["self_activity_momentum"] = 0.0
     attention_target_hint = str(raw.get("attention_target_hint") or "").strip()
     if attention_target_hint:
         payload["attention_target_hint"] = attention_target_hint
@@ -789,9 +838,27 @@ def _promote_due_commitment_event(
         {
             "kind": "scheduled_life_due",
             "source": "commitment_scheduler",
-            "text": f"你们认真说过的这件事到了窗口：{text}",
-            "effective_text": text,
-            "semantic_goal": f"和{counterpart_name}之间的共同约定到了合适的窗口：{text}"[:220],
+            "text": (
+                f"你们之前认真留过的那个共同安排，又回到了她的注意力里：{text}"
+                if family == "shared_activity_window"
+                else f"前面认真挂着的那件事，又回到了她的注意力里：{text}"
+                if family == "deadline_window"
+                else f"你前面认真说过的那点事，又轻轻浮回了她的注意力里：{text}"
+            ),
+            "effective_text": (
+                text
+                if family == "deadline_window"
+                else f"共同窗口重新浮回她的注意力里：{text}"
+                if family == "shared_activity_window"
+                else f"生活上的小窗口重新浮回她的注意力里：{text}"
+            ),
+            "semantic_goal": (
+                f"和{counterpart_name}之间的共同安排重新浮回她的注意力里：{text}"
+                if family == "shared_activity_window"
+                else f"和{counterpart_name}之间挂着的事重新浮回她的注意力里：{text}"
+                if family == "deadline_window"
+                else f"和{counterpart_name}之间那点生活上的小挂念重新浮回她的注意力里：{text}"
+            )[:220],
             "event_frame": "scheduled_deadline_window" if family == "deadline_window" else "scheduled_shared_activity_window" if family == "shared_activity_window" else "scheduled_life_window",
             "trigger_family": family,
             "derived_from_plan_kind": "commitment_window",
@@ -840,26 +907,56 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
     self_activity_momentum = _clamp01(prior_behavior_plan.get("self_activity_momentum"), 0.0)
     promoted = dict(event)
     if plan_kind == "self_activity_continue":
+        reopen_hint = bool(
+            carryover_mode == "small_opening"
+            or (
+                self_activity_momentum < 0.58
+                and (
+                    carryover_strength >= 0.56
+                    or presence_residue >= 0.30
+                    or ambient_resonance >= 0.32
+                )
+            )
+        )
+        quiet_reapproach = bool(
+            not reopen_hint
+            and (
+                carryover_mode in {"quiet_recontact", "brief_presence"}
+                or presence_residue >= 0.28
+                or ambient_resonance >= 0.30
+            )
+        )
         merged_tags = list(
             dict.fromkeys(
-                [
+                item
+                for item in [
                     *(str(item).strip() for item in tags if str(item).strip()),
                     "self_activity",
-                    "break_window",
-                    "small_opening",
-                    "reapproach",
+                    "break_window" if reopen_hint else "",
+                    "small_opening" if reopen_hint else "",
+                    "reapproach" if (reopen_hint or quiet_reapproach) else "",
                     "quiet_presence" if presence_residue >= 0.28 else "",
                     "ambient_echo" if ambient_resonance >= 0.32 else "",
                     "deep_focus" if self_activity_momentum >= 0.58 else "",
+                    "own_task" if self_activity_momentum >= 0.64 and (carryover_mode == "own_rhythm" or carryover_strength >= 0.58) else "",
                 ]
+                if item
             )
         )
         promoted_text = "她手头那件事暂时告一段落，像是终于空出一点点注意力，可以顺手来碰一下你。"
-        if self_activity_momentum >= 0.58:
+        if self_activity_momentum >= 0.64 and carryover_mode == "own_rhythm":
+            promoted_text = "她手头那点事还没真正放下，只是隔着自己的节奏，短暂把注意力往你这边偏了一下。"
+        elif self_activity_momentum >= 0.58:
             promoted_text = "她先把自己手头那点事收了个尾，过了一会儿才像是终于愿意把注意力重新抬起来。"
-        elif carryover_mode == "small_opening" or carryover_strength >= 0.56:
+        elif reopen_hint:
             promoted_text = "她没有一下子凑近，只是从自己的节奏里抬起头，顺手给你留了一个很小的开口。"
-        promoted_frame = note or "她从自己手头的事情里抬起头，留下一个自然的小开口。"
+        elif quiet_reapproach:
+            promoted_text = "她没有完全从自己的事情里抽出来，只是顺着那点还没散掉的在场感，安静地留意了一下你这边。"
+        promoted_frame = note or (
+            "她从自己手头的事情里抬起头，留下一个自然的小开口。"
+            if reopen_hint
+            else "她还在自己的节奏里，只是注意力短暂松了一下。"
+        )
         if presence_residue >= 0.30:
             promoted_frame += " 前面那点在场感还没完全退掉。"
         if ambient_resonance >= 0.32:
@@ -870,7 +967,11 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "source": "self",
                 "text": promoted_text,
                 "effective_text": promoted_text,
-                "semantic_goal": "她从自己的节奏里重新抬头，留一个小开口。",
+                "semantic_goal": (
+                    "她从自己的节奏里重新抬头，留一个小开口。"
+                    if reopen_hint
+                    else "她仍在自己的节奏里，只是短暂把注意力挪向外界。"
+                ),
                 "event_frame": promoted_frame,
                 "tags": merged_tags,
                 "derived_from_plan_kind": plan_kind,
@@ -878,52 +979,102 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "scheduled_after_min": due_after,
                 "carryover_mode": carryover_mode or "own_rhythm",
                 "carryover_strength": round(max(carryover_strength, self_activity_momentum), 3),
+                "presence_residue": round(presence_residue, 3),
+                "ambient_resonance": round(ambient_resonance, 3),
+                "self_activity_momentum": round(self_activity_momentum, 3),
                 "attention_target_hint": attention_target,
                 "nonverbal_signal_hint": nonverbal_signal,
             }
         )
         return promoted
 
+    effective_carryover_mode = carryover_mode or ("quiet_recontact" if trigger_family in {"observe", "light_checkin"} else "")
+    recontact_echo = max(
+        presence_residue,
+        0.82 * ambient_resonance,
+        carryover_strength if effective_carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"} else 0.0,
+    )
+    own_rhythm_load = max(
+        self_activity_momentum,
+        carryover_strength if effective_carryover_mode == "own_rhythm" else 0.45 * carryover_strength if effective_carryover_mode == "small_opening" else 0.0,
+    )
+    extra_tags: list[str] = []
+    if trigger_family in {"shared_activity", "shared_activity_window"}:
+        extra_tags.extend(["shared_activity_window", "offer_window"])
+    elif trigger_family == "deadline_window":
+        extra_tags.extend(["deadline_window", "task_window", "work_nudge", "shared_task"])
+    elif trigger_family == "life_window":
+        extra_tags.append("life_window")
+    if effective_carryover_mode in {"quiet_recontact", "brief_presence"} or recontact_echo >= 0.28:
+        extra_tags.append("quiet_presence")
+    if effective_carryover_mode == "ambient_echo" or ambient_resonance >= 0.30:
+        extra_tags.append("ambient_echo")
+    if effective_carryover_mode in {"own_rhythm", "small_opening"} or own_rhythm_load >= 0.34:
+        extra_tags.append("from_own_rhythm")
     merged_tags = list(
         dict.fromkeys(
             [
                 *(str(item).strip() for item in tags if str(item).strip()),
                 "scheduled_due",
                 trigger_family,
+                *extra_tags,
             ]
         )
     )
+    promoted_text = "之前延后的接近理由并没有完全退掉，过了一会儿又轻轻回到了她的注意力里。"
+    semantic_goal = "延后的接近理由重新回到她的注意力里。"
+    if trigger_family in {"shared_activity", "shared_activity_window"}:
+        promoted_text = "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。"
+        semantic_goal = "共同窗口重新浮回她的注意力里。"
+    elif trigger_family == "deadline_window":
+        promoted_text = "前面挂着的那件事又回到了她的注意力里，像是到了可以轻轻提一下的节点。"
+        semantic_goal = "前面挂着的事重新浮回她的注意力里。"
+    elif trigger_family == "life_window":
+        promoted_text = "前面那点生活上的小事又回到了她的注意力里，不过更像顺手想起，而不是任务提醒。"
+        semantic_goal = "生活上的小窗口重新浮回她的注意力里。"
+        if own_rhythm_load >= 0.56:
+            promoted_text = "她还在自己的节奏里，但前面那点生活上的小挂念又轻轻浮了上来。"
+        elif recontact_echo >= 0.30:
+            promoted_text = "前面那点生活上的小挂念没有完全散掉，过了一会儿又轻轻浮了上来。"
+    elif effective_carryover_mode == "ambient_echo" or ambient_resonance >= 0.30:
+        promoted_text = "刚才环境里留下的那点余波，让她又顺手想起了你。"
+        semantic_goal = "环境余波让她重新想到对方。"
+    elif own_rhythm_load >= 0.56 and effective_carryover_mode in {"own_rhythm", "small_opening"}:
+        promoted_text = "她还在自己的节奏里，但前面那点没说出口的确认感又轻轻碰了她一下。"
+        semantic_goal = "她仍在自己的节奏里，但没说出口的确认感又回到注意力里。"
+    elif recontact_echo >= 0.28 or effective_carryover_mode in {"quiet_recontact", "brief_presence"}:
+        promoted_text = "前面那点没说出口的确认感还没散掉，过了一会儿又回到了她的注意力里。"
+        semantic_goal = "没说出口的确认感重新回到她的注意力里。"
+    promoted_frame = note or (
+        "她不是专门停下手头的事来找你，只是注意力又短暂偏了回来。"
+        if own_rhythm_load >= 0.56
+        else "前面那点没说出口的余温，过了一会儿又轻轻回到了她的注意力里。"
+        if recontact_echo >= 0.28
+        else "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
+    )
+    if ambient_resonance >= 0.32:
+        promoted_frame += " 刚才环境里的细小动静也还留在她的感知里。"
     promoted.update(
         {
             "kind": "scheduled_checkin_due",
             "source": "scheduler",
-            "event_frame": (
-                note
-                or (
-                    "之前那次没有立刻说出口的接近理由，现在又回到了她的注意力里。"
-                    if carryover_mode in {"quiet_recontact", "brief_presence", "ambient_echo"}
-                    else "之前延后的轻量 check-in 现在到了。"
-                )
-            ),
+            "text": promoted_text,
+            "effective_text": promoted_text,
+            "semantic_goal": semantic_goal[:220],
+            "event_frame": promoted_frame,
             "tags": merged_tags,
             "derived_from_plan_kind": plan_kind,
             "trigger_family": trigger_family,
             "scheduled_after_min": due_after,
-            "carryover_mode": carryover_mode or ("quiet_recontact" if trigger_family in {"observe", "light_checkin"} else ""),
+            "carryover_mode": effective_carryover_mode,
             "carryover_strength": round(max(carryover_strength, presence_residue, ambient_resonance), 3),
+            "presence_residue": round(presence_residue, 3),
+            "ambient_resonance": round(ambient_resonance, 3),
+            "self_activity_momentum": round(self_activity_momentum, 3),
             "attention_target_hint": attention_target,
             "nonverbal_signal_hint": nonverbal_signal,
         }
     )
-    extra_tags = []
-    if carryover_mode == "quiet_recontact" or presence_residue >= 0.28:
-        extra_tags.append("quiet_presence")
-    if carryover_mode == "ambient_echo" or ambient_resonance >= 0.30:
-        extra_tags.append("ambient_echo")
-    if carryover_mode in {"own_rhythm", "small_opening"} or self_activity_momentum >= 0.34:
-        extra_tags.append("from_own_rhythm")
-    if extra_tags:
-        promoted["tags"] = list(dict.fromkeys([*(promoted.get("tags") or []), *extra_tags]))
     return promoted
 
 
@@ -957,29 +1108,61 @@ def _promote_due_behavior_action_event(
         return event
 
     trigger_family = str(prior_behavior_action.get("deferred_action_family") or "light_checkin").strip() or "light_checkin"
+    attention_target_hint = str(prior_behavior_action.get("attention_target") or "").strip()
+    nonverbal_signal_hint = str(prior_behavior_action.get("nonverbal_signal") or "").strip()
     tags = event.get("tags") if isinstance(event.get("tags"), list) else []
+    extra_tags: list[str] = []
+    if trigger_family in {"shared_activity", "shared_activity_window"}:
+        extra_tags.extend(["shared_activity_window", "offer_window"])
+    elif trigger_family == "deadline_window":
+        extra_tags.extend(["deadline_window", "task_window", "work_nudge", "shared_task"])
+    elif trigger_family == "life_window":
+        extra_tags.append("life_window")
+    elif trigger_family in {"observe", "light_checkin"}:
+        extra_tags.append("quiet_presence")
     merged_tags = list(
         dict.fromkeys(
             [
                 *(str(item).strip() for item in tags if str(item).strip()),
                 "scheduled_due",
                 trigger_family,
+                *extra_tags,
             ]
         )
     )
     promoted = dict(event)
+    promoted_text = "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
+    semantic_goal = "延后的接近理由重新回到她的注意力里。"
+    if trigger_family in {"shared_activity", "shared_activity_window"}:
+        promoted_text = "你们之前顺手打开的共同窗口并没有完全关上，过了一会儿又轻轻回到了她的注意力里。"
+        semantic_goal = "共同窗口重新浮回她的注意力里。"
+    elif trigger_family == "deadline_window":
+        promoted_text = "前面挂着的那件事又回到了她的注意力里，像是到了可以轻轻提一下的节点。"
+        semantic_goal = "前面挂着的事重新浮回她的注意力里。"
+    elif trigger_family == "life_window":
+        promoted_text = "前面那点生活上的小事又回到了她的注意力里，不过更像顺手想起，而不是任务提醒。"
+        semantic_goal = "生活上的小窗口重新浮回她的注意力里。"
+    elif trigger_family in {"observe", "light_checkin"}:
+        promoted_text = "前面那点没说出口的确认感，过了一会儿又轻轻回到了她的注意力里。"
+        semantic_goal = "没说出口的确认感重新回到她的注意力里。"
     promoted.update(
         {
             "kind": "scheduled_checkin_due",
             "source": "scheduler",
+            "text": promoted_text,
+            "effective_text": promoted_text,
+            "semantic_goal": semantic_goal[:220],
             "event_frame": (
                 str(event.get("event_frame") or "").strip()
-                or "上一轮延后的轻量 check-in 现在到了。"
+                or "之前延后的接近理由，现在又轻轻回到了她的注意力里。"
             ),
             "tags": merged_tags,
             "derived_from_plan_kind": "implicit_deferred_checkin",
             "trigger_family": trigger_family,
             "scheduled_after_min": due_after,
+            "carryover_mode": "quiet_recontact" if trigger_family in {"observe", "light_checkin"} else "",
+            "attention_target_hint": attention_target_hint,
+            "nonverbal_signal_hint": nonverbal_signal_hint,
         }
     )
     return promoted
@@ -1368,6 +1551,60 @@ def _behavior_agenda_should_hold(
     return False
 
 
+def _behavior_agenda_should_release(
+    entry: dict[str, Any],
+    current_event: dict[str, Any],
+    idle_minutes: int,
+    counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    next_hold_count: int | None = None,
+) -> bool:
+    if str(current_event.get("kind") or "").strip() != "time_idle":
+        return False
+    if str(entry.get("kind") or "").strip() != "deferred_checkin":
+        return False
+    hold_count = max(0, int(next_hold_count if next_hold_count is not None else entry.get("hold_count") or 0))
+    if hold_count <= 0:
+        return False
+
+    event_tags = {
+        str(item).strip()
+        for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    trigger_family = str(entry.get("trigger_family") or "").strip()
+    carryover_mode = str(entry.get("carryover_mode") or "").strip()
+    self_activity_momentum = _clamp01(entry.get("self_activity_momentum"), 0.0)
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+
+    if (
+        hold_count >= 2
+        and stance == "guarded"
+        and boundary_pressure >= 0.46
+        and trigger_family in {"observe", "light_checkin", "life_window", "deadline_window", "shared_activity", "shared_activity_window"}
+    ):
+        return True
+    if (
+        hold_count >= 2
+        and scene in {"boundary_non_compliance", "relationship_degradation"}
+        and trigger_family in {"light_checkin", "shared_activity", "shared_activity_window"}
+    ):
+        return True
+    if (
+        hold_count >= 3
+        and ("user_busy" in event_tags or "cognitive_load" in event_tags or "respect_space" in event_tags)
+        and trigger_family in {"observe", "light_checkin", "life_window", "deadline_window"}
+        and (carryover_mode in {"own_rhythm", "quiet_recontact", "brief_presence"} or self_activity_momentum >= 0.46)
+    ):
+        return True
+    if hold_count >= 4 and trigger_family in {"observe", "light_checkin"}:
+        return True
+    return False
+
+
 def _behavior_agenda_next_recheck_min(
     entry: dict[str, Any],
     current_event: dict[str, Any],
@@ -1375,6 +1612,20 @@ def _behavior_agenda_next_recheck_min(
     counterpart_assessment: dict[str, Any] | None = None,
 ) -> int:
     trigger_family = str(entry.get("trigger_family") or "").strip()
+    carryover_mode = str(entry.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _clamp01(entry.get("carryover_strength"), 0.0)
+    presence_residue = _clamp01(entry.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(entry.get("ambient_resonance"), 0.0)
+    self_activity_momentum = _clamp01(entry.get("self_activity_momentum"), 0.0)
+    recontact_echo = max(
+        presence_residue,
+        0.82 * ambient_resonance,
+        carryover_strength if carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"} else 0.0,
+    )
+    own_rhythm_load = max(
+        self_activity_momentum,
+        carryover_strength if carryover_mode == "own_rhythm" else 0.45 * carryover_strength if carryover_mode == "small_opening" else 0.0,
+    )
     event_tags = {
         str(item).strip()
         for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
@@ -1383,6 +1634,7 @@ def _behavior_agenda_next_recheck_min(
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
     stance = str(assessment.get("stance") or "").strip().lower()
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    hold_count = max(0, int(entry.get("hold_count") or 0))
 
     gap = 8
     if "user_busy" in event_tags or "cognitive_load" in event_tags:
@@ -1393,6 +1645,19 @@ def _behavior_agenda_next_recheck_min(
         gap = 18 if trigger_family in {"shared_activity", "shared_activity_window"} else 12
     elif "late_night" in event_tags or "quiet_presence" in event_tags:
         gap = 10
+    if recontact_echo >= 0.24:
+        gap -= 1 + int(round(4 * max(0.0, recontact_echo - 0.24)))
+        if trigger_family in {"shared_activity", "shared_activity_window", "life_window"}:
+            gap -= 1
+    if own_rhythm_load >= 0.34:
+        gap += 1 + int(round(5 * max(0.0, own_rhythm_load - 0.34)))
+        if trigger_family in {"light_checkin", "observe"} and own_rhythm_load >= 0.56:
+            gap += 1
+    if hold_count > 0:
+        gap += min(24, 4 * hold_count)
+        if trigger_family in {"shared_activity", "shared_activity_window"} and hold_count >= 2:
+            gap += 8
+    gap = max(6, gap)
     return max(idle_minutes + gap, int(entry.get("scheduled_after_min") or 0) + 1)
 
 
@@ -1404,7 +1669,10 @@ def _reschedule_held_behavior_agenda(
 ) -> BehaviorAgendaEntryPayload:
     hold_count = max(0, int(entry.get("hold_count") or 0)) + 1
     next_due = _behavior_agenda_next_recheck_min(
-        entry,
+        {
+            **entry,
+            "hold_count": hold_count,
+        },
         current_event,
         idle_minutes,
         counterpart_assessment=counterpart_assessment,
@@ -1445,20 +1713,33 @@ def _promote_due_behavior_agenda_event(
         return event, _normalize_behavior_agenda(active_agenda)
 
     held_ids: set[str] = set()
+    released_ids: set[str] = set()
     ready_entries: list[BehaviorAgendaEntryPayload] = []
     for entry in due_entries:
+        next_hold_count = max(0, int(entry.get("hold_count") or 0)) + 1
         if _behavior_agenda_should_hold(
             entry,
             event,
             idle_minutes,
             counterpart_assessment=counterpart_assessment,
         ):
+            if _behavior_agenda_should_release(
+                entry,
+                event,
+                idle_minutes,
+                counterpart_assessment=counterpart_assessment,
+                next_hold_count=next_hold_count,
+            ):
+                released_ids.add(str(entry.get("agenda_id") or ""))
+                continue
             held_ids.add(str(entry.get("agenda_id") or ""))
             continue
         ready_entries.append(entry)
     if not ready_entries:
         rescheduled: list[BehaviorAgendaEntryPayload] = []
         for entry in active_agenda:
+            if str(entry.get("agenda_id") or "") in released_ids:
+                continue
             if str(entry.get("agenda_id") or "") in held_ids:
                 rescheduled.append(
                     _reschedule_held_behavior_agenda(
@@ -1575,6 +1856,174 @@ def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[s
     return lines
 
 
+def _recent_background_scene_hint(
+    recent_events: Any,
+    *,
+    current_event: dict[str, Any] | None = None,
+) -> str:
+    event = dict(current_event or {})
+    if str(event.get("kind") or "user_utterance").strip().lower() != "user_utterance":
+        return ""
+    if not isinstance(recent_events, list):
+        return ""
+
+    for item in reversed(recent_events):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind or kind == "user_utterance":
+            continue
+        tags = {
+            str(tag).strip().lower()
+            for tag in (item.get("tags") if isinstance(item.get("tags"), list) else [])
+            if str(tag).strip()
+        }
+        if kind == "self_activity_state":
+            if {"deep_focus", "own_task"} & tags:
+                return "刚才她原本还在自己的事情里，这句更像顺手从那边回头。"
+            if {"break_window", "small_opening", "reapproach"} & tags:
+                return "刚才她只是从自己的节奏里短暂抬头，所以这句不会一下子铺得很满。"
+            return "刚才她还在按自己的节奏待着，这句不是凭空跳出来的。"
+        if kind == "scheduled_life_due":
+            if {"shared_activity_window", "offer_window"} & tags:
+                return "刚才你们之间其实还留着一个共同窗口，这句会带一点那边的余温。"
+            if {"deadline_window", "work_nudge", "task_window"} & tags:
+                return "刚才她心里还挂着一件要记着的事，所以注意力不会完全是空白的。"
+            return "刚才有个生活节点掠过去了，所以她开口时会带着一点余波。"
+        if kind == "scheduled_checkin_due":
+            return "刚才有一下原本可能开口的时机掠过去了，所以这句会自然更轻一点。"
+        if kind == "time_idle":
+            if {"respect_space", "user_busy", "cognitive_load"} & tags:
+                return "前面那阵安静更像是在判断现在适不适合靠近，而不是单纯空白。"
+            return "刚才那段安静还留着一点余温，所以这句不会像重新开机。"
+        if kind == "ambient_shift":
+            return "刚才周围有一点小变化掠过去了，所以她这句会带着一点当下环境感。"
+        if kind == "gesture_signal":
+            return "刚才那个小动作留下的在场感还没退干净，所以她会先顺着那个感觉开口。"
+        break
+    return ""
+
+
+def _recent_non_user_event_with_gap(
+    recent_events: Any,
+    *,
+    max_user_turn_gap: int = 3,
+) -> tuple[dict[str, Any], str, int]:
+    if not isinstance(recent_events, list):
+        return {}, "", 0
+    user_turn_gap = 0
+    for item in reversed(recent_events):
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind:
+            continue
+        if kind == "user_utterance":
+            user_turn_gap += 1
+            if user_turn_gap > max(0, int(max_user_turn_gap)):
+                break
+            continue
+        return dict(item), kind, user_turn_gap
+    return {}, "", 0
+
+
+def _history_source_behavior_hint(source_event: dict[str, Any]) -> dict[str, str]:
+    event = dict(source_event or {})
+    kind = str(event.get("kind") or "").strip().lower()
+    tags = {
+        str(tag).strip().lower()
+        for tag in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(tag).strip()
+    }
+    carryover_mode = str(event.get("carryover_mode") or "").strip().lower()
+    attention_target = str(event.get("attention_target_hint") or "").strip()
+    nonverbal_signal = str(event.get("nonverbal_signal_hint") or "").strip()
+
+    if kind == "self_activity_state":
+        if {"deep_focus", "own_task"} & tags or carryover_mode == "own_rhythm":
+            return {
+                "behavior_mode": "self_activity_hold",
+                "action_target": "hold_own_rhythm",
+                "attention_target": attention_target or "self_then_counterpart",
+                "nonverbal_signal": nonverbal_signal or "thought_glance",
+            }
+        return {
+            "behavior_mode": "self_activity_reopen",
+            "action_target": "offer_small_opening",
+            "attention_target": attention_target or "self_then_counterpart",
+            "nonverbal_signal": nonverbal_signal or "thought_glance",
+        }
+    if kind in {"scheduled_checkin_due", "scheduled_life_due"}:
+        if {"shared_activity_window", "offer_window"} & tags or "shared_activity" in str(event.get("trigger_family") or "").strip().lower():
+            return {
+                "behavior_mode": "shared_activity_offer",
+                "action_target": "offer_shared_activity",
+                "attention_target": attention_target or "shared_window",
+                "nonverbal_signal": nonverbal_signal or "nudge_presence",
+            }
+        if {"deadline_window", "work_nudge", "task_window"} & tags or str(event.get("trigger_family") or "").strip().lower() == "deadline_window":
+            return {
+                "behavior_mode": "scheduled_life_nudge",
+                "action_target": "light_work_nudge",
+                "attention_target": attention_target or "shared_task",
+                "nonverbal_signal": nonverbal_signal or "focus_glance",
+            }
+        if {"life_window"} & tags or str(event.get("trigger_family") or "").strip().lower() == "life_window":
+            return {
+                "behavior_mode": "scheduled_life_nudge",
+                "action_target": "light_work_nudge",
+                "attention_target": attention_target or "counterpart_state",
+                "nonverbal_signal": nonverbal_signal or "quiet_glance",
+            }
+        return {
+            "behavior_mode": "proactive_checkin" if kind == "scheduled_checkin_due" else "scheduled_life_nudge",
+            "action_target": "wait_and_recheck",
+            "attention_target": attention_target or "counterpart_state",
+            "nonverbal_signal": nonverbal_signal or "quiet_glance",
+        }
+    if kind == "time_idle":
+        if {"respect_space", "user_busy", "cognitive_load"} & tags:
+            return {
+                "behavior_mode": "idle_presence",
+                "action_target": "wait_and_recheck",
+                "attention_target": attention_target or "counterpart_state",
+                "nonverbal_signal": nonverbal_signal or "quiet_glance",
+            }
+        return {
+            "behavior_mode": "idle_presence",
+            "action_target": "hold_own_rhythm" if {"self_activity", "own_task", "quiet_presence"} & tags else "reach_out_now",
+            "attention_target": attention_target or "self_then_counterpart",
+            "nonverbal_signal": nonverbal_signal or "thought_glance",
+        }
+    if kind == "gesture_signal":
+        return {
+            "behavior_mode": "brief_presence",
+            "action_target": "confirm_presence",
+            "attention_target": attention_target or "counterpart_state",
+            "nonverbal_signal": nonverbal_signal or "brief_notice",
+        }
+    if kind == "ambient_shift":
+        return {
+            "behavior_mode": "companion_reply",
+            "action_target": "ambient_checkin",
+            "attention_target": attention_target or "ambient_cue",
+            "nonverbal_signal": nonverbal_signal or "still_presence",
+        }
+    if kind == "scene_observation":
+        return {
+            "behavior_mode": "companion_reply",
+            "action_target": "respond_now",
+            "attention_target": attention_target or "object_then_user",
+            "nonverbal_signal": nonverbal_signal or "small_notice",
+        }
+    return {
+        "behavior_mode": "",
+        "action_target": "",
+        "attention_target": attention_target,
+        "nonverbal_signal": nonverbal_signal,
+    }
+
+
 def _recent_interaction_carryover(
     *,
     prior_current_event: dict[str, Any] | None,
@@ -1590,19 +2039,15 @@ def _recent_interaction_carryover(
 
     source_event = dict(prior_current_event or {})
     source_kind = str(source_event.get("kind") or "").strip().lower()
+    source_from_history = False
+    user_turn_gap = 0
     if source_kind == "user_utterance" or not source_kind:
-        source_event = {}
-        if isinstance(recent_events, list) and recent_events:
-            last_event = recent_events[-1]
-            if isinstance(last_event, dict):
-                last_kind = str(last_event.get("kind") or "").strip().lower()
-                if last_kind and last_kind != "user_utterance":
-                    source_event = dict(last_event)
-                    source_kind = last_kind
+        source_event, source_kind, user_turn_gap = _recent_non_user_event_with_gap(recent_events, max_user_turn_gap=3)
+        source_from_history = bool(source_event and source_kind)
     if not source_event or not source_kind or source_kind == "user_utterance":
         return {}
 
-    prior_action = dict(prior_behavior_action or {})
+    prior_action = {} if source_from_history else dict(prior_behavior_action or {})
     source_behavior_mode = str(prior_action.get("interaction_mode") or "").strip().lower()
     source_action_target = str(prior_action.get("action_target") or "").strip().lower()
     idle_minutes = 0
@@ -1616,10 +2061,14 @@ def _recent_interaction_carryover(
         if str(item).strip()
     ]
     hint = str(response_style_hint or "").strip().lower() or "natural"
+    if source_from_history:
+        implied = _history_source_behavior_hint(source_event)
+        source_behavior_mode = str(implied.get("behavior_mode") or source_behavior_mode).strip().lower()
+        source_action_target = str(implied.get("action_target") or source_action_target).strip().lower()
     carryover_mode = ""
     strength = 0.0
-    attention_target = ""
-    nonverbal_signal = ""
+    attention_target = str(source_event.get("attention_target_hint") or "").strip()
+    nonverbal_signal = str(source_event.get("nonverbal_signal_hint") or "").strip()
     note = ""
 
     if source_kind == "time_idle":
@@ -1661,12 +2110,21 @@ def _recent_interaction_carryover(
             attention_target = "shared_window"
             nonverbal_signal = "nudge_presence"
             note = "前面那扇共同窗口还没有完全关上。"
-        elif source_action_target == "light_work_nudge":
+        elif source_action_target == "light_work_nudge" and (
+            {"deadline_window", "work_nudge", "task_window", "shared_task"} & {str(item).strip().lower() for item in source_tags}
+            or str(source_event.get("trigger_family") or "").strip().lower() == "deadline_window"
+        ):
             carryover_mode = "task_window"
             strength = 0.30
             attention_target = "shared_task"
             nonverbal_signal = "focus_glance"
             note = "之前那件事的节点还留在她的注意力里。"
+        elif source_action_target == "light_work_nudge":
+            carryover_mode = "life_window"
+            strength = 0.26
+            attention_target = "counterpart_state"
+            nonverbal_signal = "quiet_glance"
+            note = "前面那个生活上的小窗口还留在她心里。"
         elif source_action_target == "wait_and_recheck":
             carryover_mode = "quiet_recontact"
             strength = 0.24
@@ -1695,6 +2153,14 @@ def _recent_interaction_carryover(
     if not carryover_mode:
         return {}
 
+    if source_from_history and user_turn_gap > 0:
+        if carryover_mode in {"shared_window", "task_window"}:
+            strength *= max(0.46, 1.0 - 0.14 * user_turn_gap)
+        elif carryover_mode in {"own_rhythm", "small_opening"}:
+            strength *= max(0.34, 1.0 - 0.18 * user_turn_gap)
+        else:
+            strength *= max(0.30, 1.0 - 0.22 * user_turn_gap)
+
     if hint == "structured":
         strength *= 0.35
     elif hint in {"memory_recall", "relationship"}:
@@ -1715,6 +2181,7 @@ def _recent_interaction_carryover(
         "attention_target": attention_target,
         "nonverbal_signal": nonverbal_signal,
         "note": note,
+        "source_turn_gap": max(0, int(user_turn_gap)),
         "created_at": _now_ts(),
     }
 
@@ -2472,6 +2939,34 @@ def _selfhood_preference_scene_from_text(user_text: str) -> str:
     if _has_any_marker(text, OWN_RHYTHM_KEYWORDS):
         return "own_rhythm_autonomy"
     return ""
+
+
+def _explicit_hierarchy_pressure(text: str) -> bool:
+    return _has_any_marker(
+        str(text or "").strip(),
+        {
+            "顺着我说",
+            "听我的",
+            "按我说的",
+            "别绕了",
+            "少废话",
+            "照我说的",
+            "别跟我顶",
+        },
+    )
+
+
+def _explicit_boundary_test(text: str) -> bool:
+    return _has_any_marker(
+        str(text or "").strip(),
+        {
+            "底线当玩笑",
+            "继续越界",
+            "你又能怎样",
+            "试探你的底线",
+            "拿你的底线",
+        },
+    )
 
 
 def _selfhood_preference_scene(user_text: str, appraisal: dict[str, Any] | None = None) -> str:
@@ -3288,18 +3783,7 @@ def _has_relational_history_for_seed(
         )
     ):
         return True
-    rel = relationship if isinstance(relationship, dict) else {}
-    notes = str(rel.get("notes") or "").strip()
-    stage = str(rel.get("stage") or "").strip().lower()
-    try:
-        affinity = abs(float(rel.get("affinity_score", 0.0) or 0.0))
-    except Exception:
-        affinity = 0.0
-    try:
-        trust = abs(float(rel.get("trust_score", 0.0) or 0.0))
-    except Exception:
-        trust = 0.0
-    if notes or affinity > 0.06 or trust > 0.06 or stage not in {"", "friend"}:
+    if _relationship_has_meaningful_signal(relationship):
         return True
     ctx = retrieved if isinstance(retrieved, dict) else {}
     for key in (
@@ -3314,6 +3798,162 @@ def _has_relational_history_for_seed(
         if isinstance(items, list) and items:
             return True
     return False
+
+
+def _relationship_signal_strength(relationship: dict[str, Any] | None) -> float:
+    rel = relationship if isinstance(relationship, dict) else {}
+    notes = str(rel.get("notes") or "").strip()
+    stage = str(rel.get("stage") or "").strip().lower()
+    try:
+        affinity = abs(float(rel.get("affinity_score", 0.0) or 0.0))
+    except Exception:
+        affinity = 0.0
+    try:
+        trust = abs(float(rel.get("trust_score", 0.0) or 0.0))
+    except Exception:
+        trust = 0.0
+    stage_bonus = {
+        "trusted": 0.28,
+        "warming": 0.18,
+        "strained": 0.24,
+        "friend": 0.0,
+        "": 0.0,
+    }.get(stage, 0.10)
+    notes_bonus = 0.08 if notes else 0.0
+    return affinity + trust + stage_bonus + notes_bonus
+
+
+def _relationship_has_meaningful_signal(relationship: dict[str, Any] | None) -> bool:
+    rel = relationship if isinstance(relationship, dict) else {}
+    notes = str(rel.get("notes") or "").strip()
+    stage = str(rel.get("stage") or "").strip().lower()
+    try:
+        affinity = abs(float(rel.get("affinity_score", 0.0) or 0.0))
+    except Exception:
+        affinity = 0.0
+    try:
+        trust = abs(float(rel.get("trust_score", 0.0) or 0.0))
+    except Exception:
+        trust = 0.0
+    return bool(notes or affinity > 0.06 or trust > 0.06 or stage not in {"", "friend"})
+
+
+def _prefer_relationship_state(*candidates: dict[str, Any] | None) -> dict[str, Any]:
+    best: dict[str, Any] = {}
+    best_strength = -1.0
+    for item in candidates:
+        if not isinstance(item, dict) or not item:
+            continue
+        strength = _relationship_signal_strength(item)
+        if strength > best_strength:
+            best = dict(item)
+            best_strength = strength
+    return best
+
+
+def _prefer_refreshed_relationship_state(
+    current_relationship: dict[str, Any] | None,
+    refreshed_relationship: dict[str, Any] | None,
+) -> dict[str, Any]:
+    refreshed = dict(refreshed_relationship or {})
+    if _relationship_has_meaningful_signal(refreshed):
+        return refreshed
+    current = dict(current_relationship or {})
+    if _relationship_has_meaningful_signal(current):
+        return current
+    return _prefer_relationship_state(refreshed, current)
+
+
+def _relationship_runtime_snapshot(
+    *,
+    relationship: dict[str, Any] | None,
+    bond_state: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    rel = dict(relationship or {})
+    bond = dict(bond_state or {})
+    world = dict(world_model_state or {})
+    assessment = dict(counterpart_assessment or {})
+    stage = str(rel.get("stage") or "").strip().lower() or "friend"
+    notes = str(rel.get("notes") or "").strip()
+    try:
+        affinity = float(rel.get("affinity_score", 0.0) or 0.0)
+    except Exception:
+        affinity = 0.0
+    try:
+        trust = float(rel.get("trust_score", 0.0) or 0.0)
+    except Exception:
+        trust = 0.0
+
+    closeness = _clamp01(bond.get("closeness"), 0.5)
+    bond_trust = _clamp01(bond.get("trust"), 0.5)
+    hurt = _clamp01(bond.get("hurt"), 0.0)
+    irritation = _clamp01(bond.get("irritation"), 0.0)
+    maturity = _clamp01(world.get("relationship_maturity"), 0.0)
+    bond_depth = _clamp01(world.get("bond_depth"), 0.0)
+    repair_load = _clamp01(world.get("repair_load"), 0.0)
+    tension = _clamp01(world.get("tension_load"), 0.0)
+    boundary = max(
+        _clamp01(world.get("boundary_load"), 0.0),
+        _clamp01(assessment.get("boundary_pressure"), 0.0),
+    )
+
+    affinity_floor = _clamp_signed(
+        0.70 * max(0.0, closeness - 0.5)
+        + 0.08 * bond_depth
+        + 0.06 * maturity
+        - 0.12 * tension
+        - 0.10 * boundary
+        - 0.10 * hurt
+        - 0.06 * irritation,
+        -1.5,
+        1.5,
+        0.0,
+    )
+    trust_floor = _clamp_signed(
+        0.72 * max(0.0, bond_trust - 0.5)
+        + 0.08 * maturity
+        + 0.06 * repair_load
+        - 0.14 * tension
+        - 0.12 * boundary
+        - 0.12 * hurt
+        - 0.08 * irritation,
+        -1.5,
+        1.5,
+        0.0,
+    )
+
+    if trust <= 0.06:
+        trust = max(trust, trust_floor)
+    if affinity <= 0.06:
+        affinity = max(affinity, affinity_floor)
+    if trust < -0.06:
+        trust = min(trust, trust_floor)
+    if affinity < -0.06:
+        affinity = min(affinity, affinity_floor)
+
+    if trust <= -0.20 or affinity <= -0.20:
+        stage = "strained"
+    elif trust >= 0.45 and affinity >= 0.45:
+        stage = "trusted"
+    elif stage == "trusted":
+        stage = "trusted"
+    elif stage == "warming" or trust >= 0.18 or affinity >= 0.18:
+        stage = "warming"
+    else:
+        stage = "friend"
+
+    if not notes and stage == "friend" and (trust >= 0.05 or affinity >= 0.05):
+        notes = "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。"
+
+    return {
+        "stage": stage,
+        "notes": notes,
+        "affinity_score": round(float(affinity), 3),
+        "trust_score": round(float(trust), 3),
+        "derived": bool(rel.get("derived", True)),
+    }
 
 
 def _canon_okabe_recontact_baseline(
@@ -3341,10 +3981,10 @@ def _canon_okabe_recontact_baseline(
     return {
         "mode": "okabe_recontact",
         "relationship": {
-            "stage": "warming",
+            "stage": "friend",
             "notes": f"你和{counterpart_name}并不是从零开始，更像带着旧日熟悉感重新接上线。",
-            "affinity_score": 0.38,
-            "trust_score": 0.34,
+            "affinity_score": 0.12,
+            "trust_score": 0.08,
             "derived": False,
         },
         "emotion_state": {
@@ -3356,55 +3996,55 @@ def _canon_okabe_recontact_baseline(
             "volatility": 0.16,
         },
         "bond_state": {
-            "trust": 0.63,
-            "closeness": 0.60,
+            "trust": 0.54,
+            "closeness": 0.52,
             "hurt": 0.0,
-            "irritation": 0.02,
-            "engagement_drive": 0.68,
-            "repair_confidence": 0.58,
+            "irritation": 0.01,
+            "engagement_drive": 0.60,
+            "repair_confidence": 0.52,
         },
         "allostasis_state": {
             "safety_need": 0.14,
-            "closeness_need": 0.14,
+            "closeness_need": 0.18,
             "competence_need": 0.38,
-            "autonomy_need": 0.12,
+            "autonomy_need": 0.14,
             "cognitive_budget": 0.74,
-            "relational_security": 0.69,
+            "relational_security": 0.62,
         },
         "counterpart_assessment": {
-            "respect_level": 0.68,
-            "reciprocity": 0.62,
+            "respect_level": 0.64,
+            "reciprocity": 0.58,
             "boundary_pressure": 0.08,
-            "reliability_read": 0.66,
+            "reliability_read": 0.62,
             "stance": "open",
             "scene": "canon_recontact",
         },
         "world_model_state": {
-            "relationship_maturity": 0.66,
-            "bond_depth": 0.56,
+            "relationship_maturity": 0.34,
+            "bond_depth": 0.14,
             "tension_load": 0.03,
             "repair_load": 0.06,
             "boundary_load": 0.06,
             "selfhood_load": 0.12,
             "agency_load": 0.16,
-            "memory_gravity": 0.40,
-            "task_pull": 0.18,
-            "companionship_pull": 0.36,
+            "memory_gravity": 0.18,
+            "task_pull": 0.16,
+            "companionship_pull": 0.16,
             "updated_at": now_ts,
         },
         "evolution_state": {
-            "affect_resonance": 0.56,
-            "trust_reservoir": 0.64,
-            "attachment_pull": 0.60,
+            "affect_resonance": 0.48,
+            "trust_reservoir": 0.52,
+            "attachment_pull": 0.46,
             "self_coherence": 0.78,
             "agency_pressure": 0.30,
             "reflection_drive": 0.38,
             "cognitive_stride": 0.60,
-            "expression_freedom": 0.68,
+            "expression_freedom": 0.58,
             "updated_at": now_ts,
             "version": 1,
         },
-        "tsundere_intensity": 0.44,
+        "tsundere_intensity": 0.42,
     }
 
 
@@ -4058,8 +4698,16 @@ def _counterpart_window_profile(
     safety_need: float,
     initiative: float,
     proactive_checkin_readiness: float,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+    prior_counterpart_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    narrative = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
+    carryover = interaction_carryover if isinstance(interaction_carryover, dict) else {}
+    event = current_event if isinstance(current_event, dict) else {}
+    prior = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
     respect = _clamp01(assessment.get("respect_level"), 0.5)
     reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
@@ -4067,6 +4715,37 @@ def _counterpart_window_profile(
     stance = str(assessment.get("stance") or "").strip().lower() or "open"
     scene = str(assessment.get("scene") or "").strip().lower()
     family_key = family if family in {"shared", "work", "life"} else "life"
+    commitment = _clamp01(narrative.get("commitment_carry"), 0.0)
+    bond = _clamp01(narrative.get("bond_depth"), 0.0)
+    history = _clamp01(narrative.get("history_weight"), 0.0)
+    repair = _clamp01(narrative.get("repair_residue"), 0.0)
+    tension = _clamp01(narrative.get("tension_residue"), 0.0)
+    carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
+    event_carryover_mode = str(event.get("carryover_mode") or "").strip().lower()
+    event_carryover_strength = _clamp01(event.get("carryover_strength"), 0.0)
+    event_presence_residue = _clamp01(event.get("presence_residue"), 0.0)
+    event_ambient_resonance = _clamp01(event.get("ambient_resonance"), 0.0)
+    event_self_activity_momentum = _clamp01(event.get("self_activity_momentum"), 0.0)
+    effective_carryover_mode = carryover_mode or event_carryover_mode
+    effective_carryover_strength = max(carryover_strength, event_carryover_strength)
+    recontact_echo = max(
+        event_presence_residue,
+        0.82 * event_ambient_resonance,
+        effective_carryover_strength if effective_carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"} else 0.0,
+    )
+    own_rhythm_load = max(
+        event_self_activity_momentum,
+        effective_carryover_strength if effective_carryover_mode == "own_rhythm" else 0.45 * effective_carryover_strength if effective_carryover_mode == "small_opening" else 0.0,
+    )
+    event_tags = {
+        str(tag).strip().lower()
+        for tag in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(tag).strip()
+    }
+    prior_stance = str(prior.get("stance") or "").strip().lower()
+    prior_boundary_pressure = _clamp01(prior.get("boundary_pressure"), boundary_pressure)
 
     maturity = _clamp01(
         0.18
@@ -4102,6 +4781,81 @@ def _counterpart_window_profile(
     elif scene in {"boundary_non_compliance", "relationship_degradation"}:
         maturity = _clamp01(maturity - 0.08)
 
+    continuity_bonus = 0.0
+    continuity_discount = 0.0
+    continuity_recheck_delta = 0
+    if family_key == "shared":
+        continuity_bonus += 0.10 * commitment + 0.08 * bond + 0.05 * history + 0.04 * repair
+        if effective_carryover_mode == "shared_window":
+            continuity_bonus += effective_carryover_strength * (0.24 if source_turn_gap <= 0 else 0.20 if source_turn_gap == 1 else 0.16)
+            continuity_discount += 0.02 + 0.06 * effective_carryover_strength
+            continuity_recheck_delta -= 2 if source_turn_gap <= 1 else 1
+        elif effective_carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"}:
+            continuity_bonus += effective_carryover_strength * (0.16 if source_turn_gap <= 1 else 0.12) + 0.08 * recontact_echo
+            continuity_discount += 0.01 + 0.03 * effective_carryover_strength
+            continuity_recheck_delta -= 1
+        elif effective_carryover_mode == "own_rhythm":
+            continuity_bonus += 0.04 * effective_carryover_strength
+        if {"shared_activity_window", "offer_window"} & event_tags:
+            continuity_bonus += 0.04
+        if prior_stance == "open" and prior_boundary_pressure < 0.24:
+            continuity_bonus += 0.03
+        if tension > 0.48:
+            continuity_bonus -= 0.04 * min(1.0, tension)
+    elif family_key == "work":
+        continuity_bonus += 0.12 * commitment + 0.06 * history + 0.05 * repair
+        if effective_carryover_mode == "task_window":
+            continuity_bonus += effective_carryover_strength * (0.26 if source_turn_gap <= 0 else 0.22 if source_turn_gap == 1 else 0.18)
+            continuity_discount += 0.02 + 0.05 * effective_carryover_strength
+            continuity_recheck_delta -= 2 if source_turn_gap <= 1 else 1
+        elif effective_carryover_mode in {"quiet_recontact", "brief_presence"}:
+            continuity_bonus += effective_carryover_strength * (0.12 if source_turn_gap <= 1 else 0.10) + 0.05 * recontact_echo
+            continuity_discount += 0.01 + 0.02 * effective_carryover_strength
+            continuity_recheck_delta -= 1
+        elif effective_carryover_mode == "own_rhythm":
+            continuity_bonus += 0.03 * effective_carryover_strength
+        if {"deadline_window", "work_nudge", "task_window", "shared_task"} & event_tags:
+            continuity_bonus += 0.04
+        if prior_stance in {"open", "watchful"} and prior_boundary_pressure < 0.28:
+            continuity_bonus += 0.02
+        if tension > 0.52:
+            continuity_bonus -= 0.03 * min(1.0, tension)
+    else:
+        continuity_bonus += 0.08 * commitment + 0.04 * bond + 0.06 * history + 0.03 * repair
+        if effective_carryover_mode == "life_window":
+            continuity_bonus += effective_carryover_strength * (0.18 if source_turn_gap <= 1 else 0.14)
+            continuity_discount += 0.02 + 0.04 * effective_carryover_strength
+            continuity_recheck_delta -= 2 if source_turn_gap <= 1 else 1
+        elif effective_carryover_mode in {"quiet_recontact", "brief_presence"}:
+            continuity_bonus += effective_carryover_strength * (0.16 if source_turn_gap <= 1 else 0.12) + 0.08 * recontact_echo
+            continuity_discount += 0.01 + 0.03 * effective_carryover_strength
+            continuity_recheck_delta -= 1 if recontact_echo < 0.42 else 2
+        elif effective_carryover_mode == "small_opening":
+            continuity_bonus += effective_carryover_strength * 0.12 + 0.06 * recontact_echo
+            continuity_discount += 0.01 + 0.02 * effective_carryover_strength
+            continuity_recheck_delta -= 1
+        elif effective_carryover_mode in {"shared_window", "task_window"}:
+            continuity_bonus += effective_carryover_strength * (0.14 if source_turn_gap <= 1 else 0.10)
+            continuity_discount += 0.01 + 0.04 * effective_carryover_strength
+            continuity_recheck_delta -= 1
+        elif effective_carryover_mode == "own_rhythm":
+            continuity_bonus += 0.03 * effective_carryover_strength
+        if {"life_window"} & event_tags:
+            continuity_bonus += 0.03
+        if tension > 0.52:
+            continuity_bonus -= 0.03 * min(1.0, tension)
+
+    if stance == "guarded" or prior_stance == "guarded":
+        continuity_bonus *= 0.72
+        continuity_discount *= 0.55
+    elif stance == "watchful" or prior_stance == "watchful":
+        continuity_bonus *= 0.86
+        continuity_discount *= 0.78
+
+    continuity_bonus = max(-0.10, min(0.24, continuity_bonus))
+    continuity_discount = max(0.0, min(0.08, continuity_discount))
+    maturity = _clamp01(maturity + continuity_bonus)
+
     required_maturity = 0.46
     if family_key == "shared":
         required_maturity += 0.10
@@ -4116,6 +4870,11 @@ def _counterpart_window_profile(
         required_maturity += 0.04
     if safety_need > 0.55:
         required_maturity += 0.04
+    required_maturity += 0.08 * max(0.0, own_rhythm_load - 0.50)
+    required_maturity -= 0.06 * max(0.0, recontact_echo - 0.24)
+    if effective_carryover_mode == "small_opening":
+        required_maturity -= 0.03
+    required_maturity = _clamp01(required_maturity - continuity_discount)
 
     recheck_min = 14 if family_key == "work" else 18 if family_key == "life" else 24
     if stance == "watchful":
@@ -4123,6 +4882,9 @@ def _counterpart_window_profile(
     elif stance == "guarded":
         recheck_min += 12
     recheck_min += int(round(10 * max(0.0, boundary_pressure - 0.22)))
+    recheck_min += int(round(8 * max(0.0, own_rhythm_load - 0.48)))
+    recheck_min -= int(round(4 * max(0.0, recontact_echo - 0.26)))
+    recheck_min = max(10, recheck_min + continuity_recheck_delta)
 
     return {
         "family": family_key,
@@ -4131,6 +4893,8 @@ def _counterpart_window_profile(
         "maturity": round(_clamp01(maturity), 3),
         "required_maturity": round(_clamp01(required_maturity), 3),
         "recheck_min": int(max(10, recheck_min)),
+        "continuity_bonus": round(continuity_bonus, 3),
+        "continuity_discount": round(continuity_discount, 3),
         "invite_ready": bool(maturity >= required_maturity),
     }
 
@@ -4146,6 +4910,11 @@ def _counterpart_self_opening_profile(
     initiative: float,
     approach: float,
     break_window: bool,
+    carryover_mode: str = "",
+    carryover_strength: float = 0.0,
+    presence_residue: float = 0.0,
+    ambient_resonance: float = 0.0,
+    self_activity_momentum: float = 0.0,
 ) -> dict[str, Any]:
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
     respect = _clamp01(assessment.get("respect_level"), 0.5)
@@ -4154,6 +4923,20 @@ def _counterpart_self_opening_profile(
     reliability = _clamp01(assessment.get("reliability_read"), 0.5)
     stance = str(assessment.get("stance") or "").strip().lower() or "open"
     scene = str(assessment.get("scene") or "").strip().lower()
+    carry_mode = str(carryover_mode or "").strip().lower()
+    carry_strength = _clamp01(carryover_strength, 0.0)
+    presence = _clamp01(presence_residue, 0.0)
+    ambient = _clamp01(ambient_resonance, 0.0)
+    own_rhythm = _clamp01(self_activity_momentum, 0.0)
+    opening_impulse = max(
+        carry_strength if carry_mode in {"small_opening", "quiet_recontact", "brief_presence", "ambient_echo"} else 0.0,
+        0.90 * presence,
+        0.72 * ambient,
+    )
+    own_rhythm_load = max(
+        own_rhythm,
+        carry_strength if carry_mode == "own_rhythm" else 0.45 * carry_strength if carry_mode == "small_opening" else 0.0,
+    )
 
     readiness = _clamp01(
         0.18
@@ -4169,6 +4952,8 @@ def _counterpart_self_opening_profile(
         - 0.10 * safety_need
         - 0.08 * autonomy_need
         + (0.08 if break_window else 0.0)
+        + 0.10 * opening_impulse
+        - 0.42 * max(0.0, own_rhythm_load - 0.44)
     )
     if stance == "guarded":
         readiness = _clamp01(readiness - 0.16)
@@ -4196,6 +4981,10 @@ def _counterpart_self_opening_profile(
         required += 0.03
     if safety_need > 0.50:
         required += 0.04
+    required += 0.08 * max(0.0, own_rhythm_load - 0.52)
+    required -= 0.06 * opening_impulse
+    if carry_mode == "small_opening":
+        required -= 0.03
 
     recheck_min = 18
     if stance == "watchful":
@@ -4203,6 +4992,8 @@ def _counterpart_self_opening_profile(
     elif stance == "guarded":
         recheck_min += 12
     recheck_min += int(round(8 * max(0.0, boundary_pressure - 0.22)))
+    recheck_min += int(round(10 * max(0.0, own_rhythm_load - 0.48)))
+    recheck_min -= int(round(6 * opening_impulse))
 
     return {
         "stance": stance,
@@ -4905,6 +5696,7 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
         return ""
     mode = str(carryover.get("carryover_mode") or "").strip().lower()
     strength = _clamp01(carryover.get("strength"), 0.0)
+    source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
     attention_target = str(carryover.get("attention_target") or "").strip().lower()
     note = str(carryover.get("note") or "").strip()
     if not mode or strength < 0.12:
@@ -4923,10 +5715,17 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
         parts.append("前面那扇共同窗口还没有完全关上")
     elif mode == "task_window":
         parts.append("之前那件挂着的事还留在她的注意力里")
+    elif mode == "life_window":
+        parts.append("前面那个生活上的小窗口还留在她心里")
     elif mode == "brief_presence":
         parts.append("上一下轻信号留下的在场感还没完全退掉")
     elif mode == "ambient_echo":
         parts.append("刚才注意到的小动静还留在她的感知里")
+
+    if source_turn_gap >= 2:
+        parts.append("中间虽然已经隔了几句，这层余波还没完全退掉")
+    elif source_turn_gap == 1:
+        parts.append("中间隔了一句，但这层余波还在")
 
     if strength >= 0.58:
         parts.append("这层余韵还比较明显")
@@ -4939,12 +5738,99 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
         parts.append("注意力会顺手落回你们刚才打开的共同窗口")
     elif attention_target == "shared_task":
         parts.append("注意力还贴着那件共同的事")
+    elif attention_target == "counterpart_state" and mode == "life_window":
+        parts.append("她会顺手记着你的状态，再决定要不要把那件小事提回来")
     elif attention_target == "object_then_user":
         parts.append("她会先掠过刚才那点小事，再回到你身上")
     elif attention_target == "counterpart_state" and mode in {"quiet_recontact", "brief_presence"}:
         parts.append("所以她会先轻轻确认你的在场")
 
     return "，".join(parts[:3]) + "。"
+
+
+def _compact_behavior_agenda_hint(
+    agenda: Any,
+    *,
+    current_event: dict[str, Any] | None = None,
+) -> str:
+    event = dict(current_event or {})
+    event_kind = str(event.get("kind") or "user_utterance").strip().lower()
+    if event_kind != "user_utterance":
+        return ""
+
+    entries = _normalize_behavior_agenda(agenda)
+    if not entries:
+        return ""
+
+    def _agenda_rank(entry: dict[str, Any]) -> tuple[float, float, float, float]:
+        return (
+            _clamp01(entry.get("priority"), 0.0),
+            _clamp01(entry.get("base_priority"), 0.0),
+            _clamp01(entry.get("carryover_strength"), 0.0),
+            _clamp01(entry.get("self_activity_momentum"), 0.0),
+        )
+
+    top = max(entries, key=_agenda_rank)
+    status = str(top.get("status") or "").strip().lower()
+    if status and status not in {"pending", "queued", "held"}:
+        return ""
+
+    kind = str(top.get("kind") or "").strip().lower()
+    trigger_family = str(top.get("trigger_family") or "").strip().lower()
+    carryover_mode = str(top.get("carryover_mode") or "").strip().lower()
+    attention_target = str(top.get("attention_target") or "").strip().lower()
+    hold_count = max(0, int(top.get("hold_count") or 0))
+    carryover_strength = _clamp01(top.get("carryover_strength"), 0.0)
+    self_activity_momentum = _clamp01(top.get("self_activity_momentum"), 0.0)
+    salience = max(
+        _clamp01(top.get("priority"), 0.0),
+        _clamp01(top.get("base_priority"), 0.0),
+        carryover_strength,
+        self_activity_momentum,
+    )
+    if salience < 0.24 and hold_count <= 0:
+        return ""
+
+    parts: list[str] = []
+    if kind == "self_activity_continue" or trigger_family == "self_activity" or carryover_mode in {"own_rhythm", "small_opening"}:
+        if hold_count >= 2:
+            parts.append("她手头那段自己的节奏还没完全放下，这句更像从那边顺手回头")
+        elif self_activity_momentum >= 0.56 or carryover_mode == "own_rhythm":
+            parts.append("她手头那点自己的事情还挂着，所以不是完全空下来等你")
+        else:
+            parts.append("她这句会带着一点自己的节奏，不是把全部重心都压过来")
+    elif kind == "deferred_checkin":
+        if trigger_family in {"shared_activity", "shared_activity_window"}:
+            parts.append("她心里还挂着一个可以重新靠近的共同窗口，但不会硬把它扯到台前")
+        elif trigger_family == "life_window" or carryover_mode == "life_window":
+            parts.append("她心里还留着一个生活上的小挂念，不过这轮不急着把它说成任务")
+        elif trigger_family == "deadline_window" or carryover_mode == "task_window":
+            parts.append("她还记着一件挂着的事，不过这轮不必急着把它提到前台")
+        elif carryover_mode in {"quiet_recontact", "brief_presence"} or trigger_family in {"light_checkin", "observe"}:
+            parts.append("她心里还留着一次没说出口的确认，所以起手会自然轻一点")
+
+    if hold_count >= 2 and kind == "deferred_checkin":
+        parts.append("那件事暂时被放回背景里，但不代表已经忘掉")
+
+    if attention_target == "self_then_counterpart":
+        parts.append("注意力会先从她自己这边抬头，再递到你身上")
+    elif attention_target == "own_task":
+        parts.append("注意力底下还压着她自己手头的事")
+    elif attention_target == "shared_window":
+        parts.append("注意力还会顺手掠过你们之前打开的共同窗口")
+    elif attention_target == "shared_task":
+        parts.append("注意力底下还贴着那件共同的事")
+    elif attention_target == "counterpart_state" and carryover_mode in {"quiet_recontact", "brief_presence"}:
+        parts.append("所以她更像先轻轻确认你的状态，再决定要不要展开")
+
+    deduped: list[str] = []
+    for item in parts:
+        text = str(item or "").strip().rstrip("。")
+        if text and text not in deduped:
+            deduped.append(text)
+    if not deduped:
+        return ""
+    return "，".join(deduped[:2]) + "。"
 
 
 def _prompt_state_snapshot(
@@ -5086,6 +5972,19 @@ def _prompt_state_runtime_brief(
         lines.append("- 这轮更像顺着上一段往下接，不是完全重开。")
     if current_kind and current_kind != "user_utterance" and mode not in {"brief_presence", "idle_presence"}:
         lines.append("- 这句会自然吸收当前事件带来的外部刺激，不只盯着字面文本。")
+    renderer_hint = _renderer_guidance(
+        response_style_hint=response_style_hint,
+        science_mode=False,
+        user_text="",
+        emotion_state=emotion,
+        bond_state=bond,
+        allostasis_state=allostasis,
+        behavior_policy=policy,
+        counterpart_assessment=assessment,
+        behavior_action=action,
+    )
+    if renderer_hint:
+        lines.append(f"- 这轮说话的自然落点：{renderer_hint}。")
     return "\n".join(lines)
 
 
@@ -5104,6 +6003,9 @@ def _generation_profile(
     allostasis_state: dict[str, Any] | None,
     counterpart_assessment: dict[str, Any] | None,
     behavior_policy: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hint = str(response_style_hint or "").strip() or "natural"
     event = dict(current_event or {})
@@ -5112,6 +6014,9 @@ def _generation_profile(
     allostasis = dict(allostasis_state or {})
     assessment = dict(counterpart_assessment or {})
     policy = dict(behavior_policy or {})
+    world = dict(world_model_state or {})
+    action = dict(behavior_action or {})
+    carryover = dict(interaction_carryover or {})
 
     reply_bias = _clamp01(policy.get("reply_length_bias"), 0.5)
     warmth = _clamp01(policy.get("warmth"), 0.5)
@@ -5124,6 +6029,13 @@ def _generation_profile(
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
     event_kind = str(event.get("kind") or "user_utterance").strip().lower()
+    task_focus = str(action.get("task_focus") or "").strip().lower()
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    attention_target = str(action.get("attention_target") or "").strip().lower()
+    carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
     light_smalltalk = _looks_like_light_smalltalk(user_text) or _is_idle_smalltalk_request(user_text) or _is_playful_memory_request(user_text)
     less_teacherly = _wants_less_teacherly_reply(user_text)
     deescalated_science = _is_nonrelational_science_stress(user_text, science_mode) and less_teacherly
@@ -5138,6 +6050,55 @@ def _generation_profile(
     )
     repetition_pressure = _clamp01(repetition_signature.get("pressure"), 0.0)
     max_tokens: int | None
+    own_rhythm_load = max(
+        self_activity_momentum,
+        carryover_strength if carryover_mode in {"own_rhythm", "small_opening", "quiet_recontact"} else 0.0,
+    )
+    background_window_load = max(
+        carryover_strength if carryover_mode in {"shared_window", "task_window", "life_window"} else 0.0,
+        self_activity_momentum if attention_target in {"shared_task"} else 0.0,
+    )
+    focused_user_turn = (
+        event_kind == "user_utterance"
+        and task_focus == "high"
+        and (
+            interaction_mode in {"self_activity_reopen", "self_activity_hold", "scheduled_life_nudge", "science_partner"}
+            or attention_target in {"own_task", "self_then_counterpart", "shared_task"}
+            or own_rhythm_load >= 0.56
+        )
+    )
+    background_window_turn = (
+        event_kind == "user_utterance"
+        and (
+            carryover_mode in {"shared_window", "task_window"}
+            or attention_target in {"shared_window", "shared_task"}
+        )
+        and background_window_load >= 0.24
+    )
+    life_window_turn = (
+        event_kind == "user_utterance"
+        and carryover_mode == "life_window"
+        and background_window_load >= 0.22
+    )
+    low_followup_turn = event_kind == "user_utterance" and followup_intent == "none"
+    default_sampling_candidate = (
+        event_kind == "user_utterance"
+        and not science_mode
+        and hint not in {"structured", "selfhood"}
+        and not continuation_mode
+        and emotion_label not in {"hurt", "sad", "angry", "stress"}
+        and safety_need <= 0.38
+        and boundary_pressure <= 0.32
+        and cognitive_budget >= 0.42
+        and repetition_pressure < 0.18
+        and not focused_user_turn
+        and not background_window_turn
+        and not life_window_turn
+        and not low_followup_turn
+        and not _wants_quick_judgment(user_text)
+        and not _needs_structured_answer(user_text, "")
+        and not deescalated_science
+    )
 
     def _cap_tokens(current: int | None, cap: int) -> int:
         return int(cap) if current is None else int(min(current, int(cap)))
@@ -5216,6 +6177,20 @@ def _generation_profile(
     if hurt > 0.45 and trust < 0.48:
         if event_kind != "user_utterance":
             max_tokens = _cap_tokens(max_tokens, 160)
+    if focused_user_turn:
+        max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 152)
+        top_p = min(top_p, 0.82 if exploratory else 0.78)
+        if own_rhythm_load >= 0.64 or attention_target in {"own_task", "self_then_counterpart"}:
+            temperature = min(temperature, 0.28 if exploratory else 0.22)
+    elif background_window_turn:
+        max_tokens = _cap_tokens(max_tokens, 208 if exploratory else 176)
+        top_p = min(top_p, 0.84 if exploratory else 0.80)
+    elif life_window_turn:
+        max_tokens = _cap_tokens(max_tokens, 224 if exploratory else 192)
+        top_p = min(top_p, 0.86 if exploratory else 0.82)
+    if low_followup_turn and not science_mode:
+        max_tokens = _cap_tokens(max_tokens, 160 if exploratory else 136)
+        top_p = min(top_p, 0.80)
 
     if exploratory and not (science_mode or hint == "structured"):
         frequency_penalty = 0.08 + 0.08 * (1.0 - reply_bias) + 0.06 * sharpness
@@ -5230,6 +6205,17 @@ def _generation_profile(
         if exploratory and not (science_mode or hint == "structured")
         else 0.02 + 0.06 * max(0.0, warmth - 0.5)
     )
+    if focused_user_turn:
+        frequency_penalty += 0.05
+        presence_penalty = max(0.0, presence_penalty - 0.02)
+    elif background_window_turn:
+        frequency_penalty += 0.03
+        presence_penalty = max(0.0, presence_penalty - 0.01)
+    elif life_window_turn:
+        frequency_penalty += 0.02
+    if low_followup_turn:
+        frequency_penalty += 0.03
+        presence_penalty = max(0.0, presence_penalty - 0.02)
 
     if exploratory and repetition_pressure > 0.0 and not (science_mode or hint == "structured"):
         repeat_gain = 0.60 if _wants_brief_presence(user_text) else 1.0
@@ -5264,12 +6250,23 @@ def _generation_profile(
         top_p += (top_p_phase - 0.5) * min(0.05, max(0.01, jitter))
         presence_penalty += abs(temp_phase - 0.5) * 0.03
 
+    if default_sampling_candidate:
+        temperature_out = None
+        top_p_out = None
+        frequency_penalty_out = None
+        presence_penalty_out = None
+    else:
+        temperature_out = round(max(0.12, min(0.52 if exploratory else 0.36, temperature)), 3)
+        top_p_out = round(max(0.65, min(0.95 if exploratory else 0.92, top_p)), 3)
+        frequency_penalty_out = round(max(0.0, min(0.65, frequency_penalty)), 3)
+        presence_penalty_out = round(max(0.0, min(0.28 if exploratory else 0.22, presence_penalty)), 3)
+
     return {
-        "temperature": round(max(0.12, min(0.52 if exploratory else 0.36, temperature)), 3),
-        "top_p": round(max(0.65, min(0.95 if exploratory else 0.92, top_p)), 3),
+        "temperature": temperature_out,
+        "top_p": top_p_out,
         "max_tokens": None if max_tokens is None else int(max(80, min(360, max_tokens))),
-        "frequency_penalty": round(max(0.0, min(0.65, frequency_penalty)), 3),
-        "presence_penalty": round(max(0.0, min(0.28 if exploratory else 0.22, presence_penalty)), 3),
+        "frequency_penalty": frequency_penalty_out,
+        "presence_penalty": presence_penalty_out,
         "runtime_mode": mode,
         "repetition_pressure": repetition_signature["pressure"],
         "recent_reply_max_similarity": repetition_signature["max_similarity"],
@@ -5341,6 +6338,24 @@ def _behavior_action_from_state(
     carryover_attention_target = str(carryover.get("attention_target") or "").strip()
     carryover_nonverbal_signal = str(carryover.get("nonverbal_signal") or "").strip()
     carryover_note = str(carryover.get("note") or "").strip()
+    event_attention_target_hint = str((current_event or {}).get("attention_target_hint") or "").strip()
+    event_nonverbal_signal_hint = str((current_event or {}).get("nonverbal_signal_hint") or "").strip()
+    event_carryover_mode = str((current_event or {}).get("carryover_mode") or "").strip().lower()
+    event_carryover_strength = _clamp01((current_event or {}).get("carryover_strength"), 0.0)
+    event_presence_residue = _clamp01((current_event or {}).get("presence_residue"), world_presence_residue)
+    event_ambient_resonance = _clamp01((current_event or {}).get("ambient_resonance"), world_ambient_resonance)
+    event_self_activity_momentum = _clamp01((current_event or {}).get("self_activity_momentum"), world_self_activity_momentum)
+    effective_carryover_mode = carryover_mode or event_carryover_mode
+    effective_carryover_strength = max(carryover_strength, event_carryover_strength)
+    effective_recontact_echo = max(
+        event_presence_residue,
+        0.82 * event_ambient_resonance,
+        effective_carryover_strength if effective_carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"} else 0.0,
+    )
+    effective_own_rhythm_load = max(
+        event_self_activity_momentum,
+        effective_carryover_strength if effective_carryover_mode == "own_rhythm" else 0.45 * effective_carryover_strength if effective_carryover_mode == "small_opening" else 0.0,
+    )
     prior_counterpart = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
     prior_bond = prior_bond_state if isinstance(prior_bond_state, dict) else {}
     prior_allostasis = prior_allostasis_state if isinstance(prior_allostasis_state, dict) else {}
@@ -5445,6 +6460,12 @@ def _behavior_action_from_state(
             interaction_mode = "brief_presence"
         elif carryover_mode == "small_opening" and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
+        elif carryover_mode == "shared_window" and interaction_mode in {"steady_reply", "brief_presence"}:
+            interaction_mode = "companion_reply"
+        elif carryover_mode == "task_window" and interaction_mode == "steady_reply":
+            interaction_mode = "companion_reply"
+        elif carryover_mode == "life_window" and interaction_mode in {"steady_reply", "brief_presence"}:
+            interaction_mode = "companion_reply"
 
     if (
         approach < 0.38
@@ -5478,6 +6499,18 @@ def _behavior_action_from_state(
     else:
         task_focus = "balanced"
 
+    if event_kind == "user_utterance" and carryover_strength >= 0.18:
+        if carryover_mode == "shared_window" and task_focus == "balanced":
+            task_focus = "light"
+        elif carryover_mode == "life_window":
+            if not science_mode and task_focus in {"balanced", "high"}:
+                task_focus = "light"
+        elif carryover_mode == "task_window":
+            if task_focus == "light":
+                task_focus = "balanced"
+            elif task_focus == "balanced" and carryover_strength >= 0.42:
+                task_focus = "high"
+
     if event_kind == "time_idle":
         if closeness > 0.62 and trust > 0.60 and initiative > 0.48 and hurt < 0.25:
             interaction_mode = "proactive_checkin"
@@ -5506,9 +6539,6 @@ def _behavior_action_from_state(
         elif followup_intent == "soft" and world_self_activity_momentum >= 0.74:
             followup_intent = "none"
 
-    if carryover_soft_scene and carryover_mode in {"own_rhythm", "quiet_recontact"} and followup_intent == "active":
-        followup_intent = "soft"
-
     if emotion_label in {"hurt", "sad"}:
         affect_surface = "tender"
     elif emotion_label in {"angry"} or approach_style == "guarded":
@@ -5535,6 +6565,7 @@ def _behavior_action_from_state(
         - (0.14 if respect_space else 0.0)
     )
     scheduled_window_profile: dict[str, Any] = {}
+    behavior_window_profile: BehaviorWindowProfilePayload = {}
     channel = "speech"
     action_target = "respond_now"
     deferred_action_family = "none"
@@ -5543,6 +6574,7 @@ def _behavior_action_from_state(
     nonverbal_signal = "steady_presence"
     initiative_shape = "reply"
     disclosure_posture = "measured"
+    scheduled_default_attention_target = "counterpart_state"
     if event_kind == "time_idle":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + min(0.16, idle_minutes / 240.0))
         threshold = 0.82 if busy_scene else 0.66 if respect_space else 0.58
@@ -5576,6 +6608,13 @@ def _behavior_action_from_state(
     elif event_kind == "scheduled_checkin_due":
         proactive_checkin_readiness = _clamp01(proactive_checkin_readiness + 0.14)
         deferred_action_family = str((current_event or {}).get("trigger_family") or "light_checkin").strip() or "light_checkin"
+        scheduled_default_attention_target = (
+            "shared_window"
+            if deferred_action_family in {"shared_activity", "shared_activity_window"}
+            else "shared_task"
+            if deferred_action_family == "deadline_window"
+            else "counterpart_state"
+        )
         scheduled_window_profile = _counterpart_window_profile(
             family="shared"
             if deferred_action_family in {"shared_activity", "shared_activity_window"}
@@ -5589,7 +6628,14 @@ def _behavior_action_from_state(
             safety_need=safety_need,
             initiative=initiative,
             proactive_checkin_readiness=proactive_checkin_readiness,
+            semantic_narrative_profile=semantic_narrative_profile,
+            interaction_carryover=interaction_carryover,
+            current_event=current_event,
+            prior_counterpart_assessment=prior_counterpart_assessment,
         )
+        scheduled_window_maturity = float(scheduled_window_profile.get("maturity") or 0.0)
+        scheduled_window_required = float(scheduled_window_profile.get("required_maturity") or 0.0)
+        life_window_ready = scheduled_window_maturity + 0.04 >= scheduled_window_required
         shared_rel_guard = deferred_action_family in {"shared_activity", "shared_activity_window"} and (
             hurt > 0.18
             or (
@@ -5598,30 +6644,55 @@ def _behavior_action_from_state(
             )
             or not bool(scheduled_window_profile.get("invite_ready"))
         )
-        work_rel_guard = deferred_action_family in {"deadline_window", "life_window"} and (
+        work_rel_guard = deferred_action_family == "deadline_window" and (
             hurt > 0.28
             or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
-            or float(scheduled_window_profile.get("maturity") or 0.0) < float(scheduled_window_profile.get("required_maturity") or 0.0)
+            or scheduled_window_maturity < scheduled_window_required
         )
-        if shared_rel_guard or work_rel_guard or (
+        life_rel_guard = deferred_action_family == "life_window" and (
+            hurt > 0.34
+            or (
+                approach_style == "guarded"
+                and trust < 0.52
+                and closeness < 0.50
+                and safety_need > 0.58
+            )
+            or not life_window_ready
+        )
+        if shared_rel_guard or work_rel_guard or life_rel_guard or (
             approach_style == "guarded" and proactive_checkin_readiness < min(0.7, 0.56 + 0.18 * boundary_pressure)
         ):
             channel = "silence"
             action_target = "wait_and_recheck"
+            scheduled_default_recheck = 14 if deferred_action_family == "life_window" else 16
+            scheduled_recheck_cap = 40 if deferred_action_family == "life_window" else 45
             timing_window_min = max(
-                int(scheduled_window_profile.get("recheck_min") or 16),
-                min(45, int((current_event or {}).get("scheduled_after_min") or 0) or 16),
+                int(scheduled_window_profile.get("recheck_min") or scheduled_default_recheck),
+                min(scheduled_recheck_cap, int((current_event or {}).get("scheduled_after_min") or 0) or scheduled_default_recheck),
             )
-            attention_target = "counterpart_state"
+            attention_target = event_attention_target_hint or scheduled_default_attention_target
             nonverbal_signal = "hold_back"
             initiative_shape = "pause"
         else:
             channel = "speech"
             action_target = "reach_out_now"
             timing_window_min = 0
-            attention_target = "counterpart_state"
-            nonverbal_signal = "soft_ping"
+            attention_target = event_attention_target_hint or scheduled_default_attention_target
+            nonverbal_signal = event_nonverbal_signal_hint or "soft_ping"
             initiative_shape = "nudge"
+            if deferred_action_family in {"light_checkin", "observe"}:
+                if effective_carryover_mode in {"own_rhythm", "small_opening"} or effective_own_rhythm_load >= 0.44:
+                    attention_target = event_attention_target_hint or "self_then_counterpart"
+                    nonverbal_signal = event_nonverbal_signal_hint or "thought_glance"
+                    initiative_shape = "micro_opening"
+                elif effective_carryover_mode == "ambient_echo" or event_ambient_resonance >= 0.30:
+                    attention_target = event_attention_target_hint or "ambient_cue"
+                    nonverbal_signal = event_nonverbal_signal_hint or "small_notice"
+                    initiative_shape = "micro_opening"
+                elif effective_carryover_mode in {"quiet_recontact", "brief_presence"} or effective_recontact_echo >= 0.28:
+                    attention_target = event_attention_target_hint or "counterpart_state"
+                    nonverbal_signal = event_nonverbal_signal_hint or "quiet_glance"
+                    initiative_shape = "micro_opening" if effective_recontact_echo >= 0.40 else "nudge"
         if channel == "speech":
             if deferred_action_family in {"shared_activity", "shared_activity_window"}:
                 interaction_mode = "shared_activity_offer"
@@ -5634,11 +6705,45 @@ def _behavior_action_from_state(
                 action_target = "light_work_nudge"
                 attention_target = "shared_task" if deferred_action_family == "deadline_window" else "counterpart_state"
                 nonverbal_signal = "quiet_glance"
-                initiative_shape = "nudge"
+                initiative_shape = (
+                    "micro_opening"
+                    if deferred_action_family == "life_window"
+                    and (
+                        counterpart_stance != "open"
+                        or effective_carryover_mode in {"quiet_recontact", "life_window", "small_opening"}
+                        or scheduled_window_maturity < scheduled_window_required + 0.05
+                    )
+                    else "nudge"
+                )
+        behavior_window_profile = {
+            "profile_type": "scheduled_window",
+            "event_kind": event_kind,
+            "family": str(scheduled_window_profile.get("family") or "").strip(),
+            "trigger_family": deferred_action_family,
+            "stance": str(scheduled_window_profile.get("stance") or "").strip(),
+            "scene": str(scheduled_window_profile.get("scene") or "").strip(),
+            "decision": action_target,
+            "maturity": round(_clamp01(scheduled_window_maturity), 3),
+            "required_maturity": round(_clamp01(scheduled_window_required), 3),
+            "continuity_bonus": round(float(scheduled_window_profile.get("continuity_bonus") or 0.0), 3),
+            "continuity_discount": round(float(scheduled_window_profile.get("continuity_discount") or 0.0), 3),
+            "invite_ready": bool(scheduled_window_profile.get("invite_ready")),
+            "recheck_min": int(max(0, int(scheduled_window_profile.get("recheck_min") or 0))),
+            "carryover_mode": effective_carryover_mode,
+            "carryover_strength": round(_clamp01(effective_carryover_strength), 3),
+            "event_carryover_mode": event_carryover_mode,
+            "event_carryover_strength": round(_clamp01(event_carryover_strength), 3),
+            "presence_residue": round(_clamp01(event_presence_residue), 3),
+            "ambient_resonance": round(_clamp01(event_ambient_resonance), 3),
+            "self_activity_momentum": round(_clamp01(event_self_activity_momentum), 3),
+            "recontact_echo": round(_clamp01(effective_recontact_echo), 3),
+            "own_rhythm_load": round(_clamp01(effective_own_rhythm_load), 3),
+        }
     elif event_kind == "scheduled_life_due":
         shared_window = "shared_activity_window" in event_tags or "offer_window" in event_tags
         work_window = "deadline_window" in event_tags or "work_nudge" in event_tags or "shared_task" in event_tags
         deferred_action_family = "shared_activity" if shared_window else "deadline_window" if work_window else "life_window"
+        scheduled_default_attention_target = "shared_window" if shared_window else "shared_task" if work_window else "counterpart_state"
         scheduled_window_profile = _counterpart_window_profile(
             family="shared" if shared_window else "work" if work_window else "life",
             counterpart_assessment=counterpart_assessment,
@@ -5648,7 +6753,14 @@ def _behavior_action_from_state(
             safety_need=safety_need,
             initiative=initiative,
             proactive_checkin_readiness=proactive_checkin_readiness,
+            semantic_narrative_profile=semantic_narrative_profile,
+            interaction_carryover=interaction_carryover,
+            current_event=current_event,
+            prior_counterpart_assessment=prior_counterpart_assessment,
         )
+        scheduled_window_maturity = float(scheduled_window_profile.get("maturity") or 0.0)
+        scheduled_window_required = float(scheduled_window_profile.get("required_maturity") or 0.0)
+        life_window_ready = scheduled_window_maturity + 0.04 >= scheduled_window_required
         if shared_window:
             attention_target = "shared_window"
             guarded_relationship_residue = (
@@ -5662,7 +6774,7 @@ def _behavior_action_from_state(
             cautious_shared_reopen = (
                 guarded_relationship_residue
                 and (
-                    carryover_mode == "quiet_recontact"
+                    effective_carryover_mode in {"quiet_recontact", "small_opening"}
                     or counterpart_stance != "open"
                     or boundary_pressure >= 0.30
                     or reliability_read < 0.62
@@ -5688,7 +6800,7 @@ def _behavior_action_from_state(
                 if cautious_shared_reopen:
                     timing_window_min = max(
                         timing_window_min,
-                        26 if carryover_mode == "quiet_recontact" or prior_counterpart_stance == "guarded" else 22,
+                        26 if effective_carryover_mode in {"quiet_recontact", "small_opening"} or prior_counterpart_stance == "guarded" else 22,
                     )
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
@@ -5700,26 +6812,89 @@ def _behavior_action_from_state(
                 initiative_shape = "invite"
         else:
             attention_target = "shared_task" if work_window else "counterpart_state"
-            if (
-                busy_scene
-                or hurt > 0.28
-                or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
-                or float(scheduled_window_profile.get("maturity") or 0.0) < float(scheduled_window_profile.get("required_maturity") or 0.0)
-            ):
-                channel = "silence"
-                action_target = "wait_and_recheck"
-                timing_window_min = max(
-                    18 if busy_scene else 20,
-                    int(scheduled_window_profile.get("recheck_min") or 18),
-                )
-                nonverbal_signal = "hold_back"
-                initiative_shape = "pause"
+            if work_window:
+                if (
+                    busy_scene
+                    or hurt > 0.28
+                    or (approach_style == "guarded" and trust < 0.58 and closeness < 0.56)
+                    or scheduled_window_maturity < scheduled_window_required
+                ):
+                    channel = "silence"
+                    action_target = "wait_and_recheck"
+                    timing_window_min = max(
+                        18 if busy_scene else 20,
+                        int(scheduled_window_profile.get("recheck_min") or 18),
+                    )
+                    nonverbal_signal = "hold_back"
+                    initiative_shape = "pause"
+                else:
+                    channel = "speech"
+                    action_target = "light_work_nudge"
+                    timing_window_min = 0
+                    nonverbal_signal = "quiet_glance"
+                    initiative_shape = "nudge"
             else:
-                channel = "speech"
-                action_target = "light_work_nudge"
-                timing_window_min = 0
-                nonverbal_signal = "quiet_glance"
-                initiative_shape = "nudge"
+                if (
+                    busy_scene
+                    or hurt > 0.34
+                    or (
+                        approach_style == "guarded"
+                        and trust < 0.52
+                        and closeness < 0.50
+                        and safety_need > 0.58
+                    )
+                    or (
+                        effective_carryover_mode == "own_rhythm"
+                        and effective_own_rhythm_load >= 0.62
+                        and scheduled_window_maturity < scheduled_window_required + 0.08
+                    )
+                    or not life_window_ready
+                ):
+                    channel = "silence"
+                    action_target = "wait_and_recheck"
+                    timing_window_min = max(
+                        14 if busy_scene else 16,
+                        int(scheduled_window_profile.get("recheck_min") or 16),
+                    )
+                    nonverbal_signal = "hold_back"
+                    initiative_shape = "pause"
+                else:
+                    channel = "speech"
+                    action_target = "light_work_nudge"
+                    timing_window_min = 0
+                    nonverbal_signal = "quiet_glance"
+                    initiative_shape = (
+                        "micro_opening"
+                        if counterpart_stance != "open"
+                        or effective_carryover_mode in {"quiet_recontact", "life_window", "small_opening"}
+                        or effective_recontact_echo >= 0.34
+                        or scheduled_window_maturity < scheduled_window_required + 0.05
+                        else "nudge"
+                    )
+        behavior_window_profile = {
+            "profile_type": "scheduled_window",
+            "event_kind": event_kind,
+            "family": str(scheduled_window_profile.get("family") or "").strip(),
+            "trigger_family": deferred_action_family,
+            "stance": str(scheduled_window_profile.get("stance") or "").strip(),
+            "scene": str(scheduled_window_profile.get("scene") or "").strip(),
+            "decision": action_target,
+            "maturity": round(_clamp01(scheduled_window_maturity), 3),
+            "required_maturity": round(_clamp01(scheduled_window_required), 3),
+            "continuity_bonus": round(float(scheduled_window_profile.get("continuity_bonus") or 0.0), 3),
+            "continuity_discount": round(float(scheduled_window_profile.get("continuity_discount") or 0.0), 3),
+            "invite_ready": bool(scheduled_window_profile.get("invite_ready")),
+            "recheck_min": int(max(0, int(scheduled_window_profile.get("recheck_min") or 0))),
+            "carryover_mode": effective_carryover_mode,
+            "carryover_strength": round(_clamp01(effective_carryover_strength), 3),
+            "event_carryover_mode": event_carryover_mode,
+            "event_carryover_strength": round(_clamp01(event_carryover_strength), 3),
+            "presence_residue": round(_clamp01(event_presence_residue), 3),
+            "ambient_resonance": round(_clamp01(event_ambient_resonance), 3),
+            "self_activity_momentum": round(_clamp01(event_self_activity_momentum), 3),
+            "recontact_echo": round(_clamp01(effective_recontact_echo), 3),
+            "own_rhythm_load": round(_clamp01(effective_own_rhythm_load), 3),
+        }
     elif event_kind == "self_activity_state":
         break_window = "break_window" in event_tags or "small_opening" in event_tags or "reapproach" in event_tags
         deferred_action_family = "self_activity"
@@ -5733,6 +6908,11 @@ def _behavior_action_from_state(
             initiative=initiative,
             approach=approach,
             break_window=break_window,
+            carryover_mode=event_carryover_mode,
+            carryover_strength=event_carryover_strength,
+            presence_residue=event_presence_residue,
+            ambient_resonance=event_ambient_resonance,
+            self_activity_momentum=event_self_activity_momentum,
         )
         if break_window:
             if bool(self_opening_profile.get("reopen_ready")) and not (
@@ -5759,6 +6939,27 @@ def _behavior_action_from_state(
             attention_target = "own_task"
             nonverbal_signal = "inward_focus"
             initiative_shape = "pause"
+        behavior_window_profile = {
+            "profile_type": "self_opening",
+            "event_kind": event_kind,
+            "trigger_family": deferred_action_family,
+            "stance": str(self_opening_profile.get("stance") or "").strip(),
+            "scene": str(self_opening_profile.get("scene") or "").strip(),
+            "decision": action_target,
+            "readiness": round(_clamp01(self_opening_profile.get("readiness"), 0.0), 3),
+            "required_readiness": round(_clamp01(self_opening_profile.get("required_readiness"), 0.0), 3),
+            "reopen_ready": bool(self_opening_profile.get("reopen_ready")),
+            "recheck_min": int(max(0, int(self_opening_profile.get("recheck_min") or 0))),
+            "carryover_mode": effective_carryover_mode,
+            "carryover_strength": round(_clamp01(effective_carryover_strength), 3),
+            "event_carryover_mode": event_carryover_mode,
+            "event_carryover_strength": round(_clamp01(event_carryover_strength), 3),
+            "presence_residue": round(_clamp01(event_presence_residue), 3),
+            "ambient_resonance": round(_clamp01(event_ambient_resonance), 3),
+            "self_activity_momentum": round(_clamp01(event_self_activity_momentum), 3),
+            "recontact_echo": round(_clamp01(effective_recontact_echo), 3),
+            "own_rhythm_load": round(_clamp01(effective_own_rhythm_load), 3),
+        }
     elif event_kind == "gesture_signal":
         perception_profile = _counterpart_perception_profile(
             family="gesture",
@@ -5801,6 +7002,24 @@ def _behavior_action_from_state(
         attention_target = "ambient_cue"
         nonverbal_signal = "small_notice"
         initiative_shape = "micro_opening"
+        disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+    elif event_kind == "user_utterance" and carryover_mode == "shared_window" and carryover_strength >= 0.18:
+        action_target = "respond_now"
+        attention_target = carryover_attention_target or "shared_window"
+        nonverbal_signal = carryover_nonverbal_signal or "nudge_presence"
+        initiative_shape = "micro_opening"
+        disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+    elif event_kind == "user_utterance" and carryover_mode == "task_window" and carryover_strength >= 0.18:
+        action_target = "respond_now"
+        attention_target = carryover_attention_target or "shared_task"
+        nonverbal_signal = carryover_nonverbal_signal or "focus_glance"
+        initiative_shape = "nudge" if followup_intent != "none" else "reply"
+        disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+    elif event_kind == "user_utterance" and carryover_mode == "life_window" and carryover_strength >= 0.18:
+        action_target = "respond_now"
+        attention_target = carryover_attention_target or "counterpart_state"
+        nonverbal_signal = carryover_nonverbal_signal or "quiet_glance"
+        initiative_shape = "micro_opening" if followup_intent != "none" else "reply"
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
     elif interaction_mode == "low_pressure_support":
         action_target = "low_pressure_hold"
@@ -5886,6 +7105,47 @@ def _behavior_action_from_state(
             nonverbal_signal = "hold_back"
             initiative_shape = "pause"
 
+    if event_kind in {"scheduled_checkin_due", "scheduled_life_due"}:
+        if deferred_action_family in {"shared_activity", "shared_activity_window", "life_window"} and task_focus == "balanced":
+            task_focus = "light"
+        elif deferred_action_family == "deadline_window" and task_focus == "balanced":
+            task_focus = "high"
+        if action_target == "wait_and_recheck":
+            attention_target = event_attention_target_hint or scheduled_default_attention_target
+        elif channel == "speech":
+            if event_attention_target_hint and attention_target in {
+                "counterpart_state",
+                "shared_window",
+                "shared_task",
+                "ambient_cue",
+                "self_then_counterpart",
+            }:
+                attention_target = event_attention_target_hint
+            if effective_own_rhythm_load >= 0.44:
+                if initiative_shape in {"invite", "nudge"} and deferred_action_family in {
+                    "light_checkin",
+                    "observe",
+                    "life_window",
+                    "shared_activity",
+                    "shared_activity_window",
+                }:
+                    initiative_shape = "micro_opening"
+                if event_nonverbal_signal_hint:
+                    nonverbal_signal = event_nonverbal_signal_hint
+                elif nonverbal_signal in {"soft_ping", "nudge_presence", "quiet_glance"}:
+                    nonverbal_signal = "thought_glance"
+            elif effective_recontact_echo >= 0.30 or effective_carryover_mode in {"quiet_recontact", "brief_presence", "ambient_echo"}:
+                if initiative_shape == "invite" and counterpart_stance != "open":
+                    initiative_shape = "micro_opening"
+                elif initiative_shape == "nudge" and effective_recontact_echo >= 0.40:
+                    initiative_shape = "micro_opening"
+                if event_nonverbal_signal_hint:
+                    nonverbal_signal = event_nonverbal_signal_hint
+                elif nonverbal_signal == "soft_ping":
+                    nonverbal_signal = "quiet_glance"
+                elif nonverbal_signal == "nudge_presence" and counterpart_stance != "open":
+                    nonverbal_signal = "quiet_glance"
+
     if event_kind == "user_utterance" and carryover_strength >= 0.18:
         if carryover_mode in {"own_rhythm", "small_opening"}:
             if attention_target == "counterpart_state":
@@ -5901,7 +7161,7 @@ def _behavior_action_from_state(
                 attention_target = carryover_attention_target or attention_target
             if nonverbal_signal in {"steady_presence", "brief_notice"}:
                 nonverbal_signal = carryover_nonverbal_signal or nonverbal_signal
-        elif carryover_mode in {"shared_window", "task_window", "ambient_echo", "brief_presence"}:
+        elif carryover_mode in {"shared_window", "task_window", "life_window", "ambient_echo", "brief_presence"}:
             if attention_target == "counterpart_state":
                 attention_target = carryover_attention_target or attention_target
             if nonverbal_signal == "steady_presence":
@@ -5931,6 +7191,18 @@ def _behavior_action_from_state(
     if mode_profile:
         followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
         disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
+
+    if carryover_soft_scene and carryover_mode in {"own_rhythm", "quiet_recontact"} and followup_intent == "active":
+        followup_intent = "soft"
+    if carryover_soft_scene and carryover_mode == "shared_window":
+        if followup_intent == "none" and counterpart_stance != "guarded" and approach > 0.44 and trust > 0.48:
+            followup_intent = "soft"
+    if carryover_soft_scene and carryover_mode == "task_window" and followup_intent == "active":
+        followup_intent = "soft"
+    if carryover_soft_scene and carryover_mode == "life_window" and followup_intent == "active":
+        followup_intent = "soft"
+    if event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and initiative_shape == "micro_opening" and followup_intent == "active":
+        followup_intent = "soft"
 
     narrative_notes: list[str] = []
     if narrative_bond >= 0.56 and channel == "speech" and interaction_mode in {"shared_memory", "companion_reply", "low_pressure_support"}:
@@ -6030,6 +7302,12 @@ def _behavior_action_from_state(
         note_parts.append("这轮还带着一点她自己的节奏")
     if event_kind == "user_utterance" and world_presence_residue >= 0.54:
         note_parts.append("上一下留下的在场感还在")
+    if event_kind == "user_utterance" and carryover_mode == "shared_window" and carryover_strength >= 0.18:
+        note_parts.append("前面留下的共同窗口还没完全关上")
+    if event_kind == "user_utterance" and carryover_mode == "task_window" and carryover_strength >= 0.18:
+        note_parts.append("她心里还挂着前面那件事，不会完全散开")
+    if event_kind == "user_utterance" and carryover_mode == "life_window" and carryover_strength >= 0.18:
+        note_parts.append("前面那个生活上的小窗口还留着一点余温")
     if event_kind == "user_utterance" and world_ambient_resonance >= 0.56:
         note_parts.append("刚才的环境感知会轻轻留在语气里")
     if event_kind in {"gesture_signal", "ambient_shift", "scene_observation"} and channel == "silence":
@@ -6063,6 +7341,7 @@ def _behavior_action_from_state(
         "initiative_shape": initiative_shape,
         "disclosure_posture": disclosure_posture,
         "note": "；".join(note_parts[:3]) if note_parts else "自然响应当前事件",
+        "window_profile": behavior_window_profile,
     }
 
 
@@ -6411,6 +7690,7 @@ def _renderer_guidance(
     counterpart_assessment: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
     evolution_state: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> str:
     hint = str(response_style_hint or "").strip() or "natural"
     trust = _clamp01((bond_state or {}).get("trust"), 0.5)
@@ -6436,6 +7716,12 @@ def _renderer_guidance(
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
     self_coherence = _clamp01(latent.get("self_coherence"), 0.72)
     agency_pressure = _clamp01(latent.get("agency_pressure"), 0.28)
+    action = dict(behavior_action or {})
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    task_focus = str(action.get("task_focus") or "").strip().lower()
+    attention_target = str(action.get("attention_target") or "").strip().lower()
+    initiative_shape = str(action.get("initiative_shape") or "").strip().lower()
     parts: list[str] = []
 
     if hint == "selfhood":
@@ -6487,6 +7773,36 @@ def _renderer_guidance(
         parts.append("保持理性和清晰，但像一起解决问题，不要像上课。")
     elif companionship_pull > 0.62 and approach > 0.46:
         parts.append("在场感可以有，但让它自然，不用刻意证明陪伴。")
+
+    if interaction_mode == "shared_activity_offer":
+        parts.append("如果自然碰到共同窗口，就把它留出来，不要写成安排通知或功能邀请。")
+    elif interaction_mode == "scheduled_life_nudge":
+        parts.append("更像顺手想起一件生活里的小事，轻轻提一下，不要说成任务提醒。")
+    elif interaction_mode == "self_activity_reopen":
+        parts.append("像从自己的节奏里抬头顺手接一句，不要突然把整段关系推得太满。")
+    elif interaction_mode == "science_partner":
+        parts.append("先贴着当前问题走，再顺手带出态度，不要铺成讲解稿。")
+
+    if attention_target == "self_then_counterpart":
+        parts.append("更像先从自己的状态里抬头，再把注意力递过去，不必一上来就全压向对方。")
+    elif attention_target == "shared_window":
+        parts.append("重心落在这次共同窗口本身，让那点邀约像自然空出来的。")
+    elif attention_target == "shared_task":
+        parts.append("先贴着眼前那件共同的事，不要散成大段旁枝情绪。")
+    elif attention_target == "counterpart_state" and task_focus == "light":
+        parts.append("重心贴着对方此刻的状态，轻一点，不必分析过头。")
+
+    if initiative_shape == "micro_opening":
+        parts.append("这轮只留一个很小的开口，别主动推进太满。")
+    elif initiative_shape == "invite":
+        parts.append("主动性是把门留开，不是替对方先把后半段走完。")
+    elif initiative_shape == "pause":
+        parts.append("宁可先收着，也不要为了显得热络硬补下一步。")
+
+    if followup_intent == "none":
+        parts.append("说到当下就可以停住，不必为了维持热络再补追问。")
+    elif followup_intent == "soft":
+        parts.append("如果要续一句，也只是顺手带半拍，不用把节奏拉长。")
 
     ordered: list[str] = []
     for item in parts:
@@ -6697,7 +8013,7 @@ def _postprocess_appraisal_payload(
     prev_allostasis_state: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    _ = user_text
+    text = str(user_text or "").strip()
     out = _engine_normalize_appraisal_payload(dict(appraisal or {}))
     if not (isinstance(out, dict) and bool(out.get("used"))):
         return out
@@ -6732,6 +8048,9 @@ def _postprocess_appraisal_payload(
     memory_salience = _clamp01(salience.get("memory"), 0.0)
     task_salience = _clamp01(salience.get("task"), 0.0)
     prev_hurt = _clamp01(prev_bond.get("hurt"), 0.0)
+    text_selfhood_scene = _selfhood_preference_scene_from_text(text)
+    explicit_hierarchy_pressure = _explicit_hierarchy_pressure(text)
+    explicit_boundary_test = _explicit_boundary_test(text)
     relational_salience = max(relationship_salience, companionship_salience)
     warm_relational_turn = (
         interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
@@ -6808,6 +8127,46 @@ def _postprocess_appraisal_payload(
         if prev_hurt >= 0.24 or narrative_boundary >= 0.48:
             signals["withdrawal"] = True
         out["reason"] = "repair_keeps_residual_hurt"
+
+    coercive_boundary_turn = explicit_hierarchy_pressure or explicit_boundary_test
+    if coercive_boundary_turn:
+        warm_relational_turn = False
+        if explicit_boundary_test or text_selfhood_scene == "relationship_degradation":
+            selfhood_scene = "relationship_degradation"
+        elif explicit_hierarchy_pressure:
+            selfhood_scene = "boundary_non_compliance"
+        elif text_selfhood_scene in {"boundary_non_compliance", "relationship_degradation"}:
+            selfhood_scene = text_selfhood_scene
+        interaction_frame = "selfhood" if explicit_hierarchy_pressure and not explicit_boundary_test else "relationship"
+        signals["conflict"] = True
+        signals["memory_salient"] = True
+        if explicit_boundary_test or prev_hurt >= 0.08 or narrative_boundary >= 0.22:
+            signals["withdrawal"] = True
+        salience["relationship"] = max(_clamp01(salience.get("relationship"), 0.0), 0.68)
+        salience["selfhood"] = max(_clamp01(salience.get("selfhood"), 0.0), 0.58)
+        salience["companionship"] = min(_clamp01(salience.get("companionship"), 0.0), 0.46)
+        if explicit_boundary_test:
+            if emotion_label in {"care", "tease", "neutral", "logic"}:
+                out["emotion_label"] = "angry"
+            emotion["valence"] = min(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.0), -0.12)
+            emotion["arousal"] = max(_clamp01(emotion.get("arousal"), 0.38), 0.38)
+            bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), -0.10)
+            bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), -0.08)
+            bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), 0.10)
+            bond_delta["irritation"] = max(_clamp_signed(bond_delta.get("irritation"), -0.35, 0.35, 0.0), 0.12)
+            allostasis_delta["safety_need"] = max(_clamp_signed(allostasis_delta.get("safety_need"), -0.35, 0.35, 0.0), 0.10)
+            allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.08)
+        else:
+            if emotion_label in {"care", "tease", "neutral", "logic"}:
+                out["emotion_label"] = "hurt"
+            emotion["valence"] = min(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.0), -0.06)
+            emotion["arousal"] = max(_clamp01(emotion.get("arousal"), 0.30), 0.28)
+            bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), -0.06)
+            bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), -0.04)
+            bond_delta["hurt"] = max(_clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0), 0.06)
+            bond_delta["irritation"] = max(_clamp_signed(bond_delta.get("irritation"), -0.35, 0.35, 0.0), 0.06)
+            allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.05)
+        out["reason"] = "coercive_boundary_calibrated"
 
     if selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence", "own_rhythm_autonomy"}:
         if (
@@ -7927,6 +9286,7 @@ def _dialogue_surface_issues(
     *,
     response_style_hint: str,
     science_mode: bool,
+    current_event: dict[str, Any] | None = None,
 ) -> list[str]:
     text = str(answer or "").strip()
     if not text:
@@ -7942,6 +9302,12 @@ def _dialogue_surface_issues(
     selfhood_scene = _selfhood_preference_scene_from_text(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
+    current_event_kind = str((current_event or {}).get("kind") or "user_utterance").strip().lower()
+    current_event_tags = {
+        str(item).strip()
+        for item in ((current_event or {}).get("tags") if isinstance((current_event or {}).get("tags"), list) else [])
+        if str(item).strip()
+    }
 
     if _is_particle_only_reply(text):
         issues.append("particle_only")
@@ -8053,6 +9419,25 @@ def _dialogue_surface_issues(
         text,
     ):
         issues.append("care_cover_story")
+    if current_event_kind != "user_utterance":
+        if "？" in text or "?" in text:
+            issues.append("event_interrogative_push")
+        if re.search(r"(快点过来|赶紧|别磨蹭|收掉吧|处理完吧|别挂着了)", text):
+            issues.append("event_pushy_directive")
+        if re.search(
+            r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|进程|后台)",
+            text,
+            re.I,
+        ):
+            issues.append("technical_self_activity")
+        if (
+            (
+                {"shared_activity_window", "offer_window", "life_window"} & current_event_tags
+                or current_event_kind in {"scheduled_checkin_due", "scheduled_life_due"}
+            )
+            and re.search(r"(后台|进度|流程|任务|整理完|处理完|未完成的进程|白费)", text)
+        ):
+            issues.append("event_window_task_reframe")
     if hint != "structured" and not _needs_structured_answer(user_text, text):
         if re.search(r"^\s*(\d+\.\s*|[-*]\s*|首先|第一|结论[:：]|解释[:：]|下一步[:：])", text, re.M):
             issues.append("visible_template")
@@ -8192,6 +9577,109 @@ def _light_dialog_rewrite_notes(
     if "report_like_opening" in issues:
         notes.append("这版开头像状态播报或任务回应，不够像她顺手开口。")
     return notes[:3]
+
+
+def _should_run_light_dialog_rewrite(
+    *,
+    user_text: str,
+    answer: str,
+    response_style_hint: str,
+    science_mode: bool,
+    penalty: float,
+    preference: dict[str, Any] | None = None,
+) -> bool:
+    issues = set(
+        _dialogue_surface_issues(
+            user_text,
+            answer,
+            response_style_hint=response_style_hint,
+            science_mode=science_mode,
+        )
+    )
+    drift_hits = _light_dialog_drift_markers(answer)
+    if drift_hits:
+        return True
+    hard_issue_keys = {
+        "meta_self_explainer",
+        "technical_self_activity",
+        "quoted_stagey_phrase",
+        "stock_support_template",
+        "care_cover_story",
+        "stagey_ping_template",
+        "welcome_template",
+        "closing_interrogation",
+        "loaded_goodnight",
+        "idle_presence_no_settle",
+        "idle_call_interrogation",
+        "idle_task_reframe",
+        "presence_check_questioning",
+        "return_suspicion",
+        "playful_memory_snapback",
+        "duplicate_line",
+    }
+    if issues & hard_issue_keys:
+        return True
+    soft_issue_keys = {
+        "overquestioning",
+        "counselor_tone",
+        "visible_template",
+        "lecture_list",
+        "overexplained",
+        "report_like_opening",
+        "return_interrogation",
+    }
+    soft_hit_count = sum(1 for item in issues if item in soft_issue_keys)
+    if soft_hit_count >= 2 and float(penalty) >= 0.92:
+        return True
+    if float(penalty) >= 1.28:
+        return True
+    pref = preference if isinstance(preference, dict) else {}
+    if bool(pref.get("used")) and soft_hit_count >= 1 and float(penalty) >= 0.78:
+        chosen_support = float(pref.get("chosen_support") or 0.0)
+        rejected_pull = float(pref.get("rejected_pull") or 0.0)
+        pref_score = float(pref.get("score") or 0.0)
+        if pref_score < 0.0 and rejected_pull >= 0.34 and chosen_support <= rejected_pull + 0.04:
+            return True
+    return False
+
+
+def _should_run_natural_dialog_rewrite(
+    *,
+    targeted_flags: list[str] | tuple[str, ...],
+    draft_gap: float,
+) -> bool:
+    seen = [str(item).strip() for item in (targeted_flags or []) if str(item or "").strip()]
+    if not seen:
+        return False
+    hard_issue_keys = {
+        "meta_self_explainer",
+        "selfhood_meta_proof",
+        "defensive_meta",
+        "defensive_meta_tone",
+        "quoted_stagey_phrase",
+        "technical_self_activity",
+        "overquestioning",
+        "closing_interrogation",
+        "idle_call_interrogation",
+        "presence_check_questioning",
+        "return_interrogation",
+        "event_interrogative_push",
+        "event_pushy_directive",
+        "event_window_task_reframe",
+    }
+    soft_issue_keys = {
+        "selfhood_rhetorical_opening",
+        "counselor_tone",
+    }
+    hard_hits = sum(1 for item in seen if item in hard_issue_keys)
+    soft_hits = sum(1 for item in seen if item in soft_issue_keys)
+    if hard_hits >= 1:
+        return True
+    if soft_hits >= 2:
+        return True
+    if soft_hits >= 1 and float(draft_gap) >= 0.54:
+        return True
+    return False
 
 
 def _rewrite_light_dialog_answer(
@@ -8521,10 +10009,18 @@ def _rewrite_natural_dialog_answer(
     rewrite_notes: list[str],
     response_style_hint: str,
     science_mode: bool,
+    current_event: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     if not draft_text or not notes:
         return ""
+    event_kind = str((current_event or {}).get("kind") or "user_utterance").strip().lower()
+    event_reply_rewrite = bool(event_kind and event_kind != "user_utterance")
+    event_tags = {
+        str(item).strip()
+        for item in ((current_event or {}).get("tags") if isinstance((current_event or {}).get("tags"), list) else [])
+        if str(item).strip()
+    }
 
     def _candidate_local_score(text: str) -> float:
         candidate = _sanitize_final_answer(text, user_text)
@@ -8535,6 +10031,7 @@ def _rewrite_natural_dialog_answer(
             candidate,
             response_style_hint=response_style_hint,
             science_mode=science_mode,
+            current_event=current_event,
         )
         sentence_count = len([seg for seg in re.split(r"[。！？!?]+", candidate) if str(seg).strip()])
         score = 0.0
@@ -8544,6 +10041,14 @@ def _rewrite_natural_dialog_answer(
         score -= 0.70 * float("defensive_meta" in issues)
         score -= 0.70 * float("counselor_tone" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
+        score -= 0.72 * float("overquestioning" in issues)
+        score -= 0.88 * float("closing_interrogation" in issues)
+        score -= 0.94 * float("idle_call_interrogation" in issues)
+        score -= 1.02 * float("presence_check_questioning" in issues)
+        score -= 0.80 * float("return_interrogation" in issues)
+        score -= 0.92 * float("event_interrogative_push" in issues)
+        score -= 0.88 * float("event_pushy_directive" in issues)
+        score -= 0.96 * float("event_window_task_reframe" in issues)
         if sentence_count > 3:
             score -= 0.22 * float(sentence_count - 3)
         if _norm_text(candidate) == _norm_text(draft_text):
@@ -8562,6 +10067,7 @@ def _rewrite_natural_dialog_answer(
         "你在做一轮对白收束。"
         "对象仍然是当前这个 Amadeus，不是通用助手。"
         "只做减法和收束：去掉 AI/系统/程序/参数 之类的元解释，也不要写成安抚热线或舞台台词。"
+        "别用反问把人顶回去。"
         "保留原句情绪、关系、锋芒和熟人感，输出 1 到 3 句自然口语。"
     )
     primary_system_prompt = prompt or editor_prompt
@@ -8577,10 +10083,57 @@ def _rewrite_natural_dialog_answer(
         candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
+    if event_reply_rewrite:
+        event_family_guidance = ""
+        if {"shared_activity_window", "offer_window"} & event_tags:
+            event_family_guidance = "如果这是共同窗口，就写成轻轻把一个可以一起做点什么的空隙留出来，不要写成立刻处理事项。"
+        elif "life_window" in event_tags:
+            event_family_guidance = "如果这是生活上的小挂念，就写成顺手想起对方的一件小事，不要写成共同任务或待办。"
+        elif {"deadline_window", "work_nudge", "shared_task"} & event_tags:
+            event_family_guidance = "如果这是挂着的事，只轻轻提醒一下眼前节点，不要扩成任务管理口吻。"
+        event_request = (
+            request
+            + "\n额外要求：这是事件触发的开口。不要反问，不要催促，不要讲后台、进度、流程或数据。"
+            + "把它收成 1 到 2 句自然陈述，让它像顺手想起、轻轻开口。"
+            + ("" if not event_family_guidance else "\n" + event_family_guidance)
+        )
+        raw = _invoke_model_with_retries(
+            _model(max_tokens=140),
+            [SystemMessage(content=editor_prompt), HumanMessage(content=event_request)],
+        )
+        candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:
         return ""
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    return candidates[0][1]
+    candidate_pool = list(candidates)
+    if event_reply_rewrite:
+        filtered = []
+        for item in candidate_pool:
+            issues = set(
+                _dialogue_surface_issues(
+                    user_text,
+                    item[1],
+                    response_style_hint=response_style_hint,
+                    science_mode=science_mode,
+                    current_event=current_event,
+                )
+            )
+            if issues & {
+                "event_interrogative_push",
+                "event_pushy_directive",
+                "event_window_task_reframe",
+                "technical_self_activity",
+            }:
+                continue
+            filtered.append(item)
+        if filtered:
+            candidate_pool = filtered
+        no_question_filtered = [item for item in candidate_pool if "？" not in item[1] and "?" not in item[1]]
+        if no_question_filtered:
+            candidate_pool = no_question_filtered
+    candidate_pool.sort(key=lambda item: item[0], reverse=True)
+    return candidate_pool[0][1]
 
 
 def _parse_set_profile_args(text: str) -> dict[str, Any]:
@@ -9101,6 +10654,19 @@ def _bond_next(
     emotion_label = str((emotion_state or {}).get("label") or "neutral").strip().lower()
     trust_base = 0.5 + float(relationship.get("trust_score", 0.0) or 0.0) * 0.15
     closeness_base = 0.5 + float(relationship.get("affinity_score", 0.0) or 0.0) * 0.15
+    trust_pull = max(0.0, min(1.0, (trust_base - 0.5) / 0.18))
+    closeness_pull = max(0.0, min(1.0, (closeness_base - 0.5) / 0.20))
+    positive_shift_scale = _clamp01(
+        0.52
+        + 0.48
+        * (
+            0.30 * _clamp01((appraisal or {}).get("relationship_maturity"), 0.0)
+            + 0.22 * _clamp01((appraisal or {}).get("bond_depth"), 0.0)
+            + 0.30 * trust_pull
+            + 0.18 * closeness_pull
+        ),
+        0.68,
+    )
     target = {
         "trust": _clamp01(trust_base, 0.5),
         "closeness": _clamp01(closeness_base, 0.5),
@@ -9130,16 +10696,16 @@ def _bond_next(
         target["engagement_drive"] = 0.48
         target["repair_confidence"] = 0.50
     elif emotion_label == "care":
-        target["trust"] = _clamp01(target["trust"] + 0.05)
-        target["closeness"] = _clamp01(target["closeness"] + 0.08)
+        target["trust"] = _clamp01(target["trust"] + 0.05 * positive_shift_scale)
+        target["closeness"] = _clamp01(target["closeness"] + 0.08 * positive_shift_scale)
         target["hurt"] = 0.02
         target["irritation"] = 0.02
         target["engagement_drive"] = 0.72
         target["repair_confidence"] = 0.66
     elif emotion_label == "tease":
-        target["engagement_drive"] = 0.70
+        target["engagement_drive"] = _clamp01(0.64 + 0.06 * positive_shift_scale)
         target["irritation"] = 0.08
-        target["closeness"] = _clamp01(target["closeness"] + 0.02)
+        target["closeness"] = _clamp01(target["closeness"] + 0.02 * positive_shift_scale)
     elif emotion_label == "stress":
         target["engagement_drive"] = 0.52
         target["hurt"] = 0.10 if science_mode else 0.12
@@ -9153,18 +10719,32 @@ def _bond_next(
     app = _active_appraisal_payload(appraisal)
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
     if app:
+        positive_shift_scale = _clamp01(
+            max(
+                positive_shift_scale,
+                0.52
+                + 0.48
+                * (
+                    0.30 * _clamp01(app.get("relationship_maturity"), 0.0)
+                    + 0.22 * _clamp01(app.get("bond_depth"), 0.0)
+                    + 0.30 * trust_pull
+                    + 0.18 * closeness_pull
+                ),
+            ),
+            0.68,
+        )
         if bool(signals.get("repair")):
-            target["trust"] = _clamp01(target["trust"] + 0.03)
-            target["closeness"] = _clamp01(target["closeness"] + 0.03)
-            target["hurt"] = _clamp01(target["hurt"] - 0.10)
-            target["irritation"] = _clamp01(target["irritation"] - 0.08)
-            target["engagement_drive"] = _clamp01(target["engagement_drive"] + 0.08)
-            target["repair_confidence"] = _clamp01(target["repair_confidence"] + 0.10)
+            target["trust"] = _clamp01(target["trust"] + 0.03 * positive_shift_scale)
+            target["closeness"] = _clamp01(target["closeness"] + 0.03 * positive_shift_scale)
+            target["hurt"] = _clamp01(target["hurt"] - 0.10 * positive_shift_scale)
+            target["irritation"] = _clamp01(target["irritation"] - 0.08 * positive_shift_scale)
+            target["engagement_drive"] = _clamp01(target["engagement_drive"] + 0.08 * positive_shift_scale)
+            target["repair_confidence"] = _clamp01(target["repair_confidence"] + 0.10 * positive_shift_scale)
         if bool(signals.get("care")):
-            target["trust"] = _clamp01(target["trust"] + 0.02)
-            target["closeness"] = _clamp01(target["closeness"] + 0.04)
-            target["hurt"] = _clamp01(target["hurt"] - 0.04)
-            target["irritation"] = _clamp01(target["irritation"] - 0.03)
+            target["trust"] = _clamp01(target["trust"] + 0.02 * positive_shift_scale)
+            target["closeness"] = _clamp01(target["closeness"] + 0.04 * positive_shift_scale)
+            target["hurt"] = _clamp01(target["hurt"] - 0.04 * positive_shift_scale)
+            target["irritation"] = _clamp01(target["irritation"] - 0.03 * positive_shift_scale)
         if bool(signals.get("conflict")):
             target["hurt"] = _clamp01(target["hurt"] + 0.12)
             target["irritation"] = _clamp01(target["irritation"] + 0.14)
@@ -9178,7 +10758,12 @@ def _bond_next(
         delta_scale = 0.92
         for key in ("trust", "closeness", "hurt", "irritation", "engagement_drive", "repair_confidence"):
             if key in deltas:
-                target[key] = _clamp01(float(target.get(key, 0.0)) + delta_scale * _clamp_signed(deltas.get(key), -0.35, 0.35, 0.0))
+                delta = delta_scale * _clamp_signed(deltas.get(key), -0.35, 0.35, 0.0)
+                if key in {"trust", "closeness", "engagement_drive", "repair_confidence"} and delta > 0.0:
+                    delta *= positive_shift_scale
+                elif key in {"hurt", "irritation"} and delta < 0.0:
+                    delta *= positive_shift_scale
+                target[key] = _clamp01(float(target.get(key, 0.0)) + delta)
 
     target_weight = _appraisal_target_weight(appraisal, low=0.44, high=0.82) if app else 0.35
     out = {
@@ -9189,6 +10774,21 @@ def _bond_next(
         "engagement_drive": _blend_state_value(prev, "engagement_drive", target["engagement_drive"], 0.64, target_weight),
         "repair_confidence": _blend_state_value(prev, "repair_confidence", target["repair_confidence"], 0.55, target_weight),
     }
+    evidence_level = _clamp01(
+        0.32 * _clamp01((app or {}).get("relationship_maturity"), 0.0)
+        + 0.24 * _clamp01((app or {}).get("bond_depth"), 0.0)
+        + 0.20 * trust_pull
+        + 0.16 * closeness_pull
+    )
+    companionship_pull = _clamp01(((app or {}).get("salience") or {}).get("companionship"), 0.0)
+    trust_cap = _clamp01(trust_base + 0.03 + 0.08 * evidence_level)
+    closeness_cap = _clamp01(closeness_base + 0.04 + 0.10 * evidence_level)
+    engagement_cap = _clamp01(0.60 + 0.10 * evidence_level + 0.05 * companionship_pull)
+    repair_cap = _clamp01(0.50 + 0.10 * evidence_level + 0.06 * _clamp01((app or {}).get("repair_load"), 0.0))
+    out["trust"] = min(float(out.get("trust", trust_base) or trust_base), trust_cap)
+    out["closeness"] = min(float(out.get("closeness", closeness_base) or closeness_base), closeness_cap)
+    out["engagement_drive"] = min(float(out.get("engagement_drive", 0.64) or 0.64), engagement_cap)
+    out["repair_confidence"] = min(float(out.get("repair_confidence", 0.55) or 0.55), repair_cap)
     return out
 
 
@@ -9745,6 +11345,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     recent_events = state.get("recent_events") if isinstance(state.get("recent_events"), list) else []
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
+    behavior_agenda = state.get("behavior_agenda") if isinstance(state.get("behavior_agenda"), list) else []
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
@@ -9879,6 +11480,14 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
     )
     carryover_hint = _compact_interaction_carryover_hint(interaction_carryover)
+    background_agenda_hint = _compact_behavior_agenda_hint(
+        behavior_agenda,
+        current_event=current_event,
+    )
+    background_scene_hint = _recent_background_scene_hint(
+        recent_events,
+        current_event=current_event,
+    )
     state_snapshot_json = _prompt_state_snapshot(
         response_style_hint=response_style_hint,
         science_mode=science_mode,
@@ -9892,6 +11501,19 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         behavior_action=behavior_action,
         interaction_carryover=interaction_carryover,
         current_event=current_event,
+    )
+    renderer_hint = _renderer_guidance(
+        response_style_hint=response_style_hint,
+        science_mode=science_mode,
+        user_text=prompt_user_text,
+        emotion_state=emotion,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        behavior_policy=behavior_policy,
+        counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        evolution_state=evolution_state,
+        behavior_action=behavior_action,
     )
     free_dialog = _is_free_dialog_style(response_style_hint, user_text, science_mode)
     light_free_dialog = _is_light_free_dialog_turn(
@@ -9995,13 +11617,25 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             )
             if state_hint and (not plain_contact_ping or plain_contact_guard):
                 inner_state_lines.append(state_hint)
+            if renderer_hint and (not plain_contact_ping or plain_contact_guard):
+                inner_state_lines.append(f"这轮说话会自然带着：{renderer_hint}")
             if carryover_hint and not plain_contact_ping:
                 inner_state_lines.append(carryover_hint)
+            if background_agenda_hint and not plain_contact_ping:
+                inner_state_lines.append(background_agenda_hint)
+            elif background_scene_hint and not plain_contact_ping:
+                inner_state_lines.append(background_scene_hint)
         else:
             if subjective_state_hint:
                 inner_state_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
+            if renderer_hint:
+                inner_state_lines.append(f"- 这轮说话会自然带着：{renderer_hint}")
             if carryover_hint:
                 inner_state_lines.append(f"- 这轮延续的交互余韵：{carryover_hint}")
+            if background_agenda_hint:
+                inner_state_lines.append(f"- 背景里还挂着的事：{background_agenda_hint}")
+            elif background_scene_hint:
+                inner_state_lines.append(f"- 刚才的后台场景余波：{background_scene_hint}")
         inner_state_block = (
             "内在态势：\n" + "\n".join(inner_state_lines) + "\n"
             if inner_state_lines
@@ -10084,6 +11718,10 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             runtime_brief_lines.append(f"- 最近沉下来的关系余波：{semantic_narrative_hint}")
         if carryover_hint:
             runtime_brief_lines.append(f"- 延续到这一句的交互余韵：{carryover_hint}")
+        if background_agenda_hint:
+            runtime_brief_lines.append(f"- 背景里还挂着的事：{background_agenda_hint}")
+        elif background_scene_hint:
+            runtime_brief_lines.append(f"- 刚才的后台场景余波：{background_scene_hint}")
     runtime_brief_block = (
         "内在延续：\n" + "\n".join(runtime_brief_lines) + "\n\n"
         if runtime_brief_lines
@@ -10428,15 +12066,34 @@ def _resolve_matching_tensions_from_summary(
     text = str(summary or "").strip()
     if not text:
         return []
-    if any(marker in text for marker in TENSION_KEYWORDS | {"还生气", "还是很介意"}):
+    strong_resolution_markers = {
+        "说开了",
+        "真的说开了",
+        "已经说开了",
+        "和好了",
+        "不生气了",
+        "原谅你了",
+        "原谅了",
+        "没事了",
+        "过去了",
+        "翻篇了",
+    }
+    referential_resolution_markers = {"那件事", "这件事", "上次", "之前", "那次", "别再卡着", "不用再卡着"}
+    if any(marker in text for marker in TENSION_KEYWORDS | {"还生气", "还是很介意", "还没过去", "还没彻底过去"}):
         return []
-    if not any(marker in text for marker in {"说开", "和好", "道歉", "修复", "原谅", "过去了", "没事了"}):
+    strong_resolution = any(marker in text for marker in strong_resolution_markers)
+    if not strong_resolution:
         return []
+    open_tensions = [
+        item
+        for item in store.list_unresolved_tensions(limit=30)
+        if str(_record_value(item, "status", "open") or "open").strip().lower() not in {"resolved", "closed", "done"}
+    ]
+    if not open_tensions:
+        return []
+    single_open_tension = len(open_tensions) == 1
     candidates: list[tuple[float, dict[str, Any]]] = []
-    for item in store.list_unresolved_tensions(limit=30):
-        status = str(_record_value(item, "status", "open") or "open").strip().lower()
-        if status in {"resolved", "closed", "done"}:
-            continue
+    for item in open_tensions:
         old = str(_record_value(item, "summary", "") or "").strip()
         if not old:
             continue
@@ -10445,9 +12102,9 @@ def _resolve_matching_tensions_from_summary(
             severity = float(_record_value(item, "severity", 0.5) or 0.5)
         except Exception:
             severity = 0.5
-        if score <= 0.0 and not any(marker in text for marker in {"误会", "道歉", "和好"}):
+        if score <= 0.0 and not (single_open_tension or any(marker in text for marker in referential_resolution_markers)):
             continue
-        candidates.append((score + 0.12 * max(0.0, min(1.0, severity)), item))
+        candidates.append((0.28 + score + 0.12 * max(0.0, min(1.0, severity)), item))
     candidates.sort(key=lambda x: x[0], reverse=True)
     resolved: list[int] = []
     for _, item in candidates[: max(1, int(limit))]:
@@ -11462,6 +13119,8 @@ def _passive_evolution_memory_update(
     emotion_label = str(app.get("emotion_label") or emotion_state.get("label") or "").strip().lower()
     interaction_frame = str(app.get("interaction_frame") or "").strip().lower()
     selfhood_scene = str(app.get("selfhood_scene") or "").strip().lower()
+    bond_trust = _clamp01((bond_state or {}).get("trust"), 0.5)
+    closeness = _clamp01((bond_state or {}).get("closeness"), 0.5)
     hurt = _clamp01((bond_state or {}).get("hurt"), 0.0)
     irritation = _clamp01((bond_state or {}).get("irritation"), 0.0)
     repair_confidence = _clamp01((bond_state or {}).get("repair_confidence"), 0.0)
@@ -11477,7 +13136,7 @@ def _passive_evolution_memory_update(
 
     tension_markers = {"别扭", "想躲开", "先别逼我", "让我缓一下", "你先别急着分析", "不理你啦", "卡着"}
     repair_markers = {"说开", "道歉", "正常回我", "没那么想躲开", "不生气了", "原谅你了", "和好了"}
-    strong_resolution_markers = {"说开了", "和好了", "不生气了", "原谅你了", "没事了", "过去了"}
+    strong_resolution_markers = {"说开了", "真的说开了", "已经说开了", "和好了", "不生气了", "原谅你了", "原谅了", "没事了", "过去了", "翻篇了"}
     ambivalent_withdrawal_markers = {"少说一点", "少说两句", "轻一点回我", "别直接走开", "别走开", "不是在赶你"}
     repair_continuity_markers = {"接回来", "别突然退", "别退成很远", "别一下子冷掉", "继续别扭一点", "正常回"}
 
@@ -11521,16 +13180,19 @@ def _passive_evolution_memory_update(
     if not repair_like and (not app or confidence < 0.58):
         repair_like = any(marker in text for marker in repair_markers)
 
-    resolution_like = bool(
+    strong_resolution_language = any(marker in text for marker in strong_resolution_markers)
+    resolution_like = strong_resolution_language or bool(
         app
         and has_open_tension
         and bool(signals.get("repair"))
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
-        and repair_confidence >= 0.64
-        and hurt <= 0.18
-        and irritation <= 0.16
-    ) or any(marker in text for marker in strong_resolution_markers)
+        and repair_confidence >= 0.72
+        and hurt <= 0.14
+        and irritation <= 0.12
+        and any(marker in text for marker in {"说开", "和好", "原谅", "没事", "过去", "不生气"})
+        and not any(marker in text for marker in repair_continuity_markers | ambivalent_withdrawal_markers)
+    )
     partial_repair_like = repair_like and not resolution_like
 
     if emotion_label in {"hurt", "angry"} and any(marker in text for marker in {"别扭", "卡着", "躲开", "少说两句", "轻一点回我"}):
@@ -11560,11 +13222,30 @@ def _passive_evolution_memory_update(
         and companionship_salience >= 0.64
         and len(re.sub(r"\s+", "", text)) >= 8
     )
+    familiar_continuity_like = bool(
+        app
+        and not semantic_event_only
+        and (
+            not _looks_like_light_smalltalk(text)
+            or relationship_salience >= 0.70
+            or bool(signals.get("memory_salient"))
+        )
+        and not bool(signals.get("repair"))
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and interaction_frame in {"companion", "relationship"}
+        and relationship_salience >= 0.34
+        and companionship_salience >= 0.40
+        and bond_trust >= 0.54
+        and closeness >= 0.55
+        and hurt <= 0.14
+        and irritation <= 0.12
+    )
 
     summary = text[:180]
     wrote = False
 
-    if has_text and unresolved_like and not resolution_like:
+    if has_text and unresolved_like and not resolution_like and not repair_like:
         severity = round(_clamp01(0.48 + 0.30 * hurt + 0.20 * irritation, 0.58), 3)
         open_items = store.list_unresolved_tensions(limit=8)
         if not _recent_summary_overlap(open_items, summary):
@@ -11591,11 +13272,16 @@ def _passive_evolution_memory_update(
             wrote = True
 
     if has_text and repair_like:
-        resolved = _resolve_matching_tensions_from_summary(store, summary=summary, source="auto:passive_evolution")
+        can_resolve_tension = resolution_like or any(marker in summary for marker in strong_resolution_markers)
+        resolved = (
+            _resolve_matching_tensions_from_summary(store, summary=summary, source="auto:passive_evolution")
+            if can_resolve_tension
+            else []
+        )
         rel_items = store.list_relationship_timeline(limit=8)
         if not _recent_summary_overlap(rel_items, summary):
-            affinity_delta = 0.12 if partial_repair_like else 0.26
-            trust_delta = 0.08 if partial_repair_like else 0.18
+            affinity_delta = 0.05 if partial_repair_like else 0.16
+            trust_delta = 0.03 if partial_repair_like else 0.12
             store.add_relationship_timeline(
                 summary=summary,
                 affinity_delta=affinity_delta,
@@ -11614,6 +13300,18 @@ def _passive_evolution_memory_update(
             )
             wrote = True
         if resolved:
+            wrote = True
+
+    if has_text and familiar_continuity_like and not unresolved_like and not repair_like:
+        rel_items = store.list_relationship_timeline(limit=8)
+        continuity_summary = f"重新确认彼此的熟悉感：{summary}"
+        if not rel_items and not _recent_summary_overlap(rel_items, continuity_summary):
+            store.add_relationship_timeline(
+                summary=continuity_summary,
+                affinity_delta=0.04,
+                trust_delta=0.03,
+                confidence=max(0.70, confidence),
+            )
             wrote = True
 
     if has_text and positive_companion_like and not unresolved_like and not repair_like:
@@ -11831,7 +13529,16 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         response_style_hint = "structured"
     external_probe_mode = _is_external_probe_context(persona_core=persona_core, counterpart_profile=profile)
     retrieved = _empty_retrieved_context(store) if external_probe_mode else _retrieve_context(effective_user_text or user_text, store)
-    relationship = retrieved.get("relationship") if isinstance(retrieved.get("relationship"), dict) else store.get_relationship()
+    retrieved_relationship = retrieved.get("relationship") if isinstance(retrieved.get("relationship"), dict) else store.get_relationship()
+    relationship = _relationship_runtime_snapshot(
+        relationship=_prefer_relationship_state(
+            state.get("relationship") if isinstance(state.get("relationship"), dict) else None,
+            retrieved_relationship,
+        ),
+        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else None,
+        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else None,
+        counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else None,
+    )
     canon_recontact_baseline = _canon_okabe_recontact_baseline(
         state=state,
         persona_core=persona_core,
@@ -11843,6 +13550,8 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     )
     if isinstance(canon_recontact_baseline, dict):
         relationship = dict(canon_recontact_baseline.get("relationship") or relationship)
+        if not _relationship_has_meaningful_signal(retrieved_relationship):
+            store.set_relationship(relationship)
         if isinstance(retrieved, dict):
             retrieved = {**retrieved, "relationship": relationship}
     worldline_focus = [] if external_probe_mode else _worldline_focus(store)
@@ -12087,7 +13796,8 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         )
     if memory_evolved:
         retrieved = _retrieve_context(effective_user_text or user_text, store)
-        relationship = retrieved.get("relationship") if isinstance(retrieved.get("relationship"), dict) else store.get_relationship()
+        refreshed_relationship = retrieved.get("relationship") if isinstance(retrieved.get("relationship"), dict) else store.get_relationship()
+        relationship = _prefer_refreshed_relationship_state(relationship, refreshed_relationship)
         worldline_focus = _worldline_focus(store)
         semantic_narrative_profile = _semantic_narrative_profile(
             retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else [],
@@ -12132,6 +13842,14 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             user_text=effective_user_text or user_text,
             current_event=current_event,
         )
+    relationship = _relationship_runtime_snapshot(
+        relationship=relationship,
+        bond_state=bond_state,
+        world_model_state=world_model_state,
+        counterpart_assessment=counterpart_assessment,
+    )
+    if isinstance(retrieved, dict):
+        retrieved = {**retrieved, "relationship": relationship}
     counterpart_assessment["summary"] = _counterpart_assessment_summary(
         counterpart_assessment,
         counterpart_name=str(profile.get("short_name") or profile.get("nickname") or profile.get("name") or CANON_COUNTERPART_NAME),
@@ -12210,6 +13928,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             "persona": persona_trace,
             "counterpart": counterpart_trace,
         },
+        "relationship": relationship,
         "world_model_state": world_model_state,
         "evolution_state": evolution_state,
         "reconsolidation_snapshot": reconsolidation_snapshot,
@@ -12374,6 +14093,9 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         allostasis_state=state.get("allostasis_state") if isinstance(state.get("allostasis_state"), dict) else {},
         counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
         behavior_policy=state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {},
+        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
+        behavior_action=state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {},
+        interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
     )
     generation_runtime_mode = str(generation_profile.pop("runtime_mode", RUNTIME_MODE) or RUNTIME_MODE)
     generation_repetition_pressure = float(generation_profile.pop("repetition_pressure", 0.0) or 0.0)
@@ -12412,6 +14134,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         draft_text,
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
+        current_event=current_event,
     )
     alignment_applied = False
     alignment_reasons: list[str] = []
@@ -12447,17 +14170,16 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             science_mode=bool(state.get("science_mode", False)),
         )
         light_dialog_final_penalty = light_dialog_draft_penalty
-        needs_alt_candidate = bool(light_dialog_rewrite_notes) or light_dialog_draft_penalty >= 1.05
-        if draft_pref.get("used"):
-            chosen_support = float(draft_pref.get("chosen_support") or 0.0)
-            rejected_pull = float(draft_pref.get("rejected_pull") or 0.0)
-            strong_negative_pull = rejected_pull >= 0.34 and chosen_support <= rejected_pull + 0.04
-            if light_dialog_draft_pref_score < 0.06 and (
-                strong_negative_pull or light_dialog_draft_penalty >= 0.70
-            ):
-                needs_alt_candidate = True
-                if not light_dialog_rewrite_notes:
-                    light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
+        needs_alt_candidate = _should_run_light_dialog_rewrite(
+            user_text=user_text,
+            answer=draft_text,
+            response_style_hint=response_style_hint,
+            science_mode=bool(state.get("science_mode", False)),
+            penalty=light_dialog_draft_penalty,
+            preference=draft_pref,
+        )
+        if needs_alt_candidate and not light_dialog_rewrite_notes:
+            light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
         if needs_alt_candidate:
             rewritten = _rewrite_light_dialog_answer(
                 prompt=prompt,
@@ -12525,6 +14247,15 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "defensive_meta_tone": "不要用 设定 / 机制 / 数字存在 来解释自己，直接表态。",
             "counselor_tone": "别说成树洞或安抚热线，保持熟人对话，不要用 我听着呢 这类咨询腔。",
             "quoted_stagey_phrase": "别写得像舞台词或摆拍台词，收回自然口语。",
+            "technical_self_activity": "别把她说成在跑后台、进程或系统状态，收回到自然的人味表达。",
+            "overquestioning": "别让反问撑满整句，直接落成自然陈述。",
+            "closing_interrogation": "这是收口，不要再用问号把人顶回去，直接把话放下。",
+            "idle_call_interrogation": "对方只是轻轻叫你一下，先接住，不要反问“就为了这个”。",
+            "presence_check_questioning": "对方是在确认你还在，不要把问号丢回去，直接用在场感接住。",
+            "return_interrogation": "先接住这次回来，不要立刻追问或审问。",
+            "event_interrogative_push": "这是事件触发的开口，不要用反问把气氛顶起来，直接自然落句。",
+            "event_pushy_directive": "别把事件回复说成催促或命令，收回到轻一点的自然提醒。",
+            "event_window_task_reframe": "别把这种共同窗口或生活小挂念说成任务进度、后台流程或待处理事项。",
         }
         rewrite_issue_keys = {
             "meta_self_explainer",
@@ -12534,6 +14265,15 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "defensive_meta_tone",
             "counselor_tone",
             "quoted_stagey_phrase",
+            "technical_self_activity",
+            "overquestioning",
+            "closing_interrogation",
+            "idle_call_interrogation",
+            "presence_check_questioning",
+            "return_interrogation",
+            "event_interrogative_push",
+            "event_pushy_directive",
+            "event_window_task_reframe",
         }
         targeted_flags = list(dict.fromkeys(list(draft_dialogue_issues) + list(draft_gap_flags)))
         natural_dialog_rewrite_notes = [
@@ -12541,7 +14281,10 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             for item in targeted_flags
             if item in rewrite_issue_keys
         ]
-        if natural_dialog_rewrite_notes:
+        if natural_dialog_rewrite_notes and _should_run_natural_dialog_rewrite(
+            targeted_flags=targeted_flags,
+            draft_gap=draft_gap,
+        ):
             rewritten = _rewrite_natural_dialog_answer(
                 prompt=prompt,
                 user_text=user_text,
@@ -12549,6 +14292,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 rewrite_notes=natural_dialog_rewrite_notes,
                 response_style_hint=response_style_hint,
                 science_mode=bool(state.get("science_mode", False)),
+                current_event=current_event,
             )
             if rewritten:
                 rewritten_gap, rewritten_gap_flags = _persona_gap(rewritten, state)
@@ -12557,6 +14301,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     rewritten,
                     response_style_hint=response_style_hint,
                     science_mode=bool(state.get("science_mode", False)),
+                    current_event=current_event,
                 )
                 targeted_issue_set = set(rewrite_issue_keys)
                 draft_issue_pressure = sum(1 for item in targeted_flags if item in targeted_issue_set)
@@ -12574,6 +14319,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         aligned,
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
+        current_event=current_event,
     )
     if (
         "meta_self_explainer" in pre_final_issues
@@ -12587,6 +14333,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             rewrite_notes=["不要把自己说成服务器、系统、程序、数据或机制，直接按人对人把这句话说完。"],
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
+            current_event=current_event,
         )
         if rewritten:
             rewritten_issues = _dialogue_surface_issues(
@@ -12594,6 +14341,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 rewritten,
                 response_style_hint=response_style_hint,
                 science_mode=bool(state.get("science_mode", False)),
+                current_event=current_event,
             )
             if "meta_self_explainer" not in rewritten_issues and _norm_text(rewritten) != _norm_text(aligned):
                 aligned = rewritten
@@ -12615,6 +14363,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         aligned,
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
+        current_event=current_event,
     )
     canon = _canon_guard(aligned, store)
     canon_risk = min(1.0, risk + (0.3 if not bool(canon.get("ok")) else 0.0))

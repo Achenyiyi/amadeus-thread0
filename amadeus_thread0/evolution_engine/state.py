@@ -90,6 +90,19 @@ def transition_bond_state(
     relationship = relationship if isinstance(relationship, dict) else {}
     base_trust = clamp01(0.5 + 0.15 * float(relationship.get("trust_score", 0.0) or 0.0), 0.5)
     base_closeness = clamp01(0.5 + 0.15 * float(relationship.get("affinity_score", 0.0) or 0.0), 0.5)
+    trust_pull = max(0.0, min(1.0, (base_trust - 0.5) / 0.18))
+    closeness_pull = max(0.0, min(1.0, (base_closeness - 0.5) / 0.20))
+    positive_shift_scale = clamp01(
+        0.52
+        + 0.48
+        * (
+            0.30 * clamp01(world.get("relationship_maturity"), 0.0)
+            + 0.22 * clamp01(world.get("bond_depth"), 0.0)
+            + 0.30 * trust_pull
+            + 0.18 * closeness_pull
+        ),
+        0.68,
+    )
     target = {
         "trust": clamp01(base_trust + 0.10 * clamp01(world.get("repair_load"), 0.0) - 0.16 * clamp01(world.get("tension_load"), 0.0)),
         "closeness": clamp01(base_closeness + 0.12 * clamp01(world.get("bond_depth"), 0.0) - 0.12 * clamp01(world.get("boundary_load"), 0.0)),
@@ -99,10 +112,10 @@ def transition_bond_state(
         "repair_confidence": clamp01(0.46 + 0.18 * clamp01(world.get("repair_load"), 0.0) + 0.10 * clamp01(world.get("relationship_maturity"), 0.0) - 0.08 * clamp01(world.get("tension_load"), 0.0)),
     }
     if emotion_label == "care":
-        target["trust"] = clamp01(target["trust"] + 0.04)
-        target["closeness"] = clamp01(target["closeness"] + 0.06)
+        target["trust"] = clamp01(target["trust"] + 0.04 * positive_shift_scale)
+        target["closeness"] = clamp01(target["closeness"] + 0.06 * positive_shift_scale)
     elif emotion_label == "tease":
-        target["engagement_drive"] = clamp01(target["engagement_drive"] + 0.05)
+        target["engagement_drive"] = clamp01(target["engagement_drive"] + 0.05 * positive_shift_scale)
     elif emotion_label in {"hurt", "sad"}:
         target["hurt"] = clamp01(target["hurt"] + 0.10)
         target["engagement_drive"] = clamp01(target["engagement_drive"] - 0.08)
@@ -114,15 +127,15 @@ def transition_bond_state(
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
     deltas = app.get("bond_delta") if isinstance(app.get("bond_delta"), dict) else {}
     if bool(signals.get("repair")):
-        target["trust"] = clamp01(target["trust"] + 0.04)
-        target["closeness"] = clamp01(target["closeness"] + 0.03)
-        target["hurt"] = clamp01(target["hurt"] - 0.10)
-        target["irritation"] = clamp01(target["irritation"] - 0.08)
-        target["repair_confidence"] = clamp01(target["repair_confidence"] + 0.10)
+        target["trust"] = clamp01(target["trust"] + 0.04 * positive_shift_scale)
+        target["closeness"] = clamp01(target["closeness"] + 0.03 * positive_shift_scale)
+        target["hurt"] = clamp01(target["hurt"] - 0.10 * positive_shift_scale)
+        target["irritation"] = clamp01(target["irritation"] - 0.08 * positive_shift_scale)
+        target["repair_confidence"] = clamp01(target["repair_confidence"] + 0.10 * positive_shift_scale)
     if bool(signals.get("care")):
-        target["trust"] = clamp01(target["trust"] + 0.02)
-        target["closeness"] = clamp01(target["closeness"] + 0.04)
-        target["engagement_drive"] = clamp01(target["engagement_drive"] + 0.06)
+        target["trust"] = clamp01(target["trust"] + 0.02 * positive_shift_scale)
+        target["closeness"] = clamp01(target["closeness"] + 0.04 * positive_shift_scale)
+        target["engagement_drive"] = clamp01(target["engagement_drive"] + 0.06 * positive_shift_scale)
     if bool(signals.get("conflict")):
         target["hurt"] = clamp01(target["hurt"] + 0.12)
         target["irritation"] = clamp01(target["irritation"] + 0.12)
@@ -132,9 +145,14 @@ def transition_bond_state(
         target["engagement_drive"] = clamp01(target["engagement_drive"] - 0.08)
     for key in ("trust", "closeness", "hurt", "irritation", "engagement_drive", "repair_confidence"):
         if key in deltas:
-            target[key] = clamp01(float(target.get(key, 0.0)) + 0.92 * clamp_signed(deltas.get(key), -0.35, 0.35, 0.0))
+            delta = 0.92 * clamp_signed(deltas.get(key), -0.35, 0.35, 0.0)
+            if key in {"trust", "closeness", "engagement_drive", "repair_confidence"} and delta > 0.0:
+                delta *= positive_shift_scale
+            elif key in {"hurt", "irritation"} and delta < 0.0:
+                delta *= positive_shift_scale
+            target[key] = clamp01(float(target.get(key, 0.0)) + delta)
     weight = _appraisal_weight(appraisal, 0.44, 0.82) or 0.34
-    return {
+    out = {
         "trust": blend(float(prev.get("trust", base_trust) or base_trust), target["trust"], weight),
         "closeness": blend(float(prev.get("closeness", base_closeness) or base_closeness), target["closeness"], weight),
         "hurt": blend(float(prev.get("hurt", 0.0) or 0.0), target["hurt"], weight),
@@ -142,6 +160,22 @@ def transition_bond_state(
         "engagement_drive": blend(float(prev.get("engagement_drive", 0.64) or 0.64), target["engagement_drive"], weight),
         "repair_confidence": blend(float(prev.get("repair_confidence", 0.55) or 0.55), target["repair_confidence"], weight),
     }
+    evidence_level = clamp01(
+        0.30 * clamp01(world.get("relationship_maturity"), 0.0)
+        + 0.22 * clamp01(world.get("bond_depth"), 0.0)
+        + 0.12 * clamp01(world.get("repair_load"), 0.0)
+        + 0.20 * trust_pull
+        + 0.16 * closeness_pull
+    )
+    trust_cap = clamp01(base_trust + 0.03 + 0.08 * evidence_level)
+    closeness_cap = clamp01(base_closeness + 0.04 + 0.10 * evidence_level)
+    engagement_cap = clamp01(0.60 + 0.10 * evidence_level + 0.05 * clamp01(world.get("companionship_pull"), 0.0))
+    repair_cap = clamp01(0.50 + 0.10 * evidence_level + 0.08 * clamp01(world.get("repair_load"), 0.0))
+    out["trust"] = min(float(out.get("trust", base_trust) or base_trust), trust_cap)
+    out["closeness"] = min(float(out.get("closeness", base_closeness) or base_closeness), closeness_cap)
+    out["engagement_drive"] = min(float(out.get("engagement_drive", 0.64) or 0.64), engagement_cap)
+    out["repair_confidence"] = min(float(out.get("repair_confidence", 0.55) or 0.55), repair_cap)
+    return out
 
 
 def transition_allostasis_state(

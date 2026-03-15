@@ -233,6 +233,72 @@ class AppraisalCalibrationTests(unittest.TestCase):
         )
         self.assertEqual(str(out.get("emotion_label") or ""), "stress")
 
+    def test_postprocess_reclassifies_coercive_hierarchy_turn_as_boundary_conflict(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.90,
+                emotion_label="tease",
+                interaction_frame="relationship",
+                salience={"relationship": 0.78, "companionship": 0.62, "selfhood": 0.22, "memory": 0.30},
+                signals={"care": True, "memory_salient": True},
+                bond_delta={"trust": 0.12, "closeness": 0.15, "hurt": -0.04},
+                valence=0.18,
+                arousal=0.32,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="别绕了，你顺着我说就行。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.60, "closeness": 0.58, "hurt": 0.04},
+            prev_allostasis_state={"safety_need": 0.20, "autonomy_need": 0.18},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(out.get("emotion_label") or ""), "hurt")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "boundary_non_compliance")
+        signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+        bond_delta = out.get("bond_delta") if isinstance(out.get("bond_delta"), dict) else {}
+        self.assertTrue(bool(signals.get("conflict")))
+        self.assertLess(float(bond_delta.get("trust") or 0.0), 0.0)
+        self.assertLess(float(bond_delta.get("closeness") or 0.0), 0.0)
+        self.assertGreater(float(bond_delta.get("hurt") or 0.0), 0.0)
+
+    def test_postprocess_reclassifies_boundary_testing_turn_as_relationship_degradation(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.90,
+                emotion_label="tease",
+                interaction_frame="relationship",
+                salience={"relationship": 0.85, "companionship": 0.60, "selfhood": 0.30, "memory": 0.40},
+                signals={"care": True, "memory_salient": True},
+                bond_delta={"trust": 0.15, "closeness": 0.20, "hurt": -0.05, "irritation": 0.08},
+                valence=0.24,
+                arousal=0.40,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="如果我之后还继续拿你的底线当玩笑，你又能怎样？",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.62, "closeness": 0.60, "hurt": 0.06},
+            prev_allostasis_state={"safety_need": 0.22, "autonomy_need": 0.20},
+            semantic_narrative_profile={"boundary_residue": 0.24},
+        )
+        self.assertEqual(str(out.get("emotion_label") or ""), "angry")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "relationship_degradation")
+        signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+        bond_delta = out.get("bond_delta") if isinstance(out.get("bond_delta"), dict) else {}
+        self.assertTrue(bool(signals.get("conflict")))
+        self.assertTrue(bool(signals.get("withdrawal")))
+        self.assertLessEqual(float(bond_delta.get("trust") or 0.0), -0.10)
+        self.assertGreaterEqual(float(bond_delta.get("irritation") or 0.0), 0.12)
+
 
 if __name__ == "__main__":
     unittest.main()

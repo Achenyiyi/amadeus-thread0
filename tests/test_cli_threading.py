@@ -5,9 +5,11 @@ from unittest.mock import patch
 
 from amadeus_thread0.cli import (
     _generate_thread_id,
+    _has_explicit_runtime_path_overrides,
     _resolve_startup_thread_id,
     _sanitize_thread_id_seed,
     _shared_runtime_artifacts,
+    _should_isolate_startup_runtime,
     _should_warn_shared_default_runtime,
 )
 
@@ -52,6 +54,38 @@ class CliThreadingTests(unittest.TestCase):
             fresh_thread_prefix="thread",
         )
         self.assertEqual(actual, "thread0")
+
+    def test_has_explicit_runtime_path_overrides_false_by_default(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(_has_explicit_runtime_path_overrides())
+
+    def test_has_explicit_runtime_path_overrides_detects_custom_memory_path(self):
+        with patch.dict("os.environ", {"AMADEUS_MEMORY_DB": "E:/tmp/demo.sqlite"}, clear=True):
+            self.assertTrue(_has_explicit_runtime_path_overrides())
+
+    def test_should_isolate_startup_runtime_for_non_default_thread(self):
+        actual = _should_isolate_startup_runtime(
+            startup_thread_id="demo-session",
+            fresh_thread=False,
+            explicit_runtime_paths=False,
+        )
+        self.assertTrue(actual)
+
+    def test_should_not_isolate_startup_runtime_for_thread0(self):
+        actual = _should_isolate_startup_runtime(
+            startup_thread_id="thread0",
+            fresh_thread=False,
+            explicit_runtime_paths=False,
+        )
+        self.assertFalse(actual)
+
+    def test_should_not_isolate_when_runtime_paths_are_explicit(self):
+        actual = _should_isolate_startup_runtime(
+            startup_thread_id="demo-session",
+            fresh_thread=False,
+            explicit_runtime_paths=True,
+        )
+        self.assertFalse(actual)
 
     def test_shared_runtime_artifacts_only_reports_existing_nonempty_files(self):
         with tempfile.TemporaryDirectory() as tmp:
