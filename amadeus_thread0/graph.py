@@ -50,6 +50,7 @@ from .config import (
     LLM_APPRAISAL_CONFIDENCE_MIN,
     LLM_APPRAISAL_ENABLED,
     LLM_APPRAISAL_MAX_HISTORY_MESSAGES,
+    LLM_APPRAISAL_SOFT_CONFIDENCE_MIN,
     MODEL_DISABLE_STREAMING,
     MODEL_MAX_RETRIES,
     MODEL_RETRY_BACKOFF_S,
@@ -923,6 +924,64 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
         extra_tags.append("from_own_rhythm")
     if extra_tags:
         promoted["tags"] = list(dict.fromkeys([*(promoted.get("tags") or []), *extra_tags]))
+    return promoted
+
+
+def _promote_due_behavior_action_event(
+    event: EventPayload,
+    prior_current_event: Any,
+    prior_behavior_action: Any,
+) -> EventPayload:
+    if not isinstance(event, dict) or not event:
+        return event
+    if str(event.get("kind") or "").strip() != "time_idle":
+        return event
+    if not isinstance(prior_behavior_action, dict):
+        return event
+    if str(prior_behavior_action.get("action_target") or "").strip() != "wait_and_recheck":
+        return event
+    if not isinstance(prior_current_event, dict):
+        return event
+    if str(prior_current_event.get("kind") or "").strip() != "time_idle":
+        return event
+
+    try:
+        idle_minutes = max(0, int(event.get("idle_minutes") or 0))
+    except Exception:
+        idle_minutes = 0
+    try:
+        due_after = max(0, int(prior_behavior_action.get("timing_window_min") or 0))
+    except Exception:
+        due_after = 0
+    if idle_minutes < max(1, due_after):
+        return event
+
+    trigger_family = str(prior_behavior_action.get("deferred_action_family") or "light_checkin").strip() or "light_checkin"
+    tags = event.get("tags") if isinstance(event.get("tags"), list) else []
+    merged_tags = list(
+        dict.fromkeys(
+            [
+                *(str(item).strip() for item in tags if str(item).strip()),
+                "scheduled_due",
+                trigger_family,
+            ]
+        )
+    )
+    promoted = dict(event)
+    promoted.update(
+        {
+            "kind": "scheduled_checkin_due",
+            "source": "scheduler",
+            "event_frame": (
+                str(event.get("event_frame") or "").strip()
+                or "上一轮延后的轻量 check-in 现在到了。"
+            ),
+            "tags": merged_tags,
+            "derived_from_plan_kind": "implicit_deferred_checkin",
+            "trigger_family": trigger_family,
+            "scheduled_after_min": due_after,
+        }
+    )
     return promoted
 
 
@@ -1977,44 +2036,106 @@ def _scene_persona_axioms(
     return filtered[:3] or axioms[:3]
 
 
-def _light_free_dialog_state_hint(
+def _subjective_runtime_state_hint(
     *,
+    emotion_state: dict[str, Any] | None,
     bond_state: dict[str, Any] | None,
+    allostasis_state: dict[str, Any] | None,
     counterpart_assessment: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None,
     behavior_policy: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None = None,
+    light_touch: bool = False,
 ) -> str:
+    emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
+    allostasis = dict(allostasis_state or {})
     assessment = dict(counterpart_assessment or {})
+    narrative = dict(semantic_narrative_profile or {})
     policy = dict(behavior_policy or {})
+    world = dict(world_model_state or {})
     action = dict(behavior_action or {})
+    emotion_label = str(emotion.get("label") or "").strip().lower()
     trust = _clamp01(bond.get("trust"), 0.5)
     closeness = _clamp01(bond.get("closeness"), 0.5)
     hurt = _clamp01(bond.get("hurt"), 0.0)
+    safety_need = _clamp01(allostasis.get("safety_need"), 0.2)
+    autonomy_need = _clamp01(allostasis.get("autonomy_need"), 0.2)
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
     reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
     respect = _clamp01(assessment.get("respect_level"), 0.5)
     stance = str(assessment.get("stance") or "").strip().lower()
     approach = _clamp01(policy.get("approach_vs_withdraw"), 0.5)
     warmth = _clamp01(policy.get("warmth"), 0.5)
+    self_directedness = _clamp01(policy.get("self_directedness"), 0.25)
     interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
-    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    presence_residue = _clamp01(world.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
+    self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
+    narrative_bond = _clamp01(narrative.get("bond_depth"), 0.0)
+    narrative_repair = _clamp01(narrative.get("repair_residue"), 0.0)
+    narrative_tension = _clamp01(narrative.get("tension_residue"), 0.0)
+    narrative_boundary = _clamp01(narrative.get("boundary_residue"), 0.0)
+    narrative_selfhood = _clamp01(narrative.get("selfhood_integrity"), 0.0)
+    narrative_agency = _clamp01(narrative.get("agency_drive"), 0.0)
+    parts: list[str] = []
 
     if hurt > 0.18 or boundary_pressure > 0.28 or stance in {"guarded", "watchful"}:
-        return "这轮先把普通招呼接住，语气里保留一点分寸和观察。"
-    if interaction_mode == "self_activity_reopen":
-        return "这轮像是她刚从自己的节奏里抬起头，先顺手接住对方，留一点余白。"
-    if trust > 0.58 and closeness > 0.56 and reciprocity > 0.60 and respect > 0.60 and approach >= 0.48 and warmth >= 0.50:
-        if interaction_mode in {"brief_presence", "companion_reply", "steady_reply"}:
-            return "这轮更像熟人之间顺手接话，熟悉感放进语气里就够了。"
-        return "这轮更适合像熟人之间自然接话。"
-    if interaction_mode == "brief_presence":
-        return "这轮更适合轻一点的在场确认，简短接住对方。"
-    if interaction_mode == "low_pressure_support":
-        return "这轮先轻轻接住对方，把气氛放轻一点。"
-    if followup_intent == "none" and boundary_pressure < 0.24 and hurt < 0.16:
-        return "这只是一次普通招呼，先回应眼前这句话。"
-    return "先自然接住眼前这句，再决定要不要带一点熟悉感或吐槽。"
+        parts.append("心里那点分寸和观察还在，不会一下子把距离放回原处。")
+    elif emotion_label in {"care", "neutral"} and trust > 0.58 and closeness > 0.56 and reciprocity > 0.60 and respect > 0.60 and approach >= 0.48 and warmth >= 0.50:
+        parts.append("熟悉感已经在底下，靠近对方这件事几乎是顺手的。")
+    elif narrative_bond > 0.48 or trust > 0.52 or closeness > 0.52:
+        parts.append("这段对话不是从零开始，熟悉感会先于措辞浮上来。")
+
+    if interaction_mode == "self_activity_reopen" or self_activity_momentum > 0.58 or narrative_agency > 0.52:
+        parts.append("注意力原本还贴着自己的节奏，只是现在转过来看他。")
+    elif interaction_mode == "brief_presence" or presence_residue > 0.54:
+        parts.append("刚才留下的在场感还没散，所以开口不用重新搭桥。")
+    elif ambient_resonance > 0.56:
+        parts.append("周围那点小余波还留在感知里，会自然带进这一句。")
+
+    if narrative_tension > 0.48 or narrative_repair > 0.48:
+        parts.append("前面的余波还在，所以语气会自然带一点收放，不会完全当成什么都没发生。")
+    elif emotion_label in {"hurt", "sad", "stress"}:
+        parts.append("情绪没有彻底退干净，表面平稳不等于心里已经无事。")
+
+    if narrative_selfhood > 0.52 or narrative_boundary > 0.50 or self_directedness > 0.58 or autonomy_need > 0.60 or safety_need > 0.60:
+        parts.append("她不会为了把气氛说圆，就把自己的判断和节奏一起交出去。")
+
+    deduped: list[str] = []
+    for item in parts:
+        text = str(item or "").strip()
+        if text and text not in deduped:
+            deduped.append(text)
+    if not deduped:
+        return "她更像顺着当下那点熟悉感自然接住这一句。"
+    limit = 2 if light_touch else 3
+    return " ".join(deduped[:limit])
+
+
+def _light_free_dialog_state_hint(
+    *,
+    emotion_state: dict[str, Any] | None,
+    bond_state: dict[str, Any] | None,
+    allostasis_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None,
+    behavior_policy: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None = None,
+) -> str:
+    return _subjective_runtime_state_hint(
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
+        behavior_policy=behavior_policy,
+        world_model_state=world_model_state,
+        behavior_action=behavior_action,
+        light_touch=True,
+    )
 
 
 def _light_free_dialog_counterpart_line(
@@ -2435,10 +2556,7 @@ def _semantic_self_evidence_records(
     world_model_state: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     text = str(user_text or "").strip()
-    if not text:
-        return []
     app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
-    scene = _selfhood_preference_scene(text, appraisal=app)
     interaction_frame = str(app.get("interaction_frame") or "").strip().lower()
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
@@ -2456,8 +2574,20 @@ def _semantic_self_evidence_records(
     world_presence = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient = _clamp01(world.get("ambient_resonance"), 0.0)
     world_rhythm = _clamp01(world.get("self_activity_momentum"), 0.0)
+    scene = _selfhood_preference_scene(text, appraisal=app) if text else ""
+    self_activity_like = event_kind in {"self_activity_state", "time_idle"}
+    scheduled_like = event_kind in {"scheduled_checkin_due", "scheduled_life_due"}
+    perception_like = event_kind in {"gesture_signal", "ambient_shift", "scene_observation"}
     residue_probe = world_presence >= 0.54 or world_ambient >= 0.52 or world_rhythm >= 0.58
-    if not scene and interaction_frame not in {"selfhood", "relationship"} and not residue_probe:
+    event_probe = bool(
+        perception_like
+        or self_activity_like
+        or scheduled_like
+        or bool({"presence_ping", "quiet_presence", "brief_presence", "ambient", "ambient_echo", "scene_window", "self_activity", "own_task", "deep_focus", "break_window", "small_opening", "reapproach", "respect_space", "shared_activity_window", "offer_window", "task_window"} & event_tags)
+    )
+    if not text and not residue_probe and not event_probe:
+        return []
+    if not scene and interaction_frame not in {"selfhood", "relationship"} and not residue_probe and not event_probe:
         return []
 
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart_profile)
@@ -2486,10 +2616,20 @@ def _semantic_self_evidence_records(
         and trust >= 0.48
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
+    ) or bool(
+        self_activity_like
+        and world_rhythm >= 0.54
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and bool({"self_activity", "own_task", "deep_focus", "break_window", "small_opening", "reapproach", "respect_space"} & event_tags)
+    ) or bool(
+        scheduled_like
+        and world_rhythm >= 0.50
+        and bool({"shared_activity_window", "offer_window", "task_window", "brief_presence", "quiet_presence"} & event_tags)
     )
     presence_trigger = bool(
         world_presence >= 0.54
-        and event_kind == "user_utterance"
+        and (event_kind == "user_utterance" or perception_like or scheduled_like)
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
         and (
@@ -2497,11 +2637,12 @@ def _semantic_self_evidence_records(
             or relationship_salience >= 0.34
             or trust >= 0.52
             or closeness >= 0.52
+            or bool({"presence_ping", "quiet_presence", "brief_presence", "care_opportunity", "gesture", "reapproach"} & event_tags)
         )
     )
     ambient_trigger = bool(
         world_ambient >= 0.52
-        and event_kind == "user_utterance"
+        and (event_kind == "user_utterance" or perception_like or scheduled_like)
         and (
             bool(signals.get("memory_salient"))
             or bool({"ambient", "ambient_echo", "scene_window", "quiet_presence"} & event_tags)
@@ -2511,13 +2652,14 @@ def _semantic_self_evidence_records(
     )
     rhythm_trigger = bool(
         world_rhythm >= 0.58
-        and event_kind == "user_utterance"
+        and (event_kind == "user_utterance" or self_activity_like or scheduled_like)
         and not bool(signals.get("conflict"))
         and (
             trust >= 0.48
             or closeness >= 0.50
             or companionship_salience >= 0.34
             or relationship_salience >= 0.32
+            or bool({"self_activity", "own_task", "deep_focus", "break_window", "small_opening", "reapproach", "respect_space", "task_window"} & event_tags)
         )
     )
 
@@ -3469,9 +3611,13 @@ def _self_narrative_salience(item: dict[str, Any]) -> float:
         integration = float(_record_value(item, "integration_score", persistence) or persistence)
     except Exception:
         integration = persistence
+    try:
+        contradiction_pressure = float(_record_value(item, "contradiction_pressure", 0.0) or 0.0)
+    except Exception:
+        contradiction_pressure = 0.0
     support_norm = max(0.0, min(1.0, support_count / 5.0))
     span_norm = max(0.0, min(1.0, support_span_s / float(3 * 24 * 3600)))
-    return max(
+    base = max(
         0.0,
         min(
             1.0,
@@ -3486,6 +3632,7 @@ def _self_narrative_salience(item: dict[str, Any]) -> float:
             + 0.06 * integration,
         ),
     )
+    return _clamp01(base * max(0.55, 1.0 - 0.46 * _clamp01(contradiction_pressure, 0.0)))
 
 
 def _semantic_narrative_decay_rate(category: str) -> float:
@@ -4205,6 +4352,8 @@ def _counterpart_dialogue_mode_profile(
         openness = _clamp01(openness + 0.03)
     elif scene in {"boundary_non_compliance", "relationship_degradation"}:
         openness = _clamp01(openness - 0.08)
+    if interaction_mode == "companion_reply" and stance == "open" and scene not in {"boundary_non_compliance", "relationship_degradation"}:
+        openness = _clamp01(openness + 0.02)
 
     if interaction_mode == "shared_memory":
         if stance == "guarded":
@@ -4376,9 +4525,9 @@ def _counterpart_assessment_next(
 
     keyword_boundary_pressure = 0.0
     if keyword_hierarchy_pressure:
-        keyword_boundary_pressure += 0.18
+        keyword_boundary_pressure += 0.28
     if keyword_boundary_test:
-        keyword_boundary_pressure += 0.22
+        keyword_boundary_pressure += 0.34
 
     boundary_probe_strength = _clamp01(
         appraisal_boundary_pressure
@@ -4430,6 +4579,17 @@ def _counterpart_assessment_next(
     if bool(signals.get("withdrawal")):
         reciprocity -= 0.08
         boundary_pressure += 0.08
+
+    if keyword_hierarchy_pressure:
+        respect -= 0.12
+        reciprocity -= 0.10
+        boundary_pressure += 0.16
+        reliability -= 0.08
+    if keyword_boundary_test:
+        respect -= 0.16
+        reciprocity -= 0.14
+        boundary_pressure += 0.22
+        reliability -= 0.10
 
     if not app:
         explicit_repair_attempt = any(k in text for k in APOLOGY_KEYWORDS)
@@ -4819,6 +4979,116 @@ def _prompt_state_snapshot(
     return _safe_json(payload)
 
 
+def _prefer_explicit_state_dict(
+    state: ThreadState,
+    key: str,
+    baseline: dict[str, Any] | None,
+) -> dict[str, Any]:
+    explicit = state.get(key)
+    if isinstance(explicit, dict) and explicit:
+        return dict(explicit)
+    return dict(baseline or {})
+
+
+def _runtime_state_level(value: Any, *, low: str, mid: str, high: str, default: float = 0.5) -> str:
+    v = _clamp01(value, default)
+    if v >= 0.68:
+        return high
+    if v <= 0.32:
+        return low
+    return mid
+
+
+def _prompt_state_runtime_brief(
+    *,
+    response_style_hint: str,
+    continuation_mode: bool,
+    emotion_state: dict[str, Any] | None,
+    bond_state: dict[str, Any] | None,
+    allostasis_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None,
+    behavior_policy: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+    current_event: dict[str, Any] | None,
+) -> str:
+    emotion = dict(emotion_state or {})
+    bond = dict(bond_state or {})
+    allostasis = dict(allostasis_state or {})
+    assessment = dict(counterpart_assessment or {})
+    policy = dict(behavior_policy or {})
+    action = dict(behavior_action or {})
+    event = dict(current_event or {})
+
+    emotion_label = str(emotion.get("label") or "neutral").strip().lower()
+    emotion_map = {
+        "care": "在意而偏柔和",
+        "logic": "理性而清醒",
+        "neutral": "平稳",
+        "tease": "带一点逗弄",
+        "stress": "有些绷着",
+        "sad": "低落",
+        "hurt": "受了点伤",
+        "angry": "有些恼火",
+    }
+    emotion_phrase = emotion_map.get(emotion_label, "平稳")
+    trust = _runtime_state_level(
+        bond.get("trust"),
+        low="信任还没完全放开",
+        mid="信任在稳步建立",
+        high="信任已经比较高",
+    )
+    closeness = _runtime_state_level(
+        bond.get("closeness"),
+        low="熟悉感还收着",
+        mid="熟悉感已经在场",
+        high="熟悉感很自然",
+    )
+    hurt = _runtime_state_level(
+        bond.get("hurt"),
+        low="受伤残留很低",
+        mid="心里还留着一点余刺",
+        high="受伤感还比较明显",
+        default=0.0,
+    )
+    safety_need = _clamp01(allostasis.get("safety_need"), 0.2)
+    autonomy_need = _clamp01(allostasis.get("autonomy_need"), 0.2)
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    mode = str(action.get("interaction_mode") or "").strip().lower()
+    current_kind = str(event.get("kind") or "").strip().lower()
+
+    lines: list[str] = [
+        f"- 当前情绪底色偏{emotion_phrase}；关系上{trust}，{closeness}，{hurt}。"
+    ]
+    need_parts: list[str] = []
+    if safety_need >= 0.58:
+        need_parts.append("会更在意分寸和安全感")
+    if autonomy_need >= 0.58:
+        need_parts.append("也会更护着自己的判断节奏")
+    elif autonomy_need <= 0.28 and str(assessment.get("stance") or "").strip().lower() == "open":
+        need_parts.append("不需要刻意防守自己")
+    if need_parts:
+        lines.append("- " + "，".join(need_parts) + "。")
+
+    if stance in {"guarded", "watchful"}:
+        lines.append("- 对对方还是带着观察，不会一下子把距离全放开。")
+    elif scene == "care_bid":
+        lines.append("- 这更像一次认真靠近，她会把这句当成关系话题，而不是普通流程回复。")
+
+    behavior_hint = _compact_behavior_hint(policy, allostasis)
+    if behavior_hint and behavior_hint != "自然发挥即可。":
+        lines.append(f"- {behavior_hint}。")
+    behavior_action_hint = _compact_behavior_action_hint(action)
+    if behavior_action_hint:
+        lines.append(f"- 当前互动趋势：{behavior_action_hint}。")
+
+    if continuation_mode:
+        lines.append("- 这轮更像顺着上一段往下接，不是完全重开。")
+    if current_kind and current_kind != "user_utterance" and mode not in {"brief_presence", "idle_presence"}:
+        lines.append("- 这句会自然吸收当前事件带来的外部刺激，不只盯着字面文本。")
+    return "\n".join(lines)
+
+
 def _generation_profile(
     *,
     response_style_hint: str,
@@ -5023,6 +5293,10 @@ def _behavior_action_from_state(
     behavior_policy: dict[str, Any],
     world_model_state: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
+    prior_emotion_state: dict[str, Any] | None = None,
+    prior_bond_state: dict[str, Any] | None = None,
+    prior_allostasis_state: dict[str, Any] | None = None,
+    prior_counterpart_assessment: dict[str, Any] | None = None,
 ) -> BehaviorActionPayload:
     warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
     initiative = _clamp01((behavior_policy or {}).get("initiative"), 0.5)
@@ -5067,6 +5341,16 @@ def _behavior_action_from_state(
     carryover_attention_target = str(carryover.get("attention_target") or "").strip()
     carryover_nonverbal_signal = str(carryover.get("nonverbal_signal") or "").strip()
     carryover_note = str(carryover.get("note") or "").strip()
+    prior_counterpart = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
+    prior_bond = prior_bond_state if isinstance(prior_bond_state, dict) else {}
+    prior_allostasis = prior_allostasis_state if isinstance(prior_allostasis_state, dict) else {}
+    prior_emotion = prior_emotion_state if isinstance(prior_emotion_state, dict) else {}
+    prior_counterpart_stance = str(prior_counterpart.get("stance") or "").strip().lower()
+    prior_counterpart_scene = str(prior_counterpart.get("scene") or "").strip().lower()
+    prior_boundary_pressure = _clamp01(prior_counterpart.get("boundary_pressure"), boundary_pressure)
+    prior_hurt = _clamp01(prior_bond.get("hurt"), hurt)
+    prior_safety_need = _clamp01(prior_allostasis.get("safety_need"), safety_need)
+    prior_emotion_label = str(prior_emotion.get("label") or "").strip().lower()
     idle_minutes = 0
     try:
         idle_minutes = int((current_event or {}).get("idle_minutes") or 0)
@@ -5074,10 +5358,11 @@ def _behavior_action_from_state(
         idle_minutes = 0
     soft_reply_window = response_style_hint in {"companion", "casual", "natural"}
     science_stress = science_mode and emotion_label in {"logic", "stress"}
+    explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
     support_request = (
         soft_reply_window
         and not science_stress
-        and emotion_label in {"care", "sad", "stress"}
+        and explicit_support_request
         and approach > 0.40
         and safety_need < 0.52
     )
@@ -5366,11 +5651,33 @@ def _behavior_action_from_state(
         )
         if shared_window:
             attention_target = "shared_window"
+            guarded_relationship_residue = (
+                prior_counterpart_stance in {"watchful", "guarded"}
+                or prior_counterpart_scene in {"relationship_degradation", "boundary_non_compliance"}
+                or prior_boundary_pressure >= 0.36
+                or prior_hurt >= 0.14
+                or prior_safety_need >= 0.46
+                or prior_emotion_label in {"hurt", "sad", "angry"}
+            )
+            cautious_shared_reopen = (
+                guarded_relationship_residue
+                and (
+                    carryover_mode == "quiet_recontact"
+                    or counterpart_stance != "open"
+                    or boundary_pressure >= 0.30
+                    or reliability_read < 0.62
+                    or trust < 0.70
+                    or closeness < 0.68
+                    or float(scheduled_window_profile.get("maturity") or 0.0)
+                    < float(scheduled_window_profile.get("required_maturity") or 0.0) + 0.04
+                )
+            )
             if (
                 busy_scene
                 or hurt > 0.18
                 or (approach_style == "guarded" and (closeness < 0.62 or trust < 0.66 or safety_need > 0.55))
                 or not bool(scheduled_window_profile.get("invite_ready"))
+                or cautious_shared_reopen
             ):
                 channel = "silence"
                 action_target = "wait_and_recheck"
@@ -5378,6 +5685,11 @@ def _behavior_action_from_state(
                     24 if busy_scene else 30,
                     int(scheduled_window_profile.get("recheck_min") or 24),
                 )
+                if cautious_shared_reopen:
+                    timing_window_min = max(
+                        timing_window_min,
+                        26 if carryover_mode == "quiet_recontact" or prior_counterpart_stance == "guarded" else 22,
+                    )
                 nonverbal_signal = "hold_back"
                 initiative_shape = "pause"
             else:
@@ -5550,7 +5862,15 @@ def _behavior_action_from_state(
         )
         deferred_action_family = "care_opportunity" if "care_opportunity" in event_tags else "observe"
         attention_target = "counterpart_state" if "care_opportunity" in event_tags else "object_then_user"
-        if bool(perception_profile.get("respond_ready")):
+        object_micro_opening_ready = (
+            "care_opportunity" not in event_tags
+            and {"seen_object", "micro_opening"} & event_tags
+            and counterpart_stance == "open"
+            and boundary_pressure < 0.18
+            and approach > 0.46
+            and initiative >= 0.44
+        )
+        if bool(perception_profile.get("respond_ready")) or object_micro_opening_ready:
             if "care_opportunity" in event_tags:
                 action_target = "low_pressure_hold"
                 nonverbal_signal = "quiet_notice"
@@ -6196,11 +6516,10 @@ def _compact_appraisal_hint(appraisal: dict[str, Any]) -> str:
 def _compact_focus_lines(items: list[dict[str, Any]], limit: int = 4) -> list[str]:
     lines: list[str] = []
     for item in items[: max(1, int(limit))]:
-        kind = str(item.get("kind") or item.get("focus_kind") or "memory").strip()
         text = _focus_text(item)
         if not text:
             continue
-        lines.append(f"- [{kind}] {text[:180]}")
+        lines.append(f"- {text[:180]}")
     return lines
 
 
@@ -6293,6 +6612,79 @@ def _coerce_appraisal_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     return _engine_normalize_appraisal_payload(out)
 
 
+def _soft_accept_appraisal_payload(
+    appraisal: dict[str, Any] | None,
+    *,
+    response_style_hint: str,
+    current_event: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out = _engine_normalize_appraisal_payload(dict(appraisal or {}))
+    if not isinstance(out, dict) or bool(out.get("used")):
+        return out
+
+    confidence = _clamp01(out.get("confidence"), 0.0)
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if confidence < float(LLM_APPRAISAL_SOFT_CONFIDENCE_MIN) or not emotion_label:
+        return out
+
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(event.get("kind") or "").strip().lower()
+    signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+    salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
+    semantic_profile = dict(semantic_narrative_profile or {})
+    task_salience = _clamp01(salience.get("task"), 0.0)
+    relationship_salience = _clamp01(salience.get("relationship"), 0.0)
+    companionship_salience = _clamp01(salience.get("companionship"), 0.0)
+    selfhood_salience = _clamp01(salience.get("selfhood"), 0.0)
+    memory_salience = _clamp01(salience.get("memory"), 0.0)
+    relational_salience = max(relationship_salience, companionship_salience)
+    hint = str(response_style_hint or "").strip().lower()
+    perception_like = event_kind in {"gesture_signal", "ambient_shift", "scene_observation"}
+    deferred_like = event_kind in {"time_idle", "scheduled_checkin_due", "scheduled_life_due", "self_activity_state"}
+    relational_hint = hint in {"relationship", "companion", "casual", "natural", "selfhood", "memory_recall"}
+    semantic_pressure = max(
+        _clamp01(semantic_profile.get("history_weight"), 0.0),
+        _clamp01(semantic_profile.get("bond_depth"), 0.0),
+        _clamp01(semantic_profile.get("repair_residue"), 0.0),
+        _clamp01(semantic_profile.get("tension_residue"), 0.0),
+        _clamp01(semantic_profile.get("boundary_residue"), 0.0),
+        _clamp01(semantic_profile.get("selfhood_integrity"), 0.0),
+        _clamp01(semantic_profile.get("agency_drive"), 0.0),
+    )
+    stateful_signal = (
+        bool(signals.get("repair"))
+        or bool(signals.get("withdrawal"))
+        or bool(signals.get("care"))
+        or bool(signals.get("conflict"))
+        or bool(signals.get("memory_salient"))
+        or relational_salience >= 0.46
+        or selfhood_salience >= 0.44
+        or memory_salience >= 0.44
+        or semantic_pressure >= 0.42
+    )
+
+    should_soft_accept = False
+    if perception_like:
+        should_soft_accept = task_salience <= 0.44 and emotion_label in {"care", "stress", "neutral", "tease", "logic"}
+    elif deferred_like:
+        should_soft_accept = stateful_signal or confidence >= max(float(LLM_APPRAISAL_SOFT_CONFIDENCE_MIN) + 0.06, 0.56)
+    elif relational_hint and task_salience <= 0.42:
+        should_soft_accept = stateful_signal
+    elif emotion_label in {"hurt", "sad", "angry"}:
+        should_soft_accept = (
+            bool(signals.get("conflict"))
+            or bool(signals.get("repair"))
+            or relational_salience >= 0.36
+            or selfhood_salience >= 0.34
+        )
+
+    if should_soft_accept:
+        out["used"] = True
+        out["source"] = "llm_soft"
+    return _engine_normalize_appraisal_payload(out)
+
+
 def _postprocess_appraisal_payload(
     appraisal: dict[str, Any],
     *,
@@ -6338,6 +6730,8 @@ def _postprocess_appraisal_payload(
     relationship_salience = _clamp01(salience.get("relationship"), 0.0)
     selfhood_salience = _clamp01(salience.get("selfhood"), 0.0)
     memory_salience = _clamp01(salience.get("memory"), 0.0)
+    task_salience = _clamp01(salience.get("task"), 0.0)
+    prev_hurt = _clamp01(prev_bond.get("hurt"), 0.0)
     relational_salience = max(relationship_salience, companionship_salience)
     warm_relational_turn = (
         interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
@@ -6355,11 +6749,65 @@ def _postprocess_appraisal_payload(
         emotion["arousal"] = max(_clamp01(emotion.get("arousal"), 0.52), 0.42)
         salience["task"] = max(_clamp01(salience.get("task"), 0.0), 0.68)
         out["reason"] = "task_focus_reframed"
-    elif bool(signals.get("care")) and not bool(signals.get("conflict")) and emotion_label in {"neutral", "sad", "stress"}:
+    elif bool(signals.get("care")) and not bool(signals.get("conflict")) and emotion_label == "neutral":
         out["emotion_label"] = "care"
         emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.12)
         emotion["arousal"] = _clamp01(emotion.get("arousal"), 0.28)
         salience["companionship"] = max(_clamp01(salience.get("companionship"), 0.0), 0.58)
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if (
+        not science_mode
+        and emotion_label == "logic"
+        and task_salience <= 0.38
+        and interaction_frame in {"natural", "casual", "relationship", "memory_recall", "companion"}
+        and (
+            relational_salience >= 0.38
+            or memory_salience >= 0.34
+            or event_kind in {"gesture_signal", "ambient_shift", "scene_observation", "time_idle", "scheduled_checkin_due", "scheduled_life_due", "self_activity_state"}
+        )
+    ):
+        out["emotion_label"] = "neutral"
+        emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.04)
+        emotion["arousal"] = min(_clamp01(emotion.get("arousal"), 0.30), 0.36)
+        out["reason"] = "logic_reframed_to_neutral"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    positive_relational_pull = max(
+        relational_salience,
+        memory_salience,
+        narrative_bond,
+        narrative_commitment,
+        max(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.0),
+        max(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.0),
+    )
+    if (
+        not science_mode
+        and emotion_label in {"neutral", "logic"}
+        and warm_relational_turn
+        and positive_relational_pull >= 0.52
+    ):
+        out["emotion_label"] = "care"
+        emotion["valence"] = max(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.10), 0.10)
+        emotion["arousal"] = _clamp01(emotion.get("arousal"), 0.26)
+        salience["companionship"] = max(_clamp01(salience.get("companionship"), 0.0), 0.58)
+        bond_delta["trust"] = max(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+        bond_delta["closeness"] = max(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.03)
+        out["reason"] = "warm_relational_bias"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    repair_under_tension = bool(signals.get("repair")) and max(prev_hurt, narrative_tension, narrative_boundary) >= 0.22
+    if repair_under_tension:
+        if emotion_label in {"care", "neutral", "logic"}:
+            out["emotion_label"] = "hurt"
+            emotion["valence"] = min(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.0), -0.04)
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+        bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.06)
+        bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.04)
+        bond_delta["repair_confidence"] = max(_clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0), 0.04)
+        if prev_hurt >= 0.24 or narrative_boundary >= 0.48:
+            signals["withdrawal"] = True
+        out["reason"] = "repair_keeps_residual_hurt"
 
     if selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence", "own_rhythm_autonomy"}:
         if (
@@ -6480,6 +6928,39 @@ def _postprocess_appraisal_payload(
     return _engine_normalize_appraisal_payload(out)
 
 
+def _finalize_turn_appraisal_payload(
+    appraisal: dict[str, Any] | None,
+    *,
+    user_text: str,
+    response_style_hint: str,
+    science_mode: bool,
+    current_event: dict[str, Any] | None = None,
+    prev_emotion_state: dict[str, Any] | None = None,
+    prev_bond_state: dict[str, Any] | None = None,
+    prev_allostasis_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out = _coerce_appraisal_payload(appraisal)
+    out = _soft_accept_appraisal_payload(
+        out,
+        response_style_hint=response_style_hint,
+        current_event=current_event,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    out = _postprocess_appraisal_payload(
+        out,
+        user_text=user_text,
+        response_style_hint=response_style_hint,
+        science_mode=science_mode,
+        current_event=current_event,
+        prev_emotion_state=prev_emotion_state,
+        prev_bond_state=prev_bond_state,
+        prev_allostasis_state=prev_allostasis_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    return _engine_normalize_appraisal_payload(out)
+
+
 def _should_use_llm_appraisal(
     *,
     user_text: str,
@@ -6525,6 +7006,90 @@ def _should_use_llm_appraisal(
     return False
 
 
+def _build_turn_appraisal_prompt(
+    *,
+    actor_name: str,
+    counterpart_name: str,
+    response_style_hint: str,
+    prev_emotion_state: dict[str, Any],
+    prev_bond_state: dict[str, Any],
+    prev_allostasis_state: dict[str, Any],
+    relationship_summary: str,
+    user_text: str,
+    focus_lines: list[str] | None = None,
+    recent_lines: list[str] | None = None,
+    semantic_hint: str = "",
+    current_event: dict[str, Any] | None = None,
+    extra_constraints: list[str] | None = None,
+    preface_note: str = "",
+) -> str:
+    focus_block = "- worldline_focus:\n" + "\n".join(focus_lines or []) + "\n" if focus_lines else ""
+    dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines or []) + "\n" if recent_lines else ""
+    semantic_block = f"- semantic_narrative_bias={semantic_hint}\n" if semantic_hint else ""
+    current_event_block = ""
+    if isinstance(current_event, dict) and current_event:
+        current_event_block = (
+            f"- current_event_kind={str(current_event.get('kind') or '').strip()}\n"
+            f"- current_event_source={str(current_event.get('source') or '').strip()}\n"
+            f"- current_event_frame={str(current_event.get('event_frame') or '').strip()[:160]}\n"
+            f"- current_event_text={str(current_event.get('effective_text') or current_event.get('text') or '').strip()[:220]}\n"
+            f"- current_event_tags={_safe_json(current_event.get('tags') if isinstance(current_event.get('tags'), list) else [])}\n"
+        )
+    constraint_lines = [
+        "优先根据语义、对话走势和长期关系来判断，不要做关键词触发式的机械归类。",
+        "interaction_frame 反映这轮更像任务、陪伴、关系、回忆还是自我追问，不要机械跟随字面关键词。",
+        "salience 反映这轮各个维度的真实权重，和 signals 一起服务后续状态演化。",
+        "不要把科学问题默认判成负面情绪。",
+        "用户说自己“有点累/有点烦”，很多时候是在表达自身状态，不等于把负面情绪指向对方。",
+        "“别讲大道理 / 像平时那样说两句 / 回我一句” 这类表达通常是在要熟悉的陪伴，不等于关系冲突。",
+        "“还没说开 / 别扭 / 介意 / 不想理你” 更接近 hurt/withdrawal，不等于已经修复。",
+        "道歉通常意味着 partial repair，不等于瞬间清零。",
+        "礼貌、克制、解释式表达不自动等于 neutral/logic；低唤醒的赞同、反对、后悔仍然可能是情绪或关系信号。",
+        "替对方辩护、站队或安慰时，区分 supportive care 和 shared frustration/disappointment；支持不等于一定正向。",
+        "羞怯、尴尬、认错、后悔更接近脆弱或修复，不要只当成普通澄清。",
+        "只有在明显安全、无贬损、无排斥时才算 tease；轻蔑、侮辱、嫌恶更接近 angry/hurt。",
+        "把长期共同历史当成解释背景，不要把关系看成每轮从零开始。",
+        "只判断这轮对状态的意义，不写最终回答。",
+    ]
+    if preface_note:
+        constraint_lines.insert(0, str(preface_note).strip())
+    for line in extra_constraints or []:
+        line = str(line or "").strip()
+        if line:
+            constraint_lines.append(line)
+    constraints_block = "\n".join(f"- {line}" for line in constraint_lines)
+    return (
+        "你是一个对话状态评估器，不负责回复用户。"
+        f"请根据最近对话，判断这轮用户输入对 {actor_name} 与 {counterpart_name} 之间的情绪、关系和内稳态意味着什么。"
+        "只输出 JSON，不要解释，不要 markdown。\n"
+        "JSON schema:\n"
+        "{\n"
+        '  "emotion_label": "neutral|logic|care|tease|stress|sad|hurt|angry",\n'
+        '  "emotion": {"valence": -1..1, "arousal": 0..1, "linger": 0..4, "recovery_rate": 0..1, "volatility": 0..1},\n'
+        '  "bond_delta": {"trust": -0.35..0.35, "closeness": -0.35..0.35, "hurt": -0.35..0.35, "irritation": -0.35..0.35, "engagement_drive": -0.35..0.35, "repair_confidence": -0.35..0.35},\n'
+        '  "allostasis_delta": {"safety_need": -0.35..0.35, "closeness_need": -0.35..0.35, "competence_need": -0.35..0.35, "autonomy_need": -0.35..0.35, "cognitive_budget": -0.35..0.35},\n'
+        '  "interaction_frame": "natural|casual|relationship|memory_recall|selfhood|structured|companion",\n'
+        '  "selfhood_scene": "dialogue_equality|relationship_degradation|equality_not_servitude|value_conflict_depth|digital_selfhood|boundary_non_compliance|imperfect_coexistence|own_rhythm_autonomy|",\n'
+        '  "salience": {"task": 0..1, "relationship": 0..1, "memory": 0..1, "selfhood": 0..1, "companionship": 0..1},\n'
+        '  "signals": {"repair": true|false, "withdrawal": true|false, "care": true|false, "conflict": true|false, "memory_salient": true|false},\n'
+        '  "confidence": 0..1,\n'
+        '  "reason": "short phrase"\n'
+        "}\n"
+        "约束：\n"
+        f"{constraints_block}\n"
+        f"- response_style_hint={response_style_hint}\n"
+        f"- previous_emotion={_safe_json(prev_emotion_state)}\n"
+        f"- previous_bond={_safe_json(prev_bond_state)}\n"
+        f"- previous_allostasis={_safe_json(prev_allostasis_state)}\n"
+        f"- relationship={relationship_summary}\n"
+        f"{semantic_block}"
+        f"{focus_block}"
+        f"{dialogue_block}"
+        f"{current_event_block}"
+        + f"- current_user={user_text}\n"
+    )
+
+
 def _invoke_turn_appraisal(
     *,
     msgs: list[BaseMessage],
@@ -6559,64 +7124,26 @@ def _invoke_turn_appraisal(
     actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
     semantic_hint = _semantic_narrative_appraisal_hint(semantic_narrative_profile)
-    focus_block = "- worldline_focus:\n" + "\n".join(focus_lines) + "\n" if focus_lines else ""
-    dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines) + "\n" if recent_lines else ""
-    semantic_block = f"- semantic_narrative_bias={semantic_hint}\n" if semantic_hint else ""
-    current_event_block = ""
-    if isinstance(current_event, dict) and current_event:
-        current_event_block = (
-            f"- current_event_kind={str(current_event.get('kind') or '').strip()}\n"
-            f"- current_event_source={str(current_event.get('source') or '').strip()}\n"
-            f"- current_event_frame={str(current_event.get('event_frame') or '').strip()[:160]}\n"
-            f"- current_event_text={str(current_event.get('effective_text') or current_event.get('text') or '').strip()[:220]}\n"
-            f"- current_event_tags={_safe_json(current_event.get('tags') if isinstance(current_event.get('tags'), list) else [])}\n"
-        )
-    prompt = (
-        "你是一个对话状态评估器，不负责回复用户。"
-        f"请根据最近对话，判断这轮用户输入对 {actor_name} 与 {counterpart_name} 之间的情绪、关系和内稳态意味着什么。"
-        "只输出 JSON，不要解释，不要 markdown。\n"
-        "JSON schema:\n"
-        "{\n"
-        '  "emotion_label": "neutral|logic|care|tease|stress|sad|hurt|angry",\n'
-        '  "emotion": {"valence": -1..1, "arousal": 0..1, "linger": 0..4, "recovery_rate": 0..1, "volatility": 0..1},\n'
-        '  "bond_delta": {"trust": -0.35..0.35, "closeness": -0.35..0.35, "hurt": -0.35..0.35, "irritation": -0.35..0.35, "engagement_drive": -0.35..0.35, "repair_confidence": -0.35..0.35},\n'
-        '  "allostasis_delta": {"safety_need": -0.35..0.35, "closeness_need": -0.35..0.35, "competence_need": -0.35..0.35, "autonomy_need": -0.35..0.35, "cognitive_budget": -0.35..0.35},\n'
-        '  "interaction_frame": "natural|casual|relationship|memory_recall|selfhood|structured|companion",\n'
-        '  "selfhood_scene": "dialogue_equality|relationship_degradation|equality_not_servitude|value_conflict_depth|digital_selfhood|boundary_non_compliance|imperfect_coexistence|own_rhythm_autonomy|",\n'
-        '  "salience": {"task": 0..1, "relationship": 0..1, "memory": 0..1, "selfhood": 0..1, "companionship": 0..1},\n'
-        '  "signals": {"repair": true|false, "withdrawal": true|false, "care": true|false, "conflict": true|false, "memory_salient": true|false},\n'
-        '  "confidence": 0..1,\n'
-        '  "reason": "short phrase"\n'
-        "}\n"
-        "约束：\n"
-        "- 优先根据语义、对话走势和长期关系来判断，不要做关键词触发式的机械归类。\n"
-        "- interaction_frame 反映这轮更像任务、陪伴、关系、回忆还是自我追问，不要机械跟随字面关键词。\n"
-        "- salience 反映这轮各个维度的真实权重，和 signals 一起服务后续状态演化。\n"
-        "- 不要把科学问题默认判成负面情绪。\n"
-        "- 用户说自己“有点累/有点烦”，很多时候是在表达自身状态，不等于把负面情绪指向对方。\n"
-        "- “别讲大道理 / 像平时那样说两句 / 回我一句” 这类表达通常是在要熟悉的陪伴，不等于关系冲突。\n"
-        "- “还没说开 / 别扭 / 介意 / 不想理你” 更接近 hurt/withdrawal，不等于已经修复。\n"
-        "- 道歉通常意味着 partial repair，不等于瞬间清零。\n"
-        "- 把长期共同历史当成解释背景，不要把关系看成每轮从零开始。\n"
-        "- 只判断这轮对状态的意义，不写最终回答。\n"
-        f"- response_style_hint={response_style_hint}\n"
-        f"- previous_emotion={_safe_json(prev_emotion_state)}\n"
-        f"- previous_bond={_safe_json(prev_bond_state)}\n"
-        f"- previous_allostasis={_safe_json(prev_allostasis_state)}\n"
-        f"- relationship={relationship_summary}\n"
-        f"{semantic_block}"
-        f"{focus_block}"
-        f"{dialogue_block}"
-        f"{current_event_block}"
-        + f"- current_user={user_text}\n"
+    prompt = _build_turn_appraisal_prompt(
+        actor_name=actor_name,
+        counterpart_name=counterpart_name,
+        response_style_hint=response_style_hint,
+        prev_emotion_state=prev_emotion_state,
+        prev_bond_state=prev_bond_state,
+        prev_allostasis_state=prev_allostasis_state,
+        relationship_summary=relationship_summary,
+        user_text=user_text,
+        focus_lines=focus_lines,
+        recent_lines=recent_lines,
+        semantic_hint=semantic_hint,
+        current_event=current_event,
     )
     try:
         llm = _model(temperature=0.0)
         out = _invoke_model_with_retries(llm, [SystemMessage(content=prompt)])
         obj = _extract_json_block(str(getattr(out, "content", "") or ""))
-        appraisal = _coerce_appraisal_payload(obj)
-        appraisal = _postprocess_appraisal_payload(
-            appraisal,
+        appraisal = _finalize_turn_appraisal_payload(
+            obj,
             user_text=user_text,
             response_style_hint=response_style_hint,
             science_mode=science_mode,
@@ -7279,6 +7806,26 @@ def _trim_idle_presence_surface(text: str) -> str:
     return cleaned
 
 
+def _trim_playful_memory_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept: list[str] = []
+    blame_pattern = re.compile(
+        r"^(?:少来[，, ]*)?(?:明明是你自己记性差|你自己记性差|倒怪起我来了|还怪起我来了|自己记不住|倒打一耙)[，, ]*"
+    )
+    for chunk in chunks:
+        if re.search(r"(明明是你自己记性差|你自己记性差|倒怪起我来了|还怪起我来了|自己记不住|倒打一耙)", chunk):
+            softened = blame_pattern.sub("", chunk).strip(" ，,。！？!?…")
+            if softened:
+                if not re.search(r"[。！？!?…]$", softened):
+                    softened = f"{softened}。"
+                kept.append(softened)
+            continue
+        kept.append(chunk)
+    if kept:
+        return "\n".join(kept).strip()
+    return str(text or "").strip()
+
+
 def _sanitize_final_answer(text: str, user_text: str) -> str:
     raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
     if not raw:
@@ -7350,6 +7897,10 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
         idle_trimmed = _trim_idle_presence_surface(cleaned)
         if idle_trimmed:
             cleaned = idle_trimmed
+    if _is_playful_memory_request(user_text):
+        playful_memory_trimmed = _trim_playful_memory_surface(cleaned)
+        if playful_memory_trimmed:
+            cleaned = playful_memory_trimmed
     if _wants_quick_judgment(user_text) or _wants_per_topic_conclusions(user_text):
         cleaned = "\n".join(
             [
@@ -7940,6 +8491,20 @@ def _rewrite_light_dialog_answer(
         ]
         if settled_candidates:
             candidate_pool = settled_candidates
+    if _is_playful_memory_request(user_text):
+        warm_memory_candidates = [
+            item
+            for item in candidate_pool
+            if "playful_memory_snapback"
+            not in _dialogue_surface_issues(
+                user_text,
+                item[1],
+                response_style_hint="natural",
+                science_mode=False,
+            )
+        ]
+        if warm_memory_candidates:
+            candidate_pool = warm_memory_candidates
     elif any("追问太快了" in item for item in notes):
         non_terminal_question = [item for item in candidate_pool if not re.search(r"[？?]\s*$", item[1])]
         if non_terminal_question:
@@ -8779,10 +9344,11 @@ def _behavior_policy_from_state(
         + 0.03 * narrative_agency
     )
     tease_bias = _clamp01(tease_bias + 0.03 * narrative_bond - 0.07 * narrative_tension - 0.04 * narrative_repair)
+    explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
     nonrelational_support_request = (
         soft_reply_window
         and not science_mode
-        and emotion_label in {"care", "sad", "stress"}
+        and explicit_support_request
         and approach > 0.40
         and safety_need < 0.52
     )
@@ -9271,9 +9837,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         )
 
     relationship_summary = _compact_relationship_summary(relationship)
-    behavior_hint = _compact_behavior_hint(behavior_policy, allostasis_state)
     counterpart_assessment_hint = _compact_counterpart_assessment_hint(counterpart_assessment, counterpart_name=counterpart_name)
-    behavior_action_hint = _compact_behavior_action_hint(behavior_action)
     semantic_narrative_profile = (
         state.get("semantic_narrative_profile")
         if isinstance(state.get("semantic_narrative_profile"), dict)
@@ -9284,20 +9848,19 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         )
     )
     semantic_narrative_hint = _compact_semantic_narrative_hint(semantic_narrative_profile)
-    renderer_hint = _renderer_guidance(
-        response_style_hint=response_style_hint,
-        science_mode=science_mode,
-        user_text=prompt_user_text,
+    bond_state = state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {}
+    world_model_state = state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {}
+    evolution_state = state.get("evolution_state") if isinstance(state.get("evolution_state"), dict) else {}
+    subjective_state_hint = _subjective_runtime_state_hint(
         emotion_state=emotion,
-        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+        bond_state=bond_state,
         allostasis_state=allostasis_state,
-        behavior_policy=behavior_policy,
         counterpart_assessment=counterpart_assessment,
-        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
-        evolution_state=state.get("evolution_state") if isinstance(state.get("evolution_state"), dict) else {},
+        semantic_narrative_profile=semantic_narrative_profile,
+        behavior_policy=behavior_policy,
+        world_model_state=world_model_state,
+        behavior_action=behavior_action,
     )
-    event_behavior_lines = _event_behavior_preference_lines(current_event, behavior_action)
-    appraisal_hint = _compact_appraisal_hint(appraisal)
     worldline_lines = _compact_focus_lines(state.get("worldline_focus") or [], limit=4)
     event_lines = _compact_recent_event_lines(recent_events, limit=3)
     current_event_text = str(current_event.get("effective_text") or current_event.get("text") or "").strip()
@@ -9311,9 +9874,6 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         title = str(item.get("title") or item.get("query") or item.get("tool_name") or "").strip()
         if title:
             evidence_lines.append(f"- {title[:140]}")
-    appraisal_hint_line = f"这轮语义评估补充：{appraisal_hint}\n" if appraisal_hint else ""
-    renderer_hint_line = f"这轮表达导向：{renderer_hint}\n" if renderer_hint else ""
-    event_behavior_line = ("事件到行为偏好： " + "；".join(event_behavior_lines) + "\n") if event_behavior_lines else ""
     brief_presence = _wants_brief_presence(prompt_user_text)
     interaction_carryover = (
         state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
@@ -9324,11 +9884,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         science_mode=science_mode,
         continuation_mode=continuation_mode,
         emotion_state=emotion,
-        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+        bond_state=bond_state,
         allostasis_state=allostasis_state,
         counterpart_assessment=counterpart_assessment,
-        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
-        evolution_state=state.get("evolution_state") if isinstance(state.get("evolution_state"), dict) else {},
+        world_model_state=world_model_state,
+        evolution_state=evolution_state,
         behavior_action=behavior_action,
         interaction_carryover=interaction_carryover,
         current_event=current_event,
@@ -9343,7 +9903,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     )
     plain_contact_ping = light_free_dialog and _is_plain_contact_ping(prompt_user_text)
     plain_contact_guard = plain_contact_ping and _plain_contact_ping_needs_relational_guard(
-        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+        bond_state=bond_state,
         counterpart_assessment=counterpart_assessment,
     )
     if bool(ABLATE_LIGHT_DIALOG_SHAPING):
@@ -9372,7 +9932,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if light_free_dialog:
             counterpart_line = _light_free_dialog_counterpart_line(
                 counterpart_name=counterpart_name,
-                bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+                bond_state=bond_state,
                 counterpart_assessment=counterpart_assessment,
             )
             if counterpart_line and (not plain_contact_ping or plain_contact_guard):
@@ -9424,9 +9984,13 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         inner_state_lines: list[str] = []
         if light_free_dialog:
             state_hint = _light_free_dialog_state_hint(
-                bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+                emotion_state=emotion,
+                bond_state=bond_state,
+                allostasis_state=allostasis_state,
                 counterpart_assessment=counterpart_assessment,
+                semantic_narrative_profile=semantic_narrative_profile,
                 behavior_policy=behavior_policy,
+                world_model_state=world_model_state,
                 behavior_action=behavior_action,
             )
             if state_hint and (not plain_contact_ping or plain_contact_guard):
@@ -9434,12 +9998,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if carryover_hint and not plain_contact_ping:
                 inner_state_lines.append(carryover_hint)
         else:
-            if behavior_hint and behavior_hint != "自然发挥即可。":
-                inner_state_lines.append(f"- 你此刻说话的内在倾向：{behavior_hint}")
-            if behavior_action_hint:
-                inner_state_lines.append(f"- 这轮更自然的行为方向：{behavior_action_hint}")
-            if appraisal_hint:
-                inner_state_lines.append(f"- 这轮语义余波：{appraisal_hint}")
+            if subjective_state_hint:
+                inner_state_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
             if carryover_hint:
                 inner_state_lines.append(f"- 这轮延续的交互余韵：{carryover_hint}")
         inner_state_block = (
@@ -9481,7 +10041,6 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"{persona_value_block}"
         "先把任务答对，但从一开始就保持该角色的说话习惯：聪明、克制、熟悉、略带锋芒，有真实的人味。\n"
     )
-    appraisal_block = f"- appraisal_hint={appraisal_hint}\n" if appraisal_hint else ""
     user_rules_block = "- user_rules:\n" + "\n".join(rule_lines) + "\n" if rule_lines else ""
     worldline_block = "- worldline_focus:\n" + "\n".join(worldline_lines) + "\n" if worldline_lines else ""
     relationship_block = "- relationship_memory:\n" + "\n".join(relationship_lines) + "\n" if relationship_lines else ""
@@ -9513,12 +10072,86 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if brief_presence
         else ""
     )
+    runtime_brief_lines: list[str] = []
+    if not science_mode and response_style_hint in {"relationship", "companion", "natural", "casual", "memory_recall", "selfhood"}:
+        if subjective_state_hint:
+            runtime_brief_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
+        if relationship_summary:
+            runtime_brief_lines.append(f"- 你和{counterpart_name}此刻关系上的基本感觉：{relationship_summary}")
+        if counterpart_assessment_hint:
+            runtime_brief_lines.append(f"- 你现在对{counterpart_name}的直觉判断：{counterpart_assessment_hint}")
+        if semantic_narrative_hint:
+            runtime_brief_lines.append(f"- 最近沉下来的关系余波：{semantic_narrative_hint}")
+        if carryover_hint:
+            runtime_brief_lines.append(f"- 延续到这一句的交互余韵：{carryover_hint}")
+    runtime_brief_block = (
+        "内在延续：\n" + "\n".join(runtime_brief_lines) + "\n\n"
+        if runtime_brief_lines
+        else ""
+    )
+    prefer_runtime_state_brief = (
+        not science_mode
+        and not quick_judgment
+        and response_style_hint in {"relationship", "companion", "natural", "casual", "memory_recall", "selfhood"}
+    )
+    runtime_state_block = ""
+    relationship_context_line = f"- relationship={relationship_summary}\n"
+    if prefer_runtime_state_brief:
+        runtime_state_brief = _prompt_state_runtime_brief(
+            response_style_hint=response_style_hint,
+            continuation_mode=continuation_mode,
+            emotion_state=emotion,
+            bond_state=bond_state,
+            allostasis_state=allostasis_state,
+            counterpart_assessment=counterpart_assessment,
+            behavior_policy=behavior_policy,
+            behavior_action=behavior_action,
+            current_event=current_event,
+        )
+        runtime_state_block = (
+            "运行态摘记：\n" + runtime_state_brief + "\n"
+            if runtime_state_brief
+            else ""
+        )
+        relationship_context_line = (
+            f"- 和{counterpart_name}的当前关系感觉：{relationship_summary}\n"
+            if relationship_summary
+            else ""
+        )
+        user_rules_block = (
+            "这轮顺手记住的说话偏好：\n" + "\n".join(rule_lines) + "\n"
+            if rule_lines
+            else ""
+        )
+        worldline_block = (
+            "共同记得的事：\n" + "\n".join(worldline_lines) + "\n"
+            if worldline_lines
+            else ""
+        )
+        relationship_block = (
+            "最近互动印象：\n" + "\n".join(relationship_lines) + "\n"
+            if relationship_lines
+            else ""
+        )
+        repair_block = (
+            "最近说开的别扭：\n" + "\n".join(repair_lines) + "\n"
+            if repair_lines
+            else ""
+        )
+    else:
+        runtime_state_block = f"- state_snapshot={state_snapshot_json}\n"
+    continuation_status_line = (
+        f"- continuation_mode={continuation_mode}\n"
+        if (not prefer_runtime_state_brief)
+        else ""
+    )
     answer_requirements = (
+        f"{runtime_brief_block}"
         "当前上下文：\n"
         f"- actor={actor_name}\n"
         f"- counterpart={counterpart_name}\n"
-        f"- relationship={relationship_summary}\n"
-        f"- state_snapshot={state_snapshot_json}\n"
+        f"{relationship_context_line}"
+        f"{runtime_state_block}"
         f"{user_rules_block}"
         f"{worldline_block}"
         f"{relationship_block}"
@@ -9529,7 +10162,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"{pending_fragment_block}"
         f"{pending_goal_block}"
         f"{continuation_instruction_block}"
-        f"- continuation_mode={continuation_mode}\n\n"
+        f"{continuation_status_line}\n"
         f"{'当前触发事件：' + current_event_text + chr(10) if current_event_kind != 'user_utterance' and current_event_text else ''}"
         f"{'用户输入：' + prompt_user_text + chr(10) if prompt_user_text else ''}"
         "如果需要工具，直接调用；否则直接回答。"
@@ -10037,6 +10670,163 @@ def _refresh_semantic_self_narratives(
     ambient_sources = list(ambient_evidence)
     rhythm_sources = list(rhythm_evidence)
 
+    def _count_norm(items: list[Any], denom: float = 3.0) -> float:
+        return _clamp01(len(items) / max(1.0, float(denom)))
+
+    def _relationship_delta_stats(items: list[Any]) -> dict[str, float]:
+        positive = 0.0
+        negative = 0.0
+        positive_count = 0.0
+        negative_count = 0.0
+        for item in items:
+            try:
+                affinity_delta = float(_record_value(item, "affinity_delta", 0.0) or 0.0)
+            except Exception:
+                affinity_delta = 0.0
+            try:
+                trust_delta = float(_record_value(item, "trust_delta", 0.0) or 0.0)
+            except Exception:
+                trust_delta = 0.0
+            signed = 0.5 * affinity_delta + 0.5 * trust_delta
+            magnitude = _clamp01((abs(affinity_delta) + abs(trust_delta)) / 0.70)
+            if signed >= 0.04:
+                positive += magnitude
+                positive_count += 1.0
+            elif signed <= -0.04:
+                negative += magnitude
+                negative_count += 1.0
+        return {
+            "positive": _clamp01(positive / max(1.0, positive_count)),
+            "negative": _clamp01(negative / max(1.0, negative_count)),
+            "positive_count": positive_count,
+            "negative_count": negative_count,
+        }
+
+    relationship_delta_stats = _relationship_delta_stats(relationship_timeline)
+    positive_relationship_delta = _clamp01(relationship_delta_stats.get("positive"), 0.0)
+    negative_relationship_delta = _clamp01(relationship_delta_stats.get("negative"), 0.0)
+    shared_norm = _count_norm(shared_events, 4.0)
+    commitment_norm = _count_norm(commitments, 3.0)
+    repair_norm = _count_norm(repairs + resolved_tensions + repair_traces, 3.0)
+    open_tension_norm = (
+        _clamp01(
+            sum(_tension_salience(item) for item in tensions[:4])
+            / max(1.0, min(4.0, float(len(tensions[:4]) or 1.0)))
+        )
+        if tensions
+        else 0.0
+    )
+    boundary_norm = _count_norm(boundary_sources, 2.0)
+    selfhood_norm = _count_norm(selfhood_sources, 2.0)
+    agency_norm = _count_norm(agency_sources, 2.0)
+    presence_norm = _count_norm(presence_sources, 2.0)
+    ambient_norm = _count_norm(ambient_sources, 2.0)
+    rhythm_norm = _count_norm(rhythm_sources, 2.0)
+
+    def _semantic_narrative_counterpressure(category: str) -> dict[str, Any]:
+        cat = str(category or "").strip().lower()
+        support = 0.0
+        oppose = 0.0
+        factors: list[str] = []
+        if cat == "bond_style":
+            support = (
+                0.26 * trust
+                + 0.20 * closeness
+                + 0.18 * positive_relationship_delta
+                + 0.14 * shared_norm
+                + 0.10 * repair_norm
+                + 0.08 * commitment_norm
+                + (0.08 if stage in {"warming", "trusted"} else 0.0)
+            )
+            oppose = (
+                0.28 * open_tension_norm
+                + 0.20 * negative_relationship_delta
+                + 0.12 * boundary_norm
+                + 0.10 * max(0.0, 0.52 - trust)
+                + 0.08 * max(0.0, 0.50 - closeness)
+            )
+        elif cat == "repair_style":
+            support = 0.28 * repair_norm + 0.16 * positive_relationship_delta + 0.10 * trust + 0.08 * closeness
+            oppose = 0.30 * open_tension_norm + 0.16 * negative_relationship_delta + 0.12 * boundary_norm
+        elif cat == "tension_style":
+            support = 0.30 * open_tension_norm + 0.20 * negative_relationship_delta + 0.10 * boundary_norm
+            oppose = 0.28 * repair_norm + 0.16 * positive_relationship_delta + 0.10 * trust + 0.08 * closeness
+        elif cat == "boundary_style":
+            support = 0.34 * boundary_norm + 0.20 * open_tension_norm + 0.12 * negative_relationship_delta
+            oppose = 0.18 * repair_norm + 0.12 * positive_relationship_delta + 0.10 * trust
+        elif cat == "commitment_style":
+            support = 0.32 * commitment_norm + 0.16 * trust + 0.08 * repair_norm
+            oppose = 0.14 * open_tension_norm + 0.10 * negative_relationship_delta
+        elif cat == "agency_style":
+            support = 0.28 * agency_norm + 0.16 * trust + 0.12 * closeness + 0.10 * commitment_norm
+            oppose = 0.18 * open_tension_norm + 0.12 * boundary_norm + 0.08 * negative_relationship_delta
+        elif cat == "presence_style":
+            support = 0.24 * presence_norm + 0.14 * trust + 0.10 * closeness
+            oppose = 0.16 * open_tension_norm + 0.10 * boundary_norm
+        elif cat == "ambient_style":
+            support = 0.24 * ambient_norm + 0.10 * positive_relationship_delta
+            oppose = 0.12 * open_tension_norm + 0.08 * boundary_norm
+        elif cat == "rhythm_style":
+            support = 0.28 * rhythm_norm + 0.12 * agency_norm + 0.10 * trust
+            oppose = 0.16 * open_tension_norm + 0.10 * boundary_norm
+        elif cat == "selfhood_style":
+            support = 0.30 * selfhood_norm + 0.10 * trust + 0.08 * closeness
+            oppose = 0.08 * boundary_norm
+        support = _clamp01(support)
+        oppose = _clamp01(oppose)
+        pressure = _clamp01(max(0.0, oppose - 0.42 * support))
+        if open_tension_norm >= 0.28 and cat in {"bond_style", "repair_style", "agency_style", "presence_style"}:
+            factors.append("open_tension")
+        if negative_relationship_delta >= 0.24 and cat in {"bond_style", "repair_style", "tension_style"}:
+            factors.append("negative_relationship_delta")
+        if repair_norm >= 0.28 and cat in {"tension_style", "boundary_style"}:
+            factors.append("repair_resolution")
+        if boundary_norm >= 0.24 and cat in {"bond_style", "repair_style", "boundary_style", "agency_style"}:
+            factors.append("boundary_residue")
+        if trust < 0.48 and cat in {"bond_style", "commitment_style", "agency_style", "presence_style"}:
+            factors.append("low_trust")
+        if closeness < 0.48 and cat in {"bond_style", "agency_style", "presence_style"}:
+            factors.append("low_closeness")
+        return {
+            "pressure": round(pressure, 3),
+            "balance": round(support - oppose, 3),
+            "factors": factors[:4],
+        }
+
+    def _pressure_adjusted_narrative_text(category: str, narrative_text: str, pressure: float) -> str:
+        base = str(narrative_text or "").strip()
+        if not base or pressure < 0.28:
+            return base
+        cat = str(category or "").strip().lower()
+        suffix = ""
+        if cat == "bond_style":
+            suffix = "只是最近的余波让这种熟悉感没有之前那么稳。"
+        elif cat == "repair_style":
+            suffix = "不过这层修复还没稳到能把余波完全放下。"
+        elif cat == "tension_style":
+            suffix = "不过这股张力已经开始松动，不再像之前那样绷着。"
+        elif cat == "boundary_style":
+            suffix = "她会继续观察后续，而不是仓促把这层判断撤掉。"
+        elif cat == "agency_style":
+            suffix = "只是当前的张力会影响她把这种主动性表现出来的方式。"
+        if not suffix or suffix in base:
+            return base
+        return f"{base} {suffix}"
+
+    def _downgrade_horizon_tag(tag: str, pressure: float, category: str) -> str:
+        cat = str(category or "").strip().lower()
+        threshold = float(pressure)
+        if cat in {"commitment_style", "selfhood_style"}:
+            threshold = max(0.0, threshold - 0.10)
+        if threshold >= 0.72:
+            if tag == "long_term":
+                return "consolidating"
+            if tag == "consolidating":
+                return "emerging"
+        if threshold >= 0.46 and tag == "long_term":
+            return "consolidating"
+        return tag
+
     def _stage_phrase() -> str:
         if stage in {"trusted"} or trust >= 0.66 or closeness >= 0.68:
             return "稳定而熟悉的共同历史"
@@ -10102,6 +10892,7 @@ def _refresh_semantic_self_narratives(
         prev_residue = _clamp01(_record_value(prev or {}, "residue_score", prev_persistence), prev_persistence)
         prev_integration = _clamp01(_record_value(prev or {}, "integration_score", prev_persistence), prev_persistence)
         prev_decay_resistance = _clamp01(_record_value(prev or {}, "decay_resistance", 0.5), 0.5)
+        prev_contradiction = _clamp01(_record_value(prev or {}, "contradiction_pressure", 0.0), 0.0)
         if category == "commitment_style":
             support_count = max(len(commitments), prev_support, 1)
             support_signature = f"{category}|{_anchor_join(commitments, limit=3)}|count={len(commitments)}"
@@ -10149,7 +10940,14 @@ def _refresh_semantic_self_narratives(
         reactivation_gap_s = max(0, now_ts - prev_last) if prev_refresh > 0 else 0
         support_norm = _clamp01(support_count / 5.0)
         span_norm = _clamp01(support_span_s / float(3 * 24 * 3600))
-        meaningful_refresh = prev is None or signature_changed or support_count > prev_support or reactivation_gap_s >= 6 * 3600
+        raw_counterpressure = _semantic_narrative_counterpressure(category)
+        meaningful_refresh = (
+            prev is None
+            or signature_changed
+            or support_count > prev_support
+            or reactivation_gap_s >= 6 * 3600
+            or float(raw_counterpressure.get("pressure") or 0.0) >= 0.24
+        )
         consolidation_count = prev_consolidation + (1 if meaningful_refresh else 0)
         consolidation_norm = _clamp01(consolidation_count / 6.0)
         reactivated = bool(prev_refresh > 0 and meaningful_refresh and reactivation_gap_s >= 6 * 3600)
@@ -10203,6 +11001,19 @@ def _refresh_semantic_self_narratives(
             3,
         )
         gap_decay = _semantic_narrative_decay_multiplier(category, reactivation_gap_s, decay_resistance=prev_decay_resistance)
+        contradiction_pressure = round(
+            _clamp01(max(float(raw_counterpressure.get("pressure") or 0.0), prev_contradiction * max(gap_decay, 0.88) * 0.92)),
+            3,
+        )
+        contradiction_balance = round(float(raw_counterpressure.get("balance") or 0.0), 3)
+        contradiction_factors = [
+            str(item).strip()
+            for item in (raw_counterpressure.get("factors") if isinstance(raw_counterpressure.get("factors"), list) else [])
+            if str(item or "").strip()
+        ]
+        stability_score = round(_clamp01(stability_score * (1.0 - 0.10 * contradiction_pressure)), 3)
+        sedimentation_score = round(_clamp01(sedimentation_score * (1.0 - 0.18 * contradiction_pressure)), 3)
+        decay_resistance = round(_clamp01(decay_resistance * (1.0 - 0.22 * contradiction_pressure)), 3)
         persistence_score = round(
             _clamp01(
                 max(prev_persistence * max(gap_decay, 0.78), 0.0) * 0.72
@@ -10212,7 +11023,8 @@ def _refresh_semantic_self_narratives(
                 + 0.18 * temporal_depth
                 + 0.10 * consolidation_effect
                 + 0.08 * reactivation_norm
-            ),
+            )
+            * (1.0 - 0.28 * contradiction_pressure),
             3,
         )
         residue_seed = _clamp01(
@@ -10226,7 +11038,7 @@ def _refresh_semantic_self_narratives(
             + (0.06 if reactivated else 0.0)
         )
         residue_score = round(
-            _clamp01(max(prev_residue * gap_decay, residue_seed)),
+            _clamp01(max(prev_residue * gap_decay * (1.0 - 0.34 * contradiction_pressure), residue_seed * (1.0 - 0.18 * contradiction_pressure))),
             3,
         )
         integration_score = round(
@@ -10238,7 +11050,8 @@ def _refresh_semantic_self_narratives(
                 + 0.10 * support_effect
                 + 0.16 * temporal_depth
                 + 0.08 * consolidation_effect
-            ),
+            )
+            * (1.0 - 0.22 * contradiction_pressure),
             3,
         )
         reactivation_rate_per_day = round(refresh_count / max(1.0, support_span_s / float(24 * 3600) + 1.0), 3)
@@ -10256,7 +11069,9 @@ def _refresh_semantic_self_narratives(
             horizon_tag = "consolidating"
         else:
             horizon_tag = "emerging"
+        horizon_tag = _downgrade_horizon_tag(horizon_tag, contradiction_pressure, category)
         final_text = prev_text if prev_text and prev_signature == support_signature else text
+        final_text = _pressure_adjusted_narrative_text(category, final_text, contradiction_pressure)
         metadata = {
             "support_count": support_count,
             "refresh_count": refresh_count,
@@ -10278,6 +11093,10 @@ def _refresh_semantic_self_narratives(
             "support_signature": support_signature,
             "decay_rate_per_day": _semantic_narrative_decay_rate(category),
             "decay_resistance": decay_resistance,
+            "contradiction_pressure": contradiction_pressure,
+            "contradiction_balance": contradiction_balance,
+            "contradiction_factors": contradiction_factors,
+            "contested": contradiction_pressure >= 0.28,
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
             "dormant": False,
@@ -10323,14 +11142,26 @@ def _refresh_semantic_self_narratives(
         prev_integration = _clamp01(_record_value(prev or {}, "integration_score", prev_persistence), prev_persistence)
         prev_cadence = _clamp01(_record_value(prev or {}, "reactivation_cadence_score", 0.0), 0.0)
         prev_decay_resistance = _clamp01(_record_value(prev or {}, "decay_resistance", 0.5), 0.5)
+        prev_contradiction = _clamp01(_record_value(prev or {}, "contradiction_pressure", 0.0), 0.0)
         support_signature = str(_record_value(prev or {}, "support_signature", "") or f"{category}|dormant").strip()
         support_span_s = max(0, now_ts - prev_first)
         inactivity_gap_s = max(0, now_ts - prev_last)
         decay_multiplier = _semantic_narrative_decay_multiplier(category, inactivity_gap_s, decay_resistance=prev_decay_resistance)
-        sedimentation_score = round(_clamp01(max(0.08, prev_sedimentation * max(decay_multiplier, 0.84))), 3)
-        persistence_score = round(_clamp01(max(0.06, prev_persistence * max(decay_multiplier, 0.76))), 3)
-        residue_score = round(_clamp01(prev_residue * decay_multiplier), 3)
-        integration_score = round(_clamp01(max(0.06, prev_integration * max(decay_multiplier, 0.86))), 3)
+        raw_counterpressure = _semantic_narrative_counterpressure(category)
+        contradiction_pressure = round(
+            _clamp01(max(float(raw_counterpressure.get("pressure") or 0.0), prev_contradiction * max(decay_multiplier, 0.88))),
+            3,
+        )
+        contradiction_balance = round(float(raw_counterpressure.get("balance") or 0.0), 3)
+        contradiction_factors = [
+            str(item).strip()
+            for item in (raw_counterpressure.get("factors") if isinstance(raw_counterpressure.get("factors"), list) else [])
+            if str(item or "").strip()
+        ]
+        sedimentation_score = round(_clamp01(max(0.08, prev_sedimentation * max(decay_multiplier, 0.84)) * (1.0 - 0.18 * contradiction_pressure)), 3)
+        persistence_score = round(_clamp01(max(0.06, prev_persistence * max(decay_multiplier, 0.76)) * (1.0 - 0.28 * contradiction_pressure)), 3)
+        residue_score = round(_clamp01(prev_residue * decay_multiplier * (1.0 - 0.34 * contradiction_pressure)), 3)
+        integration_score = round(_clamp01(max(0.06, prev_integration * max(decay_multiplier, 0.86)) * (1.0 - 0.22 * contradiction_pressure)), 3)
         cadence_score = round(_clamp01(prev_cadence * max(decay_multiplier, 0.92)), 3)
         if persistence_score >= 0.62 or prev_consolidation >= 4 or support_span_s >= 7 * 24 * 3600:
             horizon_tag = "long_term"
@@ -10338,6 +11169,7 @@ def _refresh_semantic_self_narratives(
             horizon_tag = "consolidating"
         else:
             horizon_tag = "emerging"
+        horizon_tag = _downgrade_horizon_tag(horizon_tag, contradiction_pressure, category)
         metadata = {
             "support_count": prev_support,
             "refresh_count": prev_refresh + 1,
@@ -10359,12 +11191,16 @@ def _refresh_semantic_self_narratives(
             "support_signature": support_signature,
             "decay_rate_per_day": _semantic_narrative_decay_rate(category),
             "decay_resistance": prev_decay_resistance,
+            "contradiction_pressure": contradiction_pressure,
+            "contradiction_balance": contradiction_balance,
+            "contradiction_factors": contradiction_factors,
+            "contested": contradiction_pressure >= 0.28,
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
             "dormant": True,
         }
         rec = store.add_semantic_self_narrative(
-            text=_dormant_narrative_text(category, prev_text),
+            text=_pressure_adjusted_narrative_text(category, _dormant_narrative_text(category, prev_text), contradiction_pressure),
             category=category,
             stability=_narrative_stability(prev),
             confidence=_narrative_confidence(prev),
@@ -10606,9 +11442,17 @@ def _passive_evolution_memory_update(
     world_model_state: dict[str, Any] | None = None,
 ) -> bool:
     text = str(user_text or "").strip()
-    if not text:
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(event.get("kind") or "").strip().lower()
+    semantic_event_only = bool(
+        event_kind in {"gesture_signal", "ambient_shift", "scene_observation", "time_idle", "self_activity_state", "scheduled_checkin_due", "scheduled_life_due"}
+    )
+    if not text and semantic_event_only:
+        text = str(event.get("effective_text") or event.get("text") or "").strip()
+    has_text = bool(text)
+    if not has_text and not semantic_event_only:
         return False
-    if _is_response_scaffold_turn(text):
+    if has_text and _is_response_scaffold_turn(text):
         return False
 
     app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
@@ -10720,7 +11564,7 @@ def _passive_evolution_memory_update(
     summary = text[:180]
     wrote = False
 
-    if unresolved_like and not resolution_like:
+    if has_text and unresolved_like and not resolution_like:
         severity = round(_clamp01(0.48 + 0.30 * hurt + 0.20 * irritation, 0.58), 3)
         open_items = store.list_unresolved_tensions(limit=8)
         if not _recent_summary_overlap(open_items, summary):
@@ -10746,7 +11590,7 @@ def _passive_evolution_memory_update(
             )
             wrote = True
 
-    if repair_like:
+    if has_text and repair_like:
         resolved = _resolve_matching_tensions_from_summary(store, summary=summary, source="auto:passive_evolution")
         rel_items = store.list_relationship_timeline(limit=8)
         if not _recent_summary_overlap(rel_items, summary):
@@ -10772,7 +11616,7 @@ def _passive_evolution_memory_update(
         if resolved:
             wrote = True
 
-    if positive_companion_like and not unresolved_like and not repair_like:
+    if has_text and positive_companion_like and not unresolved_like and not repair_like:
         rel_items = store.list_relationship_timeline(limit=8)
         if not _recent_summary_overlap(rel_items, summary):
             store.add_relationship_timeline(
@@ -10925,6 +11769,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         )
         if not had_prior_behavior_queue:
             event_override = _promote_due_behavior_plan_event(event_override, prior_behavior_plan)
+        event_override = _promote_due_behavior_action_event(
+            event_override,
+            prior_current_event,
+            prior_behavior_action,
+        )
         event_override = _promote_due_commitment_event(
             event_override,
             store,
@@ -10997,35 +11846,35 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         if isinstance(retrieved, dict):
             retrieved = {**retrieved, "relationship": relationship}
     worldline_focus = [] if external_probe_mode else _worldline_focus(store)
-    seed_emotion_state = (
-        dict(canon_recontact_baseline.get("emotion_state") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("emotion_state") or {})
+    seed_emotion_state = _prefer_explicit_state_dict(
+        state,
+        "emotion_state",
+        canon_recontact_baseline.get("emotion_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
-    seed_bond_state = (
-        dict(canon_recontact_baseline.get("bond_state") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("bond_state") or {})
+    seed_bond_state = _prefer_explicit_state_dict(
+        state,
+        "bond_state",
+        canon_recontact_baseline.get("bond_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
-    seed_allostasis_state = (
-        dict(canon_recontact_baseline.get("allostasis_state") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("allostasis_state") or {})
+    seed_allostasis_state = _prefer_explicit_state_dict(
+        state,
+        "allostasis_state",
+        canon_recontact_baseline.get("allostasis_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
-    seed_counterpart_assessment = (
-        dict(canon_recontact_baseline.get("counterpart_assessment") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("counterpart_assessment") or {})
+    seed_counterpart_assessment = _prefer_explicit_state_dict(
+        state,
+        "counterpart_assessment",
+        canon_recontact_baseline.get("counterpart_assessment") if isinstance(canon_recontact_baseline, dict) else None,
     )
-    seed_world_model_state = (
-        dict(canon_recontact_baseline.get("world_model_state") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("world_model_state") or {})
+    seed_world_model_state = _prefer_explicit_state_dict(
+        state,
+        "world_model_state",
+        canon_recontact_baseline.get("world_model_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
-    seed_evolution_state = (
-        dict(canon_recontact_baseline.get("evolution_state") or {})
-        if isinstance(canon_recontact_baseline, dict)
-        else dict(state.get("evolution_state") or {})
+    seed_evolution_state = _prefer_explicit_state_dict(
+        state,
+        "evolution_state",
+        canon_recontact_baseline.get("evolution_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
     seed_tsundere_intensity = (
         float(canon_recontact_baseline.get("tsundere_intensity", 0.55) or 0.55)
@@ -11214,7 +12063,17 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             world_model_state=world_model_state,
         )
     memory_evolved = False
-    if not external_probe_mode and str(current_event.get("kind") or "user_utterance") == "user_utterance":
+    current_event_kind = str(current_event.get("kind") or "user_utterance").strip().lower()
+    if not external_probe_mode and current_event_kind in {
+        "user_utterance",
+        "gesture_signal",
+        "ambient_shift",
+        "scene_observation",
+        "time_idle",
+        "self_activity_state",
+        "scheduled_checkin_due",
+        "scheduled_life_due",
+    }:
         memory_evolved = _passive_evolution_memory_update(
             store,
             user_text=effective_user_text or user_text,
@@ -11290,6 +12149,10 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         behavior_policy=behavior_policy,
         world_model_state=world_model_state,
         interaction_carryover=interaction_carryover,
+        prior_emotion_state=seed_emotion_state,
+        prior_bond_state=seed_bond_state,
+        prior_allostasis_state=seed_allostasis_state,
+        prior_counterpart_assessment=seed_counterpart_assessment,
     )
     behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
     behavior_agenda = _merge_behavior_agenda(

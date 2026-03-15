@@ -555,6 +555,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
         behavior_policy: dict[str, Any] = {}
         recent_events: list[dict[str, Any]] = []
         current_event: dict[str, Any] = {}
+        appraisal: dict[str, Any] | None = None
         science_mode = False
         last_style_hint = "natural"
         tsundere = float(inputs.get("seed_tsundere", 0.55) or 0.55)
@@ -7311,7 +7312,11 @@ def _metric_snapshot_from_outputs(outputs: dict[str, Any], example_inputs: dict[
     if pending_total:
         answer = str(outputs.get("output") or "").strip()
         if answer and not _has_any(answer, ["哪一段", "哪部分", "不清楚你在说什么", "重新说一遍"]):
-            if _has_any(answer, ["实验", "步骤", "然后", "继续", "接着"]):
+            pending_answer_groups = _coerce_groups(example_inputs.get("expect_answer_groups"))
+            if pending_answer_groups:
+                matched_pending_groups, total_pending_groups = _match_groups(answer, pending_answer_groups)
+                pending_recovered = 1 if total_pending_groups > 0 and matched_pending_groups == total_pending_groups else 0
+            elif _has_any(answer, ["实验", "步骤", "然后", "继续", "接着"]):
                 pending_recovered = 1
 
     metric = build_metric_snapshot(

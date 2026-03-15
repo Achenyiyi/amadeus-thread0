@@ -50,6 +50,15 @@ class SessionOrchestratorTests(unittest.TestCase):
         self.assertEqual(pending, "先给你一个方向，因为")
         self.assertTrue(has_pending_continuation(user_text="继续", pending_fragment=pending))
 
+    def test_referential_continue_recovers_finished_previous_excerpt(self):
+        pending = derive_pending_fragment(
+            user_text="继续刚才那段",
+            previous_excerpt="上次你提到实验失败后其实没有真的放弃。",
+            pending_fragment="",
+        )
+        self.assertEqual(pending, "上次你提到实验失败后其实没有真的放弃。")
+        self.assertTrue(has_pending_continuation(user_text="继续刚才那段", pending_fragment=pending))
+
     def test_continue_without_pending_goal_does_not_keep_previous_goal(self):
         pending_goal = derive_pending_user_goal(
             user_text="继续",
@@ -58,6 +67,16 @@ class SessionOrchestratorTests(unittest.TestCase):
             pending_fragment="",
         )
         self.assertEqual(pending_goal, "")
+
+    def test_referential_continue_keeps_pending_goal_without_fragment(self):
+        pending_goal = derive_pending_user_goal(
+            user_text="继续刚才那段",
+            previous_user_text="先把上次那个实验方案分成三步说完。",
+            pending_user_goal="我现在要做一个实验方案，请你用理性的方式给我一个三步计划，并解释每一步为什么这么安排。",
+            pending_fragment="",
+        )
+        self.assertIn("实验方案", pending_goal)
+        self.assertIn("三步计划", pending_goal)
 
 
 if __name__ == "__main__":

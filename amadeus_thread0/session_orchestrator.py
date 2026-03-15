@@ -144,12 +144,14 @@ def derive_pending_fragment(
     pending = str(pending_fragment or "").strip()
     has_continue = is_continuation_request(text)
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
+    referential_continue = _has_referential_resume_target(text)
 
     if has_continue:
         if pending:
             return pending[:240]
-        if prev and _looks_like_unfinished_assistant_reply(prev) and not _looks_like_clarification_request(prev):
-            return prev[:240]
+        if prev and not _looks_like_clarification_request(prev):
+            if referential_continue or _looks_like_unfinished_assistant_reply(prev):
+                return prev[:240]
         return ""
     if has_clear:
         return ""
@@ -183,6 +185,16 @@ def is_continuation_request(user_text: str) -> bool:
         return False
 
     return any(marker in compact for marker in _CONTINUE_MARKERS)
+
+
+def _has_referential_resume_target(text: str) -> bool:
+    t = str(text or "").strip()
+    if not t:
+        return False
+    compact = re.sub(r"\s+", "", t)
+    if not is_continuation_request(compact):
+        return False
+    return bool(re.search(r"(刚才|上次|前面|那段|那个|这段|前一段|之前)", compact))
 
 
 def _looks_like_unfinished_assistant_reply(text: str) -> bool:
@@ -248,15 +260,16 @@ def derive_pending_user_goal(
     has_continue = is_continuation_request(text)
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
     active_continuation = has_pending_continuation(user_text=text, pending_fragment=pending_fragment)
+    referential_continue = _has_referential_resume_target(text) or _looks_like_resume_goal_reference(text)
 
     if has_continue:
-        if not active_continuation:
-            return ""
-        if pending:
+        if pending and (active_continuation or referential_continue):
             return pending[:280]
+        if not active_continuation and not referential_continue:
+            return ""
         if prev_user and not is_continuation_request(prev_user):
             return prev_user[:280]
-        return ""
+        return pending[:280] if pending and referential_continue else ""
     if has_clear:
         return ""
     if _looks_like_resume_goal_reference(text):

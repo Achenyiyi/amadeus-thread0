@@ -178,6 +178,72 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 store.close()
         self.assertIn("这段时间沉下来的熟悉感", prompt)
 
+    def test_relationship_prompt_prefers_subjective_runtime_brief(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.78, "closeness": 0.88, "hurt": 0.04},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.44},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.8, "reciprocity": 0.84},
+                    "behavior_policy": {"warmth": 0.78, "approach_vs_withdraw": 0.66, "self_directedness": 0.42},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "active"},
+                    "semantic_narrative_profile": {
+                        "bond_depth": 0.68,
+                        "selfhood_integrity": 0.63,
+                        "summary_lines": ["她会把这种关系话题当成真实判断，不会说成系统说明。"],
+                    },
+                    "interaction_carryover": {
+                        "carryover_mode": "relationship_residue",
+                        "strength": 0.52,
+                        "attention_target": "selfhood",
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "别讲系统边界，我想听你自己会怎么看这种关系。", store)
+            finally:
+                store.close()
+        self.assertIn("内在延续", prompt)
+        self.assertIn("你此刻更像是从这样的内在状态开口", prompt)
+        self.assertIn("当前上下文", prompt)
+        self.assertIn("运行态摘记", prompt)
+        self.assertNotIn("state_snapshot=", prompt)
+        self.assertNotIn("relationship_memory:", prompt)
+        self.assertNotIn("conflict_repair_memory:", prompt)
+        self.assertNotIn("[memory]", prompt)
+
+    def test_structured_prompt_keeps_state_snapshot_fallback(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "structured",
+                    "science_mode": True,
+                    "emotion_state": {"label": "logic"},
+                    "bond_state": {"trust": 0.6, "closeness": 0.58, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.12, "autonomy_need": 0.2},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.7, "reciprocity": 0.68},
+                    "behavior_policy": {"warmth": 0.44, "approach_vs_withdraw": 0.55},
+                    "behavior_action": {"interaction_mode": "science_partner", "followup_intent": "active"},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "structured"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "帮我分析一下这个实验设计。", store)
+            finally:
+                store.close()
+        self.assertIn("state_snapshot=", prompt)
+        self.assertNotIn("运行态摘记", prompt)
+
     def test_light_dialog_rewrite_notes_cover_overexplained_smalltalk(self):
         notes = _light_dialog_rewrite_notes(
             "你好呀",
@@ -406,6 +472,14 @@ class DailySurfaceGatingTests(unittest.TestCase):
             "没什么事，我就是想叫你一下。",
         )
         self.assertEqual(cleaned, "行吧，那就先待着吧。")
+
+    def test_sanitize_final_answer_softens_playful_memory_snapback(self):
+        cleaned = _sanitize_final_answer(
+            "少来，明明是你自己记性差，昨天还信誓旦旦说今天要改的。真是拿你没办法……行了，先把那杯放下。",
+            "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+        )
+        self.assertNotIn("记性差", cleaned)
+        self.assertIn("昨天还信誓旦旦说今天要改的", cleaned)
 
 
 if __name__ == "__main__":

@@ -210,6 +210,8 @@ def transition_counterpart_assessment(
     current_event: dict[str, Any] | None,
 ) -> dict[str, Any]:
     prev = dict(prev_state or {})
+    prev_stance = str(prev.get("stance") or "").strip().lower()
+    prev_scene = str(prev.get("scene") or "").strip().lower()
     relationship = relationship if isinstance(relationship, dict) else {}
     bond = dict(bond_state or {})
     allostasis = dict(allostasis_state or {})
@@ -274,6 +276,16 @@ def transition_counterpart_assessment(
     elif boundary_level >= 0.34 or reliability_level < 0.48 or hurt > 0.18 or clamp01(world.get("tension_load"), 0.0) >= 0.36:
         stance = "watchful"
 
+    guarded_hold_event = event_kind in {"user_utterance", "gesture_signal", "ambient_shift", "scene_observation"}
+    # A previously guarded relational read should not reopen on a single benign contact or perception cue.
+    if prev_stance == "guarded" and guarded_hold_event and not bool(signals.get("repair")):
+        if prev_scene in {"relationship_degradation", "boundary_non_compliance"}:
+            stance = "guarded"
+            boundary_level = max(boundary_level, 0.34)
+            reliability_level = min(reliability_level, 0.56)
+        elif stance == "open":
+            stance = "watchful"
+
     scene = "neutral"
     if bool(signals.get("repair")):
         scene = "repair_attempt"
@@ -285,6 +297,15 @@ def transition_counterpart_assessment(
         scene = str(app.get("selfhood_scene") or "selfhood_reflection")
     elif event_kind == "time_idle":
         scene = "idle_presence"
+
+    if (
+        prev_scene in {"relationship_degradation", "boundary_non_compliance"}
+        and guarded_hold_event
+        and not bool(signals.get("repair"))
+        and scene in {"neutral", "care_bid"}
+        and stance == "guarded"
+    ):
+        scene = prev_scene
 
     return {
         "respect_level": respect_level,

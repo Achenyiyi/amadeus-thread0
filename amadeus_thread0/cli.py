@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import uuid
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -38,7 +40,7 @@ from .config import (
     USER_FACING_MODE,
 )
 from .cli_views import build_evolution_cli_summary, build_evolution_summary_line
-from .graph import build_graph, build_implicit_idle_state_update
+from .graph import build_graph, build_implicit_idle_state_update, reset_runtime_caches
 from .memory_store import MemoryStore
 from .modeling import build_chat_model, runtime_model_summary
 from .perception_events import (
@@ -47,8 +49,10 @@ from .perception_events import (
     list_event_seed_rows,
     list_sense_rows,
 )
+from .runtime_audit import audit_runtime_layout, render_runtime_audit_report
 from .session_orchestrator import emotion_to_tts_profile, push_tts_segments
 from .settings import configure_runtime_environment, get_settings
+from .tools import reset_tool_runtime_caches
 from .tts_io import create_dashscope_realtime_session, get_tts_config
 
 
@@ -125,17 +129,19 @@ def _print_help() -> None:
         "\n[commands]\n"
         "/help                     查看命令总览\n"
         "/exit                     退出 CLI\n"
-        "/newthread                切换到新世界线\n"
+        "/newthread [thread_id]    切换到新世界线；留空则自动生成\n"
         "/threads                  列出已有 thread_id\n"
         "/history [n]              查看 checkpoint 历史\n"
         "/rewind <checkpoint_id>   从 checkpoint 分叉继续\n"
         "/where                    查看当前 thread / checkpoint\n"
+        "/runtime                  查看 shared / isolated runtime 数据布局\n"
         "/env                      查看运行环境摘要\n"
         "/mem                      查看 profile / relationship / moments 快照\n"
         "/worldline                查看世界线事件 / 承诺 / 冲突修复\n"
         "/bond                     查看关系状态与关系时间线\n"
         "/sources                  查看来源与 claim->source 映射\n"
         "/persona                  查看角色状态快照\n"
+        "/appraisal                查看最近一轮 appraisal 结果\n"
         "/agenda                   查看待成熟行为议程\n"
         "/queue                    查看待成熟行为队列（/agenda 别名）\n"
         "/idle [minutes] [| note]  模拟一段安静时间经过，让她决定是否主动开口\n"
@@ -155,6 +161,130 @@ def _print_help() -> None:
         "/tts_ref <path.wav>       设置参考音频\n"
         "/tts_ref_text <text>      设置参考文本\n"
     )
+
+
+def _sanitize_thread_id_seed(raw: str, *, fallback: str = "thread") -> str:
+    seed = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(raw or "").strip()).strip("-._")
+    return seed or fallback
+
+
+def _generate_thread_id(
+    *,
+    prefix: str = "thread",
+    now_ts: int | None = None,
+    suffix: str | None = None,
+) -> str:
+    safe_prefix = _sanitize_thread_id_seed(prefix)
+    clock = int(now_ts if now_ts is not None else time.time())
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(clock))
+    token = _sanitize_thread_id_seed(suffix or uuid.uuid4().hex[:8], fallback="session")
+    return f"{safe_prefix}-{stamp}-{token}"
+
+
+def _resolve_startup_thread_id(
+    *,
+    default_thread_id: str,
+    cli_thread_id: str | None,
+    fresh_thread: bool,
+    fresh_thread_prefix: str,
+    now_ts: int | None = None,
+    suffix: str | None = None,
+) -> str:
+    if cli_thread_id:
+        return _sanitize_thread_id_seed(cli_thread_id, fallback=default_thread_id)
+    if fresh_thread:
+        return _generate_thread_id(prefix=fresh_thread_prefix, now_ts=now_ts, suffix=suffix)
+    return default_thread_id
+
+
+def _build_startup_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="python -m amadeus_thread0.cli",
+        description="Amadeus-K CLI",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--thread-id",
+        dest="thread_id",
+        help="启动时直接使用指定 thread_id。",
+    )
+    group.add_argument(
+        "--fresh-thread",
+        action="store_true",
+        help="启动时自动创建一个新的 thread_id，避免复用旧世界线。",
+    )
+    parser.add_argument(
+        "--fresh-thread-prefix",
+        default="thread",
+        help="配合 --fresh-thread 使用的 thread_id 前缀，默认 thread。",
+    )
+    return parser
+
+
+def _worldline_runtime_dir(base_data_dir: Path, thread_id: str) -> Path:
+    return Path(base_data_dir) / "worldlines" / _sanitize_thread_id_seed(thread_id, fallback="thread")
+
+
+def _apply_worldline_runtime_paths(base_data_dir: Path, thread_id: str) -> Path:
+    runtime_dir = _worldline_runtime_dir(base_data_dir, thread_id)
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["AMADEUS_DATA_DIR"] = str(runtime_dir)
+    os.environ["AMADEUS_CHECKPOINT_DB"] = str(runtime_dir / "checkpoints.sqlite")
+    os.environ["AMADEUS_MEMORY_DB"] = str(runtime_dir / "memories.sqlite")
+    os.environ["AMADEUS_DIARY_PATH"] = str(runtime_dir / "diary.txt")
+    return runtime_dir
+
+
+def _repo_default_data_dir() -> Path:
+    return Path(__file__).resolve().parents[1] / "data"
+
+
+def _shared_runtime_artifacts(base_data_dir: Path) -> list[str]:
+    names = [
+        "checkpoints.sqlite",
+        "memories.sqlite",
+        "decision_audit.jsonl",
+        "mcp_audit.jsonl",
+        "memory_store_audit.jsonl",
+        "tool_audit.jsonl",
+    ]
+    found: list[str] = []
+    root = Path(base_data_dir)
+    for name in names:
+        path = root / name
+        try:
+            if path.exists() and path.is_file() and path.stat().st_size > 0:
+                found.append(name)
+        except Exception:
+            continue
+    return found
+
+
+def _should_warn_shared_default_runtime(
+    *,
+    base_data_dir: Path,
+    runtime_data_dir: Path,
+    startup_thread_id: str,
+    startup_explicit: bool,
+    shared_artifacts: list[str],
+) -> bool:
+    if startup_explicit:
+        return False
+    if str(startup_thread_id or "").strip() != "thread0":
+        return False
+    if not shared_artifacts:
+        return False
+    try:
+        if Path(base_data_dir).resolve() != _repo_default_data_dir().resolve():
+            return False
+        if Path(runtime_data_dir).resolve() != Path(base_data_dir).resolve():
+            return False
+    except Exception:
+        return False
+    raw = str(os.getenv("AMADEUS_CLI_SUPPRESS_SHARED_RUNTIME_WARNING", "0") or "").strip().lower()
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return False
+    return True
 
 def _build_run_config(base_config: dict[str, object], pending_checkpoint_id: str | None) -> tuple[dict[str, object], str | None]:
     run_config: dict[str, object] = base_config
@@ -332,6 +462,15 @@ def _print_event_evolution_summary(
     print(f"\n{prefix}[{label}_SUMMARY]\n" + dumped)
 
 
+def _print_turn_appraisal(values: dict[str, object] | None, *, prefix: str = "") -> None:
+    vals = values if isinstance(values, dict) else {}
+    appraisal = vals.get("turn_appraisal") if isinstance(vals.get("turn_appraisal"), dict) else {}
+    dumped = json.dumps(appraisal, ensure_ascii=False, indent=2)
+    if prefix:
+        dumped = "\n".join(prefix + part if part else prefix for part in dumped.splitlines())
+    print(f"\n{prefix}[TURN_APPRAISAL]\n" + dumped)
+
+
 def _implicit_idle_trigger_minutes() -> int:
     raw = str(os.getenv("AMADEUS_IMPLICIT_IDLE_MINUTES", "") or "").strip()
     if not raw:
@@ -378,6 +517,8 @@ def _apply_implicit_idle_maturation(
 
 
 def main():
+    args = _build_startup_arg_parser().parse_args()
+
     # 优先从当前工作目录加载 .env（你用 `python -m amadeus_thread0.cli` 运行时最符合直觉）
     # 再回退到包根目录（避免以模块/安装形式运行时找不到配置）。
     dotenv_candidates = [
@@ -419,13 +560,31 @@ def main():
     )
 
     s = get_settings()
+    base_data_dir = s.data_dir
+    startup_explicit = bool(
+        args.thread_id
+        or args.fresh_thread
+        or str(os.getenv("AMADEUS_THREAD_ID") or "").strip()
+        or str(os.getenv("AMADEUS_DATA_DIR") or "").strip()
+    )
+    startup_thread_id = _resolve_startup_thread_id(
+        default_thread_id=s.thread_id,
+        cli_thread_id=args.thread_id,
+        fresh_thread=bool(args.fresh_thread),
+        fresh_thread_prefix=str(args.fresh_thread_prefix or "thread"),
+    )
+    isolated_worldline_dir: Path | None = None
+    if bool(args.fresh_thread):
+        isolated_worldline_dir = _apply_worldline_runtime_paths(base_data_dir, startup_thread_id)
+        s = get_settings()
+    shared_runtime_artifacts = _shared_runtime_artifacts(base_data_dir)
     graph = build_graph()
     memory_store = MemoryStore(s.memory_db_path)
 
     config = {
         "configurable": {
             # LangGraph persistence 通过 thread_id 把 checkpoint 归到同一条“世界线”
-            "thread_id": s.thread_id,
+            "thread_id": startup_thread_id,
             "user_id": s.user_id,
         }
     }
@@ -441,6 +600,37 @@ def main():
     tts_ref_text = str(tts_cfg.ref_text or "").strip()
 
     print("Amadeus-K CLI 已启动。输入 /help 查看命令，/exit 退出。")
+    if startup_thread_id != s.thread_id:
+        print(
+            "[runtime] startup_thread_override="
+            + str(startup_thread_id)
+            + " (default="
+            + str(s.thread_id)
+            + ")"
+        )
+    if isolated_worldline_dir is not None:
+        print("[runtime] worldline_storage=" + str(isolated_worldline_dir))
+    elif _should_warn_shared_default_runtime(
+        base_data_dir=base_data_dir,
+        runtime_data_dir=s.data_dir,
+        startup_thread_id=startup_thread_id,
+        startup_explicit=startup_explicit,
+        shared_artifacts=shared_runtime_artifacts,
+    ):
+        print(
+            "[runtime][warn] default thread0 is resuming shared runtime data in "
+            + str(base_data_dir)
+        )
+        print(
+            "[runtime][hint] clean demo: python -m amadeus_thread0.cli --fresh-thread"
+        )
+        print(
+            "[runtime][hint] explicit resume: python -m amadeus_thread0.cli --thread-id thread0"
+        )
+        print(
+            "[runtime][hint] shared artifacts="
+            + ", ".join(shared_runtime_artifacts[:6])
+        )
     print(
         "[runtime] model="
         + runtime_model_summary()
@@ -465,15 +655,28 @@ def main():
             continue
         if user.lower() in {"/exit", "exit", "quit"}:
             break
-        if user.lower() == "/newthread":
-            # 简单起见：让你手动输入新 thread_id（后续我可以做自动命名/列出历史线程）
-            new_id = _normalize_cli_text(input("new thread_id> "))
-            if new_id:
-                config["configurable"]["thread_id"] = new_id
-                # 切线程后清空 time travel 目标
-                pending_checkpoint_id = None
-                last_conversation_touch_ts = None
-                print(f"已切换到 thread_id={new_id}")
+        if user.lower().startswith("/newthread"):
+            new_id = _normalize_cli_text(user[len("/newthread") :].strip())
+            if not new_id:
+                entered = _normalize_cli_text(input("new thread_id (leave blank for auto)> "))
+                new_id = entered or _generate_thread_id(prefix="thread")
+            new_id = _sanitize_thread_id_seed(new_id, fallback=_generate_thread_id(prefix="thread"))
+            worldline_dir = _apply_worldline_runtime_paths(base_data_dir, new_id)
+            try:
+                memory_store.close()
+            except Exception:
+                pass
+            reset_tool_runtime_caches()
+            reset_runtime_caches()
+            s = get_settings()
+            graph = build_graph()
+            memory_store = MemoryStore(s.memory_db_path)
+            config["configurable"]["thread_id"] = new_id
+            # 切线程后清空 time travel 目标
+            pending_checkpoint_id = None
+            last_conversation_touch_ts = None
+            print(f"已切换到 thread_id={new_id}")
+            print("[runtime] worldline_storage=" + str(worldline_dir))
             continue
         if user.lower() == "/threads":
             # 从 checkpoints.sqlite 里尽量枚举 thread_id（不同版本表名可能不同，这里做容错）
@@ -506,6 +709,15 @@ def main():
                     for tid in sorted(thread_ids):
                         mark = "*" if tid == config["configurable"]["thread_id"] else " "
                         print(f"{mark} {tid}")
+                worldline_root = Path(base_data_dir) / "worldlines"
+                worldline_ids = sorted(
+                    p.name for p in worldline_root.iterdir() if p.is_dir()
+                ) if worldline_root.exists() else []
+                if worldline_ids:
+                    print("\n[worldline_dirs]")
+                    for wid in worldline_ids:
+                        mark = "*" if wid == config["configurable"]["thread_id"] else " "
+                        print(f"{mark} {wid}")
             finally:
                 conn.close()
             continue
@@ -549,6 +761,16 @@ def main():
             print(
                 f"\n[current] thread_id={config['configurable']['thread_id']} checkpoint_id={cid}"
             )
+            continue
+        if user.lower() == "/runtime":
+            print("\n[repo-runtime]")
+            print(render_runtime_audit_report(audit_runtime_layout(base_data_dir)))
+            try:
+                if Path(s.data_dir).resolve() != Path(base_data_dir).resolve():
+                    print("\n[current-runtime]")
+                    print(render_runtime_audit_report(audit_runtime_layout(s.data_dir)))
+            except Exception:
+                pass
             continue
         if user.lower() == "/env":
             print(
@@ -700,6 +922,7 @@ def main():
             print("\n[WORLD_MODEL_STATE]\n" + json.dumps(vals.get("world_model_state", {}), ensure_ascii=False, indent=2))
             print("\n[EVOLUTION_STATE]\n" + json.dumps(vals.get("evolution_state", {}), ensure_ascii=False, indent=2))
             print("\n[RECONSOLIDATION_SNAPSHOT]\n" + json.dumps(vals.get("reconsolidation_snapshot", {}), ensure_ascii=False, indent=2))
+            print("\n[TURN_APPRAISAL]\n" + json.dumps(vals.get("turn_appraisal", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
             print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(vals.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
@@ -710,6 +933,16 @@ def main():
             print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
             print("\n[OOC_DETECTOR]\n" + json.dumps(vals.get("ooc_detector", {}), ensure_ascii=False, indent=2))
             print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
+            continue
+
+        if user.lower() == "/appraisal":
+            cur = graph.get_state(
+                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
+            )
+            vals = getattr(cur, "values", {}) if cur is not None else {}
+            if not isinstance(vals, dict):
+                vals = {}
+            _print_turn_appraisal(vals)
             continue
 
         if user.lower() in {"/agenda", "/queue"}:
@@ -790,6 +1023,7 @@ def main():
                 + json.dumps(behavior_action, ensure_ascii=False, indent=2)
             )
             _print_event_evolution_summary(evolution_summary, detailed=True)
+            _print_turn_appraisal(after_values)
             if behavior_plan:
                 print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
             if current_event:
@@ -859,6 +1093,7 @@ def main():
                 + json.dumps(behavior_action, ensure_ascii=False, indent=2)
             )
             _print_event_evolution_summary(evolution_summary, detailed=True)
+            _print_turn_appraisal(after_values)
             if behavior_plan:
                 print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
             if current_event:
@@ -961,6 +1196,7 @@ def main():
                 line = _behavior_action_compact_line(behavior_action)
                 print(f"- round={idx + 1}/{rounds} elapsed={elapsed_minutes}min | {line}")
                 _print_event_evolution_summary(evolution_summary, prefix="  ", detailed=False)
+                _print_turn_appraisal(after_values, prefix="  ")
                 if behavior_plan:
                     print("  plan=" + json.dumps(behavior_plan, ensure_ascii=False))
 
@@ -1067,6 +1303,7 @@ def main():
                 + json.dumps(behavior_action, ensure_ascii=False, indent=2)
             )
             _print_event_evolution_summary(evolution_summary, detailed=True)
+            _print_turn_appraisal(after_values)
             if current_event:
                 print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
             if final_text:
