@@ -2,21 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .behavior_agenda import _normalize_behavior_agenda
+from .common import _clamp01
 from .relational import _focus_text
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _clamp01(*args, **kwargs):
-    return _graph_impl()._clamp01(*args, **kwargs)
-
-
-def _normalize_behavior_agenda(*args, **kwargs):
-    return _graph_impl()._normalize_behavior_agenda(*args, **kwargs)
 
 
 def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[str]:
@@ -276,4 +264,3 @@ def _compact_rule_lines(user_rules: list[Any], limit: int = 3) -> list[str]:
         if text:
             lines.append(f"- {text[:160]}")
     return lines
-

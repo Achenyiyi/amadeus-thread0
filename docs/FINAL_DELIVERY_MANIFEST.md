@@ -7,10 +7,12 @@ This file defines the current thesis-stage deliverables for the backend-first te
 ## 1. Core System
 
 - CLI entry: [cli.py](/E:/桌面/amadeus-thread0/amadeus_thread0/cli.py)
-- graph runtime: [graph.py](/E:/桌面/amadeus-thread0/amadeus_thread0/graph.py)
+- graph entry: [agent.py](/E:/桌面/amadeus-thread0/amadeus_thread0/agent.py)
+- graph modules: [graph_parts](/E:/桌面/amadeus-thread0/amadeus_thread0/graph_parts)
+- compatibility facade: [graph.py](/E:/桌面/amadeus-thread0/amadeus_thread0/graph.py)
 - memory store: [memory_store.py](/E:/桌面/amadeus-thread0/amadeus_thread0/memory_store.py)
-- session orchestrator: [session_orchestrator.py](/E:/桌面/amadeus-thread0/amadeus_thread0/session_orchestrator.py)
-- tools: [tools.py](/E:/桌面/amadeus-thread0/amadeus_thread0/tools.py)
+- session orchestrator: [session_orchestrator.py](/E:/桌面/amadeus-thread0/amadeus_thread0/runtime/session_orchestrator.py)
+- tools: [tools.py](/E:/桌面/amadeus-thread0/amadeus_thread0/utils/tools.py)
 
 ## 2. Official Evaluation Assets
 

@@ -30,6 +30,11 @@ _CLARIFICATION_MARKERS = [
 ]
 
 
+def _clean_utf8_text(text: str) -> str:
+    s = str(text or "")
+    return s.encode("utf-8", "ignore").decode("utf-8")
+
+
 def emotion_to_tts_profile(label: str) -> dict[str, float]:
     l = str(label or "neutral").strip().lower()
     if l == "logic":
@@ -218,6 +223,37 @@ def _looks_like_unfinished_assistant_reply(text: str) -> bool:
 
 def has_pending_continuation(*, user_text: str, pending_fragment: str) -> bool:
     return is_continuation_request(user_text) and bool(str(pending_fragment or "").strip())
+
+
+def canonicalize_pending_goal_text(text: str) -> str:
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    if re.search(r"(前面|刚才|上次|那段|那里|那句|说到)", t):
+        quoted = re.search(r"[\"“‘']([^\"”’']{2,80})[\"”’']", t)
+        if quoted:
+            focus = str(quoted.group(1) or "").strip(" ，。；;：: ")
+            if focus:
+                return focus
+        resume_ref = re.search(r"说到(.+?)(?:那里|那段|那句|那边|这一段|这一句)", t)
+        if resume_ref:
+            focus = str(resume_ref.group(1) or "").strip(" ，。；;：: ")
+            if focus:
+                return focus
+    t = re.sub(r"^(先)?把(?:上次那个|刚才那个|前面那个|那个)", "把", t)
+    t = re.sub(r"^(接着|继续)(?:上次那个|刚才那个|前面那个|那个)?", "", t)
+    t = re.sub(r"\s+", " ", t).strip("，。；;：: ")
+    return t or str(text or "").strip()
+
+
+def continuation_seed_text(*, pending_user_goal: str, pending_fragment: str) -> str:
+    goal = canonicalize_pending_goal_text(_clean_utf8_text(pending_user_goal))
+    if goal:
+        return goal
+    fragment = _clean_utf8_text(str(pending_fragment or "")).strip()
+    if not fragment:
+        return ""
+    return fragment[:280]
 
 
 def _looks_like_resume_goal_reference(text: str) -> bool:

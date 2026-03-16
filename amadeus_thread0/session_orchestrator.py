@@ -1,2 +1,8 @@
-from .runtime.session_orchestrator import *
+"""Backward-compatible facade over ``amadeus_thread0.runtime.session_orchestrator``."""
+
+from __future__ import annotations
+
+from ._compat import compat_exports
+
+__all__, __getattr__, __dir__ = compat_exports(".runtime.session_orchestrator", __package__)
 

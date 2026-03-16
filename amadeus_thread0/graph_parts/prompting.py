@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from ..config import CANON_COUNTERPART_NAME, USER_RULES_MAX_ITEMS, ABLATE_LIGHT_DIALOG_SHAPING, ABLATE_PERSONA_ALIGNMENT, ABLATE_WORLDLINE_MEMORY
 from ..memory_store import MemoryStore
+from ..runtime.session_orchestrator import (
+    canonicalize_pending_goal_text,
+    continuation_seed_text,
+    has_pending_continuation as has_active_continuation,
+)
 from .prompt_helpers import (
     _compact_behavior_agenda_hint,
     _compact_focus_lines,
@@ -14,50 +20,41 @@ from .relational import (
     _compact_relationship_summary,
     _focus_payload,
 )
+from .generation_profile import (
+    _daily_surface_preference_lines,
+    _is_free_dialog_style,
+    _is_light_free_dialog_turn,
+)
+from .dialogue_guidance import (
+    _event_behavior_preference_lines,
+    _light_free_dialog_counterpart_line,
+    _light_free_dialog_state_hint,
+    _narrative_actor_profile,
+    _plain_contact_ping_needs_relational_guard,
+    _scene_persona_axioms,
+    _selfhood_preference_lines,
+    _subjective_runtime_state_hint,
+)
+from .persona_runtime import (
+    _active_counterpart_profile,
+    _active_persona_core,
+    _canon_persona_labels,
+)
 from .retrieval import _record_value
+from .postprocess import _is_plain_contact_ping, _wants_brief_presence, _wants_per_topic_conclusions, _wants_quick_judgment
+from .runtime_prompting import (
+    _prompt_state_runtime_brief,
+    _prompt_state_snapshot,
+    _renderer_guidance,
+)
+from .semantic_narrative import (
+    _compact_semantic_narrative_hint,
+    _self_narrative_anchor_lines,
+    _semantic_narrative_profile,
+)
 from .state import ThreadState
 
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
 def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -> str:
-    g = _graph_impl()
-    _active_counterpart_profile = g._active_counterpart_profile
-    _active_persona_core = g._active_persona_core
-    _canon_persona_labels = g._canon_persona_labels
-    has_active_continuation = g.has_active_continuation
-    _canonicalize_pending_goal_text = g._canonicalize_pending_goal_text
-    USER_RULES_MAX_ITEMS = g.USER_RULES_MAX_ITEMS
-    ABLATE_PERSONA_ALIGNMENT = g.ABLATE_PERSONA_ALIGNMENT
-    ABLATE_WORLDLINE_MEMORY = g.ABLATE_WORLDLINE_MEMORY
-    ABLATE_LIGHT_DIALOG_SHAPING = g.ABLATE_LIGHT_DIALOG_SHAPING
-    _wants_quick_judgment = g._wants_quick_judgment
-    _wants_per_topic_conclusions = g._wants_per_topic_conclusions
-    _narrative_actor_profile = g._narrative_actor_profile
-    CANON_COUNTERPART_NAME = g.CANON_COUNTERPART_NAME
-    _semantic_narrative_profile = g._semantic_narrative_profile
-    _compact_semantic_narrative_hint = g._compact_semantic_narrative_hint
-    _self_narrative_anchor_lines = g._self_narrative_anchor_lines
-    _subjective_runtime_state_hint = g._subjective_runtime_state_hint
-    _wants_brief_presence = g._wants_brief_presence
-    _prompt_state_snapshot = g._prompt_state_snapshot
-    _renderer_guidance = g._renderer_guidance
-    _is_free_dialog_style = g._is_free_dialog_style
-    _is_light_free_dialog_turn = g._is_light_free_dialog_turn
-    _is_plain_contact_ping = g._is_plain_contact_ping
-    _plain_contact_ping_needs_relational_guard = g._plain_contact_ping_needs_relational_guard
-    _daily_surface_preference_lines = g._daily_surface_preference_lines
-    _selfhood_preference_lines = g._selfhood_preference_lines
-    _event_behavior_preference_lines = g._event_behavior_preference_lines
-    _scene_persona_axioms = g._scene_persona_axioms
-    _light_free_dialog_counterpart_line = g._light_free_dialog_counterpart_line
-    _light_free_dialog_state_hint = g._light_free_dialog_state_hint
-    _continuation_seed_text = g._continuation_seed_text
-    _prompt_state_runtime_brief = g._prompt_state_runtime_brief
     profile = _active_counterpart_profile(state, store)
     persona_core = _active_persona_core(state)
     canon_labels = _canon_persona_labels()
@@ -75,7 +72,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
-    prompt_user_text = _canonicalize_pending_goal_text(pending_user_goal) if continuation_mode and pending_user_goal else user_text
+    prompt_user_text = canonicalize_pending_goal_text(pending_user_goal) if continuation_mode and pending_user_goal else user_text
     response_style_hint = str(state.get("response_style_hint") or "natural").strip() or "natural"
     behavior_policy = state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {}
     allostasis_state = state.get("allostasis_state") if isinstance(state.get("allostasis_state"), dict) else {}
@@ -452,7 +449,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if selfhood_pref_lines
         else ""
     )
-    continuation_seed = _continuation_seed_text(
+    continuation_seed = continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending_fragment,
     )
