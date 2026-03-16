@@ -1,17 +1,45 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from functools import lru_cache
 from typing import Any
 
 from langchain_core.tools import BaseTool
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from ..config import CLAIM_REQUIRED_TOOLS, TOOLSET_UPGRADE_TTL_S, TOOL_CALLS_MAX, auto_approve_tool_names
-from ..runtime.settings import get_settings
+from ..config import (
+    ABLATE_CLAIM_ATTRIBUTION,
+    ABLATE_LIGHT_DIALOG_SHAPING,
+    ABLATE_PERSONA_ALIGNMENT,
+    ABLATE_WORLDLINE_MEMORY,
+    CANON_COUNTERPART_ALIASES,
+    CANON_COUNTERPART_ID,
+    CANON_COUNTERPART_NAME,
+    CLAIM_REQUIRED_TOOLS,
+    CONTEXT_KEEP_LAST_MESSAGES,
+    EVAL_MODE,
+    OOC_RISK_THRESHOLD,
+    PERSONA_GAP_THRESHOLD,
+    RUNTIME_MODE,
+    TOOLSET_UPGRADE_TTL_S,
+    TOOL_CALLS_MAX,
+    auto_approve_tool_names,
+)
+from ..evolution_engine import evolve_turn_state
+from ..persona_authority import normalize_override_mode
+from ..runtime.session_orchestrator import (
+    build_claim_attribution,
+    canonicalize_pending_goal_text,
+    continuation_seed_text,
+    derive_pending_fragment,
+    derive_pending_user_goal,
+    has_pending_continuation as has_active_continuation,
+)
+from ..settings import get_settings
 from .messages import (
     _compact_thread_if_needed,
     _last_ai_text,
@@ -20,8 +48,51 @@ from .messages import (
     _messages,
     _previous_user_text,
     _recent_ai_texts,
+    _sanitize_message,
     _window_messages,
 )
+from .persona_runtime import (
+    _active_counterpart_profile,
+    _active_persona_core,
+    _canon_okabe_recontact_baseline,
+    _canon_persona_labels,
+    _is_external_probe_context,
+    _prefer_explicit_state_dict,
+    _science_mode_from_context,
+    _tsundere_next,
+)
+from .runtime_services import _audit_jsonl, _get_store, _get_tool_bundle
+from .guards import _canon_guard, _ooc_risk, _persona_gap
+from .appraisal import _invoke_turn_appraisal
+from .memory_evolution import _auto_reconsolidate_after_tool, _passive_evolution_memory_update
+from .generation_profile import (
+    _daily_surface_profile,
+    _ensure_response_structure,
+    _generation_profile,
+    _is_free_dialog_style,
+    _is_light_free_dialog_turn,
+)
+from .behavior_agenda import (
+    _merge_behavior_agenda,
+    _promote_due_behavior_action_event,
+    _promote_due_behavior_agenda_event,
+    _promote_due_behavior_plan_event,
+)
+from .behavior_runtime import (
+    _behavior_action_from_state,
+    _behavior_plan_from_action,
+)
+from .postprocess import (
+    _clean_utf8_text,
+    _dialogue_surface_issues,
+    _effective_natural_dialog_target_flags,
+    _light_dialog_surface_penalty,
+    _needs_structured_answer,
+    _producer_surface_issues,
+    _response_style_hint,
+    _sanitize_final_answer,
+)
+from .prompting import _build_task_prompt
 from .relational import (
     _counterpart_assessment_summary,
     _prefer_refreshed_relationship_state,
@@ -33,56 +104,45 @@ from .relational import (
     _worldline_focus,
 )
 from .retrieval import _empty_retrieved_context, _retrieve_context
+from .rewrite import (
+    _daily_surface_alignment_metrics,
+    _invoke_model_with_retries,
+    _light_dialog_rewrite_notes,
+    _model,
+    _norm_text,
+    _rewrite_light_dialog_answer,
+    _rewrite_natural_dialog_answer,
+    _should_run_light_dialog_rewrite,
+    _should_run_natural_dialog_rewrite,
+)
+from .semantic_narrative import _semantic_narrative_profile
 from .state import ThreadState
+from .tool_policies import MEMORY_WRITE_TOOLS, WORLDLINE_ABLATION_READ_TOOLS
+from .tool_runtime import (
+    _build_evidence_from_tool_result,
+    _invoke_tool,
+    _memory_guard_check,
+)
+from .tooling import _infer_memory_tool_calls, _parse_explicit_tool_call
+from .turn_events import (
+    _append_recent_events,
+    _appraisal_event_context,
+    _build_current_event,
+    _is_silent_behavior_event,
+    _now_ts,
+    _normalize_event_override,
+    _promote_due_commitment_event,
+    _sanitize_obj,
+)
+
+_CHECKPOINT_CONN: sqlite3.Connection | None = None
 
 
-def _graph_impl():
-    from .. import graph as g
-
-    return g
+def _safe_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
-    g = _graph_impl()
-    ABLATE_PERSONA_ALIGNMENT = g.ABLATE_PERSONA_ALIGNMENT
-    CANON_COUNTERPART_ALIASES = g.CANON_COUNTERPART_ALIASES
-    CANON_COUNTERPART_ID = g.CANON_COUNTERPART_ID
-    CANON_COUNTERPART_NAME = g.CANON_COUNTERPART_NAME
-    _active_counterpart_profile = g._active_counterpart_profile
-    _active_persona_core = g._active_persona_core
-    _append_recent_events = g._append_recent_events
-    _appraisal_event_context = g._appraisal_event_context
-    _audit_jsonl = g._audit_jsonl
-    _behavior_action_from_state = g._behavior_action_from_state
-    _behavior_plan_from_action = g._behavior_plan_from_action
-    _build_current_event = g._build_current_event
-    _canon_okabe_recontact_baseline = g._canon_okabe_recontact_baseline
-    _canon_persona_labels = g._canon_persona_labels
-    _clean_utf8_text = g._clean_utf8_text
-    _continuation_seed_text = g._continuation_seed_text
-    _get_store = g._get_store
-    _invoke_turn_appraisal = g._invoke_turn_appraisal
-    _is_external_probe_context = g._is_external_probe_context
-    _merge_behavior_agenda = g._merge_behavior_agenda
-    _needs_structured_answer = g._needs_structured_answer
-    _normalize_event_override = g._normalize_event_override
-    _now_ts = g._now_ts
-    _passive_evolution_memory_update = g._passive_evolution_memory_update
-    _prefer_explicit_state_dict = g._prefer_explicit_state_dict
-    _promote_due_behavior_action_event = g._promote_due_behavior_action_event
-    _promote_due_behavior_agenda_event = g._promote_due_behavior_agenda_event
-    _promote_due_behavior_plan_event = g._promote_due_behavior_plan_event
-    _promote_due_commitment_event = g._promote_due_commitment_event
-    _response_style_hint = g._response_style_hint
-    _sanitize_obj = g._sanitize_obj
-    _science_mode_from_context = g._science_mode_from_context
-    _semantic_narrative_profile = g._semantic_narrative_profile
-    _tsundere_next = g._tsundere_next
-    derive_pending_fragment = g.derive_pending_fragment
-    derive_pending_user_goal = g.derive_pending_user_goal
-    evolve_turn_state = g.evolve_turn_state
-    has_active_continuation = g.has_active_continuation
-    normalize_override_mode = g.normalize_override_mode
 
     store = _get_store()
     turn_now_ts = _now_ts()
@@ -133,7 +193,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         pending_fragment=pending,
     )
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending)
-    continuation_seed = _continuation_seed_text(
+    continuation_seed = continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending,
     )
@@ -615,13 +675,6 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
 
 
 def _available_tools_for_state(state: ThreadState) -> list[BaseTool]:
-    g = _graph_impl()
-    ABLATE_WORLDLINE_MEMORY = g.ABLATE_WORLDLINE_MEMORY
-    WORLDLINE_ABLATION_READ_TOOLS = g.WORLDLINE_ABLATION_READ_TOOLS
-    _get_tool_bundle = g._get_tool_bundle
-    _is_external_probe_context = g._is_external_probe_context
-    _now_ts = g._now_ts
-
     if _is_external_probe_context(state=state):
         return []
     bundle = _get_tool_bundle()
@@ -654,9 +707,6 @@ def build_implicit_idle_state_update(
     note: str = "",
     created_at: int | None = None,
 ) -> dict[str, Any]:
-    g = _graph_impl()
-    _now_ts = g._now_ts
-
     seeded: ThreadState = dict(state or {})
     try:
         idle_window = max(1, min(24 * 60, int(idle_minutes)))
@@ -678,62 +728,25 @@ def build_implicit_idle_state_update(
     return _node_prepare_turn(seeded)
 
 
-def _node_call_model(state: ThreadState) -> dict[str, Any]:
-    g = _graph_impl()
-    ABLATE_CLAIM_ATTRIBUTION = g.ABLATE_CLAIM_ATTRIBUTION
-    ABLATE_LIGHT_DIALOG_SHAPING = g.ABLATE_LIGHT_DIALOG_SHAPING
-    ABLATE_PERSONA_ALIGNMENT = g.ABLATE_PERSONA_ALIGNMENT
-    ABLATE_WORLDLINE_MEMORY = g.ABLATE_WORLDLINE_MEMORY
-    AIMessage = g.AIMessage
-    BaseMessage = g.BaseMessage
-    CONTEXT_KEEP_LAST_MESSAGES = g.CONTEXT_KEEP_LAST_MESSAGES
-    EVAL_MODE = g.EVAL_MODE
-    HumanMessage = g.HumanMessage
-    OOC_RISK_THRESHOLD = g.OOC_RISK_THRESHOLD
-    PERSONA_GAP_THRESHOLD = g.PERSONA_GAP_THRESHOLD
-    RUNTIME_MODE = g.RUNTIME_MODE
-    SystemMessage = g.SystemMessage
-    _build_task_prompt = g._build_task_prompt
-    _canon_guard = g._canon_guard
-    _canonicalize_pending_goal_text = g._canonicalize_pending_goal_text
-    _clean_utf8_text = g._clean_utf8_text
-    _continuation_seed_text = g._continuation_seed_text
-    _daily_surface_alignment_metrics = g._daily_surface_alignment_metrics
-    _daily_surface_profile = g._daily_surface_profile
-    _dialogue_surface_issues = g._dialogue_surface_issues
-    _effective_natural_dialog_target_flags = g._effective_natural_dialog_target_flags
-    _ensure_response_structure = g._ensure_response_structure
-    _generation_profile = g._generation_profile
-    _get_store = g._get_store
-    _infer_memory_tool_calls = g._infer_memory_tool_calls
-    _invoke_model_with_retries = g._invoke_model_with_retries
-    _is_free_dialog_style = g._is_free_dialog_style
-    _is_light_free_dialog_turn = g._is_light_free_dialog_turn
-    _light_dialog_rewrite_notes = g._light_dialog_rewrite_notes
-    _light_dialog_surface_penalty = g._light_dialog_surface_penalty
-    _model = g._model
-    _needs_structured_answer = g._needs_structured_answer
-    _norm_text = g._norm_text
-    _ooc_risk = g._ooc_risk
-    _parse_explicit_tool_call = g._parse_explicit_tool_call
-    _persona_gap = g._persona_gap
-    _producer_surface_issues = g._producer_surface_issues
-    _rewrite_light_dialog_answer = g._rewrite_light_dialog_answer
-    _rewrite_natural_dialog_answer = g._rewrite_natural_dialog_answer
-    _sanitize_final_answer = g._sanitize_final_answer
-    _sanitize_message = g._sanitize_message
-    _should_run_light_dialog_rewrite = g._should_run_light_dialog_rewrite
-    _should_run_natural_dialog_rewrite = g._should_run_natural_dialog_rewrite
-    build_claim_attribution = g.build_claim_attribution
-    has_active_continuation = g.has_active_continuation
+def _tool_limit_fallback_text(state: ThreadState) -> str:
+    user_text = _last_user_text(_messages(state))
+    if any(marker in user_text for marker in {"记得", "回忆", "上次", "之前", "继续"}):
+        text = "我一下子还接不上刚才那段。你把最关键的那句再给我一下，我就顺着接回去。"
+    elif any(marker in user_text for marker in {"检索", "搜索", "文档", "资料"}):
+        text = "这轮我先停在这里。再继续盲查意义不大，你把关键词再收紧一点，我就继续往下翻。"
+    else:
+        text = "我先停在这里。再硬往下翻只会越说越乱，你把问题再收紧一点，我就继续。"
+    return _ensure_response_structure(text.replace("\\n", "\n"), user_text)
 
+
+def _node_call_model(state: ThreadState) -> dict[str, Any]:
     store = _get_store()
     msgs = _messages(state)
     user_text = _clean_utf8_text(_last_user_text(msgs))
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
-    continuation_seed = _continuation_seed_text(
+    continuation_seed = continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending_fragment,
     )
@@ -751,7 +764,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         if pending_fragment:
             continuation_lines.append(f"未完成片段：{pending_fragment[:240]}")
         if pending_user_goal:
-            continuation_lines.append(f"原始任务焦点：{_canonicalize_pending_goal_text(pending_user_goal)[:220]}")
+            continuation_lines.append(f"原始任务焦点：{canonicalize_pending_goal_text(pending_user_goal)[:220]}")
         continuation_lines.append(f"现在就从这里接着往下说：{continuation_seed[:240]}")
         call_msgs.append(_sanitize_message(HumanMessage(content="\n".join(continuation_lines))))
     else:
@@ -1177,7 +1190,6 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     }
 
 def _node_tool_limit(state: ThreadState) -> dict[str, Any]:
-    g = _graph_impl()
     msgs = _messages(state)
     ai = _latest_ai(msgs)
     tool_msgs: list[ToolMessage] = []
@@ -1192,14 +1204,13 @@ def _node_tool_limit(state: ThreadState) -> dict[str, Any]:
                 "message": f"tool calls exceeded max={int(TOOL_CALLS_MAX)} for this turn",
             },
         }
-        tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+        tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
 
-    msg = AIMessage(content=g._tool_limit_fallback_text(state))
+    msg = AIMessage(content=_tool_limit_fallback_text(state))
     return {"messages": [*tool_msgs, msg]}
 
 
 def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
-    g = _graph_impl()
     msgs = _messages(state)
     ai = _latest_ai(msgs)
     if ai is None:
@@ -1230,7 +1241,7 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
     if need_human:
         source = (
             "memory"
-            if any(str(x.get("name") or "") in g.MEMORY_WRITE_TOOLS for x in need_human)
+            if any(str(x.get("name") or "") in MEMORY_WRITE_TOOLS for x in need_human)
             else "dialog"
         )
         resume = interrupt(
@@ -1268,8 +1279,7 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
 
 
 def _tool_lookup(name: str) -> BaseTool | None:
-    g = _graph_impl()
-    bundle = g._get_tool_bundle()
+    bundle = _get_tool_bundle()
     for t in [*bundle.base_tools, *bundle.extended_tools]:
         if t is None:
             continue
@@ -1279,8 +1289,7 @@ def _tool_lookup(name: str) -> BaseTool | None:
 
 
 def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
-    g = _graph_impl()
-    store = g._get_store()
+    store = _get_store()
     msgs = _messages(state)
     ai = _latest_ai(msgs)
     if ai is None:
@@ -1316,51 +1325,51 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
         if action == "reject":
             reason = str(decision.get("reason") or "rejected").strip()
             payload = {"ok": False, "error": {"code": "REJECTED", "message": reason}}
-            tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+            tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
-            g._audit_jsonl("tool_audit.jsonl", record)
+            _audit_jsonl("tool_audit.jsonl", record)
             continue
 
-        if name in g.MEMORY_WRITE_TOOLS:
+        if name in MEMORY_WRITE_TOOLS:
             guard_checked += 1
-        ok, reason = g._memory_guard_check(name, args, store)
+        ok, reason = _memory_guard_check(name, args, store)
         if not ok:
             guard_blocked += 1
             payload = {"ok": False, "error": {"code": "MEMORY_GUARD_BLOCKED", "message": reason}}
-            tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+            tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
-            g._audit_jsonl("tool_audit.jsonl", record)
+            _audit_jsonl("tool_audit.jsonl", record)
             continue
 
         tool = _tool_lookup(name)
         if tool is None:
             payload = {"ok": False, "error": {"code": "TOOL_NOT_FOUND", "message": name}}
-            tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+            tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
-            g._audit_jsonl("tool_audit.jsonl", record)
+            _audit_jsonl("tool_audit.jsonl", record)
             continue
 
         try:
-            result = g._invoke_tool(tool, args)
-            g._auto_reconsolidate_after_tool(
+            result = _invoke_tool(tool, args)
+            _auto_reconsolidate_after_tool(
                 store,
                 tool_name=name,
                 args=args,
                 result=result,
             )
             payload = {"ok": True, "data": result}
-            tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+            tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
 
             if name == "request_toolset_upgrade" and isinstance(result, dict):
                 req = result.get("requested_tools")
                 if isinstance(req, list):
-                    exp = g._now_ts() + int(TOOLSET_UPGRADE_TTL_S)
+                    exp = _now_ts() + int(TOOLSET_UPGRADE_TTL_S)
                     for x in req:
                         nm = str(x).strip()
                         if nm:
                             unlocks[nm] = exp
 
-            ev = g._build_evidence_from_tool_result(tool_name=name, result=result, store=store)
+            ev = _build_evidence_from_tool_result(tool_name=name, result=result, store=store)
             if ev:
                 evidence_pack.extend(ev)
                 external_tools.add(name)
@@ -1368,12 +1377,12 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                 external_tools.add(name)
 
             record["result"] = payload
-            g._audit_jsonl("tool_audit.jsonl", record)
+            _audit_jsonl("tool_audit.jsonl", record)
         except Exception as e:
             payload = {"ok": False, "error": {"code": "TOOL_EXEC_ERROR", "message": str(e)}}
-            tool_msgs.append(ToolMessage(content=g._safe_json(payload), tool_call_id=tc_id))
+            tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
-            g._audit_jsonl("tool_audit.jsonl", record)
+            _audit_jsonl("tool_audit.jsonl", record)
 
     return {
         "messages": tool_msgs,
@@ -1388,7 +1397,6 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
 
 
 def _route_after_model(state: ThreadState) -> str:
-    g = _graph_impl()
     ai = _latest_ai(_messages(state))
     if ai is None:
         return END
@@ -1401,41 +1409,39 @@ def _route_after_model(state: ThreadState) -> str:
 
 
 def _route_after_prepare(state: ThreadState) -> str:
-    g = _graph_impl()
     current_event = state.get('current_event') if isinstance(state.get('current_event'), dict) else {}
     behavior_action = state.get('behavior_action') if isinstance(state.get('behavior_action'), dict) else {}
-    if g._is_silent_behavior_event(current_event, behavior_action):
+    if _is_silent_behavior_event(current_event, behavior_action):
         return END
     return 'call_model'
 
 
 def _build_checkpointer() -> SqliteSaver:
-    g = _graph_impl()
-    if g._CHECKPOINT_CONN is None:
+    global _CHECKPOINT_CONN
+    if _CHECKPOINT_CONN is None:
         s = get_settings()
         s.checkpoint_db_path.parent.mkdir(parents=True, exist_ok=True)
-        g._CHECKPOINT_CONN = sqlite3.connect(str(s.checkpoint_db_path), check_same_thread=False)
-        g._CHECKPOINT_CONN.execute('PRAGMA journal_mode=WAL')
-        g._CHECKPOINT_CONN.execute('PRAGMA foreign_keys=ON')
-    return SqliteSaver(g._CHECKPOINT_CONN)
+        _CHECKPOINT_CONN = sqlite3.connect(str(s.checkpoint_db_path), check_same_thread=False)
+        _CHECKPOINT_CONN.execute('PRAGMA journal_mode=WAL')
+        _CHECKPOINT_CONN.execute('PRAGMA foreign_keys=ON')
+    return SqliteSaver(_CHECKPOINT_CONN)
 
 
 def reset_runtime_caches() -> None:
-    g = _graph_impl()
+    global _CHECKPOINT_CONN
     try:
-        if g._CHECKPOINT_CONN is not None:
-            g._CHECKPOINT_CONN.close()
+        if _CHECKPOINT_CONN is not None:
+            _CHECKPOINT_CONN.close()
     except Exception:
         pass
-    g._CHECKPOINT_CONN = None
-    g._get_store.cache_clear()
-    g._get_tool_bundle.cache_clear()
+    _CHECKPOINT_CONN = None
+    _get_store.cache_clear()
+    _get_tool_bundle.cache_clear()
     build_graph.cache_clear()
 
 
 @lru_cache(maxsize=1)
 def build_graph():
-    g = _graph_impl()
     s = get_settings()
     s.data_dir.mkdir(parents=True, exist_ok=True)
 

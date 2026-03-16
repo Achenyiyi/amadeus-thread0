@@ -104,8 +104,8 @@ pip install -r requirements.txt
 
 说明：
 
-- 根目录 `requirements.txt` 现在只做入口转发
-- 实际运行依赖维护在 `amadeus_thread0/requirements.txt`
+- 根目录 `requirements.txt` 是唯一正式依赖清单
+- `amadeus_thread0/requirements.txt` 只保留兼容入口，避免旧脚本失效
 - LangGraph / LangSmith 部署配置维护在根目录 `langgraph.json`
 
 ### 3. 启动 CLI
@@ -393,12 +393,14 @@ python scripts/inspect_runtime_layout.py
 
 - `amadeus_thread0/agent.py`：LangGraph / LangSmith 部署入口，导出编译后的 graph
 - `amadeus_thread0/cli.py`：CLI 与演示入口
-- `amadeus_thread0/graph.py`：主对话图与核心编排
+- `amadeus_thread0/graph.py`：兼容导出层，保留历史导入路径
+- `amadeus_thread0/graph_parts/`：主对话图、节点、prompt、rewrite、guard 的真实实现层
 - `amadeus_thread0/memory_store.py`：长期记忆与审计存储
 - `amadeus_thread0/runtime/`：运行时配置、模型接入、会话编排、TTS
 - `amadeus_thread0/utils/`：工具、CLI 视图、感知事件、运行布局审计，以及节点/状态桥接
 - `amadeus_thread0/evolution_engine/`：演化引擎与 appraisal / policy / worldline 子模块
-- `amadeus_thread0/requirements.txt`：包内运行时依赖清单
+- `requirements.txt`：唯一正式依赖清单
+- `amadeus_thread0/requirements.txt`：兼容入口，转发到根依赖文件
 - `langgraph.json`：LangGraph 应用配置
 - `evals/run_langsmith_evals.py`：正式评测入口
 - `evals/run_backend_reliability_checks.py`：本地可靠性与演化曲线检查

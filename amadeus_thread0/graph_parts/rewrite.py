@@ -5,107 +5,25 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _clamp01(*args, **kwargs):
-    return _graph_impl()._clamp01(*args, **kwargs)
-
-
-def _daily_surface_prompt_similarity(*args, **kwargs):
-    return _graph_impl()._daily_surface_prompt_similarity(*args, **kwargs)
-
-
-def _dialogue_surface_issues(*args, **kwargs):
-    return _graph_impl()._dialogue_surface_issues(*args, **kwargs)
-
-
-def _light_dialog_drift_markers(*args, **kwargs):
-    return _graph_impl()._light_dialog_drift_markers(*args, **kwargs)
-
-
-def _is_playful_memory_request(*args, **kwargs):
-    return _graph_impl()._is_playful_memory_request(*args, **kwargs)
-
-
-def _is_presence_reassurance_check(*args, **kwargs):
-    return _graph_impl()._is_presence_reassurance_check(*args, **kwargs)
-
-
-def _is_soft_presence_checkin_request(*args, **kwargs):
-    return _graph_impl()._is_soft_presence_checkin_request(*args, **kwargs)
-
-
-def _effective_relationship_weather(*args, **kwargs):
-    return _graph_impl()._effective_relationship_weather(*args, **kwargs)
-
-
-def _sanitize_final_answer(*args, **kwargs):
-    return _graph_impl()._sanitize_final_answer(*args, **kwargs)
-
-
-def _norm_text(*args, **kwargs):
-    return _graph_impl()._norm_text(*args, **kwargs)
-
-
-def _invoke_model_with_retries(*args, **kwargs):
-    return _graph_impl()._invoke_model_with_retries(*args, **kwargs)
-
-
-def _model(*args, **kwargs):
-    return _graph_impl()._model(*args, **kwargs)
-
-
-def _producer_surface_issues(*args, **kwargs):
-    return _graph_impl()._producer_surface_issues(*args, **kwargs)
-
-
-def _is_idle_presence_call(*args, **kwargs):
-    return _graph_impl()._is_idle_presence_call(*args, **kwargs)
-
-
-def _event_behavior_preference_lines(*args, **kwargs):
-    return _graph_impl()._event_behavior_preference_lines(*args, **kwargs)
-
-
-def _has_window_technical_self_activity(*args, **kwargs):
-    return _graph_impl()._has_window_technical_self_activity(*args, **kwargs)
-
-
-
-def _daily_surface_alignment_metrics(answer: str, *, profile: dict[str, Any] | None) -> dict[str, Any]:
-    prof = profile if isinstance(profile, dict) else {}
-    rows = prof.get("rows") if isinstance(prof.get("rows"), list) else []
-    text = str(answer or "").strip()
-    if not text or not rows:
-        return {"used": False, "score": 0.0, "chosen_support": 0.0, "rejected_pull": 0.0}
-
-    chosen_scores: list[float] = []
-    rejected_scores: list[float] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        chosen = str(row.get("chosen") or "").strip()
-        rejected = str(row.get("rejected") or "").strip()
-        if chosen:
-            chosen_scores.append(_daily_surface_prompt_similarity(text, chosen))
-        if rejected:
-            rejected_scores.append(_daily_surface_prompt_similarity(text, rejected))
-    chosen_scores.sort(reverse=True)
-    rejected_scores.sort(reverse=True)
-    chosen_support = sum(chosen_scores[:3]) / max(1, len(chosen_scores[:3]))
-    rejected_pull = sum(rejected_scores[:3]) / max(1, len(rejected_scores[:3]))
-    score = chosen_support - 0.82 * rejected_pull
-    return {
-        "used": True,
-        "score": round(score, 4),
-        "chosen_support": round(chosen_support, 4),
-        "rejected_pull": round(rejected_pull, 4),
-    }
+from .common import _clamp01, _norm_text
+from .dialogue_guidance import _event_behavior_preference_lines
+from .generation_profile import (
+    _daily_surface_alignment_metrics,
+    _daily_surface_prompt_similarity,
+    _effective_relationship_weather,
+)
+from .postprocess import (
+    _dialogue_surface_issues,
+    _has_window_technical_self_activity,
+    _is_idle_presence_call,
+    _is_playful_memory_request,
+    _is_presence_reassurance_check,
+    _is_soft_presence_checkin_request,
+    _light_dialog_drift_markers,
+    _producer_surface_issues,
+    _sanitize_final_answer,
+)
+from .runtime_services import _invoke_model_with_retries, _model
 
 
 def _relationship_weather_rewrite_guidance(relationship_weather: Any, *, strength: float = 0.0) -> str:

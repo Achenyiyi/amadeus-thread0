@@ -13,25 +13,8 @@ from langchain_core.messages import (
 
 from ..config import CONTEXT_TRIM_TRIGGER_MESSAGES
 from ..memory_store import MemoryStore
+from .common import _now_ts, _sanitize_message, _sanitize_obj
 from .state import ThreadState
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _sanitize_message(*args, **kwargs):
-    return _graph_impl()._sanitize_message(*args, **kwargs)
-
-
-def _sanitize_obj(*args, **kwargs):
-    return _graph_impl()._sanitize_obj(*args, **kwargs)
-
-
-def _now_ts(*args, **kwargs):
-    return _graph_impl()._now_ts(*args, **kwargs)
 
 
 def _messages(state: ThreadState) -> list[BaseMessage]:
@@ -163,4 +146,3 @@ def _compact_thread_if_needed(msgs: list[BaseMessage], store: MemoryStore) -> No
             "message_count": len(msgs),
         },
     )
-

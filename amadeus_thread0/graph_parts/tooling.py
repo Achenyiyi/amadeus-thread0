@@ -7,16 +7,7 @@ from typing import Any
 from langchain_core.tools import BaseTool
 
 from ..config import TOOL_POLICIES
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _safe_json(*args, **kwargs):
-    return _graph_impl()._safe_json(*args, **kwargs)
+from .common import _safe_json
 
 def _parse_set_profile_args(text: str) -> dict[str, Any]:
     key = ""
@@ -311,4 +302,3 @@ def _infer_memory_tool_calls(user_text: str) -> list[dict[str, Any]]:
             seen.add(key)
             deduped.append(call)
     return deduped[:4]
-

@@ -22,7 +22,7 @@ amadeus-thread0/
 ├── scripts/                # utility scripts
 ├── user_study/             # user-study runtime and raw materials
 ├── langgraph.json          # LangGraph / LangSmith deployment config
-├── requirements.txt        # root dependency entry
+├── requirements.txt        # canonical dependency file
 └── AGENTS.md               # repository-level agent operating brief
 ```
 
@@ -101,6 +101,7 @@ Rule:
 - `tts_io.py`
 
 Top-level wrappers like `amadeus_thread0/settings.py` exist only to preserve old imports.
+They are thin facades implemented through `amadeus_thread0/_compat.py`.
 
 ## Utility Layer
 

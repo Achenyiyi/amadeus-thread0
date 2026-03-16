@@ -4,14 +4,17 @@ import re
 
 from typing import Any
 
+from ..config import BANNED_PHRASES
 from ..memory_store import MemoryStore
+from ..runtime.session_orchestrator import has_pending_continuation as has_active_continuation
+from .postprocess import (
+    SELFHOOD_VALUE_CONFLICT_KEYWORDS,
+    _dialogue_surface_issues,
+    _has_any_marker,
+    _norm_for_compare,
+    _wants_quick_judgment,
+)
 from .state import ThreadState
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
 
 
 def _ooc_risk(text: str) -> tuple[float, list[str]]:
@@ -205,4 +208,3 @@ def _canon_guard(text: str, store: MemoryStore) -> dict[str, Any]:
         "violations": violations,
         "hard_boundary_rules_count": len(hard_rules),
     }
-

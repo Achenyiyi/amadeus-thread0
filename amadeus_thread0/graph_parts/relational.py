@@ -5,6 +5,8 @@ from typing import Any
 
 from ..config import ABLATE_WORLDLINE_MEMORY, CANON_COUNTERPART_NAME
 from ..memory_store import MemoryStore
+from .common import _clamp01, _clamp_signed, _now_ts
+from .postprocess import _looks_like_light_smalltalk
 from .retrieval import (
     _commitment_priority,
     _conflict_repair_salience,
@@ -13,28 +15,6 @@ from .retrieval import (
     _tension_salience,
 )
 from .state import InteractionCarryoverPayload, ThreadState
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _clamp01(*args, **kwargs):
-    return _graph_impl()._clamp01(*args, **kwargs)
-
-
-def _clamp_signed(*args, **kwargs):
-    return _graph_impl()._clamp_signed(*args, **kwargs)
-
-
-def _looks_like_light_smalltalk(*args, **kwargs):
-    return _graph_impl()._looks_like_light_smalltalk(*args, **kwargs)
-
-
-def _now_ts(*args, **kwargs):
-    return _graph_impl()._now_ts(*args, **kwargs)
 
 
 def _recent_non_user_event_with_gap(
@@ -871,4 +851,3 @@ def _worldline_focus(store: MemoryStore) -> list[dict[str, Any]]:
     if len(focus) < 5:
         _push(bond_items, "relationship_timeline")
     return focus[:5]
-

@@ -15,24 +15,7 @@ from ..config import (
     WORKING_CONTEXT_MAX_ITEMS,
 )
 from ..memory_store import MemoryStore
-
-
-def _graph_impl():
-    from .. import graph as g
-
-    return g
-
-
-def _clamp01(*args, **kwargs):
-    return _graph_impl()._clamp01(*args, **kwargs)
-
-
-def _norm_text(*args, **kwargs):
-    return _graph_impl()._norm_text(*args, **kwargs)
-
-
-def _now_ts(*args, **kwargs):
-    return _graph_impl()._now_ts(*args, **kwargs)
+from .common import _clamp01, _norm_text, _now_ts
 
 
 def _text_units(text: str) -> set[str]:
@@ -369,4 +352,3 @@ def _empty_retrieved_context(store: MemoryStore) -> dict[str, Any]:
         "working_items": [],
         "working_chars": 0,
     }
-
