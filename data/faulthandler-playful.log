@@ -1,0 +1,37 @@
+Windows fatal exception: code 0xc0000139
+
+Thread 0x00002144 (most recent call first):
+  File "D:\ProgramData\anaconda3\Lib\site-packages\torch\__init__.py", line 254 in _load_dll_libraries
+  File "D:\ProgramData\anaconda3\Lib\site-packages\torch\__init__.py", line 278 in <module>
+  File "<frozen importlib._bootstrap>", line 488 in _call_with_frames_removed
+  File "<frozen importlib._bootstrap_external>", line 995 in exec_module
+  File "E:\\u684c\u9762\amadeus-thread0\amadeus_thread0\memory_store.py", line 58 in _prefer_conda_gpu_torch
+  File "E:\\u684c\u9762\amadeus-thread0\amadeus_thread0\memory_store.py", line 63 in <module>
+  File "<frozen importlib._bootstrap>", line 488 in _call_with_frames_removed
+  File "<frozen importlib._bootstrap_external>", line 995 in exec_module
+  File "<frozen importlib._bootstrap>", line 935 in _load_unlocked
+  File "<frozen importlib._bootstrap>", line 1331 in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 1360 in _find_and_load
+  File "E:\\u684c\u9762\amadeus-thread0\amadeus_thread0\graph.py", line 85 in <module>
+  File "<frozen importlib._bootstrap>", line 488 in _call_with_frames_removed
+  File "<frozen importlib._bootstrap_external>", line 995 in exec_module
+  File "<frozen importlib._bootstrap>", line 935 in _load_unlocked
+  File "<frozen importlib._bootstrap>", line 1331 in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 1360 in _find_and_load
+  File "E:\\u684c\u9762\amadeus-thread0\evals\run_langsmith_evals.py", line 49 in <module>
+  File "<frozen importlib._bootstrap>", line 488 in _call_with_frames_removed
+  File "<frozen importlib._bootstrap_external>", line 995 in exec_module
+  File "<frozen importlib._bootstrap>", line 935 in _load_unlocked
+  File "<frozen importlib._bootstrap>", line 1331 in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 1360 in _find_and_load
+  File "E:\\u684c\u9762\amadeus-thread0\evals\run_subjective_review_pack.py", line 20 in <module>
+  File "<frozen importlib._bootstrap>", line 488 in _call_with_frames_removed
+  File "<frozen importlib._bootstrap_external>", line 995 in exec_module
+  File "<frozen importlib._bootstrap>", line 935 in _load_unlocked
+  File "<frozen importlib._bootstrap>", line 1331 in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 1360 in _find_and_load
+  File "<string>", line 11 in <module>
+Windows fatal exception: access violation
+
+Current thread 0x00002144 (most recent call first):
+  File "<string>", line 15 in <module>

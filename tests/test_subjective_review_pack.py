@@ -213,6 +213,52 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertIn("worker exit=1", result.get("worker_warning", ""))
         self.assertEqual(result["final_answer"], "喂，我只是顺手想起来而已。")
 
+    def test_run_case_subprocess_uses_worker_json_even_if_worker_exit_is_nonzero(self):
+        case = {
+            "name": "shared_window_resurface_okabe",
+            "axis": "event_window",
+            "focus": "focus",
+            "speaker_style": "okabe",
+            "review_targets": ["event_window"],
+            "turns": [""],
+        }
+        worker_payload = {
+            "name": "shared_window_resurface_okabe",
+            "axis": "event_window",
+            "focus": "focus",
+            "speaker_style": "okabe",
+            "speaker_style_label": "冈部伦太郎视角",
+            "review_targets": ["event_window"],
+            "turns": [""],
+            "display_turns": [],
+            "event_overrides": [],
+            "transcript": [{"role": "assistant", "text": "喂，我只是顺手想起来而已。"}],
+            "final_answer": "喂，我只是顺手想起来而已。",
+            "tool_calls": [],
+            "snapshot": {},
+            "status": "ok",
+            "error": "",
+            "elapsed_s": 1.2,
+            "turn_timings": [],
+            "review_rubric": [],
+        }
+
+        def _fake_run(*args, **kwargs):
+            out_idx = args[0].index("--worker-json-out") + 1
+            out_path = args[0][out_idx]
+            from pathlib import Path
+            import json
+
+            Path(out_path).write_text(json.dumps(worker_payload, ensure_ascii=False), encoding="utf-8")
+            return SimpleNamespace(returncode=3221225477, stderr="", stdout="")
+
+        with patch("evals.run_subjective_review_pack.subprocess.run", side_effect=_fake_run):
+            result = _run_case_subprocess(case, "testrun", timeout_s=30)
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["final_answer"], "喂，我只是顺手想起来而已。")
+        self.assertIn("worker exit=3221225477", result.get("worker_warning", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

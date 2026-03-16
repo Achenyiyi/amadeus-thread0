@@ -1,0 +1,25 @@
+{
+  "final_answer": "啧，明明是你自己记性差，怎么反倒怪我像老师。我那是陈述生理学事实——胃酸在空腹时分泌旺盛，咖啡因会进一步刺激黏膜，长期如此确实容易引发胃炎或溃疡，这跟“像不像老师”没关系吧。",
+  "current_event": {
+    "kind": "user_utterance",
+    "source": "text",
+    "text": "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+    "effective_text": "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+    "semantic_goal": "你昨天不是还说过，空腹喝咖啡最容易把胃折腾坏吗。别太像老师，正常回我。",
+    "response_style_hint": "structured",
+    "science_mode": true,
+    "continuation_mode": false,
+    "counterpart_name": "冈部",
+    "event_frame": "task-focused interaction with live interpersonal carryover",
+    "appraisal_label": "tease",
+    "appraisal_confidence": 0.88,
+    "tags": [
+      "structured",
+      "science",
+      "care",
+      "memory_salient",
+      "companionship_salient"
+    ],
+    "created_at": 1773634612
+  }
+}
