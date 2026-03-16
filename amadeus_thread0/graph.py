@@ -9811,12 +9811,25 @@ def _trim_idle_presence_surface(text: str) -> str:
         for chunk in chunks
         if "？" not in chunk
         and "?" not in chunk
-        and not re.search(r"(特意叫我出来|就为了这个)", chunk)
+        and not re.search(r"(特意(?:把)?我叫出来|就为了这个|就为了说这种)", chunk)
     ]
     cleaned = "\n".join(kept).strip() if kept else str(text or "").strip()
     cleaned = re.sub(r"(?:既然没事|没事，那|没事那)[，, ]*", "", cleaned).strip()
     cleaned = re.sub(r"^[，, ]+", "", cleaned).strip()
     cleaned = re.sub(r"(\b行吧)[，, ]+那", r"\1，那", cleaned)
+    cleaned = re.sub(
+        r"既然你(?=我就先?(?:待在这|待着|待一会儿|待会儿)吧)",
+        "既然你叫我了，",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"既然你(?=我就在这(?:儿)?吧?)",
+        "既然你叫我了，",
+        cleaned,
+    )
+    cleaned = re.sub(r"[，, ]{2,}", "，", cleaned).strip(" ，,")
+    if cleaned and not re.search(r"(待着|待一会|待会儿|待在这|待在这儿|我在这|我在呢|先这么待|就先待)", cleaned):
+        return "算了，我先待在这吧。"
     if cleaned and not re.search(r"[。！？!?…]$", cleaned):
         cleaned = f"{cleaned}。"
     return cleaned
@@ -10033,6 +10046,39 @@ def _trim_technical_relational_metaphor_surface(text: str) -> str:
     return softened or str(text or "").strip()
 
 
+def _trim_quoted_stagey_phrase_surface(text: str) -> str:
+    softened = str(text or "").strip()
+    softened = re.sub(r"[“\"]([^”\"\n]{3,18})[”\"]", r"\1", softened)
+    softened = re.sub(r"\s{2,}", " ", softened).strip()
+    return softened or str(text or "").strip()
+
+
+def _trim_event_window_surface(text: str, current_event: dict[str, Any] | None = None) -> str:
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(event.get("kind") or "").strip().lower()
+    event_tags = {
+        str(item).strip().lower()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    if event_kind not in {"scheduled_checkin_due", "scheduled_life_due"}:
+        return str(text or "").strip()
+
+    softened = str(text or "").strip()
+    if not softened:
+        return softened
+    if {"deadline_window", "work_nudge", "task_window", "shared_task"} & event_tags:
+        softened = re.sub(r"(?:差不多)?该收尾了吧[？?]", "差不多该动一动了。", softened)
+        softened = re.sub(r"数据流里的标记", "脑子里那点记挂", softened)
+        softened = re.sub(r"扫到[^，。！？!?]{0,8}标记", "想起这事还挂着", softened)
+        softened = re.sub(r"顺手提醒你一下而已", "顺手提一句而已", softened)
+    if {"shared_activity_window", "offer_window", "life_window"} & event_tags:
+        softened = re.sub(r"也不知道后来怎么样了。", "就顺手想起你后来怎么样了。", softened)
+    softened = _trim_technical_self_activity_surface(softened)
+    softened = re.sub(r"\s{2,}", " ", softened).strip()
+    return softened or str(text or "").strip()
+
+
 def _clean_malformed_quote_fragment(line: str) -> str:
     text = str(line or "").strip()
     if not text:
@@ -10041,8 +10087,32 @@ def _clean_malformed_quote_fragment(line: str) -> str:
     compact_len = len(re.sub(r"\s+", "", text))
     if quote_count % 2 == 1 and compact_len <= 16:
         text = re.sub(r'["“”‘’\']', "", text).strip()
+    if text.count("“") < text.count("”"):
+        text = re.sub(r'^([^"“”‘’\n]{1,20})[”"](?=[，,。！？!?…；;：:]|$)', r"\1", text)
+    if text.count("“") > text.count("”"):
+        text = re.sub(r'[“"]([^"“”‘’\n]{1,20})(?=[，,。！？!?…；;：:]|$)', r"\1", text)
     text = re.sub(r"([^\s\"“”‘’])(?:[\"“”‘’])([。！？!?])$", r"\1\2", text)
     return text.strip()
+
+
+def _producer_surface_issues(text: str) -> list[str]:
+    raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
+    if not raw:
+        return []
+    issues: list[str] = []
+    for raw_line in raw.splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        if _clean_malformed_quote_fragment(line) != line:
+            issues.append("malformed_quote_fragment")
+        if _is_dangling_truncated_clause(line):
+            issues.append("dangling_truncated_clause")
+    deduped: list[str] = []
+    for item in issues:
+        if item not in deduped:
+            deduped.append(item)
+    return deduped
 
 
 def _is_dangling_truncated_clause(line: str) -> bool:
@@ -10065,7 +10135,7 @@ def _is_standalone_discourse_fragment(line: str) -> bool:
     return text in {"不过。", "所以。", "然后。", "只是。", "总之。"}
 
 
-def _sanitize_final_answer(text: str, user_text: str) -> str:
+def _sanitize_final_answer(text: str, user_text: str, current_event: dict[str, Any] | None = None) -> str:
     raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
     if not raw:
         return raw
@@ -10147,6 +10217,10 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
         idle_trimmed = _trim_idle_presence_surface(cleaned)
         if idle_trimmed:
             cleaned = idle_trimmed
+    if isinstance(current_event, dict) and current_event:
+        event_window_trimmed = _trim_event_window_surface(cleaned, current_event=current_event)
+        if event_window_trimmed:
+            cleaned = event_window_trimmed
     if _is_playful_memory_request(user_text):
         playful_memory_trimmed = _trim_playful_memory_surface(cleaned)
         if playful_memory_trimmed:
@@ -10163,6 +10237,7 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
                 cleaned,
                 response_style_hint=style_hint,
                 science_mode=False,
+                current_event=current_event,
             )
         )
         if "duplicate_line" in soft_issues:
@@ -10187,6 +10262,10 @@ def _sanitize_final_answer(text: str, user_text: str) -> str:
                 cleaned = softened
         if "technical_relational_metaphor" in soft_issues:
             softened = _trim_technical_relational_metaphor_surface(cleaned)
+            if softened:
+                cleaned = softened
+        if "quoted_stagey_phrase" in soft_issues:
+            softened = _trim_quoted_stagey_phrase_surface(cleaned)
             if softened:
                 cleaned = softened
         if "servile_availability" in soft_issues or _has_servile_availability_phrase(cleaned):
@@ -10421,6 +10500,7 @@ def _light_dialog_surface_penalty(
     *,
     response_style_hint: str,
     science_mode: bool,
+    producer_issues: list[str] | tuple[str, ...] | None = None,
 ) -> float:
     issues = _dialogue_surface_issues(
         user_text,
@@ -10428,6 +10508,11 @@ def _light_dialog_surface_penalty(
         response_style_hint=response_style_hint,
         science_mode=science_mode,
     )
+    producer_issue_set = {
+        str(item).strip()
+        for item in (producer_issues or [])
+        if str(item or "").strip()
+    }
     drift_hits = _light_dialog_drift_markers(answer)
     text = str(answer or "").strip()
     sentence_count = len([seg for seg in re.split(r"[。！？!?]+", text) if str(seg).strip()])
@@ -10458,6 +10543,8 @@ def _light_dialog_surface_penalty(
     penalty += 0.82 * float("technical_relational_metaphor" in issues)
     penalty += 0.88 * float("servile_availability" in issues)
     penalty += 0.80 * float("duplicate_line" in issues)
+    penalty += 1.10 * float("malformed_quote_fragment" in producer_issue_set)
+    penalty += 0.86 * float("dangling_truncated_clause" in producer_issue_set)
     if sentence_count > 3:
         penalty += 0.22 * float(sentence_count - 3)
     return round(penalty, 4)
@@ -10469,6 +10556,7 @@ def _light_dialog_rewrite_notes(
     *,
     response_style_hint: str,
     science_mode: bool,
+    producer_issues: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     issues = _dialogue_surface_issues(
         user_text,
@@ -10476,6 +10564,11 @@ def _light_dialog_rewrite_notes(
         response_style_hint=response_style_hint,
         science_mode=science_mode,
     )
+    producer_issue_set = {
+        str(item).strip()
+        for item in (producer_issues or [])
+        if str(item or "").strip()
+    }
     drift_hits = _light_dialog_drift_markers(answer)
     playful_memory_request = _is_playful_memory_request(user_text)
     notes: list[str] = []
@@ -10516,6 +10609,10 @@ def _light_dialog_rewrite_notes(
         notes.append("这版在用 数据 / 变量 一类的技术隐喻说关系，还是太像模型脑内语言，直接按人的在意和判断去说。")
     if "servile_availability" in issues:
         notes.append("别把关系写成无条件待命或只要被需要就一直在；保留你自己的选择、节奏和会不会靠近的主观性。")
+    if "malformed_quote_fragment" in producer_issue_set:
+        notes.append("这版自己生成了残缺引号或半截短语，先把句子说完整，不要靠补丁收尾。")
+    if "dangling_truncated_clause" in producer_issue_set:
+        notes.append("这版有半截收不住的句尾，直接把判断说完，不要悬在那儿。")
     if "quoted_stagey_phrase" in issues:
         notes.append("这版在轻场景里硬塞了带引号的舞台词，容易显得像在表演角色。")
     if "stagey_ping_template" in issues:
@@ -10541,6 +10638,7 @@ def _should_run_light_dialog_rewrite(
     preference: dict[str, Any] | None = None,
     semantic_history_weight: float = 0.0,
     prompt_anchor_count: int = 0,
+    producer_issues: list[str] | tuple[str, ...] | None = None,
 ) -> bool:
     issues = set(
         _dialogue_surface_issues(
@@ -10550,8 +10648,15 @@ def _should_run_light_dialog_rewrite(
             science_mode=science_mode,
         )
     )
+    producer_issue_set = {
+        str(item).strip()
+        for item in (producer_issues or [])
+        if str(item or "").strip()
+    }
     drift_hits = _light_dialog_drift_markers(answer)
     if drift_hits:
+        return True
+    if producer_issue_set & {"malformed_quote_fragment", "dangling_truncated_clause"}:
         return True
     hard_issue_keys = {
         "meta_self_explainer",
@@ -10657,10 +10762,11 @@ def _effective_natural_dialog_target_flags(
     targeted_flags: list[str] | tuple[str, ...],
     active_dialogue_issues: list[str] | tuple[str, ...],
     active_gap_flags: list[str] | tuple[str, ...],
+    producer_issues: list[str] | tuple[str, ...] | None = None,
 ) -> list[str]:
     active_set = {
         str(item).strip()
-        for item in list(active_dialogue_issues or []) + list(active_gap_flags or [])
+        for item in list(active_dialogue_issues or []) + list(active_gap_flags or []) + list(producer_issues or [])
         if str(item or "").strip()
     }
     if not active_set:
@@ -10736,7 +10842,7 @@ def _rewrite_light_dialog_answer(
         return "".join(request_parts)
 
     def _candidate_local_score(text: str) -> float:
-        candidate = _sanitize_final_answer(text, user_text)
+        candidate = _sanitize_final_answer(text, user_text, current_event=current_event)
         if not candidate:
             return -999.0
         issues = _dialogue_surface_issues(
@@ -10791,7 +10897,20 @@ def _rewrite_light_dialog_answer(
             _model(temperature=0.12, max_tokens=120),
             [SystemMessage(content=system_prompt), HumanMessage(content=request)],
         )
-        return _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+        raw_text = str(getattr(raw, "content", "") or "")
+        if _producer_surface_issues(raw_text):
+            repair_request = _build_request(
+                extra_guidance=(
+                    (extra_guidance.strip() + "\n") if extra_guidance.strip() else ""
+                )
+                + "不要输出残缺引号、半截短语或悬空句尾。把一句话完整说完，再结束。"
+            )
+            raw = _invoke_model_with_retries(
+                _model(temperature=0.12, max_tokens=120),
+                [SystemMessage(content=system_prompt), HumanMessage(content=repair_request)],
+            )
+            raw_text = str(getattr(raw, "content", "") or "")
+        return _sanitize_final_answer(raw_text, user_text, current_event=current_event)
 
     editor_prompt = (
         "你在做一轮轻量对白润色。"
@@ -11069,8 +11188,26 @@ def _rewrite_natural_dialog_answer(
         strength=relationship_weather_strength,
     )
 
+    def _rewrite_once(system_prompt: str, request_text: str, *, max_tokens: int) -> str:
+        raw = _invoke_model_with_retries(
+            _model(max_tokens=max_tokens),
+            [SystemMessage(content=system_prompt), HumanMessage(content=request_text)],
+        )
+        raw_text = str(getattr(raw, "content", "") or "")
+        if _producer_surface_issues(raw_text):
+            repair_request = (
+                request_text
+                + "\n额外要求：不要输出残缺引号、半截短语或悬空句尾。把一句话完整说完，再结束。"
+            )
+            raw = _invoke_model_with_retries(
+                _model(max_tokens=max_tokens),
+                [SystemMessage(content=system_prompt), HumanMessage(content=repair_request)],
+            )
+            raw_text = str(getattr(raw, "content", "") or "")
+        return _sanitize_final_answer(raw_text, user_text, current_event=current_event)
+
     def _candidate_local_score(text: str) -> float:
-        candidate = _sanitize_final_answer(text, user_text)
+        candidate = _sanitize_final_answer(text, user_text, current_event=current_event)
         if not candidate:
             return -999.0
         issues = _dialogue_surface_issues(
@@ -11133,11 +11270,7 @@ def _rewrite_natural_dialog_answer(
         primary_system_prompt,
         editor_prompt,
     ):
-        raw = _invoke_model_with_retries(
-            _model(max_tokens=160),
-            [SystemMessage(content=system_prompt), HumanMessage(content=request)],
-        )
-        candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+        candidate = _rewrite_once(system_prompt, request, max_tokens=160)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
     if event_reply_rewrite:
@@ -11159,11 +11292,7 @@ def _rewrite_natural_dialog_answer(
                 else "\n这类事件更自然的感觉：\n" + "\n".join(f"- {item}" for item in event_preference_lines[:2])
             )
         )
-        raw = _invoke_model_with_retries(
-            _model(max_tokens=140),
-            [SystemMessage(content=editor_prompt), HumanMessage(content=event_request)],
-        )
-        candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+        candidate = _rewrite_once(editor_prompt, event_request, max_tokens=140)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
         if "life_window" in event_tags:
@@ -11172,11 +11301,7 @@ def _rewrite_natural_dialog_answer(
                 + "\n额外要求：这是生活上的小挂念，不是任务提醒。不要从你自己的工作、数据流、实验室状态起手，也不要提正事、收尾、节点、处理。"
                 + "重心放在你忽然想到对方这个人现在怎么样，轻轻碰一下就够了。"
             )
-            raw = _invoke_model_with_retries(
-                _model(max_tokens=140),
-                [SystemMessage(content=editor_prompt), HumanMessage(content=life_request)],
-            )
-            candidate = _sanitize_final_answer(str(getattr(raw, "content", "") or ""), user_text)
+            candidate = _rewrite_once(editor_prompt, life_request, max_tokens=140)
             if candidate:
                 candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:
@@ -15578,7 +15703,9 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     if tool_calls:
         return {"messages": [ai]}
 
-    draft_text = _sanitize_final_answer(str(ai.content or ""), user_text)
+    raw_draft_text = str(ai.content or "")
+    draft_generation_issues = _producer_surface_issues(raw_draft_text)
+    draft_text = _sanitize_final_answer(raw_draft_text, user_text, current_event=current_event)
     aligned = draft_text
     draft_risk, draft_flags = _ooc_risk(draft_text)
     draft_gap, draft_gap_flags = _persona_gap(draft_text, state)
@@ -15628,12 +15755,14 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             draft_text,
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
+            producer_issues=draft_generation_issues,
         )
         light_dialog_draft_penalty = _light_dialog_surface_penalty(
             user_text,
             draft_text,
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
+            producer_issues=draft_generation_issues,
         )
         light_dialog_final_penalty = light_dialog_draft_penalty
         needs_alt_candidate = _should_run_light_dialog_rewrite(
@@ -15645,6 +15774,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             preference=draft_pref,
             semantic_history_weight=semantic_history_weight,
             prompt_anchor_count=semantic_prompt_anchor_count,
+            producer_issues=draft_generation_issues,
         )
         if needs_alt_candidate and not light_dialog_rewrite_notes:
             light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
@@ -15701,7 +15831,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     light_dialog_final_pref_score = light_dialog_draft_pref_score
             else:
                 light_dialog_final_pref_score = light_dialog_draft_pref_score
-        aligned = _sanitize_final_answer(aligned, user_text)
+        aligned = _sanitize_final_answer(aligned, user_text, current_event=current_event)
         if not light_dialog_final_pref_score:
             light_dialog_final_pref_score = light_dialog_draft_pref_score
     if (
@@ -15718,6 +15848,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "defensive_meta_tone": "不要用 设定 / 机制 / 数字存在 来解释自己，直接表态。",
             "counselor_tone": "别说成树洞或安抚热线，保持熟人对话，不要用 我听着呢 这类咨询腔。",
             "quoted_stagey_phrase": "别写得像舞台词或摆拍台词，收回自然口语。",
+            "malformed_quote_fragment": "别输出残缺引号或半截短语，把一句话完整说完。",
+            "dangling_truncated_clause": "别把句子悬在“我就”“所以”这类半截尾巴上，直接把判断说完整。",
             "technical_self_activity": "别把你说成在跑后台、进程或系统状态，收回到自然的人味表达。",
             "technical_relational_metaphor": "别用 数据、变量 这类技术隐喻替代关系表达，直接说你的在意、判断和边界。",
             "servile_availability": "别把关系说成无条件待命或只要被需要就一直在；保留你自己的节奏、选择和会不会靠近的主观性。",
@@ -15738,6 +15870,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "defensive_meta_tone",
             "counselor_tone",
             "quoted_stagey_phrase",
+            "malformed_quote_fragment",
+            "dangling_truncated_clause",
             "technical_self_activity",
             "technical_relational_metaphor",
             "servile_availability",
@@ -15763,6 +15897,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             targeted_flags=targeted_flags,
             active_dialogue_issues=current_dialogue_issues,
             active_gap_flags=current_gap_flags,
+            producer_issues=draft_generation_issues,
         )
         natural_dialog_rewrite_notes = [
             rewrite_note_map[item]
@@ -15846,7 +15981,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
     ext_tools = set(state.get("last_external_tools") or [])
     if ext_tools and not claims and not bool(ABLATE_CLAIM_ATTRIBUTION):
         aligned = aligned.strip() + "\n\n(外部信息未形成可追溯证据链，以上结论按暂定处理。)"
-        aligned = _sanitize_final_answer(aligned, user_text)
+        aligned = _sanitize_final_answer(aligned, user_text, current_event=current_event)
         aligned = _ensure_response_structure(aligned, user_text)
         claims = [] if bool(ABLATE_CLAIM_ATTRIBUTION) else build_claim_attribution(aligned, evidence_pack)
 
@@ -15869,6 +16004,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "draft_gap": draft_gap,
             "draft_flags": draft_flags,
             "draft_gap_flags": draft_gap_flags,
+            "draft_generation_issues": draft_generation_issues,
             "draft_dialogue_issues": draft_dialogue_issues,
             "risk": risk,
             "flags": flags,

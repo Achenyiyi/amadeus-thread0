@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -1059,6 +1060,15 @@ def _run_case_subprocess(case: dict[str, Any], run_tag: str, timeout_s: int) -> 
     elapsed_s = round(time.perf_counter() - started_at, 3)
     try:
         if proc.returncode != 0:
+            if tmp_path.exists():
+                try:
+                    payload = json.loads(tmp_path.read_text(encoding="utf-8"))
+                    if isinstance(payload, dict):
+                        payload["elapsed_s"] = elapsed_s
+                        payload["worker_warning"] = f"worker exit={proc.returncode}; stderr={str(proc.stderr or '')[:1000]}"
+                        return payload
+                except Exception:
+                    pass
             fallback = _run_case(case, run_tag)
             if isinstance(fallback, dict):
                 fallback["elapsed_s"] = elapsed_s + float(fallback.get("elapsed_s") or 0.0)
@@ -1241,7 +1251,7 @@ def main() -> None:
             raise SystemExit("worker mode expects exactly one selected case")
         case_result = _run_case(selected[0], run_id)
         Path(args.worker_json_out).write_text(json.dumps(case_result, ensure_ascii=False, indent=2), encoding="utf-8")
-        return
+        os._exit(0)
 
     for case in selected:
         print(f"[subjective-review] running {case['name']}")

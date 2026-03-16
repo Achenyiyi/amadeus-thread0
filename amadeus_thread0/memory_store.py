@@ -1,20 +1,70 @@
 ﻿from __future__ import annotations
 
 import json
+import importlib
 import math
 import os
 import re
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import site
 
 # Reduce TensorFlow noise emitted through sentence-transformers dependencies.
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("USE_TF", "0")
+
+
+def _prefer_conda_gpu_torch() -> None:
+    """Prefer the conda-managed GPU torch over a user-site CPU shadow build.
+
+    This must happen before any torch import. Reordering sys.path is stable;
+    importing torch manually via importlib spec is not.
+    """
+
+    try:
+        user_site = str(site.getusersitepackages() or "").strip()
+    except Exception:
+        user_site = ""
+    if not user_site:
+        return
+
+    try:
+        conda_site = Path(sys.executable).resolve().parent / "Lib" / "site-packages"
+    except Exception:
+        return
+
+    conda_torch_init = conda_site / "torch" / "__init__.py"
+    user_torch_init = Path(user_site) / "torch" / "__init__.py"
+    if not conda_torch_init.exists() or not user_torch_init.exists():
+        return
+
+    loaded = sys.modules.get("torch")
+    loaded_path = str(getattr(loaded, "__file__", "") or "")
+    if loaded_path:
+        return
+
+    conda_site_str = str(conda_site)
+    user_site_str = str(user_site)
+    original_path = list(sys.path)
+    try:
+        sys.path[:] = [item for item in sys.path if item != user_site_str]
+        if conda_site_str in sys.path:
+            sys.path.remove(conda_site_str)
+        sys.path.insert(0, conda_site_str)
+        importlib.import_module("torch")
+    except Exception:
+        sys.modules.pop("torch", None)
+    finally:
+        sys.path[:] = original_path
+
+
+_prefer_conda_gpu_torch()
 
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -59,6 +109,7 @@ class MemoryStore:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._embedder: HuggingFaceEmbeddings | None = None
+        self._embedding_disabled_reason: str = ""
         self._vec_enabled: bool = False
         self._vec_dim: int | None = None
         try:
@@ -72,19 +123,155 @@ class MemoryStore:
                 pass
             raise
 
+    @staticmethod
+    def _read_bool_env(name: str) -> bool | None:
+        raw = str(os.getenv(name, "") or "").strip().lower()
+        if not raw:
+            return None
+        if raw in {"1", "true", "yes", "y", "on"}:
+            return True
+        if raw in {"0", "false", "no", "n", "off"}:
+            return False
+        return None
+
+    @staticmethod
+    def _huggingface_cache_dirs() -> list[Path]:
+        out: list[Path] = []
+        hub_cache = str(os.getenv("HUGGINGFACE_HUB_CACHE", "") or "").strip()
+        if hub_cache:
+            out.append(Path(hub_cache).expanduser())
+        hf_home = str(os.getenv("HF_HOME", "") or "").strip()
+        if hf_home:
+            out.append(Path(hf_home).expanduser() / "hub")
+        out.append(Path.home() / ".cache" / "huggingface" / "hub")
+
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for path in out:
+            key = str(path).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(path)
+        return deduped
+
+    @classmethod
+    def _cached_embedding_model_path(cls, model_name: str) -> Path | None:
+        name = str(model_name or "").strip()
+        if not name:
+            return None
+        path = Path(name).expanduser()
+        if path.exists():
+            return path
+
+        normalized = name.replace("\\", "/").strip("/")
+        if not normalized or normalized.count("/") > 1:
+            return None
+        repo_dir = "models--" + normalized.replace("/", "--")
+        for root in cls._huggingface_cache_dirs():
+            repo_root = root / repo_dir
+            if not repo_root.exists():
+                continue
+            ref_main = repo_root / "refs" / "main"
+            if ref_main.exists():
+                try:
+                    revision = ref_main.read_text(encoding="utf-8").strip()
+                except Exception:
+                    revision = ""
+                if revision:
+                    snapshot = repo_root / "snapshots" / revision
+                    if snapshot.exists():
+                        return snapshot
+            snapshots_dir = repo_root / "snapshots"
+            if snapshots_dir.exists():
+                candidates = [p for p in snapshots_dir.iterdir() if p.is_dir()]
+                if candidates:
+                    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    return candidates[0]
+            return repo_root
+        return None
+
+    @classmethod
+    def _embedding_model_cached(cls, model_name: str) -> bool:
+        return cls._cached_embedding_model_path(model_name) is not None
+
+    def _resolve_embedding_model_name(self, model_name: str) -> str:
+        cached = self._cached_embedding_model_path(model_name)
+        if cached is not None:
+            return str(cached)
+        return str(model_name or "").strip()
+
+    def _resolve_embedding_device(self, device_name: str) -> str:
+        requested = str(device_name or "").strip() or "cpu"
+        if not requested.lower().startswith("cuda"):
+            return requested
+        try:
+            import torch
+
+            if bool(torch.cuda.is_available()):
+                return requested
+        except Exception:
+            pass
+
+        self._audit_log(
+            {
+                "event": "embedding_device_downgraded",
+                "requested_device": requested,
+                "resolved_device": "cpu",
+            }
+        )
+        return "cpu"
+
+    def _embedding_local_files_only(self, model_name: str) -> bool:
+        explicit = self._read_bool_env("AMADEUS_EMBEDDING_LOCAL_FILES_ONLY")
+        if explicit is not None:
+            return bool(explicit)
+        if self._embedding_model_cached(model_name):
+            return True
+        runtime_mode = str(get_settings().runtime_mode or "").strip().lower()
+        return runtime_mode == "regression"
+
+    def _disable_embeddings(self, reason: str) -> None:
+        msg = str(reason or "").strip() or "embedding disabled"
+        if self._embedding_disabled_reason == msg:
+            return
+        self._embedding_disabled_reason = msg
+        self._embedder = None
+        self._audit_log({"event": "embedding_disabled", "reason": msg})
+
     def _get_embedder(self) -> HuggingFaceEmbeddings:
         if self._embedder is not None:
             return self._embedder
+        if self._embedding_disabled_reason:
+            raise RuntimeError(self._embedding_disabled_reason)
         s = get_settings()
-        self._embedder = HuggingFaceEmbeddings(
-            model_name=s.embedding_model_name,
-            model_kwargs={
-                "device": s.embedding_device,
-                "trust_remote_code": bool(s.embedding_trust_remote_code),
-            },
-            encode_kwargs={"normalize_embeddings": bool(s.embedding_normalize)},
-        )
+        model_name = self._resolve_embedding_model_name(s.embedding_model_name)
+        device = self._resolve_embedding_device(s.embedding_device)
+        try:
+            self._embedder = HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={
+                    "device": device,
+                    "trust_remote_code": bool(s.embedding_trust_remote_code),
+                    "local_files_only": self._embedding_local_files_only(model_name),
+                },
+                encode_kwargs={"normalize_embeddings": bool(s.embedding_normalize)},
+            )
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+            self._disable_embeddings(reason)
+            raise RuntimeError(reason) from e
         return self._embedder
+
+    def _embed_query(self, text: str) -> list[float]:
+        if self._embedding_disabled_reason:
+            raise RuntimeError(self._embedding_disabled_reason)
+        try:
+            return self._get_embedder().embed_query(text)
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+            self._disable_embeddings(reason)
+            raise RuntimeError(reason) from e
 
     @staticmethod
     def _cosine(a: list[float], b: list[float]) -> float:
@@ -277,7 +464,7 @@ class MemoryStore:
             return
 
         try:
-            probe = self._get_embedder().embed_query("dimension probe")
+            probe = self._embed_query("dimension probe")
             dim = int(len(probe))
             if dim <= 0:
                 self._vec_enabled = False
@@ -1723,7 +1910,7 @@ class MemoryStore:
         return out
 
     def search_moments(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Semantic search first, with LIKE fallback.
+        """Semantic search over local embeddings only.
 
         If sqlite-vec is enabled, query KNN from `moments_vss` first.
         """
@@ -1735,7 +1922,7 @@ class MemoryStore:
         # 1) sqlite-vec KNN
         if self._vec_enabled:
             try:
-                q_emb = self._get_embedder().embed_query(q)
+                q_emb = self._embed_query(q)
                 cur = self.conn.execute(
                     """
                     SELECT moment_id, distance
@@ -1785,7 +1972,7 @@ class MemoryStore:
 
         # 2) Fallback to embedding + Python reranking when sqlite-vec is unavailable.
         try:
-            q_emb = self._get_embedder().embed_query(q)
+            q_emb = self._embed_query(q)
 
             window = max(200, limit * 50)
             cur = self.conn.execute(
@@ -1821,7 +2008,7 @@ class MemoryStore:
 
                 if emb is None:
                     try:
-                        emb = self._get_embedder().embed_query(str(summary))
+                        emb = self._embed_query(str(summary))
                         self.conn.execute(
                             "INSERT OR REPLACE INTO moments_vec(moment_id, embedding, updated_at) VALUES(?, ?, ?)",
                             (rid, json.dumps(emb, ensure_ascii=False), int(time.time())),
@@ -1851,31 +2038,16 @@ class MemoryStore:
             self.conn.commit()
             scored.sort(key=lambda x: x[0], reverse=True)
             return [x[1] for x in scored[:limit] if x[0] > -0.5]
-        except Exception:
-            cur = self.conn.execute(
-                "SELECT id, summary, tags, links, created_at FROM moments WHERE summary LIKE ? ORDER BY id DESC LIMIT ?",
-                (f"%{q}%", limit),
+        except Exception as e:
+            self._audit_log(
+                {
+                    "event": "search_moments_failed",
+                    "query": q,
+                    "limit": int(limit),
+                    "error": f"{type(e).__name__}: {e}",
+                }
             )
-            out: list[dict[str, Any]] = []
-            for (rid, summary, tags, links, created_at) in cur.fetchall():
-                try:
-                    tags_v = json.loads(tags)
-                except Exception:
-                    tags_v = []
-                try:
-                    links_v = json.loads(links)
-                except Exception:
-                    links_v = []
-                out.append(
-                    {
-                        "id": rid,
-                        "summary": summary,
-                        "tags": tags_v,
-                        "links": links_v,
-                        "created_at": created_at,
-                    }
-                )
-            return out
+            return []
 
     def merge_moments(
         self,
@@ -1945,7 +2117,7 @@ class MemoryStore:
 
         # Best-effort embedding write; failures should not block the main write path.
         try:
-            emb = self._get_embedder().embed_query(s)
+            emb = self._embed_query(s)
             self.conn.execute(
                 "INSERT OR REPLACE INTO moments_vec(moment_id, embedding, updated_at) VALUES(?, ?, ?)",
                 (mid, json.dumps(emb, ensure_ascii=False), int(time.time())),
@@ -1988,7 +2160,7 @@ class MemoryStore:
         wrote = 0
         for rid, summary in rows:
             try:
-                emb = self._get_embedder().embed_query(str(summary))
+                emb = self._embed_query(str(summary))
                 self.conn.execute(
                     "INSERT OR REPLACE INTO moments_vec(moment_id, embedding, updated_at) VALUES(?, ?, ?)",
                     (int(rid), json.dumps(emb, ensure_ascii=False), int(time.time())),
@@ -2062,7 +2234,7 @@ class MemoryStore:
 
         # Best effort: write the embedding without blocking the main row insert.
         try:
-            emb = self._get_embedder().embed_query(t)
+            emb = self._embed_query(t)
             self.conn.execute(
                 "INSERT OR REPLACE INTO reflections_vec(reflection_id, embedding, updated_at) VALUES(?, ?, ?)",
                 (rid, json.dumps(emb, ensure_ascii=False), int(time.time())),
@@ -2100,7 +2272,7 @@ class MemoryStore:
         # 1) sqlite-vec KNN when the vector index is available.
         if self._vec_enabled:
             try:
-                q_emb = self._get_embedder().embed_query(q)
+                q_emb = self._embed_query(q)
                 cur = self.conn.execute(
                     """
                     SELECT reflection_id, distance
@@ -2146,7 +2318,7 @@ class MemoryStore:
 
         # 2) Fallback to embedding search + Python reranking when sqlite-vec is unavailable.
         try:
-            q_emb = self._get_embedder().embed_query(q)
+            q_emb = self._embed_query(q)
             window = max(200, int(limit) * 50)
             cur = self.conn.execute(
                 """
@@ -2177,7 +2349,7 @@ class MemoryStore:
                 # 鎳掕ˉ
                 if emb is None:
                     try:
-                        emb = self._get_embedder().embed_query(str(text))
+                        emb = self._embed_query(str(text))
                         self.conn.execute(
                             "INSERT OR REPLACE INTO reflections_vec(reflection_id, embedding, updated_at) VALUES(?, ?, ?)",
                             (int(rid), json.dumps(emb, ensure_ascii=False), int(time.time())),
@@ -2209,28 +2381,16 @@ class MemoryStore:
             self.conn.commit()
             scored.sort(key=lambda x: x[0], reverse=True)
             return [x[1] for x in scored[: int(limit)] if x[0] > -0.5]
-        except Exception:
-            # 3) 鍥為€€ LIKE
-            cur = self.conn.execute(
-                "SELECT id, text, derived_from, importance, created_at FROM reflections WHERE text LIKE ? ORDER BY id DESC LIMIT ?",
-                (f"%{q}%", int(limit)),
+        except Exception as e:
+            self._audit_log(
+                {
+                    "event": "search_reflections_failed",
+                    "query": q,
+                    "limit": int(limit),
+                    "error": f"{type(e).__name__}: {e}",
+                }
             )
-            out: list[dict[str, Any]] = []
-            for rid, text, derived_from, importance, created_at in cur.fetchall():
-                try:
-                    df = json.loads(derived_from)
-                except Exception:
-                    df = []
-                out.append(
-                    {
-                        "id": int(rid),
-                        "text": str(text),
-                        "derived_from": df,
-                        "importance": float(importance),
-                        "created_at": int(created_at),
-                    }
-                )
-            return out
+            return []
 
     def backfill_reflection_embeddings(self, limit: int = 500) -> int:
         lim = int(limit or 0)
@@ -2255,7 +2415,7 @@ class MemoryStore:
         wrote = 0
         for rid, text in rows:
             try:
-                emb = self._get_embedder().embed_query(str(text))
+                emb = self._embed_query(str(text))
                 self.conn.execute(
                     "INSERT OR REPLACE INTO reflections_vec(reflection_id, embedding, updated_at) VALUES(?, ?, ?)",
                     (int(rid), json.dumps(emb, ensure_ascii=False), int(time.time())),

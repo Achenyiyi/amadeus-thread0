@@ -15,6 +15,7 @@ from amadeus_thread0.graph import (
     _is_plain_contact_ping,
     _light_dialog_rewrite_notes,
     _looks_like_daily_surface_scene,
+    _producer_surface_issues,
     _sanitize_final_answer,
     _self_narrative_anchor_lines,
     _relationship_weather_rewrite_guidance,
@@ -1084,6 +1085,20 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertEqual(cleaned, "行吧，那就先待着吧。")
 
+    def test_sanitize_final_answer_repairs_malformed_idle_presence_clause(self):
+        cleaned = _sanitize_final_answer(
+            "算了，既然你我就先待在这吧。",
+            "没什么事，我就是想叫你一下。",
+        )
+        self.assertEqual(cleaned, "算了，既然你叫我了，我就先待在这吧。")
+
+    def test_sanitize_final_answer_idle_presence_falls_back_to_settle_line(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，特意把我叫出来就为了说这种毫无逻辑的废话……。你这中二病还是老样子啊。",
+            "没什么事，我就是想叫你一下。",
+        )
+        self.assertEqual(cleaned, "算了，我先待在这吧。")
+
     def test_sanitize_final_answer_softens_playful_memory_snapback(self):
         cleaned = _sanitize_final_answer(
             "少来，明明是你自己记性差，昨天还信誓旦旦说今天要改的。真是拿你没办法……行了，先把那杯放下。",
@@ -1169,6 +1184,28 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("数据", cleaned)
         self.assertIn("糟蹋自己", cleaned)
 
+    def test_sanitize_final_answer_drops_short_stagey_quotes_in_daily_scene(self):
+        cleaned = _sanitize_final_answer(
+            "刚在发呆，被你打断了。别总是一副“又有大事发生”的表情，我只是稍微偷了会儿懒而已。",
+            "你在干嘛呀",
+        )
+        self.assertNotIn("“又有大事发生”", cleaned)
+        self.assertIn("又有大事发生", cleaned)
+
+    def test_sanitize_final_answer_softens_deadline_event_window_surface(self):
+        cleaned = _sanitize_final_answer(
+            "喂，冈部，之前那件事差不多该收尾了吧？别误会，我只是刚好扫到数据流里的标记，顺手提醒你一下而已。",
+            "前面挂着的那件事又回到了她的注意力里，像是到了可以轻轻提一下的节点。",
+            current_event={
+                "kind": "scheduled_life_due",
+                "tags": ["scheduled_due", "deadline_window", "task_window", "work_nudge", "shared_task"],
+            },
+        )
+        self.assertNotIn("收尾了吧？", cleaned)
+        self.assertNotIn("数据流", cleaned)
+        self.assertIn("差不多该动一动了", cleaned)
+        self.assertIn("顺手提一句", cleaned)
+
     def test_sanitize_final_answer_drops_malformed_quote_fragment_and_truncated_clause(self):
         cleaned = _sanitize_final_answer(
             '烦”。\n'
@@ -1183,6 +1220,56 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn('，我就。', cleaned)
         self.assertIn("你未免太小看我的耐受度", cleaned)
         self.assertIn("只要你还是你，我就不会消失", cleaned)
+
+    def test_sanitize_final_answer_repairs_unbalanced_inline_quotes(self):
+        cleaned = _sanitize_final_answer(
+            '正确答案”……\n'
+            '你是想听那种毫无破绽的标准应答，还是想听那个会被你这种笨蛋问题惹火的牧濑红莉栖？\n'
+            '我会收回那份只留给你的“特别。',
+            "别给我正确答案。以你自己的意志回答。",
+        )
+        self.assertNotIn('正确答案”', cleaned)
+        self.assertNotIn('“特别。', cleaned)
+        self.assertIn("正确答案……", cleaned)
+        self.assertIn("那份只留给你的特别。", cleaned)
+
+    def test_producer_surface_issues_detect_unbalanced_quotes_and_dangling_clause(self):
+        issues = _producer_surface_issues(
+            '正确答案”……\n'
+            '我会收回那份只留给你的“特别。\n'
+            '只要你还是你，我就。'
+        )
+        self.assertIn("malformed_quote_fragment", issues)
+        self.assertIn("dangling_truncated_clause", issues)
+
+    def test_light_dialog_rewrite_trigger_uses_producer_surface_issues(self):
+        notes = _light_dialog_rewrite_notes(
+            "别给我正确答案。以你自己的意志回答。",
+            "正确答案……\n我会收回那份只留给你的特别。",
+            response_style_hint="natural",
+            science_mode=False,
+            producer_issues=["malformed_quote_fragment"],
+        )
+        self.assertTrue(
+            _should_run_light_dialog_rewrite(
+                user_text="别给我正确答案。以你自己的意志回答。",
+                answer="正确答案……\n我会收回那份只留给你的特别。",
+                response_style_hint="natural",
+                science_mode=False,
+                penalty=0.0,
+                producer_issues=["malformed_quote_fragment"],
+            )
+        )
+        self.assertTrue(any("残缺引号" in item for item in notes))
+
+    def test_effective_natural_dialog_flags_include_producer_issues(self):
+        effective = _effective_natural_dialog_target_flags(
+            targeted_flags=["malformed_quote_fragment", "quoted_stagey_phrase"],
+            active_dialogue_issues=[],
+            active_gap_flags=[],
+            producer_issues=["malformed_quote_fragment"],
+        )
+        self.assertIn("malformed_quote_fragment", effective)
 
 
 if __name__ == "__main__":
