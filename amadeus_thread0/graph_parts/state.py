@@ -1,0 +1,196 @@
+from __future__ import annotations
+
+from typing import Annotated, Any, TypedDict
+
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
+
+
+class EventPayload(TypedDict, total=False):
+    kind: str
+    source: str
+    text: str
+    effective_text: str
+    semantic_goal: str
+    response_style_hint: str
+    science_mode: bool
+    continuation_mode: bool
+    counterpart_name: str
+    event_frame: str
+    appraisal_label: str
+    appraisal_confidence: float
+    tags: list[str]
+    created_at: int
+    idle_minutes: int
+    derived_from_plan_kind: str
+    scheduled_after_min: int
+    trigger_family: str
+    commitment_id: int
+    due_at: str
+    carryover_mode: str
+    carryover_strength: float
+    relationship_weather: str
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+    attention_target_hint: str
+    nonverbal_signal_hint: str
+
+
+class BehaviorActionPayload(TypedDict, total=False):
+    channel: str
+    interaction_mode: str
+    approach_style: str
+    engagement_level: float
+    initiative_level: float
+    followup_intent: str
+    task_focus: str
+    affect_surface: str
+    silence_ok: bool
+    proactive_checkin_readiness: float
+    action_target: str
+    deferred_action_family: str
+    timing_window_min: int
+    attention_target: str
+    nonverbal_signal: str
+    initiative_shape: str
+    disclosure_posture: str
+    note: str
+    relationship_weather: str
+    window_profile: "BehaviorWindowProfilePayload"
+
+
+class BehaviorWindowProfilePayload(TypedDict, total=False):
+    profile_type: str
+    event_kind: str
+    family: str
+    trigger_family: str
+    stance: str
+    scene: str
+    decision: str
+    maturity: float
+    required_maturity: float
+    readiness: float
+    required_readiness: float
+    continuity_bonus: float
+    continuity_discount: float
+    invite_ready: bool
+    reopen_ready: bool
+    recheck_min: int
+    carryover_mode: str
+    carryover_strength: float
+    event_carryover_mode: str
+    event_carryover_strength: float
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+    recontact_echo: float
+    own_rhythm_load: float
+
+
+class BehaviorPlanPayload(TypedDict, total=False):
+    kind: str
+    target: str
+    scheduled_after_min: int
+    trigger_family: str
+    allow_interrupt: bool
+    note: str
+    carryover_mode: str
+    carryover_strength: float
+    relationship_weather: str
+    attention_target: str
+    nonverbal_signal: str
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+
+
+class BehaviorAgendaEntryPayload(TypedDict, total=False):
+    agenda_id: str
+    kind: str
+    target: str
+    scheduled_after_min: int
+    expires_after_min: int
+    base_priority: float
+    priority: float
+    trigger_family: str
+    allow_interrupt: bool
+    note: str
+    source_event_kind: str
+    created_at: int
+    status: str
+    hold_count: int
+    last_recheck_at_min: int
+    carryover_mode: str
+    carryover_strength: float
+    relationship_weather: str
+    attention_target: str
+    nonverbal_signal: str
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+
+
+class InteractionCarryoverPayload(TypedDict, total=False):
+    source_event_kind: str
+    source_behavior_mode: str
+    source_action_target: str
+    source_text: str
+    source_tags: list[str]
+    carryover_mode: str
+    strength: float
+    relationship_weather: str
+    idle_minutes: int
+    source_turn_gap: int
+    attention_target: str
+    nonverbal_signal: str
+    note: str
+    created_at: int
+
+
+class ThreadState(TypedDict, total=False):
+    messages: Annotated[list[BaseMessage], add_messages]
+    persona_core_override: dict[str, Any]
+    counterpart_profile_override: dict[str, Any]
+    persona_override_mode: str
+    counterpart_override_mode: str
+    authority_trace: dict[str, Any]
+    relationship: dict[str, Any]
+    semantic_narrative_profile: dict[str, Any]
+    world_model_state: dict[str, Any]
+    evolution_state: dict[str, Any]
+    reconsolidation_snapshot: dict[str, Any]
+    persona_state: dict[str, Any]
+    emotion_state: dict[str, Any]
+    bond_state: dict[str, Any]
+    allostasis_state: dict[str, Any]
+    counterpart_assessment: dict[str, Any]
+    behavior_policy: dict[str, Any]
+    behavior_action: BehaviorActionPayload
+    behavior_plan: BehaviorPlanPayload
+    behavior_agenda: list[BehaviorAgendaEntryPayload]
+    behavior_queue: list[BehaviorAgendaEntryPayload]
+    turn_appraisal: dict[str, Any]
+    response_style_hint: str
+    science_mode: bool
+    tsundere_intensity: float
+    canon_risk_score: float
+    canon_guard: dict[str, Any]
+    ooc_detector: dict[str, Any]
+    worldline_focus: list[dict[str, Any]]
+    evidence_pack: list[dict[str, Any]]
+    event_override: EventPayload
+    current_event: EventPayload
+    recent_events: list[EventPayload]
+    interaction_carryover: InteractionCarryoverPayload
+    pending_utterance_fragment: str
+    pending_user_goal: str
+    retrieved_context: dict[str, Any]
+    claim_links: list[dict[str, Any]]
+    tool_round: int
+    approval_actions: list[dict[str, Any]]
+    toolset_unlocks: dict[str, int]
+    last_external_tools: list[str]
+    memory_guard_checked: int
+    memory_guard_blocked: int
+

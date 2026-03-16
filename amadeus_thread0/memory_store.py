@@ -68,7 +68,7 @@ _prefer_conda_gpu_torch()
 
 from langchain_huggingface import HuggingFaceEmbeddings
 
-from .settings import get_settings
+from .runtime.settings import get_settings
 
 try:
     import sqlite_vec  # type: ignore
