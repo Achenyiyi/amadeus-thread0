@@ -1,0 +1,9 @@
+{
+  "dependencies": [
+    "./amadeus_thread0"
+  ],
+  "graphs": {
+    "amadeus_k": "./amadeus_thread0/agent.py:agent"
+  },
+  "env": "./.env"
+}

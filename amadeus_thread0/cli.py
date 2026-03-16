@@ -49,25 +49,25 @@ from .config import (
     TOOLSET_UPGRADE_TTL_S,
     USER_FACING_MODE,
 )
-from .cli_views import (
+from .utils.cli_views import (
     build_evolution_cli_summary,
     build_evolution_summary_line,
     render_behavior_queue_cli_text,
 )
 from .graph import build_graph, build_implicit_idle_state_update, reset_runtime_caches
 from .memory_store import MemoryStore
-from .modeling import build_chat_model, runtime_model_summary
-from .perception_events import (
+from .runtime.modeling import build_chat_model, runtime_model_summary
+from .utils.perception_events import (
     build_seed_event,
     build_sense_event,
     list_event_seed_rows,
     list_sense_rows,
 )
-from .runtime_audit import audit_runtime_layout, render_runtime_audit_report
-from .session_orchestrator import emotion_to_tts_profile, push_tts_segments
-from .settings import configure_runtime_environment, get_settings
-from .tools import reset_tool_runtime_caches
-from .tts_io import create_dashscope_realtime_session, get_tts_config
+from .utils.runtime_audit import audit_runtime_layout, render_runtime_audit_report
+from .runtime.session_orchestrator import emotion_to_tts_profile, push_tts_segments
+from .runtime.settings import configure_runtime_environment, get_settings
+from .utils.tools import reset_tool_runtime_caches
+from .runtime.tts_io import create_dashscope_realtime_session, get_tts_config
 
 
 def _is_transient_runtime_error(exc: Exception) -> bool:
