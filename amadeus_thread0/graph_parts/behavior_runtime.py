@@ -13,6 +13,122 @@ from .counterpart_dynamics import (
 from .postprocess import _is_nonrelational_support_request
 from .state import BehaviorActionPayload, BehaviorPlanPayload, BehaviorWindowProfilePayload
 
+
+def _derive_behavior_motive(
+    *,
+    event_kind: str,
+    interaction_mode: str,
+    action_target: str,
+    approach_style: str,
+    counterpart_stance: str,
+    boundary_pressure: float,
+    trust: float,
+    closeness: float,
+    hurt: float,
+    safety_need: float,
+    autonomy_need: float,
+    companionship_pull: float,
+    task_pull: float,
+    self_activity_momentum: float,
+    effective_own_rhythm_load: float,
+    narrative_tension: float,
+    narrative_repair: float,
+) -> dict[str, str]:
+    motive = "maintain_natural_contact"
+    tension = "none"
+    goal_frame = "先自然接住这轮互动。"
+
+    if action_target == "protect_relationship_boundary" or (
+        approach_style == "guarded" and boundary_pressure >= 0.48
+    ):
+        motive = "protect_boundary"
+        tension = "boundary_vs_closeness" if trust >= 0.46 or closeness >= 0.46 else "none"
+        goal_frame = "先守住边界和自我位置，再决定要不要继续靠近。"
+    elif action_target == "hold_own_rhythm":
+        motive = "preserve_self_rhythm"
+        tension = (
+            "self_rhythm_vs_contact"
+            if event_kind in {"time_idle", "self_activity_state", "user_utterance"} or closeness >= 0.48
+            else "none"
+        )
+        goal_frame = "先维持自己的节奏，不急着把全部注意力交出去。"
+    elif action_target == "wait_and_recheck":
+        if (
+            approach_style == "guarded"
+            or boundary_pressure >= 0.32
+            or hurt >= 0.16
+            or counterpart_stance in {"guarded", "watchful"}
+            or safety_need >= 0.54
+        ):
+            motive = "protect_boundary"
+            tension = "boundary_vs_closeness" if trust >= 0.44 or closeness >= 0.44 else "space_vs_contact"
+            goal_frame = "先留出观察和缓冲，再决定要不要重新靠近。"
+        else:
+            motive = "gentle_recontact"
+            tension = "space_vs_contact"
+            goal_frame = "先把靠近的冲动压轻一点，等更自然的时机再接上。"
+    elif interaction_mode == "self_activity_reopen" or action_target == "offer_small_opening":
+        motive = "gentle_recontact"
+        tension = "self_rhythm_vs_contact"
+        goal_frame = "先从自己的节奏里回头，留一个不压迫对方的小开口。"
+    elif interaction_mode == "brief_presence" or action_target == "confirm_presence":
+        motive = "confirm_presence"
+        tension = (
+            "space_vs_contact"
+            if counterpart_stance != "open" or hurt > 0.10 or boundary_pressure > 0.24
+            else "none"
+        )
+        goal_frame = "先确认在场，不急着把这轮互动推进太多。"
+    elif interaction_mode == "low_pressure_support" or action_target == "low_pressure_hold":
+        motive = "support_without_pressure"
+        tension = (
+            "care_vs_guard"
+            if counterpart_stance in {"guarded", "watchful"} or hurt > 0.14 or boundary_pressure > 0.26
+            else "none"
+        )
+        goal_frame = "先低负担接住对方，让关心不过载。"
+    elif interaction_mode == "science_partner" or action_target == "co_regulate_then_focus":
+        motive = "co_solve_problem"
+        tension = "task_vs_companionship" if task_pull > 0.40 and companionship_pull > 0.34 else "none"
+        goal_frame = "先并肩把眼前问题理清，再决定情绪要跟到哪里。"
+    elif interaction_mode == "shared_memory" or action_target == "echo_shared_history":
+        motive = "reconnect_shared_history"
+        tension = "past_vs_present" if narrative_tension > 0.46 or narrative_repair > 0.46 else "none"
+        goal_frame = "先把共同记忆轻轻带回来，让熟悉感自然接上。"
+    elif action_target == "offer_shared_activity":
+        motive = "open_shared_window"
+        tension = "space_vs_contact" if counterpart_stance != "open" or boundary_pressure > 0.22 else "none"
+        goal_frame = "先留一个可以一起待着的窗口，不替对方把后半段决定掉。"
+    elif action_target == "light_work_nudge":
+        motive = "honor_continuity"
+        tension = "task_vs_companionship"
+        goal_frame = "先把前面挂着的事情自然接上，不写成任务催促。"
+    elif action_target == "light_life_nudge":
+        motive = "honor_continuity"
+        tension = (
+            "self_rhythm_vs_contact"
+            if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44
+            else "space_vs_contact"
+            if counterpart_stance != "open"
+            else "none"
+        )
+        goal_frame = "先把前面那点生活上的惦记轻轻接回来。"
+    elif action_target == "ambient_checkin":
+        motive = "maintain_natural_contact"
+        tension = "self_rhythm_vs_contact" if effective_own_rhythm_load >= 0.54 else "none"
+        goal_frame = "先顺着环境里的细小变化自然接一句。"
+    elif autonomy_need >= 0.60 and self_activity_momentum >= 0.56:
+        motive = "preserve_self_rhythm"
+        tension = "self_rhythm_vs_contact"
+        goal_frame = "先保住自己的节奏，再看这轮要给多少注意力。"
+
+    return {
+        "primary_motive": motive,
+        "motive_tension": tension,
+        "goal_frame": goal_frame,
+    }
+
+
 def _behavior_action_from_state(
     *,
     current_event: dict[str, Any],
@@ -56,6 +172,8 @@ def _behavior_action_from_state(
     world_presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
     world_self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
+    companionship_pull = _clamp01(world.get("companionship_pull"), 0.0)
+    task_pull = _clamp01(world.get("task_pull"), 0.0)
     boundary_assertiveness = _clamp01((behavior_policy or {}).get("boundary_assertiveness"), 0.25)
     self_directedness = _clamp01((behavior_policy or {}).get("self_directedness"), 0.25)
     equality_guard = _clamp01((behavior_policy or {}).get("equality_guard"), 0.25)
@@ -98,6 +216,19 @@ def _behavior_action_from_state(
     effective_own_rhythm_load = max(
         event_self_activity_momentum,
         effective_carryover_strength if effective_carryover_mode == "own_rhythm" else 0.45 * effective_carryover_strength if effective_carryover_mode == "small_opening" else 0.0,
+    )
+    explicit_own_rhythm_hint = bool({"break_window", "small_opening", "reapproach", "from_own_rhythm"} & event_tags) or (
+        event_carryover_mode in {"own_rhythm", "small_opening"}
+    ) or (
+        "self_activity_momentum" in (current_event or {}) and event_self_activity_momentum >= 0.44
+    )
+    own_rhythm_carryover_active = effective_own_rhythm_load >= 0.58 and (
+        effective_carryover_mode in {"own_rhythm", "small_opening"} or explicit_own_rhythm_hint
+    )
+    own_rhythm_trace_active = effective_own_rhythm_load >= 0.44 and (
+        own_rhythm_carryover_active
+        or effective_carryover_mode in {"own_rhythm", "small_opening"}
+        or explicit_own_rhythm_hint
     )
     prior_counterpart = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
     prior_bond = prior_bond_state if isinstance(prior_bond_state, dict) else {}
@@ -183,7 +314,7 @@ def _behavior_action_from_state(
         interaction_mode = "companion_reply"
 
     if event_kind == "user_utterance" and soft_reply_window and not science_stress:
-        if world_self_activity_momentum >= 0.58 and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
+        if own_rhythm_carryover_active and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
             interaction_mode = "self_activity_reopen"
         elif world_presence_residue >= 0.54 and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "brief_presence"
@@ -241,7 +372,7 @@ def _behavior_action_from_state(
         task_focus = "light"
     elif support_request or brief_presence or presence_checkin:
         task_focus = "light"
-    elif event_kind == "user_utterance" and world_self_activity_momentum >= 0.56:
+    elif event_kind == "user_utterance" and own_rhythm_trace_active:
         task_focus = "light"
     else:
         task_focus = "balanced"
@@ -280,10 +411,10 @@ def _behavior_action_from_state(
     else:
         followup_intent = "soft" if initiative > 0.48 else "none"
 
-    if event_kind == "user_utterance" and world_self_activity_momentum >= 0.58:
+    if event_kind == "user_utterance" and own_rhythm_carryover_active:
         if followup_intent == "active":
             followup_intent = "soft"
-        elif followup_intent == "soft" and world_self_activity_momentum >= 0.74:
+        elif followup_intent == "soft" and effective_own_rhythm_load >= 0.74:
             followup_intent = "none"
 
     if emotion_label in {"hurt", "sad"}:
@@ -1023,7 +1154,7 @@ def _behavior_action_from_state(
             nonverbal_signal = "inward_focus"
             initiative_shape = "pause"
         narrative_notes.append("你会按自己的节奏决定靠近还是先安静")
-    if world_self_activity_momentum >= 0.58 and event_kind == "user_utterance":
+    if own_rhythm_carryover_active and event_kind == "user_utterance":
         if action_target == "respond_now" and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "self_activity_reopen"
             attention_target = "self_then_counterpart"
@@ -1035,6 +1166,61 @@ def _behavior_action_from_state(
         narrative_notes.append("上一轮留下的在场感会让这次开口更轻更近")
     if world_ambient_resonance >= 0.56 and event_kind == "user_utterance" and interaction_mode in {"companion_reply", "brief_presence"}:
         narrative_notes.append("周围环境的小余波还会顺手带进这轮说话")
+
+    motive_state = _derive_behavior_motive(
+        event_kind=event_kind,
+        interaction_mode=interaction_mode,
+        action_target=action_target,
+        approach_style=approach_style,
+        counterpart_stance=counterpart_stance,
+        boundary_pressure=boundary_pressure,
+        trust=trust,
+        closeness=closeness,
+        hurt=hurt,
+        safety_need=safety_need,
+        autonomy_need=autonomy_need,
+        companionship_pull=companionship_pull,
+        task_pull=task_pull,
+        self_activity_momentum=world_self_activity_momentum,
+        effective_own_rhythm_load=effective_own_rhythm_load,
+        narrative_tension=narrative_tension,
+        narrative_repair=narrative_repair,
+    )
+    primary_motive = str(motive_state.get("primary_motive") or "").strip()
+    motive_tension = str(motive_state.get("motive_tension") or "").strip() or "none"
+    goal_frame = str(motive_state.get("goal_frame") or "").strip() or "先自然接住这轮互动。"
+
+    if primary_motive == "protect_boundary":
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        elif action_target == "protect_relationship_boundary" and disclosure_posture != "guarded":
+            disclosure_posture = "guarded"
+        if followup_intent == "active":
+            followup_intent = "soft"
+    elif primary_motive == "preserve_self_rhythm":
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        if action_target == "hold_own_rhythm":
+            followup_intent = "none"
+            if initiative_shape == "invite":
+                initiative_shape = "pause"
+    elif primary_motive == "gentle_recontact":
+        if initiative_shape == "invite":
+            initiative_shape = "micro_opening"
+        if followup_intent == "active":
+            followup_intent = "soft"
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+    elif primary_motive == "confirm_presence":
+        if followup_intent == "active":
+            followup_intent = "soft"
+        if initiative_shape == "nudge":
+            initiative_shape = "ping"
+    elif primary_motive == "support_without_pressure":
+        if followup_intent == "active" and (counterpart_stance in {"watchful", "guarded"} or hurt > 0.18):
+            followup_intent = "soft"
+    elif primary_motive == "co_solve_problem" and task_focus == "light":
+        task_focus = "balanced"
 
     # Final action semantics win over dialogue-mode softening. If the resolved action
     # is to stay silent and observe, do not leak a residual follow-up intention.
@@ -1074,7 +1260,7 @@ def _behavior_action_from_state(
         note_parts.append("空出来不等于立刻回头，先把自己的节奏走完")
     elif event_kind == "self_activity_state" and action_target == "offer_small_opening" and counterpart_stance != "open":
         note_parts.append("只留很小的开口，不默认对方会马上接住")
-    if event_kind == "user_utterance" and world_self_activity_momentum >= 0.58:
+    if event_kind == "user_utterance" and own_rhythm_trace_active:
         note_parts.append("这轮还带着一点你自己的节奏")
     if event_kind == "user_utterance" and world_presence_residue >= 0.54:
         note_parts.append("上一下留下的在场感还在")
@@ -1109,6 +1295,9 @@ def _behavior_action_from_state(
         "affect_surface": affect_surface,
         "silence_ok": silence_ok,
         "proactive_checkin_readiness": round(proactive_checkin_readiness, 3),
+        "primary_motive": primary_motive,
+        "motive_tension": motive_tension,
+        "goal_frame": goal_frame,
         "action_target": action_target,
         "deferred_action_family": deferred_action_family,
         "timing_window_min": int(max(0, timing_window_min)),
@@ -1125,6 +1314,7 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     if not isinstance(action, dict):
         return ""
     mode = str(action.get("interaction_mode") or "").strip()
+    primary_motive = str(action.get("primary_motive") or "").strip()
     approach_style = str(action.get("approach_style") or "").strip()
     followup_intent = str(action.get("followup_intent") or "").strip()
     affect_surface = str(action.get("affect_surface") or "").strip()
@@ -1134,6 +1324,24 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     disclosure_posture = str(action.get("disclosure_posture") or "").strip()
     note = str(action.get("note") or "").strip()
     parts: list[str] = []
+    if primary_motive == "protect_boundary":
+        parts.append("先守住边界，再决定要不要继续靠近")
+    elif primary_motive == "preserve_self_rhythm":
+        parts.append("先维持自己的节奏，不急着把注意力全交出去")
+    elif primary_motive == "gentle_recontact":
+        parts.append("先留一个很轻的小开口，不把靠近推进太满")
+    elif primary_motive == "support_without_pressure":
+        parts.append("先低负担接住对方，不把关心做成流程")
+    elif primary_motive == "co_solve_problem":
+        parts.append("先并肩把眼前问题理清")
+    elif primary_motive == "open_shared_window":
+        parts.append("先给彼此留一个能继续待下去的小窗口")
+    elif primary_motive == "honor_continuity":
+        parts.append("先把前面挂着的那点事自然接上")
+    elif primary_motive == "reconnect_shared_history":
+        parts.append("先把共同记忆轻轻接回来")
+    elif primary_motive == "confirm_presence":
+        parts.append("先确认在场，不急着把话题铺满")
     if mode == "brief_presence":
         parts.append("先以轻确认的方式在场")
     elif mode == "idle_presence":
@@ -1278,6 +1486,11 @@ def _behavior_plan_from_action(
     timing_window_min = int(max(0, int(action.get("timing_window_min") or 0)))
     channel = str(action.get("channel") or "").strip()
     carryover_snapshot = _behavior_plan_carryover_snapshot(action, world_model_state=world_model_state)
+    motive_fields = {
+        "primary_motive": str(action.get("primary_motive") or "").strip(),
+        "motive_tension": str(action.get("motive_tension") or "").strip(),
+        "goal_frame": str(action.get("goal_frame") or "").strip(),
+    }
 
     if event_kind == "time_idle":
         if action_target == "reach_out_now":
@@ -1288,6 +1501,7 @@ def _behavior_plan_from_action(
                 "trigger_family": "light_checkin",
                 "allow_interrupt": True,
                 "note": "空闲时间已足够，允许轻量主动开口。",
+                **motive_fields,
             }
         if action_target == "hold_own_rhythm":
             return {
@@ -1297,6 +1511,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "self_activity",
                 "allow_interrupt": True,
                 "note": "没有新的接近理由时，她会先回到自己的节奏里，之后再决定是否重新抬头。",
+                **motive_fields,
                 **carryover_snapshot,
             }
         if action_target == "wait_and_recheck":
@@ -1308,6 +1523,7 @@ def _behavior_plan_from_action(
                     "trigger_family": "none",
                     "allow_interrupt": True,
                     "note": "这段低压接近理由已经自然过期，不再继续挂起。",
+                    **motive_fields,
                 }
             return {
                 "kind": "deferred_checkin",
@@ -1316,6 +1532,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "observe",
                 "allow_interrupt": True,
                 "note": "先继续观察，稍后再决定是否轻量 check-in。",
+                **motive_fields,
                 **carryover_snapshot,
             }
     if event_kind == "scheduled_checkin_due":
@@ -1327,6 +1544,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "shared_activity",
                 "allow_interrupt": True,
                 "note": "之前那点还能再靠近一点的空当现在刚好，可以自然把这次小邀约带出来。",
+                **motive_fields,
             }
         if action_target == "light_work_nudge":
             return {
@@ -1336,6 +1554,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "deadline_window",
                 "allow_interrupt": True,
                 "note": "之前压后的生活节点现在成熟了，可以轻轻把眼前的事再拎一下。",
+                **motive_fields,
             }
         if action_target == "light_life_nudge":
             return {
@@ -1345,6 +1564,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
                 "note": "之前留着的那点生活上的惦记又被想起来了，可以顺手问一句近况或提醒一个小细节。",
+                **motive_fields,
             }
         if action_target == "reach_out_now":
             return {
@@ -1354,6 +1574,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "light_checkin",
                 "allow_interrupt": True,
                 "note": "先前延后的 check-in 现在成熟了，可以轻轻开口。",
+                **motive_fields,
             }
         if action_target == "wait_and_recheck":
             delay = timing_window_min if timing_window_min > 0 else 15
@@ -1364,6 +1585,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "observe",
                 "allow_interrupt": True,
                 "note": "即使到了先前约好的时候，这次也先继续观察，稍后再决定是否冒头。",
+                **motive_fields,
                 **carryover_snapshot,
             }
     if event_kind == "scheduled_life_due":
@@ -1375,6 +1597,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "shared_activity_window",
                 "allow_interrupt": True,
                 "note": "刚好有个能一起做点什么的空当，可以自然地留给对方。",
+                **motive_fields,
             }
         if action_target == "light_work_nudge":
             return {
@@ -1384,6 +1607,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "deadline_window",
                 "allow_interrupt": True,
                 "note": "记得眼前这件事到了节点，先轻轻拎一下，不接管节奏。",
+                **motive_fields,
             }
         if action_target == "light_life_nudge":
             return {
@@ -1393,6 +1617,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
                 "note": "又想起一点生活上的小事，顺手碰一下对方眼前状态就够，不把它说成待办。",
+                **motive_fields,
             }
         if action_target == "wait_and_recheck":
             delay = timing_window_min if timing_window_min > 0 else 20
@@ -1403,6 +1628,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
                 "note": "这点生活上的惦记先记着，但此刻先不打断，稍后再看。",
+                **motive_fields,
                 **carryover_snapshot,
             }
     if event_kind == "self_activity_state":
@@ -1414,6 +1640,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "self_activity",
                 "allow_interrupt": True,
                 "note": "她从自己的节奏里抬起头，顺手给对方留了一个小开口。",
+                **motive_fields,
             }
         if action_target == "hold_own_rhythm":
             return {
@@ -1423,6 +1650,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "self_activity",
                 "allow_interrupt": True,
                 "note": "她这轮先维持自己的节奏，稍后再决定是否重新靠近。",
+                **motive_fields,
                 **carryover_snapshot,
             }
     if action_target == "confirm_presence":
@@ -1433,6 +1661,7 @@ def _behavior_plan_from_action(
             "trigger_family": "presence_ping",
             "allow_interrupt": True,
             "note": "优先确认在场感，不必展开。",
+            **motive_fields,
         }
     if action_target == "ambient_checkin":
         return {
@@ -1442,6 +1671,7 @@ def _behavior_plan_from_action(
             "trigger_family": "ambient_presence",
             "allow_interrupt": True,
             "note": "环境变化足以触发一句安静确认。",
+            **motive_fields,
         }
     if action_target == "low_pressure_hold":
         return {
@@ -1451,6 +1681,7 @@ def _behavior_plan_from_action(
             "trigger_family": "care_opportunity",
             "allow_interrupt": True,
             "note": "先低负担接住，不接管对方节奏。",
+            **motive_fields,
         }
     if channel == "silence":
         return {
@@ -1460,6 +1691,7 @@ def _behavior_plan_from_action(
             "trigger_family": deferred_family or "observe",
             "allow_interrupt": True,
             "note": "当前更适合保持安静，继续观察。",
+            **motive_fields,
         }
     return {
         "kind": "respond_now",
@@ -1468,4 +1700,5 @@ def _behavior_plan_from_action(
         "trigger_family": deferred_family or "none",
         "allow_interrupt": True,
         "note": "当前回合以即时回应为主。",
+        **motive_fields,
     }

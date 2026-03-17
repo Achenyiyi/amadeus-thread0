@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 from functools import lru_cache
 from typing import Any
 
@@ -76,6 +77,7 @@ from .behavior_agenda import (
     _merge_behavior_agenda,
     _promote_due_behavior_action_event,
     _promote_due_behavior_agenda_event,
+    _promote_due_behavior_agenda_event_with_residue,
     _promote_due_behavior_plan_event,
 )
 from .behavior_runtime import (
@@ -94,6 +96,7 @@ from .postprocess import (
 )
 from .prompting import _build_task_prompt
 from .relational import (
+    _apply_agenda_lifecycle_residue_to_runtime_state,
     _counterpart_assessment_summary,
     _prefer_refreshed_relationship_state,
     _prefer_relationship_state,
@@ -137,9 +140,169 @@ from .turn_events import (
 
 _CHECKPOINT_CONN: sqlite3.Connection | None = None
 
+_IDLE_CONTEXT_TAGS = {
+    "respect_space",
+    "user_busy",
+    "cognitive_load",
+    "quiet_presence",
+    "ambient_echo",
+    "from_own_rhythm",
+    "own_task",
+    "deep_focus",
+    "late_night",
+}
+_OWN_RHYTHM_TAGS = {"from_own_rhythm", "own_task", "deep_focus", "break_window", "small_opening", "reapproach"}
+_QUIET_PRESENCE_MODES = {"quiet_recontact", "brief_presence"}
+_OWN_RHYTHM_MODES = {"own_rhythm", "small_opening"}
+_AMBIENT_ECHO_MODES = {"ambient_echo"}
+
 
 def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _normalize_tag_list(*chunks: Any) -> list[str]:
+    ordered: list[str] = []
+    for chunk in chunks:
+        items = chunk if isinstance(chunk, (list, tuple, set)) else [chunk]
+        for item in items:
+            text = str(item or "").strip()
+            if text and text not in ordered:
+                ordered.append(text)
+    return ordered
+
+
+def build_implicit_idle_event_override(
+    state: ThreadState | dict[str, Any] | None,
+    *,
+    idle_minutes: int,
+    note: str = "",
+    created_at: int | None = None,
+    extra_tags: list[str] | tuple[str, ...] | set[str] | None = None,
+) -> dict[str, Any]:
+    seeded: ThreadState = dict(state or {})
+    try:
+        idle_window = max(1, min(24 * 60, int(idle_minutes)))
+    except Exception:
+        idle_window = 1
+    now_ts = int(created_at or _now_ts())
+    event_text = str(note or "").strip() or f"已经安静地过去了 {idle_window} 分钟，没有新的用户消息。"
+
+    prior_event = seeded.get("current_event") if isinstance(seeded.get("current_event"), dict) else {}
+    prior_tags = {
+        str(item).strip()
+        for item in (prior_event.get("tags") if isinstance(prior_event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    prior_behavior_action = seeded.get("behavior_action") if isinstance(seeded.get("behavior_action"), dict) else {}
+    interaction_carryover = seeded.get("interaction_carryover") if isinstance(seeded.get("interaction_carryover"), dict) else {}
+    world = seeded.get("world_model_state") if isinstance(seeded.get("world_model_state"), dict) else {}
+    assessment = seeded.get("counterpart_assessment") if isinstance(seeded.get("counterpart_assessment"), dict) else {}
+    relationship_weather = (
+        str(interaction_carryover.get("relationship_weather") or "").strip().lower()
+        or str(prior_behavior_action.get("relationship_weather") or "").strip().lower()
+        or str(prior_event.get("relationship_weather") or "").strip().lower()
+    )
+    carryover_mode = str(interaction_carryover.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _safe_float(interaction_carryover.get("strength"), 0.0) if interaction_carryover else 0.0
+    presence_residue = _safe_float(world.get("presence_residue"), 0.0) if world else 0.0
+    ambient_resonance = _safe_float(world.get("ambient_resonance"), 0.0) if world else 0.0
+    self_activity_momentum = _safe_float(world.get("self_activity_momentum"), 0.0) if world else 0.0
+    action_target = str(prior_behavior_action.get("action_target") or "").strip().lower()
+    try:
+        timing_window_min = int(prior_behavior_action.get("timing_window_min") or 0) if prior_behavior_action else 0
+    except Exception:
+        timing_window_min = 0
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+
+    tags = _normalize_tag_list("time_idle", "ambient", "behavior_layer", extra_tags or [])
+    if prior_tags & {"respect_space", "user_busy", "cognitive_load"}:
+        tags = _normalize_tag_list(tags, sorted(prior_tags & {"respect_space", "user_busy", "cognitive_load"}))
+    if stance == "guarded" and "respect_space" not in tags and prior_tags & {"quiet_presence"}:
+        tags = _normalize_tag_list(tags, "respect_space")
+    if (
+        carryover_mode in _QUIET_PRESENCE_MODES
+        or bool(prior_tags & {"quiet_presence", "brief_presence"})
+        or presence_residue >= 0.28
+    ):
+        tags = _normalize_tag_list(tags, "quiet_presence")
+    if (
+        carryover_mode in _AMBIENT_ECHO_MODES
+        or bool(prior_tags & {"ambient_echo"})
+        or ambient_resonance >= 0.30
+    ):
+        tags = _normalize_tag_list(tags, "ambient_echo")
+    if (
+        carryover_mode in _OWN_RHYTHM_MODES
+        or action_target == "hold_own_rhythm"
+        or bool(prior_tags & _OWN_RHYTHM_TAGS)
+        or self_activity_momentum >= 0.56
+    ):
+        tags = _normalize_tag_list(tags, "from_own_rhythm")
+    if self_activity_momentum >= 0.60 or bool(prior_tags & {"own_task", "deep_focus"}):
+        tags = _normalize_tag_list(tags, "own_task")
+    if self_activity_momentum >= 0.66 or bool(prior_tags & {"deep_focus"}):
+        tags = _normalize_tag_list(tags, "deep_focus")
+
+    try:
+        hour = int(datetime.fromtimestamp(now_ts).hour)
+    except Exception:
+        hour = -1
+    if hour >= 23 or 0 <= hour <= 5:
+        tags = _normalize_tag_list(tags, "late_night")
+
+    stale_window = False
+    if action_target == "wait_and_recheck":
+        stale_after = max(45, timing_window_min * 3 if timing_window_min > 0 else 90)
+        if idle_window >= stale_after:
+            stale_window = True
+            tags = _normalize_tag_list(tags, "stale_window")
+
+    frame_parts = [f"和对方之间安静地过去了 {idle_window} 分钟。"]
+    if "respect_space" in tags:
+        frame_parts.append("这段安静更像是在给对方留空间。")
+    elif "user_busy" in tags or "cognitive_load" in tags:
+        frame_parts.append("她默认对方大概还在忙，先不急着往前推。")
+    if "from_own_rhythm" in tags:
+        frame_parts.append("她这段时间仍在自己的节奏里。")
+    if "quiet_presence" in tags:
+        frame_parts.append("前面那点没说出口的在场感还没有完全退掉。")
+    if "ambient_echo" in tags:
+        frame_parts.append("环境里残留的细小动静还挂在她的感知边缘。")
+    if stale_window:
+        frame_parts.append("之前那点低压接近的窗口已经自然过期。")
+    if relationship_weather:
+        frame_parts.append(f"当前关系天气更接近 {relationship_weather}。")
+    elif scene in {"boundary_non_compliance", "relationship_degradation"}:
+        frame_parts.append("这轮关系气压偏低。")
+    frame_parts.append("现在轮到她决定是否重新抬头。")
+
+    return {
+        "kind": "time_idle",
+        "source": "time",
+        "text": event_text,
+        "effective_text": event_text,
+        "semantic_goal": "time passed without new user input",
+        "response_style_hint": "companion",
+        "event_frame": " ".join(frame_parts),
+        "tags": tags,
+        "idle_minutes": idle_window,
+        "created_at": now_ts,
+        "relationship_weather": relationship_weather,
+        "carryover_mode": carryover_mode,
+        "carryover_strength": round(max(0.0, min(1.0, carryover_strength)), 3),
+        "presence_residue": round(max(0.0, min(1.0, presence_residue)), 3),
+        "ambient_resonance": round(max(0.0, min(1.0, ambient_resonance)), 3),
+        "self_activity_momentum": round(max(0.0, min(1.0, self_activity_momentum)), 3),
+    }
 
 
 def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
@@ -157,11 +320,12 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     prior_behavior_action = _sanitize_obj(state.get("behavior_action")) if isinstance(state.get("behavior_action"), dict) else {}
     prior_behavior_plan = _sanitize_obj(state.get("behavior_plan")) if isinstance(state.get("behavior_plan"), dict) else {}
     prior_behavior_agenda = _sanitize_obj(state.get("behavior_agenda")) if isinstance(state.get("behavior_agenda"), list) else []
+    agenda_lifecycle_residue: dict[str, Any] = {}
     if not prior_behavior_agenda and isinstance(state.get("behavior_queue"), list):
         prior_behavior_agenda = _sanitize_obj(state.get("behavior_queue"))  # type: ignore[assignment]
     had_prior_behavior_queue = bool(prior_behavior_agenda)
     if event_override:
-        event_override, prior_behavior_agenda = _promote_due_behavior_agenda_event(
+        event_override, prior_behavior_agenda, agenda_lifecycle_residue = _promote_due_behavior_agenda_event_with_residue(
             event_override,
             prior_behavior_agenda,
             counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else None,
@@ -282,6 +446,11 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         "world_model_state",
         canon_recontact_baseline.get("world_model_state") if isinstance(canon_recontact_baseline, dict) else None,
     )
+    seed_world_model_state, seed_counterpart_assessment = _apply_agenda_lifecycle_residue_to_runtime_state(
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
+        world_model_state=seed_world_model_state,
+        counterpart_assessment=seed_counterpart_assessment,
+    )
     seed_evolution_state = _prefer_explicit_state_dict(
         state,
         "evolution_state",
@@ -354,6 +523,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
     interaction_carryover = _recent_interaction_carryover(
         prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
         prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
+        prior_agenda_lifecycle_residue=state.get("agenda_lifecycle_residue") if isinstance(state.get("agenda_lifecycle_residue"), dict) else {},
         prior_counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
         recent_events=state.get("recent_events"),
         current_event=current_event,
@@ -459,6 +629,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             semantic_narrative_profile=semantic_narrative_profile,
             appraisal=appraisal,
             current_event=current_event,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
             response_style_hint=response_style_hint,
             tsundere_intensity=seed_tsundere_intensity,
             science_mode=science_mode,
@@ -502,6 +673,8 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             counterpart_profile=profile,
             current_event=current_event,
             world_model_state=world_model_state,
+            behavior_action=behavior_action,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
         )
     if memory_evolved:
         retrieved = _retrieve_context(effective_user_text or user_text, store)
@@ -524,6 +697,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             semantic_narrative_profile=semantic_narrative_profile,
             appraisal=appraisal,
             current_event=current_event,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
             response_style_hint=response_style_hint,
             tsundere_intensity=tsundere,
             science_mode=science_mode,
@@ -620,10 +794,18 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             "latent_self_coherence": float(evolution_state.get("self_coherence") or 0.0),
             "latent_agency_pressure": float(evolution_state.get("agency_pressure") or 0.0),
             "behavior_mode": str(behavior_action.get("interaction_mode") or ""),
+            "behavior_primary_motive": str(behavior_action.get("primary_motive") or ""),
+            "behavior_motive_tension": str(behavior_action.get("motive_tension") or ""),
+            "behavior_goal_frame": str(behavior_action.get("goal_frame") or "")[:120],
             "behavior_plan_kind": str(behavior_plan.get("kind") or ""),
+            "behavior_plan_motive": str(behavior_plan.get("primary_motive") or ""),
+            "behavior_plan_goal_frame": str(behavior_plan.get("goal_frame") or "")[:120],
             "behavior_agenda_size": int(len(behavior_agenda or [])),
+            "agenda_lifecycle_kind": str(agenda_lifecycle_residue.get("kind") or ""),
+            "agenda_lifecycle_cooldown": float(agenda_lifecycle_residue.get("recontact_cooldown") or 0.0),
             "carryover_mode": str(interaction_carryover.get("carryover_mode") or ""),
             "carryover_strength": float(interaction_carryover.get("strength") or 0.0),
+            "carryover_source_motive": str(interaction_carryover.get("source_primary_motive") or ""),
             "appraisal_used": bool(appraisal.get("used", False)),
             "appraisal_confidence": float(appraisal.get("confidence", 0.0) or 0.0),
         },
@@ -657,6 +839,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         "current_event": _sanitize_obj(current_event),
         "recent_events": _sanitize_obj(recent_events),
         "interaction_carryover": interaction_carryover,
+        "agenda_lifecycle_residue": agenda_lifecycle_residue,
         "response_style_hint": response_style_hint,
         "science_mode": science_mode,
         "tsundere_intensity": tsundere,
@@ -708,23 +891,13 @@ def build_implicit_idle_state_update(
     created_at: int | None = None,
 ) -> dict[str, Any]:
     seeded: ThreadState = dict(state or {})
-    try:
-        idle_window = max(1, min(24 * 60, int(idle_minutes)))
-    except Exception:
-        idle_window = 1
-    event_text = str(note or "").strip() or f"已经安静地过去了 {idle_window} 分钟，没有新的用户消息。"
-    seeded["event_override"] = {
-        "kind": "time_idle",
-        "source": "time",
-        "text": event_text,
-        "effective_text": event_text,
-        "semantic_goal": "time passed without new user input",
-        "response_style_hint": "companion",
-        "event_frame": f"和对方之间安静地过去了 {idle_window} 分钟，现在轮到她决定是否主动开口。",
-        "tags": ["time_idle", "ambient", "behavior_layer", "implicit_idle"],
-        "idle_minutes": idle_window,
-        "created_at": int(created_at or _now_ts()),
-    }
+    seeded["event_override"] = build_implicit_idle_event_override(
+        seeded,
+        idle_minutes=idle_minutes,
+        note=note,
+        created_at=created_at,
+        extra_tags=["implicit_idle"],
+    )
     return _node_prepare_turn(seeded)
 
 
@@ -934,6 +1107,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 current_event=current_event,
                 behavior_action=behavior_action,
                 interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+                semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
             )
             if rewritten:
                 rewritten_pref = _daily_surface_alignment_metrics(rewritten, profile=light_dialog_profile)
@@ -1064,6 +1238,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 current_event=current_event,
                 behavior_action=behavior_action,
                 interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+                semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
             )
             if rewritten:
                 rewritten_gap, rewritten_gap_flags = _persona_gap(rewritten, state)
@@ -1107,6 +1282,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             current_event=current_event,
             behavior_action=behavior_action,
             interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+            semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
         )
         if rewritten:
             rewritten_issues = _dialogue_surface_issues(

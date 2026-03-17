@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from amadeus_thread0.graph import _memory_guard_check
+from amadeus_thread0.graph_parts.tool_runtime import _memory_guard_check
 from amadeus_thread0.memory_store import MemoryStore
 
 

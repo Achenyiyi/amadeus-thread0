@@ -14,7 +14,7 @@ from .retrieval import (
     _relationship_salience,
     _tension_salience,
 )
-from .state import InteractionCarryoverPayload, ThreadState
+from .state import AgendaLifecycleResiduePayload, InteractionCarryoverPayload, ThreadState
 
 
 def _recent_non_user_event_with_gap(
@@ -139,6 +139,7 @@ def _recent_interaction_carryover(
     *,
     prior_current_event: dict[str, Any] | None,
     prior_behavior_action: dict[str, Any] | None,
+    prior_agenda_lifecycle_residue: dict[str, Any] | None = None,
     prior_counterpart_assessment: dict[str, Any] | None = None,
     recent_events: Any,
     current_event: dict[str, Any] | None,
@@ -158,17 +159,24 @@ def _recent_interaction_carryover(
         prior_counterpart_assessment=prior_counterpart_assessment,
         response_style_hint=response_style_hint,
     )
+    agenda_fallback = _agenda_lifecycle_carryover(
+        prior_agenda_lifecycle_residue,
+        current_event=current_event,
+    )
     source_from_history = False
     user_turn_gap = 0
     if source_kind == "user_utterance" or not source_kind:
         source_event, source_kind, user_turn_gap = _recent_non_user_event_with_gap(recent_events, max_user_turn_gap=3)
         source_from_history = bool(source_event and source_kind)
     if not source_event or not source_kind or source_kind == "user_utterance":
-        return relational_fallback
+        return _prefer_relational_carryover(agenda_fallback, relational_fallback)
 
     prior_action = {} if source_from_history else prior_action
     source_behavior_mode = str(prior_action.get("interaction_mode") or "").strip().lower()
     source_action_target = str(prior_action.get("action_target") or "").strip().lower()
+    source_primary_motive = str(prior_action.get("primary_motive") or "").strip().lower()
+    source_motive_tension = str(prior_action.get("motive_tension") or "").strip().lower()
+    source_goal_frame = str(prior_action.get("goal_frame") or "").strip()
     idle_minutes = 0
     try:
         idle_minutes = int(source_event.get("idle_minutes") or 0)
@@ -293,6 +301,9 @@ def _recent_interaction_carryover(
         "source_event_kind": source_kind,
         "source_behavior_mode": source_behavior_mode,
         "source_action_target": source_action_target,
+        "source_primary_motive": source_primary_motive,
+        "source_motive_tension": source_motive_tension,
+        "source_goal_frame": source_goal_frame,
         "source_text": str(source_event.get("effective_text") or source_event.get("text") or "").strip()[:180],
         "source_tags": source_tags[:6],
         "carryover_mode": carryover_mode,
@@ -305,7 +316,101 @@ def _recent_interaction_carryover(
         "source_turn_gap": max(0, int(user_turn_gap)),
         "created_at": _now_ts(),
     }
-    return _prefer_relational_carryover(derived, relational_fallback)
+    combined = _prefer_relational_carryover(derived, relational_fallback)
+    return _prefer_relational_carryover(agenda_fallback, combined)
+
+
+def _agenda_lifecycle_carryover(
+    residue: dict[str, Any] | None,
+    *,
+    current_event: dict[str, Any] | None,
+) -> AgendaLifecycleResiduePayload | InteractionCarryoverPayload:
+    current = dict(current_event or {})
+    if str(current.get("kind") or "").strip().lower() != "user_utterance":
+        return {}
+    payload = dict(residue or {})
+    kind = str(payload.get("kind") or "").strip().lower()
+    carryover_mode = str(payload.get("carryover_mode") or "").strip().lower()
+    strength = _clamp01(payload.get("carryover_strength"), 0.0)
+    if not kind or not carryover_mode or strength < 0.12:
+        return {}
+    source_tags = [
+        str(item).strip().lower()
+        for item in (payload.get("source_tags") if isinstance(payload.get("source_tags"), list) else [])
+        if str(item).strip()
+    ]
+    return {
+        "source_event_kind": f"agenda_lifecycle:{kind}",
+        "source_behavior_mode": "agenda_lifecycle",
+        "source_action_target": "hold_own_rhythm" if carryover_mode == "own_rhythm" else "wait_and_recheck",
+        "source_primary_motive": "preserve_self_rhythm" if carryover_mode == "own_rhythm" else "gentle_recontact",
+        "source_motive_tension": "self_rhythm_vs_contact" if carryover_mode == "own_rhythm" else "space_vs_contact",
+        "source_goal_frame": str(payload.get("note") or "").strip(),
+        "source_text": str(payload.get("note") or "").strip()[:180],
+        "source_tags": source_tags,
+        "carryover_mode": carryover_mode,
+        "strength": round(strength, 3),
+        "relationship_weather": str(payload.get("relationship_weather") or "").strip().lower(),
+        "idle_minutes": max(0, int(payload.get("idle_minutes") or 0)),
+        "source_turn_gap": 0,
+        "attention_target": str(payload.get("attention_target") or "").strip() or "self_then_counterpart",
+        "nonverbal_signal": str(payload.get("nonverbal_signal") or "").strip() or "thought_glance",
+        "note": str(payload.get("note") or "").strip(),
+        "created_at": int(payload.get("created_at") or _now_ts()),
+    }
+
+
+def _apply_agenda_lifecycle_residue_to_runtime_state(
+    *,
+    agenda_lifecycle_residue: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    residue = dict(agenda_lifecycle_residue or {})
+    if not residue:
+        return dict(world_model_state or {}), dict(counterpart_assessment or {})
+    kind = str(residue.get("kind") or "").strip().lower()
+    if kind not in {"held", "released_to_self_activity", "dropped", "expired"}:
+        return dict(world_model_state or {}), dict(counterpart_assessment or {})
+
+    world = dict(world_model_state or {})
+    assessment = dict(counterpart_assessment or {})
+    own_rhythm_bias = max(
+        _clamp01(residue.get("own_rhythm_bias"), 0.0),
+        _clamp01(residue.get("self_activity_momentum"), 0.0),
+    )
+    presence_residue = _clamp01(residue.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(residue.get("ambient_resonance"), 0.0)
+    cooldown = _clamp01(residue.get("recontact_cooldown"), 0.0)
+
+    world["self_activity_momentum"] = round(max(_clamp01(world.get("self_activity_momentum"), 0.0), own_rhythm_bias), 3)
+    world["presence_residue"] = round(
+        max(
+            _clamp01(world.get("presence_residue"), 0.0),
+            presence_residue * (0.92 if kind == "released_to_self_activity" else 0.82 if kind == "held" else 0.72),
+        ),
+        3,
+    )
+    world["ambient_resonance"] = round(max(_clamp01(world.get("ambient_resonance"), 0.0), 0.88 * ambient_resonance), 3)
+    boundary_load = _clamp01(world.get("boundary_load"), 0.0)
+    if kind == "released_to_self_activity":
+        boundary_load = max(boundary_load, 0.08 + 0.10 * cooldown)
+    else:
+        boundary_load = max(boundary_load, 0.12 + 0.18 * cooldown)
+    world["boundary_load"] = round(_clamp01(boundary_load), 3)
+
+    if assessment:
+        scene_bias = str(residue.get("counterpart_scene_bias") or "").strip().lower()
+        stance = str(assessment.get("stance") or "").strip().lower()
+        if scene_bias and stance != "guarded":
+            assessment["scene"] = scene_bias
+        boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1) + float(residue.get("counterpart_boundary_delta") or 0.0)
+        assessment["boundary_pressure"] = round(_clamp01(boundary_pressure), 3)
+        if scene_bias == "busy_not_disrespectful":
+            assessment["reliability_read"] = round(max(_clamp01(assessment.get("reliability_read"), 0.5), 0.52), 3)
+            assessment["respect_level"] = round(max(_clamp01(assessment.get("respect_level"), 0.5), 0.52), 3)
+
+    return world, assessment
 
 def _prefer_relational_carryover(
     derived: InteractionCarryoverPayload | dict[str, Any] | None,
@@ -378,6 +483,9 @@ def _prior_user_exchange_carryover(
     disclosure_posture = str(action.get("disclosure_posture") or "").strip().lower()
     attention_target = str(action.get("attention_target") or "").strip() or "counterpart_state"
     nonverbal_signal = str(action.get("nonverbal_signal") or "").strip()
+    primary_motive = str(action.get("primary_motive") or "").strip().lower()
+    motive_tension = str(action.get("motive_tension") or "").strip().lower()
+    goal_frame = str(action.get("goal_frame") or "").strip()
     initiative_level = _clamp01(action.get("initiative_level"), 0.0)
     engagement_level = _clamp01(action.get("engagement_level"), 0.0)
     assessment = dict(prior_counterpart_assessment or {})
@@ -420,6 +528,9 @@ def _prior_user_exchange_carryover(
             "source_event_kind": "user_utterance",
             "source_behavior_mode": interaction_mode,
             "source_action_target": str(action.get("action_target") or "").strip().lower(),
+            "source_primary_motive": primary_motive,
+            "source_motive_tension": motive_tension,
+            "source_goal_frame": goal_frame,
             "source_text": str(event.get("effective_text") or event.get("text") or "").strip()[:180],
             "source_tags": [],
             "carryover_mode": "quiet_recontact",
@@ -453,6 +564,9 @@ def _prior_user_exchange_carryover(
             "source_event_kind": "user_utterance",
             "source_behavior_mode": interaction_mode,
             "source_action_target": str(action.get("action_target") or "").strip().lower(),
+            "source_primary_motive": primary_motive,
+            "source_motive_tension": motive_tension,
+            "source_goal_frame": goal_frame,
             "source_text": str(event.get("effective_text") or event.get("text") or "").strip()[:180],
             "source_tags": [],
             "carryover_mode": "brief_presence" if weather == "repair_residue" else "small_opening",
@@ -488,6 +602,9 @@ def _seeded_interaction_carryover_from_state(
         "source_event_kind": str(seeded.get("source_event_kind") or "seed_state").strip().lower() or "seed_state",
         "source_behavior_mode": str(seeded.get("source_behavior_mode") or "").strip().lower(),
         "source_action_target": str(seeded.get("source_action_target") or "").strip().lower(),
+        "source_primary_motive": str(seeded.get("source_primary_motive") or "").strip().lower(),
+        "source_motive_tension": str(seeded.get("source_motive_tension") or "").strip().lower(),
+        "source_goal_frame": str(seeded.get("source_goal_frame") or "").strip(),
         "source_text": str(seeded.get("source_text") or "").strip()[:180],
         "source_tags": [
             str(item).strip()

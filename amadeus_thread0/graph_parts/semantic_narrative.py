@@ -1,11 +1,116 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from typing import Any
 
 from ..config import CANON_COUNTERPART_NAME
 from .counterpart_dynamics import _clamp01
 from .retrieval import _query_overlap_score, _record_value, _self_narrative_salience
 from .turn_events import _now_ts
+
+_SEMANTIC_QUERY_STOP_CHARS = frozenset(
+    {
+        "的",
+        "了",
+        "是",
+        "在",
+        "和",
+        "就",
+        "也",
+        "还",
+        "把",
+        "会",
+        "不",
+        "一",
+        "个",
+        "这",
+        "那",
+        "们",
+        "来",
+        "去",
+        "说",
+        "要",
+        "都",
+        "又",
+        "更",
+        "先",
+        "后",
+        "里",
+        "着",
+        "啊",
+        "呀",
+        "吗",
+        "呢",
+        "吧",
+        "哦",
+        "喔",
+    }
+)
+
+
+def _semantic_query_signature(text: str) -> str:
+    chars: list[str] = []
+    for char in str(text or "").strip().lower():
+        if "\u4e00" <= char <= "\u9fff":
+            if char not in _SEMANTIC_QUERY_STOP_CHARS:
+                chars.append(char)
+            continue
+        if char.isalnum():
+            chars.append(char)
+    return "".join(chars)
+
+
+def _semantic_query_affinity(query: str, text: str) -> float:
+    overlap = _query_overlap_score(query, text)
+    query_sig = _semantic_query_signature(query)
+    text_sig = _semantic_query_signature(text)
+    if not query_sig or not text_sig:
+        return overlap
+    seq_ratio = SequenceMatcher(None, query_sig, text_sig).ratio()
+    query_chars = set(query_sig)
+    text_chars = set(text_sig)
+    char_overlap = float(len(query_chars & text_chars)) / float(max(1, min(len(query_chars), 6)))
+    return _clamp01(max(overlap, 0.58 * overlap + 0.27 * seq_ratio + 0.15 * char_overlap))
+
+
+def _dominant_narrative_category(
+    categories: dict[str, float],
+    identity_snapshot: dict[str, dict[str, Any]],
+    *,
+    current_text: str = "",
+) -> str:
+    if not categories:
+        return ""
+    raw_name, raw_score = max(categories.items(), key=lambda kv: kv[1])
+    if float(raw_score or 0.0) <= 0.0:
+        return ""
+    if not isinstance(identity_snapshot, dict) or not identity_snapshot:
+        return raw_name
+
+    ranked_identity: list[tuple[float, float, float, float, str]] = []
+    for category, payload in identity_snapshot.items():
+        if not isinstance(payload, dict):
+            continue
+        try:
+            score = float(payload.get("strength", 0.0) or 0.0)
+        except Exception:
+            score = 0.0
+        name = str(category or "").strip()
+        if name:
+            evidence_text = str(payload.get("prompt_text") or payload.get("text") or "").strip()
+            relevance = _semantic_query_affinity(current_text, evidence_text) if current_text and evidence_text else 0.0
+            category_score = float(categories.get(name, 0.0) or 0.0)
+            ranked_identity.append((score + 0.16 * relevance + 0.08 * category_score, score, category_score, relevance, name))
+    if not ranked_identity:
+        return raw_name
+
+    ranked_identity.sort(key=lambda item: (item[0], item[3], item[2], item[1]), reverse=True)
+    _, identity_score, _, _, identity_name = ranked_identity[0]
+    raw_is_identity = raw_name in identity_snapshot
+    # Prefer a strongly consolidated identity axis over a generic residue axis.
+    if identity_score >= 0.78 and (not raw_is_identity or identity_score >= float(raw_score or 0.0) - 0.08):
+        return identity_name
+    return raw_name
 
 def _semantic_narrative_decay_rate(category: str) -> float:
     cat = str(category or "").strip().lower()
@@ -74,6 +179,26 @@ def _semantic_narrative_event_bonus(category: str, current_event: dict[str, Any]
         bonus += 0.12
     return _clamp01(bonus)
 
+
+def _semantic_identity_bonus(horizon_tag: str, support_span_s: float, reactivation_hits: float) -> float:
+    horizon = str(horizon_tag or "").strip().lower()
+    bonus = 0.0
+    if horizon == "long_term":
+        bonus += 0.10
+    elif horizon == "consolidating":
+        bonus += 0.04
+    span_s = max(0.0, float(support_span_s))
+    if span_s >= 7 * 24 * 3600:
+        bonus += 0.06
+    elif span_s >= 2 * 24 * 3600:
+        bonus += 0.03
+    hits = max(0.0, float(reactivation_hits))
+    if hits >= 2.0:
+        bonus += 0.04
+    elif hits >= 1.0:
+        bonus += 0.02
+    return _clamp01(bonus)
+
 def _semantic_narrative_profile(
     items: list[dict[str, Any]] | None,
     *,
@@ -101,6 +226,11 @@ def _semantic_narrative_profile(
         "top_narratives": [],
         "residue_snapshot": {},
         "persistence_snapshot": {},
+        "motive_snapshot": {},
+        "identity_snapshot": {},
+        "identity_lines": [],
+        "identity_prompt_lines": [],
+        "long_term_self_narratives": [],
     }
     if not isinstance(items, list) or not items:
         return out
@@ -124,9 +254,12 @@ def _semantic_narrative_profile(
     }
     scored_items: list[tuple[float, str, str, bool]] = []
     anchor_items: list[tuple[float, str, str]] = []
+    identity_items: list[tuple[float, str, str, str, str]] = []
     reactivated_categories: set[str] = set()
     residue_snapshot: dict[str, float] = {}
     persistence_snapshot: dict[str, float] = {}
+    motive_snapshot: dict[str, dict[str, Any]] = {}
+    identity_snapshot: dict[str, dict[str, Any]] = {}
 
     for item in items:
         if not isinstance(item, dict):
@@ -147,6 +280,9 @@ def _semantic_narrative_profile(
         last_supported_at = int(_record_value(item, "last_supported_at", now_ts) or now_ts)
         support_count = max(0.0, float(_record_value(item, "support_count", 1.0) or 1.0))
         support_norm = _clamp01(support_count / 5.0)
+        support_span_s = max(0.0, float(_record_value(item, "support_span_s", 0.0) or 0.0))
+        reactivation_hits = max(0.0, float(_record_value(item, "reactivation_hits", 0.0) or 0.0))
+        contradiction_pressure = _clamp01(_record_value(item, "contradiction_pressure", 0.0), 0.0)
         gap_s = max(0, now_ts - last_supported_at)
         decay_multiplier = _semantic_narrative_decay_multiplier(category, gap_s, decay_resistance=decay_resistance)
         event_bonus = _semantic_narrative_event_bonus(category, current_event)
@@ -180,8 +316,72 @@ def _semantic_narrative_profile(
                 float(persistence_snapshot.get(category, 0.0) or 0.0),
                 round(persistence * max(decay_multiplier, 0.65), 3),
             )
+        dominant_primary_motive = str(_record_value(item, "dominant_primary_motive", "") or "").strip()
+        dominant_motive_tension = str(_record_value(item, "dominant_motive_tension", "") or "").strip()
+        goal_frame_examples = [
+            str(goal).strip()
+            for goal in (_record_value(item, "goal_frame_examples", []) or [])
+            if str(goal or "").strip()
+        ][:2]
+        if category and (dominant_primary_motive or dominant_motive_tension or goal_frame_examples):
+            previous = motive_snapshot.get(category) if isinstance(motive_snapshot.get(category), dict) else {}
+            previous_score = float(previous.get("_score", -1.0) or -1.0)
+            if weight >= previous_score:
+                motive_snapshot[category] = {
+                    "_score": round(float(weight), 3),
+                    "primary_motive": dominant_primary_motive,
+                    "motive_tension": dominant_motive_tension,
+                    "goal_frame_examples": goal_frame_examples,
+                }
         anchor_text = str(_record_value(item, "anchor_text", "") or "").strip()
         prompt_anchor_text = str(_record_value(item, "prompt_anchor_text", "") or "").strip()
+        identity_ready = bool(_record_value(item, "identity_ready", False))
+        identity_strength = _clamp01(_record_value(item, "identity_strength", 0.0), 0.0)
+        identity_text = str(_record_value(item, "identity_text", "") or "").strip()
+        identity_prompt_text = str(_record_value(item, "identity_prompt_text", "") or "").strip()
+        if (
+            not identity_ready
+            and horizon == "long_term"
+            and persistence >= 0.64
+            and contradiction_pressure < 0.38
+            and (anchor_text or prompt_anchor_text)
+        ):
+            identity_ready = True
+            identity_strength = max(identity_strength, _clamp01(0.74 * persistence + 0.18 * integration + 0.08 * support_norm))
+            identity_text = identity_text or anchor_text
+            identity_prompt_text = identity_prompt_text or prompt_anchor_text or identity_text
+        if identity_ready and (identity_text or identity_prompt_text):
+            identity_weight = _clamp01(
+                (
+                    0.54 * max(identity_strength, persistence)
+                    + 0.14 * integration
+                    + 0.10 * residue
+                    + 0.08 * support_norm
+                    + _semantic_identity_bonus(horizon, support_span_s, reactivation_hits)
+                )
+                * max(decay_multiplier, 0.82)
+                * (1.0 - 0.24 * contradiction_pressure)
+            )
+            if identity_weight > 0.0:
+                identity_text = identity_text or anchor_text or text
+                identity_prompt_text = identity_prompt_text or prompt_anchor_text or identity_text
+                identity_snapshot[category] = {
+                    "strength": round(float(identity_weight), 3),
+                    "horizon_tag": horizon,
+                    "text": identity_text[:180],
+                    "prompt_text": identity_prompt_text[:180],
+                    "primary_motive": dominant_primary_motive,
+                    "motive_tension": dominant_motive_tension,
+                }
+                identity_items.append(
+                    (
+                        identity_weight,
+                        category,
+                        identity_text[:180],
+                        identity_prompt_text[:180],
+                        horizon,
+                    )
+                )
         anchor_strength = _clamp01(
             _record_value(
                 item,
@@ -229,8 +429,27 @@ def _semantic_narrative_profile(
     out["reactivated_categories"] = sorted(reactivated_categories)
     out["residue_snapshot"] = residue_snapshot
     out["persistence_snapshot"] = persistence_snapshot
+    out["identity_snapshot"] = identity_snapshot
+    if motive_snapshot:
+        out["motive_snapshot"] = {
+            category: {
+                "primary_motive": str(data.get("primary_motive") or "").strip(),
+                "motive_tension": str(data.get("motive_tension") or "").strip(),
+                "goal_frame_examples": [
+                    str(goal).strip()
+                    for goal in (data.get("goal_frame_examples") or [])
+                    if str(goal or "").strip()
+                ][:2],
+            }
+            for category, data in motive_snapshot.items()
+            if isinstance(data, dict)
+        }
     if categories:
-        out["dominant_category"] = max(categories.items(), key=lambda kv: kv[1])[0] if max(categories.values()) > 0.0 else ""
+        out["dominant_category"] = _dominant_narrative_category(
+            categories,
+            identity_snapshot,
+            current_text=current_text,
+        )
 
     if anchor_items:
         anchor_items.sort(key=lambda row: row[0], reverse=True)
@@ -256,6 +475,37 @@ def _semantic_narrative_profile(
                 break
         out["anchor_lines"] = report_anchor_lines[:3]
         out["prompt_anchor_lines"] = prompt_anchor_lines[:3]
+
+    if identity_items:
+        identity_items.sort(key=lambda row: row[0], reverse=True)
+        identity_lines: list[str] = []
+        identity_prompt_lines: list[str] = []
+        long_term_self_narratives: list[dict[str, Any]] = []
+        seen_identity_lines: set[str] = set()
+        seen_identity_prompt_lines: set[str] = set()
+        for score, category, text, prompt_text, horizon in identity_items:
+            if text and text not in seen_identity_lines and len(identity_lines) < 3:
+                seen_identity_lines.add(text)
+                identity_lines.append(text)
+            if prompt_text and prompt_text not in seen_identity_prompt_lines and len(identity_prompt_lines) < 3:
+                seen_identity_prompt_lines.add(prompt_text)
+                identity_prompt_lines.append(prompt_text)
+            if len(long_term_self_narratives) < 3:
+                motive_state = out["motive_snapshot"].get(category) if isinstance(out.get("motive_snapshot"), dict) else {}
+                long_term_self_narratives.append(
+                    {
+                        "category": category,
+                        "score": round(float(score), 3),
+                        "horizon_tag": horizon,
+                        "text": text,
+                        "prompt_text": prompt_text,
+                        "primary_motive": str((motive_state or {}).get("primary_motive") or "").strip(),
+                        "motive_tension": str((motive_state or {}).get("motive_tension") or "").strip(),
+                    }
+                )
+        out["identity_lines"] = identity_lines
+        out["identity_prompt_lines"] = identity_prompt_lines
+        out["long_term_self_narratives"] = long_term_self_narratives
 
     summary_lines: list[str] = []
     if categories["commitment_style"] >= 0.46:
@@ -283,12 +533,15 @@ def _semantic_narrative_profile(
     scored_items.sort(key=lambda row: row[0], reverse=True)
     top_narratives: list[dict[str, Any]] = []
     for score, category, text, reactivated in scored_items[:2]:
+        motive_state = out["motive_snapshot"].get(category) if isinstance(out.get("motive_snapshot"), dict) else {}
         top_narratives.append(
             {
                 "category": category,
                 "score": round(float(score), 3),
                 "text": text,
                 "reactivated": reactivated,
+                "primary_motive": str((motive_state or {}).get("primary_motive") or "").strip(),
+                "motive_tension": str((motive_state or {}).get("motive_tension") or "").strip(),
             }
         )
     out["top_narratives"] = top_narratives
@@ -352,6 +605,24 @@ def _self_narrative_anchor_lines(
     }
     if mutable_axes and "long_term_self_narratives" not in mutable_axes:
         return []
+    identity_prompt_lines = [
+        str(item).strip()
+        for item in (profile.get("identity_prompt_lines") if isinstance(profile.get("identity_prompt_lines"), list) else [])
+        if str(item or "").strip()
+    ]
+    if identity_prompt_lines:
+        seen_identity_prompt: set[str] = set()
+        deduped_identity_prompt: list[str] = []
+        for item in identity_prompt_lines:
+            if item in seen_identity_prompt:
+                continue
+            seen_identity_prompt.add(item)
+            deduped_identity_prompt.append(item)
+            if len(deduped_identity_prompt) >= 3:
+                break
+        if deduped_identity_prompt:
+            return deduped_identity_prompt
+
     prompt_anchor_lines = [
         str(item).strip()
         for item in (profile.get("prompt_anchor_lines") if isinstance(profile.get("prompt_anchor_lines"), list) else [])

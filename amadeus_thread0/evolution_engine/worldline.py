@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .appraisal import normalize_appraisal_payload
+from .motive import semantic_motive_vector
 from .schemas import WorldModelState, blend, clamp01
 
 
@@ -168,6 +169,13 @@ def build_world_model_state(
     agency_drive = clamp01(narrative.get("agency_drive"), 0.0)
     narrative_bond_depth = clamp01(narrative.get("bond_depth"), 0.0)
     history_weight = clamp01(narrative.get("history_weight"), 0.0)
+    motive_vector = semantic_motive_vector(narrative)
+    motive_boundary = clamp01(motive_vector.get("boundary_pull"), 0.0)
+    motive_self_rhythm = clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
+    motive_continuity = clamp01(motive_vector.get("continuity_pull"), 0.0)
+    motive_memory = clamp01(motive_vector.get("memory_pull"), 0.0)
+    motive_support = clamp01(motive_vector.get("support_pull"), 0.0)
+    motive_shared_window = clamp01(motive_vector.get("shared_window_pull"), 0.0)
     presence_persistence = clamp01(persistence_snapshot.get("presence_style"), 0.0)
     ambient_persistence = clamp01(persistence_snapshot.get("ambient_style"), 0.0)
     rhythm_persistence = clamp01(persistence_snapshot.get("rhythm_style"), 0.0)
@@ -183,6 +191,10 @@ def build_world_model_state(
         + 0.08 * presence_persistence
         + 0.06 * presence_residue_hint
         + 0.04 * narrative_bond_depth
+        + 0.04 * motive_continuity
+        + 0.03 * motive_support
+        + 0.02 * motive_shared_window
+        - 0.04 * motive_boundary
         + (0.04 if "presence_style" in reactivated_categories else 0.0)
     )
     ambient_floor = clamp01(
@@ -190,6 +202,8 @@ def build_world_model_state(
         + 0.08 * ambient_persistence
         + 0.06 * ambient_residue_hint
         + 0.04 * history_weight
+        + 0.05 * motive_memory
+        + 0.02 * motive_continuity
         + (0.04 if "ambient_style" in reactivated_categories else 0.0)
     )
     self_activity_floor = clamp01(
@@ -197,6 +211,8 @@ def build_world_model_state(
         + 0.08 * rhythm_persistence
         + 0.06 * rhythm_residue_hint
         + 0.05 * agency_drive
+        + 0.08 * motive_self_rhythm
+        + 0.02 * motive_boundary
         + (0.04 if "rhythm_style" in reactivated_categories else 0.0)
     )
     presence_target = clamp01(
@@ -204,12 +220,18 @@ def build_world_model_state(
         + 0.10 * presence_carry
         + 0.05 * presence_persistence
         + 0.03 * presence_residue_hint
+        + 0.06 * motive_continuity
+        + 0.04 * motive_support
+        + 0.03 * motive_shared_window
+        - 0.06 * motive_boundary
     )
     ambient_target = clamp01(
         ambient_target
         + 0.10 * ambient_attunement
         + 0.05 * ambient_persistence
         + 0.03 * ambient_residue_hint
+        + 0.06 * motive_memory
+        + 0.02 * motive_continuity
     )
     self_activity_target = clamp01(
         self_activity_target
@@ -217,6 +239,8 @@ def build_world_model_state(
         + 0.05 * rhythm_persistence
         + 0.03 * rhythm_residue_hint
         + 0.04 * agency_drive
+        + 0.10 * motive_self_rhythm
+        + 0.04 * motive_boundary
     )
 
     target = WorldModelState(
@@ -227,6 +251,8 @@ def build_world_model_state(
             + 0.12 * clamp01(narrative.get("history_weight"), 0.0)
             + 0.10 * clamp01(narrative.get("commitment_carry"), 0.0)
             + 0.08 * max_persistence
+            + 0.05 * motive_continuity
+            + 0.03 * motive_memory
         ),
         bond_depth=clamp01(
             0.18
@@ -236,6 +262,8 @@ def build_world_model_state(
             + 0.08 * clamp01(salience.get("companionship"), 0.0)
             + 0.08 * clamp01(residue_snapshot.get("bond_style"), 0.0)
             + 0.06 * presence_target
+            + 0.03 * motive_continuity
+            + 0.03 * motive_support
             + (0.08 if "bond_style" in reactivated_categories else 0.0)
         ),
         tension_load=clamp01(
@@ -257,6 +285,7 @@ def build_world_model_state(
             0.22 * clamp01(narrative.get("boundary_residue"), 0.0)
             + 0.14 * clamp01(narrative.get("selfhood_integrity"), 0.0)
             + 0.10 * clamp01(residue_snapshot.get("boundary_style"), 0.0)
+            + 0.16 * motive_boundary
             + (0.16 if str(app.get("selfhood_scene") or "") == "boundary_non_compliance" else 0.0)
             + (0.08 if "boundary_style" in reactivated_categories else 0.0)
         ),
@@ -265,6 +294,7 @@ def build_world_model_state(
             + 0.22 * clamp01(salience.get("selfhood"), 0.0)
             + 0.10 * clamp01(persistence_snapshot.get("selfhood_style"), 0.0)
             + 0.06 * self_activity_target
+            + 0.08 * motive_boundary
             + (0.10 if str(app.get("interaction_frame") or "") == "selfhood" else 0.0)
             + (0.08 if "selfhood_style" in reactivated_categories else 0.0)
         ),
@@ -273,6 +303,8 @@ def build_world_model_state(
             + 0.18 * clamp01(salience.get("companionship"), 0.0)
             + 0.10 * clamp01(persistence_snapshot.get("agency_style"), 0.0)
             + 0.16 * self_activity_target
+            + 0.14 * motive_self_rhythm
+            + 0.05 * motive_shared_window
             + (0.10 if event_kind in {"self_activity_state", "time_idle"} else 0.0)
             + (0.06 if "agency_style" in reactivated_categories else 0.0)
         ),
@@ -282,6 +314,8 @@ def build_world_model_state(
             + 0.14 * max_persistence
             + 0.10 * max_residue
             + 0.04 * ambient_target
+            + 0.14 * motive_memory
+            + 0.04 * motive_continuity
             + (0.16 if bool(signals.get("memory_salient")) else 0.0)
             + 0.06 * reactivation_charge
         ),
@@ -297,6 +331,10 @@ def build_world_model_state(
             + 0.10 * clamp01(residue_snapshot.get("bond_style"), 0.0)
             + 0.12 * presence_target
             + 0.06 * ambient_target
+            + 0.10 * motive_continuity
+            + 0.10 * motive_support
+            + 0.10 * motive_shared_window
+            - 0.10 * motive_boundary
             + (0.10 if bool(signals.get("care")) else 0.0)
             + (0.08 if "bond_style" in reactivated_categories or "repair_style" in reactivated_categories else 0.0)
         ),

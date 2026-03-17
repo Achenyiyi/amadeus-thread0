@@ -67,6 +67,27 @@ def _top_narrative_preview(top_narratives: Any, *, limit: int = 3) -> list[dict[
     return out
 
 
+def _long_term_identity_preview(items: Any, *, limit: int = 3) -> list[dict[str, Any]]:
+    if not isinstance(items, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "category": str(item.get("category") or "").strip(),
+                "score": _metric(item.get("score"), 0.0),
+                "horizon_tag": str(item.get("horizon_tag") or "").strip(),
+                "text": str(item.get("text") or "").strip()[:120],
+                "prompt_text": str(item.get("prompt_text") or "").strip()[:120],
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
 def _window_profile_summary(profile: Any) -> dict[str, Any]:
     if not isinstance(profile, dict) or not profile:
         return {}
@@ -133,6 +154,32 @@ def _event_residue_summary(current_event: Any) -> dict[str, Any]:
         "self_activity_momentum": _metric(current_event.get("self_activity_momentum"), 0.0),
         "scheduled_after_min": _int_metric(current_event.get("scheduled_after_min"), 0),
         "idle_minutes": _int_metric(current_event.get("idle_minutes"), 0),
+    }
+
+
+def _agenda_lifecycle_summary(residue: Any) -> dict[str, Any]:
+    if not isinstance(residue, dict) or not residue:
+        return {}
+    return {
+        "kind": str(residue.get("kind") or "").strip(),
+        "source_event_kind": str(residue.get("source_event_kind") or "").strip(),
+        "trigger_family": str(residue.get("trigger_family") or "").strip(),
+        "carryover_mode": str(residue.get("carryover_mode") or "").strip(),
+        "carryover_strength": _metric(residue.get("carryover_strength"), 0.0),
+        "relationship_weather": str(residue.get("relationship_weather") or "").strip(),
+        "hold_count": _int_metric(residue.get("hold_count"), 0),
+        "idle_minutes": _int_metric(residue.get("idle_minutes"), 0),
+        "attention_target": str(residue.get("attention_target") or "").strip(),
+        "nonverbal_signal": str(residue.get("nonverbal_signal") or "").strip(),
+        "presence_residue": _metric(residue.get("presence_residue"), 0.0),
+        "ambient_resonance": _metric(residue.get("ambient_resonance"), 0.0),
+        "self_activity_momentum": _metric(residue.get("self_activity_momentum"), 0.0),
+        "own_rhythm_bias": _metric(residue.get("own_rhythm_bias"), 0.0),
+        "recontact_cooldown": _metric(residue.get("recontact_cooldown"), 0.0),
+        "counterpart_scene_bias": str(residue.get("counterpart_scene_bias") or "").strip(),
+        "counterpart_boundary_delta": _metric(residue.get("counterpart_boundary_delta"), 0.0),
+        "source_tags": _clean_list(residue.get("source_tags"), limit=6),
+        "note": str(residue.get("note") or "").strip()[:160],
     }
 
 
@@ -224,6 +271,7 @@ def build_evolution_cli_summary(
     current_event: dict[str, Any] | None = None,
     worldline_focus: list[dict[str, Any]] | None = None,
     reconsolidation_snapshot: dict[str, Any] | None = None,
+    agenda_lifecycle_residue: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     relationship = dict(relationship or {})
     semantic = dict(semantic_narrative_profile or {})
@@ -236,8 +284,15 @@ def build_evolution_cli_summary(
     carryover = dict(interaction_carryover or {})
     current_event = dict(current_event or {})
     recon = dict(reconsolidation_snapshot or {})
+    agenda_lifecycle = dict(agenda_lifecycle_residue or {})
+    recon_consequence = (
+        dict(recon.get("behavior_consequence"))
+        if isinstance(recon.get("behavior_consequence"), dict)
+        else {}
+    )
     queue_preview = build_behavior_queue_cli_summary(behavior_queue, limit=3)
     window_profile = _window_profile_summary(behavior.get("window_profile"))
+    identity_preview = _long_term_identity_preview(semantic.get("long_term_self_narratives"), limit=3)
 
     return {
         "relationship": {
@@ -269,6 +324,16 @@ def build_evolution_cli_summary(
             "anchor_lines": _clean_list(semantic.get("anchor_lines"), limit=3),
             "top_narratives": _top_narrative_preview(semantic.get("top_narratives"), limit=3),
         },
+        "identity_continuity": {
+            "identity_lines": _clean_list(semantic.get("identity_lines"), limit=3),
+            "identity_prompt_lines": _clean_list(semantic.get("identity_prompt_lines"), limit=3),
+            "dominant_identity_category": (
+                str(identity_preview[0].get("category") or "").strip()
+                if identity_preview
+                else ""
+            ),
+            "long_term_self_narratives": identity_preview,
+        },
         "world_dynamics": {
             "bond_depth": _metric(world.get("bond_depth"), 0.0),
             "tension_load": _metric(world.get("tension_load"), 0.0),
@@ -288,20 +353,29 @@ def build_evolution_cli_summary(
             "counterpart_scene": str(counterpart.get("scene") or "").strip(),
             "behavior_mode": str(behavior.get("interaction_mode") or "").strip(),
             "action_target": str(behavior.get("action_target") or "").strip(),
+            "primary_motive": str(behavior.get("primary_motive") or "").strip(),
+            "motive_tension": str(behavior.get("motive_tension") or "").strip(),
+            "goal_frame": str(behavior.get("goal_frame") or "").strip(),
             "behavior_weather": str(behavior.get("relationship_weather") or "").strip(),
             "carryover_mode": str(carryover.get("carryover_mode") or "").strip(),
             "carryover_strength": _metric(carryover.get("strength"), 0.0),
             "carryover_weather": str(carryover.get("relationship_weather") or "").strip(),
             "recon_event_kind": str(recon.get("event_kind") or "").strip(),
             "recon_interaction_frame": str(recon.get("interaction_frame") or "").strip(),
+            "behavior_consequence_kind": str(recon_consequence.get("kind") or "").strip(),
+            "behavior_consequence_summary": str(recon_consequence.get("summary") or "").strip(),
         },
         "event_residue": _event_residue_summary(current_event),
+        "agenda_lifecycle": _agenda_lifecycle_summary(agenda_lifecycle),
         "opening_window": window_profile,
         "behavior_plan": {
             "kind": str(behavior_plan.get("kind") or "").strip(),
             "target": str(behavior_plan.get("target") or "").strip(),
             "trigger_family": str(behavior_plan.get("trigger_family") or "").strip(),
             "scheduled_after_min": _int_metric(behavior_plan.get("scheduled_after_min"), 0),
+            "primary_motive": str(behavior_plan.get("primary_motive") or "").strip(),
+            "motive_tension": str(behavior_plan.get("motive_tension") or "").strip(),
+            "goal_frame": str(behavior_plan.get("goal_frame") or "").strip(),
             "carryover_mode": str(behavior_plan.get("carryover_mode") or "").strip(),
             "carryover_strength": _metric(behavior_plan.get("carryover_strength"), 0.0),
             "relationship_weather": str(behavior_plan.get("relationship_weather") or "").strip(),
@@ -317,6 +391,8 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     continuity = summary.get("continuity_vector") if isinstance(summary.get("continuity_vector"), dict) else {}
     current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
     world = summary.get("world_dynamics") if isinstance(summary.get("world_dynamics"), dict) else {}
+    identity = summary.get("identity_continuity") if isinstance(summary.get("identity_continuity"), dict) else {}
+    lifecycle = summary.get("agenda_lifecycle") if isinstance(summary.get("agenda_lifecycle"), dict) else {}
 
     def _axis_text(name: str) -> str:
         axis = continuity.get(name) if isinstance(continuity.get(name), dict) else {}
@@ -333,6 +409,12 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     mode = str(current_turn.get("behavior_mode") or "").strip()
     if mode:
         parts.append(f"mode={mode}")
+    motive = str(current_turn.get("primary_motive") or "").strip()
+    if motive:
+        parts.append(f"motive={motive}")
+    consequence_kind = str(current_turn.get("behavior_consequence_kind") or "").strip()
+    if consequence_kind:
+        parts.append(f"cons={consequence_kind}")
     carry_mode = str(current_turn.get("carryover_mode") or "").strip()
     if carry_mode:
         parts.append(f"carry={carry_mode}:{_metric(current_turn.get('carryover_strength'), 0.0):.3f}")
@@ -358,8 +440,29 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
         recheck_min = _int_metric(opening_window.get("recheck_min"), 0)
         if recheck_min > 0 and decision in {"wait_and_recheck", "hold_own_rhythm"}:
             parts.append(f"recheck={recheck_min}m")
+    lifecycle_kind = str(lifecycle.get("kind") or "").strip()
+    if lifecycle_kind:
+        parts.append(
+            "lifecycle="
+            + lifecycle_kind
+            + ":"
+            + (str(lifecycle.get("carryover_mode") or "").strip() or "-")
+            + f":{_metric(lifecycle.get('carryover_strength'), 0.0):.3f}"
+        )
+        hold_count = _int_metric(lifecycle.get("hold_count"), 0)
+        if hold_count > 0:
+            parts.append(f"holds={hold_count}")
+        cooldown = _metric(lifecycle.get("recontact_cooldown"), 0.0)
+        if cooldown > 0.0:
+            parts.append(f"cool={cooldown:.3f}")
     bond_depth = _metric(world.get("bond_depth"), 0.0)
     tension = _metric(world.get("tension_load"), 0.0)
+    long_term = identity.get("long_term_self_narratives") if isinstance(identity.get("long_term_self_narratives"), list) else []
+    if long_term and isinstance(long_term[0], dict):
+        identity_cat = str(long_term[0].get("category") or "").strip()
+        identity_score = _metric(long_term[0].get("score"), 0.0)
+        if identity_cat:
+            parts.append(f"identity={identity_cat}:{identity_score:.3f}")
     parts.append(f"bond={bond_depth:.3f}")
     parts.append(f"tension={tension:.3f}")
     return " | ".join(parts)

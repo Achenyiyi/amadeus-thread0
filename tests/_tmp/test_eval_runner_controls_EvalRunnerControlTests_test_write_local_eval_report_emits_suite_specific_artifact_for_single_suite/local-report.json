@@ -1,0 +1,20 @@
+{
+  "run_id": "testrun",
+  "generated_at": "2026-03-17 10:00:00",
+  "mode": "local_only",
+  "run_dir": "E:\\桌面\\amadeus-thread0\\tests\\_tmp\\test_eval_runner_controls_EvalRunnerControlTests_test_write_local_eval_report_emits_suite_specific_artifact_for_single_suite",
+  "suites": [
+    {
+      "suite": "experience_probe",
+      "num_cases": 1,
+      "aggregated_metrics": {},
+      "metric_coverage": {},
+      "evaluator_summary": {},
+      "failing_cases": [],
+      "cases": []
+    }
+  ],
+  "summary": {
+    "experience_probe": {}
+  }
+}

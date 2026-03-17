@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from amadeus_thread0.graph import (
+from amadeus_thread0.graph_parts.nodes import _node_tool_limit
+from amadeus_thread0.graph_parts.tooling import (
     _infer_memory_tool_calls,
     _parse_explicit_tool_call,
     _parse_set_profile_args,
 )
-from amadeus_thread0.graph_parts.nodes import _node_tool_limit
 
 
 def test_parse_set_profile_args_from_natural_language():

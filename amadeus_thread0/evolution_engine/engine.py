@@ -26,6 +26,7 @@ def evolve_turn_state(
     semantic_narrative_profile: dict[str, Any] | None,
     appraisal: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
+    agenda_lifecycle_residue: dict[str, Any] | None = None,
     response_style_hint: str,
     tsundere_intensity: float,
     science_mode: bool,
@@ -111,6 +112,8 @@ def evolve_turn_state(
         latent_state=latent_state,
         emotion_state=emotion_state,
         bond_state=bond_state,
+        behavior_action=behavior_action,
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
     )
     return {
         "world_model_state": world_model_state,

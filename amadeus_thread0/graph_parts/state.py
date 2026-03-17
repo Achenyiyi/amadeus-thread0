@@ -12,6 +12,9 @@ class EventPayload(TypedDict, total=False):
     text: str
     effective_text: str
     semantic_goal: str
+    primary_motive: str
+    motive_tension: str
+    goal_frame: str
     response_style_hint: str
     science_mode: bool
     continuation_mode: bool
@@ -48,6 +51,9 @@ class BehaviorActionPayload(TypedDict, total=False):
     affect_surface: str
     silence_ok: bool
     proactive_checkin_readiness: float
+    primary_motive: str
+    motive_tension: str
+    goal_frame: str
     action_target: str
     deferred_action_family: str
     timing_window_min: int
@@ -94,6 +100,9 @@ class BehaviorPlanPayload(TypedDict, total=False):
     scheduled_after_min: int
     trigger_family: str
     allow_interrupt: bool
+    primary_motive: str
+    motive_tension: str
+    goal_frame: str
     note: str
     carryover_mode: str
     carryover_strength: float
@@ -115,6 +124,9 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     priority: float
     trigger_family: str
     allow_interrupt: bool
+    primary_motive: str
+    motive_tension: str
+    goal_frame: str
     note: str
     source_event_kind: str
     created_at: int
@@ -135,6 +147,9 @@ class InteractionCarryoverPayload(TypedDict, total=False):
     source_event_kind: str
     source_behavior_mode: str
     source_action_target: str
+    source_primary_motive: str
+    source_motive_tension: str
+    source_goal_frame: str
     source_text: str
     source_tags: list[str]
     carryover_mode: str
@@ -145,6 +160,29 @@ class InteractionCarryoverPayload(TypedDict, total=False):
     attention_target: str
     nonverbal_signal: str
     note: str
+    created_at: int
+
+
+class AgendaLifecycleResiduePayload(TypedDict, total=False):
+    kind: str
+    source_event_kind: str
+    trigger_family: str
+    carryover_mode: str
+    carryover_strength: float
+    relationship_weather: str
+    hold_count: int
+    idle_minutes: int
+    attention_target: str
+    nonverbal_signal: str
+    note: str
+    source_tags: list[str]
+    presence_residue: float
+    ambient_resonance: float
+    self_activity_momentum: float
+    own_rhythm_bias: float
+    recontact_cooldown: float
+    counterpart_scene_bias: str
+    counterpart_boundary_delta: float
     created_at: int
 
 
@@ -183,6 +221,7 @@ class ThreadState(TypedDict, total=False):
     current_event: EventPayload
     recent_events: list[EventPayload]
     interaction_carryover: InteractionCarryoverPayload
+    agenda_lifecycle_residue: AgendaLifecycleResiduePayload
     pending_utterance_fragment: str
     pending_user_goal: str
     retrieved_context: dict[str, Any]

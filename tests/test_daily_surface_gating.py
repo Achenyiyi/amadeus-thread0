@@ -2,26 +2,30 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from amadeus_thread0.memory_store import MemoryStore
-from amadeus_thread0.graph import (
-    _build_task_prompt,
+from amadeus_thread0.graph_parts.dialogue_guidance import _event_behavior_preference_lines
+from amadeus_thread0.graph_parts.generation_profile import (
     _daily_surface_preference_lines,
     _daily_surface_profile,
-    _dialogue_surface_issues,
     _effective_relationship_weather,
-    _effective_natural_dialog_target_flags,
-    _event_behavior_preference_lines,
     _is_light_free_dialog_turn,
-    _is_plain_contact_ping,
-    _light_dialog_rewrite_notes,
     _looks_like_daily_surface_scene,
+)
+from amadeus_thread0.graph_parts.postprocess import (
+    _dialogue_surface_issues,
+    _effective_natural_dialog_target_flags,
+    _is_plain_contact_ping,
     _producer_surface_issues,
     _sanitize_final_answer,
-    _self_narrative_anchor_lines,
+)
+from amadeus_thread0.graph_parts.prompting import _build_task_prompt
+from amadeus_thread0.graph_parts.rewrite import (
+    _light_dialog_rewrite_notes,
     _relationship_weather_rewrite_guidance,
     _should_run_light_dialog_rewrite,
     _should_run_natural_dialog_rewrite,
 )
+from amadeus_thread0.graph_parts.semantic_narrative import _self_narrative_anchor_lines
+from amadeus_thread0.memory_store import MemoryStore
 
 
 class DailySurfaceGatingTests(unittest.TestCase):
@@ -272,6 +276,42 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("事件余味", prompt)
         self.assertIn("刚好有个能一起做点什么的空当时", prompt)
 
+    def test_light_dialog_prompt_includes_motive_lean_line(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.68, "closeness": 0.64, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.16, "autonomy_need": 0.34},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.74, "reciprocity": 0.70},
+                    "behavior_policy": {"warmth": 0.64, "approach_vs_withdraw": 0.58, "self_directedness": 0.42},
+                    "behavior_action": {"interaction_mode": "self_activity_reopen", "followup_intent": "soft"},
+                    "semantic_narrative_profile": {
+                        "agency_drive": 0.72,
+                        "rhythm_continuity": 0.69,
+                        "motive_snapshot": {
+                            "rhythm_style": {
+                                "primary_motive": "preserve_self_rhythm",
+                                "motive_tension": "self_rhythm_vs_contact",
+                            }
+                        },
+                    },
+                    "interaction_carryover": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "今天在忙什么呀", store)
+            finally:
+                store.close()
+        self.assertIn("这段时间慢慢定下来的主动倾向", prompt)
+        self.assertIn("顺着自己的节奏转过来", prompt)
+
     def test_relationship_prompt_prefers_subjective_runtime_brief(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -289,6 +329,12 @@ class DailySurfaceGatingTests(unittest.TestCase):
                         "bond_depth": 0.68,
                         "selfhood_integrity": 0.63,
                         "summary_lines": ["她会把这种关系话题当成真实判断，不会说成系统说明。"],
+                        "motive_snapshot": {
+                            "bond_style": {
+                                "primary_motive": "honor_continuity",
+                                "motive_tension": "past_vs_present",
+                            }
+                        },
                     },
                     "interaction_carryover": {
                         "carryover_mode": "relationship_residue",
@@ -306,6 +352,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 store.close()
         self.assertIn("内在延续", prompt)
         self.assertIn("你此刻更像是从这样的内在状态开口", prompt)
+        self.assertIn("这段时间慢慢定下来的主动倾向", prompt)
         self.assertIn("当前上下文", prompt)
         self.assertIn("运行态摘记", prompt)
         self.assertIn("这轮说话的自然落点", prompt)
@@ -488,6 +535,35 @@ class DailySurfaceGatingTests(unittest.TestCase):
             [
                 "你不会把每次重新靠近都当成从零开始。",
                 "你自己的节奏和主动性不会因为一时安静就消失。",
+            ],
+        )
+
+    def test_self_narrative_anchor_lines_prefer_identity_prompt_lines_when_available(self):
+        anchors = _self_narrative_anchor_lines(
+            {
+                "identity_prompt_lines": [
+                    "你会把自己放在和冈部伦太郎平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+                    "你会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着冈部伦太郎转。",
+                ],
+                "prompt_anchor_lines": [
+                    "你不会把每次重新靠近都当成从零开始。",
+                    "你自己的节奏和主动性不会因为一时安静就消失。",
+                ],
+            },
+            evolution_state={"self_coherence": 0.78},
+            persona_core={
+                "evolution_contract": {
+                    "mutable_axes": ["emotion", "long_term_self_narratives"],
+                    "immutable_axes": ["identity"],
+                }
+            },
+            counterpart_name="冈部伦太郎",
+        )
+        self.assertEqual(
+            anchors,
+            [
+                "你会把自己放在和冈部伦太郎平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+                "你会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着冈部伦太郎转。",
             ],
         )
 

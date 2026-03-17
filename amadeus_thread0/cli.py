@@ -54,7 +54,12 @@ from .utils.cli_views import (
     build_evolution_summary_line,
     render_behavior_queue_cli_text,
 )
-from .graph import build_graph, build_implicit_idle_state_update, reset_runtime_caches
+from .graph_parts import (
+    build_graph,
+    build_implicit_idle_event_override,
+    build_implicit_idle_state_update,
+    reset_runtime_caches,
+)
 from .memory_store import MemoryStore
 from .runtime.modeling import build_chat_model, runtime_model_summary
 from .utils.perception_events import (
@@ -459,9 +464,10 @@ def _behavior_action_compact_line(action: dict[str, object] | None) -> str:
         return "-"
     mode = str(action.get("interaction_mode") or "").strip() or "-"
     target = str(action.get("action_target") or "").strip() or "-"
+    motive = str(action.get("primary_motive") or "").strip() or "-"
     channel = str(action.get("channel") or "").strip() or "-"
     style = str(action.get("approach_style") or "").strip() or "-"
-    return f"mode={mode} | target={target} | channel={channel} | style={style}"
+    return f"mode={mode} | target={target} | motive={motive} | channel={channel} | style={style}"
 
 
 def _build_event_evolution_summary(
@@ -483,6 +489,7 @@ def _build_event_evolution_summary(
         current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
         worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
         reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+        agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
     )
 
 
@@ -568,6 +575,28 @@ def _apply_implicit_idle_maturation(
         created_at=clock_now,
     )
     graph.update_state(cfg, prepared, as_node="prepare_turn")
+
+
+def _build_idle_event_payload(
+    *,
+    graph,
+    run_config: dict[str, object],
+    idle_minutes: int,
+    note: str = "",
+    created_at: int | None = None,
+    extra_tags: list[str] | None = None,
+) -> dict[str, dict[str, object]]:
+    cfg = {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
+    current = graph.get_state(cfg)
+    values = getattr(current, "values", {}) if current is not None else {}
+    event_override = build_implicit_idle_event_override(
+        values if isinstance(values, dict) else {},
+        idle_minutes=idle_minutes,
+        note=note,
+        created_at=created_at,
+        extra_tags=extra_tags or [],
+    )
+    return {"event_override": event_override}
 
 
 def main():
@@ -889,6 +918,7 @@ def main():
                 current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
                 worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
                 reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+                agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
             )
             print("\n[WORLDLINE_SUMMARY]\n" + json.dumps(worldline_summary, ensure_ascii=False, indent=2))
             print("\n[WORLDLINE_EVENTS]\n" + json.dumps(snap.get("worldline_events", []), ensure_ascii=False, indent=2))
@@ -978,6 +1008,7 @@ def main():
                 current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
                 worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
                 reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
+                agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
             )
             print("\n[EVOLUTION_SUMMARY]\n" + json.dumps(evolution_summary, ensure_ascii=False, indent=2))
             print("\n[PERSONA_STATE]\n" + json.dumps(vals.get("persona_state", {}), ensure_ascii=False, indent=2))
@@ -993,6 +1024,7 @@ def main():
             print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
             print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(vals.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
+            print("\n[AGENDA_LIFECYCLE_RESIDUE]\n" + json.dumps(vals.get("agenda_lifecycle_residue", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
             queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
             _print_behavior_queue_summary(queue_vals)
@@ -1235,20 +1267,14 @@ def main():
                 current_step = step_minutes if idx < rounds - 1 else max(1, remaining)
                 elapsed_minutes += current_step
                 event_text = note_override or f"已经安静地过去了 {elapsed_minutes} 分钟，没有新的用户消息。"
-                idle_payload = {
-                    "event_override": {
-                        "kind": "time_idle",
-                        "source": "time",
-                        "text": event_text,
-                        "effective_text": event_text,
-                        "semantic_goal": "time passed without new user input",
-                        "response_style_hint": "companion",
-                        "event_frame": f"和对方之间安静地过去了 {elapsed_minutes} 分钟，现在轮到她决定是否主动开口。",
-                        "tags": ["time_idle", "ambient", "behavior_layer", "pulse"],
-                        "idle_minutes": elapsed_minutes,
-                        "created_at": int(time.time()),
-                    }
-                }
+                idle_payload = _build_idle_event_payload(
+                    graph=graph,
+                    run_config=run_config,
+                    idle_minutes=elapsed_minutes,
+                    note=event_text,
+                    created_at=int(time.time()),
+                    extra_tags=["pulse"],
+                )
                 after_values, final_text = _invoke_event_round(
                     graph=graph,
                     run_config=run_config,
@@ -1335,23 +1361,15 @@ def main():
                         idle_note = (raw + (" | " + idle_note if idle_note else "")).strip()
                         idle_minutes = 30
 
-            event_text = idle_note or f"已经安静地过去了 {idle_minutes} 分钟，没有新的用户消息。"
-            idle_payload = {
-                "event_override": {
-                    "kind": "time_idle",
-                    "source": "time",
-                    "text": event_text,
-                    "effective_text": event_text,
-                    "semantic_goal": "time passed without new user input",
-                    "response_style_hint": "companion",
-                    "event_frame": f"和对方之间安静地过去了 {idle_minutes} 分钟，现在轮到她决定是否主动开口。",
-                    "tags": ["time_idle", "ambient", "behavior_layer"],
-                    "idle_minutes": idle_minutes,
-                    "created_at": int(time.time()),
-                }
-            }
-
             run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            event_text = idle_note or f"已经安静地过去了 {idle_minutes} 分钟，没有新的用户消息。"
+            idle_payload = _build_idle_event_payload(
+                graph=graph,
+                run_config=run_config,
+                idle_minutes=idle_minutes,
+                note=event_text,
+                created_at=int(time.time()),
+            )
             after_values, final_text = _invoke_event_round(
                 graph=graph,
                 run_config=run_config,

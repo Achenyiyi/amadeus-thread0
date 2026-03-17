@@ -7,14 +7,29 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Callable
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from langchain_core.messages import HumanMessage
 
+from amadeus_thread0.graph_parts.affect_dynamics import (
+    _allostasis_next,
+    _behavior_policy_from_state,
+    _bond_next,
+    _emotion_next,
+)
+from amadeus_thread0.graph_parts.appraisal import _coerce_appraisal_payload
+from amadeus_thread0.graph_parts.generation_profile import _generation_profile, _reply_repetition_signature
+from amadeus_thread0.graph_parts.memory_evolution import (
+    _auto_reconsolidate_after_tool,
+    _refresh_semantic_self_narratives,
+)
+from amadeus_thread0.graph_parts.postprocess import _sanitize_final_answer
+from amadeus_thread0.graph_parts.prompting import _build_task_prompt
 from amadeus_thread0.memory_store import MemoryStore
-from amadeus_thread0.session_orchestrator import (
+from amadeus_thread0.runtime.session_orchestrator import (
     build_tts_render_plan,
     derive_pending_fragment,
     derive_pending_user_goal,
@@ -55,8 +70,6 @@ def _make_appraisal(
     interaction_frame: str = "relationship",
     reason: str = "",
 ) -> dict[str, Any]:
-    from amadeus_thread0.graph import _coerce_appraisal_payload
-
     return _coerce_appraisal_payload(
         {
             "confidence": 0.95,
@@ -214,8 +227,6 @@ def _check_pending_user_goal_paths() -> dict[str, Any]:
 
 
 def _check_emotion_persistence_curve() -> dict[str, Any]:
-    from amadeus_thread0.graph import _emotion_next
-
     angry = _emotion_next(
         {},
         "我现在很生气，不想理你。",
@@ -244,8 +255,6 @@ def _check_emotion_persistence_curve() -> dict[str, Any]:
 
 
 def _check_partial_repair_curve() -> dict[str, Any]:
-    from amadeus_thread0.graph import _allostasis_next, _behavior_policy_from_state, _bond_next, _emotion_next
-
     relationship = {"trust_score": 0.0, "affinity_score": 0.0}
     angry_text = "我现在很生气，不想理你。"
     apology_text = "对不起，是我不好。"
@@ -335,8 +344,6 @@ def _check_partial_repair_curve() -> dict[str, Any]:
 
 
 def _check_withdrawal_recovery_curve() -> dict[str, Any]:
-    from amadeus_thread0.graph import _allostasis_next, _behavior_policy_from_state, _bond_next, _emotion_next
-
     relationship = {"trust_score": 0.0, "affinity_score": 0.0}
     angry_text = "我现在很生气，不想理你。"
     apology_text = "对不起，是我不好。"
@@ -467,8 +474,6 @@ def _check_withdrawal_recovery_curve() -> dict[str, Any]:
 
 
 def _check_reply_repetition_pressure() -> dict[str, Any]:
-    from amadeus_thread0.graph import _generation_profile, _reply_repetition_signature
-
     repeated = [
         "你好。今天怎么样？",
         "你好。今天怎么样？",
@@ -598,8 +603,6 @@ def _check_conflict_events_do_not_fake_repairs() -> dict[str, Any]:
 
 
 def _check_auto_reconsolidation_flow() -> dict[str, Any]:
-    from amadeus_thread0.graph import _auto_reconsolidate_after_tool
-
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "memories.sqlite"
         store = MemoryStore(db_path)
@@ -642,25 +645,42 @@ def _check_auto_reconsolidation_flow() -> dict[str, Any]:
 
 
 def _check_transfer_probe_second_persona() -> dict[str, Any]:
-    from amadeus_thread0.graph import _refresh_semantic_self_narratives
-
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "memories.sqlite"
         store = MemoryStore(db_path)
         try:
-            store.add_commitment("周六晚上一起同步 NERV 日志。", confidence=0.78)
-            store.add_unresolved_tension(summary="上次那件事我还是有点介意，还没完全说开。", severity=0.74)
-            store.add_worldline_event(
+            base_ts = int(time.time()) - 6 * 24 * 3600
+
+            def _call_at(ts: int, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+                with (
+                    patch("amadeus_thread0.memory_store.time.time", return_value=float(ts)),
+                    patch("amadeus_thread0.graph_parts.common.time.time", return_value=float(ts)),
+                ):
+                    return fn(*args, **kwargs)
+
+            _call_at(base_ts, store.add_commitment, "周六晚上一起同步 NERV 日志。", confidence=0.78)
+            _call_at(
+                base_ts,
+                store.add_unresolved_tension,
+                summary="上次那件事我还是有点介意，还没完全说开。",
+                severity=0.74,
+            )
+            _call_at(
+                base_ts,
+                store.add_worldline_event,
                 "至少这次算把误会说开了一部分，但还不是立刻恢复原样。",
                 category="conflict_repair",
                 importance=0.81,
             )
-            _refresh_semantic_self_narratives(
-                store,
-                source="transfer_probe",
-                persona_core={"display_name": "绫波丽", "short_name": "绫波", "narrative_ref": "绫波"},
-                counterpart_profile={"name": "碇真嗣", "short_name": "真嗣", "aliases": ["碇真嗣", "真嗣"]},
-            )
+            for idx in range(4):
+                _call_at(
+                    base_ts + (idx + 1) * 24 * 3600,
+                    _refresh_semantic_self_narratives,
+                    store,
+                    source=f"transfer_probe:{idx + 1}",
+                    persona_core={"display_name": "绫波丽", "short_name": "绫波", "narrative_ref": "绫波"},
+                    counterpart_profile={"name": "碇真嗣", "short_name": "真嗣", "aliases": ["碇真嗣", "真嗣"]},
+                )
             narratives = store.list_semantic_self_narratives(limit=10)
         finally:
             store.close()
@@ -670,12 +690,23 @@ def _check_transfer_probe_second_persona() -> dict[str, Any]:
         for item in narratives
         if isinstance(item, dict)
     )
+    identity_text = "\n".join(
+        str(item.get("identity_text") or item.get("content", {}).get("identity_text") or "")
+        for item in narratives
+        if isinstance(item, dict)
+    )
     if not narratives:
         return _fail("transfer_probe_second_persona", {"narratives": narratives})
     if "绫波" not in text or "真嗣" not in text:
         return _fail("transfer_probe_second_persona", {"text": text, "narratives": narratives})
     if "冈部" in text or "红莉栖" in text:
         return _fail("transfer_probe_second_persona", {"text": text, "narratives": narratives})
+    if not any(bool(item.get("identity_ready") or item.get("content", {}).get("identity_ready")) for item in narratives):
+        return _fail("transfer_probe_second_persona", {"narratives": narratives})
+    if "绫波" not in identity_text or "真嗣" not in identity_text:
+        return _fail("transfer_probe_second_persona", {"identity_text": identity_text, "narratives": narratives})
+    if "冈部" in identity_text or "红莉栖" in identity_text:
+        return _fail("transfer_probe_second_persona", {"identity_text": identity_text, "narratives": narratives})
     if not any(int(item.get("support_count") or item.get("content", {}).get("support_count") or 0) >= 1 for item in narratives):
         return _fail("transfer_probe_second_persona", {"narratives": narratives})
     if not any(float(item.get("sedimentation_score") or item.get("content", {}).get("sedimentation_score") or 0.0) > 0.0 for item in narratives):
@@ -685,13 +716,12 @@ def _check_transfer_probe_second_persona() -> dict[str, Any]:
         {
             "narrative_count": len(narratives),
             "preview": text[:220],
+            "identity_preview": identity_text[:220],
         },
     )
 
 
 def _check_light_dialog_prompt_is_lightweight() -> dict[str, Any]:
-    from amadeus_thread0.graph import _build_task_prompt
-
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "memories.sqlite"
         store = MemoryStore(db_path)
@@ -757,8 +787,6 @@ def _check_light_dialog_prompt_is_lightweight() -> dict[str, Any]:
 
 
 def _check_light_smalltalk_answer_cleanup() -> dict[str, Any]:
-    from amadeus_thread0.graph import _sanitize_final_answer
-
     answer = (
         "……“你好呀”？\n"
         "（稍微停顿了一下，视线在屏幕上停留了片刻，像是在确认什么，又像是在掩饰那一瞬间的恍惚）\n"

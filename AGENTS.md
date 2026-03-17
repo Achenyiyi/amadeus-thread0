@@ -4,6 +4,23 @@ This file is the repository-level operating brief for AI coding agents working o
 
 Keep this file short. Treat it as the table of contents and execution contract. Detailed rationale belongs in `docs/`.
 
+## Project North Star
+
+This repository does not target a generic chatbot or a prompt-driven role-play shell.
+It targets a `digital persona lifeform seed`: a system where `Amadeus 牧濑红莉栖` keeps a fixed identity core while changing through lived interaction.
+
+The canonical loop is:
+
+`perception -> appraisal -> internal state change -> motive / goal shift -> behavior -> consequence -> memory reconsolidation -> self-narrative update`
+
+Non-negotiable direction:
+
+- Persona core is fixed; evolution changes state, not identity.
+- Behavior should emerge from state, memory, appraisal, and relationship dynamics, not scene-by-scene keyword scripts.
+- Language is one behavior channel, not the whole system.
+- The counterpart is a real relation target, not a command source; parity, boundaries, and self-rhythm matter.
+- When short-term likability conflicts with selfhood continuity, preserve selfhood continuity.
+
 ## Mission
 
 Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual companionship backend centered on:
@@ -103,6 +120,7 @@ Expected graph build result: `CompiledStateGraph`
 
 ## Documentation Map
 
+- Blueprint: [`docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md`](./docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md)
 - Persona constitution: [`docs/PERSONA_SYSTEM_CONSTITUTION.md`](./docs/PERSONA_SYSTEM_CONSTITUTION.md)
 - Architecture alignment: [`docs/ARCHITECTURE_ALIGNMENT_MAP.md`](./docs/ARCHITECTURE_ALIGNMENT_MAP.md)
 - Self-evolution engine: [`docs/SELF_EVOLUTION_ENGINE.md`](./docs/SELF_EVOLUTION_ENGINE.md)

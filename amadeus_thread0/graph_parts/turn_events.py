@@ -119,6 +119,7 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
         "text",
         "effective_text",
         "semantic_goal",
+        "goal_frame",
         "event_frame",
         "tags",
         "idle_minutes",
@@ -174,6 +175,15 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
         "tags": [str(item).strip() for item in tags if str(item or "").strip()],
         "created_at": int(raw.get("created_at") or _now_ts()),
     }
+    primary_motive = str(raw.get("primary_motive") or "").strip()
+    if primary_motive:
+        payload["primary_motive"] = primary_motive
+    motive_tension = str(raw.get("motive_tension") or "").strip()
+    if motive_tension:
+        payload["motive_tension"] = motive_tension
+    goal_frame = str(raw.get("goal_frame") or "").strip()
+    if goal_frame:
+        payload["goal_frame"] = goal_frame[:220]
     if event_kind == "time_idle":
         try:
             payload["idle_minutes"] = max(1, int(raw.get("idle_minutes") or 0))
