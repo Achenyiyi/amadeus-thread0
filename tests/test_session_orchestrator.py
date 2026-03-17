@@ -78,6 +78,23 @@ class SessionOrchestratorTests(unittest.TestCase):
         self.assertIn("实验方案", pending_goal)
         self.assertIn("三步计划", pending_goal)
 
+    def test_resume_clarification_extracts_target_fragment(self):
+        pending = derive_pending_fragment(
+            user_text="等下，停。不是这一段，是你前面说到‘先把事情拆小’那里。",
+            previous_excerpt="那我们就先把事情拆小，然后一段一段往下推。",
+            pending_fragment="",
+        )
+        self.assertEqual(pending, "先把事情拆小")
+
+    def test_resume_clarification_keeps_pending_goal_focus(self):
+        pending_goal = derive_pending_user_goal(
+            user_text="等下，停。不是这一段，是你前面说到‘先把事情拆小’那里。",
+            previous_user_text="先别急着收尾，我刚刚其实是想让你继续说完上一句。",
+            pending_user_goal="",
+            pending_fragment="先把事情拆小",
+        )
+        self.assertEqual(pending_goal, "先把事情拆小")
+
 
 if __name__ == "__main__":
     unittest.main()

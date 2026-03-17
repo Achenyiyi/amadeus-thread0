@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..config import CANON_COUNTERPART_NAME, LLM_APPRAISAL_CONFIDENCE_MIN
+from ..evolution_engine.motive import semantic_motive_vector
 from .postprocess import (
     _has_any_marker,
     _selfhood_preference_scene_from_text,
@@ -24,6 +25,10 @@ def _clamp01(value: Any, default: float = 0.0) -> float:
     except Exception:
         v = float(default)
     return max(0.0, min(1.0, v))
+
+
+def _semantic_counterpart_motive_bias(semantic_narrative_profile: dict[str, Any] | None) -> dict[str, Any]:
+    return semantic_motive_vector(semantic_narrative_profile)
 
 
 def _active_appraisal_payload(appraisal: dict[str, Any] | None) -> dict[str, Any]:
@@ -114,6 +119,13 @@ def _counterpart_window_profile(
     history = _clamp01(narrative.get("history_weight"), 0.0)
     repair = _clamp01(narrative.get("repair_residue"), 0.0)
     tension = _clamp01(narrative.get("tension_residue"), 0.0)
+    motive_vector = _semantic_counterpart_motive_bias(narrative)
+    motive_boundary = _clamp01(motive_vector.get("boundary_pull"), 0.0)
+    motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
+    motive_continuity = _clamp01(motive_vector.get("continuity_pull"), 0.0)
+    motive_memory = _clamp01(motive_vector.get("memory_pull"), 0.0)
+    motive_support = _clamp01(motive_vector.get("support_pull"), 0.0)
+    motive_shared_window = _clamp01(motive_vector.get("shared_window_pull"), 0.0)
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     carryover_strength = _clamp01(carryover.get("strength"), 0.0)
     source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
@@ -180,6 +192,7 @@ def _counterpart_window_profile(
     continuity_recheck_delta = 0
     if family_key == "shared":
         continuity_bonus += 0.10 * commitment + 0.08 * bond + 0.05 * history + 0.04 * repair
+        continuity_bonus += 0.08 * motive_continuity + 0.06 * motive_shared_window + 0.04 * motive_memory + 0.03 * motive_support
         if effective_carryover_mode == "shared_window":
             continuity_bonus += effective_carryover_strength * (0.24 if source_turn_gap <= 0 else 0.20 if source_turn_gap == 1 else 0.16)
             continuity_discount += 0.02 + 0.06 * effective_carryover_strength
@@ -198,6 +211,7 @@ def _counterpart_window_profile(
             continuity_bonus -= 0.04 * min(1.0, tension)
     elif family_key == "work":
         continuity_bonus += 0.12 * commitment + 0.06 * history + 0.05 * repair
+        continuity_bonus += 0.06 * motive_continuity + 0.08 * motive_memory + 0.02 * motive_support
         if effective_carryover_mode == "task_window":
             continuity_bonus += effective_carryover_strength * (0.26 if source_turn_gap <= 0 else 0.22 if source_turn_gap == 1 else 0.18)
             continuity_discount += 0.02 + 0.05 * effective_carryover_strength
@@ -216,6 +230,7 @@ def _counterpart_window_profile(
             continuity_bonus -= 0.03 * min(1.0, tension)
     else:
         continuity_bonus += 0.08 * commitment + 0.04 * bond + 0.06 * history + 0.03 * repair
+        continuity_bonus += 0.08 * motive_continuity + 0.06 * motive_support + 0.04 * motive_memory + 0.03 * motive_shared_window
         if effective_carryover_mode == "life_window":
             continuity_bonus += effective_carryover_strength * (0.18 if source_turn_gap <= 1 else 0.14)
             continuity_discount += 0.02 + 0.04 * effective_carryover_strength
@@ -238,6 +253,8 @@ def _counterpart_window_profile(
             continuity_bonus += 0.03
         if tension > 0.52:
             continuity_bonus -= 0.03 * min(1.0, tension)
+
+    continuity_bonus -= 0.08 * motive_boundary
 
     if stance == "guarded" or prior_stance == "guarded":
         continuity_bonus *= 0.72
@@ -265,6 +282,11 @@ def _counterpart_window_profile(
     if safety_need > 0.55:
         required_maturity += 0.04
     required_maturity += 0.08 * max(0.0, own_rhythm_load - 0.50)
+    required_maturity += 0.10 * motive_boundary
+    required_maturity += 0.06 * max(0.0, motive_self_rhythm - 0.24)
+    required_maturity -= 0.06 * motive_continuity
+    required_maturity -= 0.04 * motive_support
+    required_maturity -= 0.04 * motive_shared_window
     required_maturity -= 0.06 * max(0.0, recontact_echo - 0.24)
     if effective_carryover_mode == "small_opening":
         required_maturity -= 0.03
@@ -277,7 +299,10 @@ def _counterpart_window_profile(
         recheck_min += 12
     recheck_min += int(round(10 * max(0.0, boundary_pressure - 0.22)))
     recheck_min += int(round(8 * max(0.0, own_rhythm_load - 0.48)))
+    recheck_min += int(round(8 * motive_boundary))
+    recheck_min += int(round(6 * max(0.0, motive_self_rhythm - 0.30)))
     recheck_min -= int(round(4 * max(0.0, recontact_echo - 0.26)))
+    recheck_min -= int(round(4 * motive_continuity + 3 * motive_support + 3 * motive_shared_window))
     recheck_min = max(10, recheck_min + continuity_recheck_delta)
 
     return {
@@ -650,6 +675,12 @@ def _counterpart_assessment_next(
     narrative_boundary = _clamp01((semantic_narrative_profile or {}).get("boundary_residue"), 0.0)
     narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
+    motive_vector = _semantic_counterpart_motive_bias(semantic_narrative_profile)
+    motive_boundary = _clamp01(motive_vector.get("boundary_pull"), 0.0)
+    motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
+    motive_continuity = _clamp01(motive_vector.get("continuity_pull"), 0.0)
+    motive_memory = _clamp01(motive_vector.get("memory_pull"), 0.0)
+    motive_support = _clamp01(motive_vector.get("support_pull"), 0.0)
 
     respect = _clamp01(0.48 + 0.24 * trust + 0.08 * repair_confidence - 0.18 * hurt - 0.14 * irritation)
     reciprocity = _clamp01(0.46 + 0.18 * closeness + 0.16 * engagement + 0.08 * trust - 0.12 * hurt)
@@ -845,6 +876,7 @@ def _counterpart_assessment_next(
         - 0.06 * narrative_tension
         - 0.05 * narrative_boundary
     )
+    respect += 0.04 * motive_continuity + 0.03 * motive_support + 0.02 * motive_memory - 0.05 * motive_boundary
     reciprocity += (
         0.06 * narrative_bond
         + 0.04 * narrative_commitment
@@ -852,6 +884,7 @@ def _counterpart_assessment_next(
         + 0.02 * narrative_selfhood
         - 0.06 * narrative_tension
     )
+    reciprocity += 0.05 * motive_continuity + 0.03 * motive_support - 0.04 * motive_boundary
     boundary_pressure += (
         0.08 * narrative_tension
         + 0.10 * narrative_boundary
@@ -859,6 +892,7 @@ def _counterpart_assessment_next(
         - 0.03 * narrative_bond
         - 0.04 * narrative_repair
     )
+    boundary_pressure += 0.12 * motive_boundary + 0.04 * motive_self_rhythm - 0.04 * motive_continuity - 0.02 * motive_support
     reliability += (
         0.02 * narrative_bond
         + 0.04 * narrative_commitment
@@ -867,6 +901,7 @@ def _counterpart_assessment_next(
         - 0.05 * narrative_tension
         - 0.03 * narrative_boundary
     )
+    reliability += 0.04 * motive_continuity + 0.05 * motive_memory + 0.03 * motive_support - 0.03 * motive_boundary
 
     if narrative_bond >= 0.54 and (explicit_care_bid or bool(signals.get("memory_salient")) or _wants_brief_presence(text) or _wants_presence_reassurance(text)):
         respect = max(respect, 0.60)
@@ -890,6 +925,20 @@ def _counterpart_assessment_next(
     if narrative_agency >= 0.46 and (busy_scene or respect_space or assessment_passive_turn or interaction_frame == "companion"):
         respect = max(respect, 0.56)
         boundary_pressure = min(boundary_pressure, 0.16 if boundary_probe_strength < 0.18 else boundary_pressure)
+    if motive_continuity >= 0.42 and (busy_scene or respect_space or assessment_passive_turn):
+        respect = max(respect, 0.54 + 0.06 * motive_continuity)
+        reliability = max(reliability, 0.52 + 0.06 * motive_continuity + 0.04 * motive_memory)
+        if boundary_probe_strength < 0.18 and not strong_boundary_event:
+            boundary_pressure = min(boundary_pressure, 0.18 + 0.08 * motive_boundary)
+    if motive_support >= 0.44 and explicit_care_bid and boundary_probe_strength < 0.22:
+        respect = max(respect, 0.58)
+        reciprocity = max(reciprocity, 0.56)
+        reliability = max(reliability, 0.54)
+    if motive_boundary >= 0.46 and (strong_boundary_event or selfhood_boundary_scene):
+        respect -= 0.04
+        reciprocity -= 0.03
+        boundary_pressure += 0.06
+        reliability -= 0.02
 
     if assessment_passive_turn and prev:
         respect = _clamp01(0.82 * _clamp01(prev.get("respect_level"), 0.52) + 0.18 * respect)
@@ -1003,6 +1052,8 @@ def _counterpart_assessment_next(
         + 0.10 * relationship_salience
         + 0.12 * narrative_bond
         + 0.06 * memory_salience
+        + 0.10 * motive_continuity
+        + 0.08 * motive_support
         - 0.10 * narrative_tension
     )
     friction_scene_strength = (
@@ -1018,6 +1069,7 @@ def _counterpart_assessment_next(
         if relational_selfhood_scene or selfhood_boundary_scene
         else 0.0
     )
+    selfhood_scene_strength += 0.10 * motive_boundary
     if busy_scene:
         scene = "busy_not_disrespectful"
     elif assessment_passive_turn and str(prev.get("scene") or "").strip():

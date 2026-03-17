@@ -31,6 +31,121 @@ def _clamp01(value: Any, default: float = 0.0) -> float:
     return max(0.0, min(1.0, v))
 
 
+def _semantic_motive_state_hint(
+    semantic_narrative_profile: dict[str, Any] | None,
+    *,
+    light_touch: bool = False,
+) -> str:
+    narrative = dict(semantic_narrative_profile or {})
+    motive_snapshot = narrative.get("motive_snapshot") if isinstance(narrative.get("motive_snapshot"), dict) else {}
+    if not motive_snapshot:
+        return ""
+
+    residue_snapshot = narrative.get("residue_snapshot") if isinstance(narrative.get("residue_snapshot"), dict) else {}
+    persistence_snapshot = (
+        narrative.get("persistence_snapshot") if isinstance(narrative.get("persistence_snapshot"), dict) else {}
+    )
+
+    axis_values = {
+        "bond_style": max(
+            _clamp01(narrative.get("bond_depth"), 0.0),
+            _clamp01(residue_snapshot.get("bond_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("bond_style"), 0.0),
+        ),
+        "presence_style": max(
+            _clamp01(narrative.get("presence_carry"), 0.0),
+            _clamp01(residue_snapshot.get("presence_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("presence_style"), 0.0),
+        ),
+        "ambient_style": max(
+            _clamp01(narrative.get("ambient_attunement"), 0.0),
+            _clamp01(residue_snapshot.get("ambient_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("ambient_style"), 0.0),
+        ),
+        "commitment_style": max(
+            _clamp01(narrative.get("commitment_carry"), 0.0),
+            _clamp01(residue_snapshot.get("commitment_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("commitment_style"), 0.0),
+        ),
+        "repair_style": max(
+            _clamp01(narrative.get("repair_residue"), 0.0),
+            _clamp01(residue_snapshot.get("repair_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("repair_style"), 0.0),
+        ),
+        "tension_style": max(
+            _clamp01(narrative.get("tension_residue"), 0.0),
+            _clamp01(residue_snapshot.get("tension_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("tension_style"), 0.0),
+        ),
+        "boundary_style": max(
+            _clamp01(narrative.get("boundary_residue"), 0.0),
+            _clamp01(residue_snapshot.get("boundary_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("boundary_style"), 0.0),
+        ),
+        "selfhood_style": max(
+            _clamp01(narrative.get("selfhood_integrity"), 0.0),
+            _clamp01(residue_snapshot.get("selfhood_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("selfhood_style"), 0.0),
+        ),
+        "agency_style": max(
+            _clamp01(narrative.get("agency_drive"), 0.0),
+            _clamp01(residue_snapshot.get("agency_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("agency_style"), 0.0),
+        ),
+        "rhythm_style": max(
+            _clamp01(narrative.get("rhythm_continuity"), 0.0),
+            _clamp01(residue_snapshot.get("rhythm_style"), 0.0),
+            0.72 * _clamp01(persistence_snapshot.get("rhythm_style"), 0.0),
+        ),
+    }
+    primary_lines = {
+        "protect_boundary": "靠近之前会先确认分寸稳不稳。",
+        "preserve_self_rhythm": "就算要回应，也会先顺着自己的节奏转过来。",
+        "gentle_recontact": "更像轻轻把联系续上，而不是突然把气氛抬高。",
+        "confirm_presence": "会先让对方感觉到自己在，而不是急着讲很多。",
+        "support_without_pressure": "更想把支撑留在场上，但不会把关心压成逼近。",
+        "honor_continuity": "会先把这段延续接上，不把它当成从零开始的新局。",
+        "reconnect_shared_history": "共同经历会先浮上来，影响这句怎么接。",
+        "open_shared_window": "如果刚好有能一起做点什么的空当，会自然留个口。",
+        "maintain_natural_contact": "更倾向顺手接住当下，不把一句普通话抬成大场面。",
+    }
+    tension_lines = {
+        "self_rhythm_vs_contact": "想回应和想保留自己的节奏会同时在场。",
+        "boundary_vs_closeness": "就算想靠近，分寸也不会自动后退。",
+        "past_vs_present": "过去留下的东西会跟着现在这句一起浮上来。",
+        "space_vs_contact": "会一边维持联系，一边给彼此留出能呼吸的空当。",
+        "care_vs_guard": "关心是真的，但保护自己也不会立刻退场。",
+    }
+
+    primary_rankings: list[tuple[float, str]] = []
+    tension_rankings: list[tuple[float, str]] = []
+    for category, raw in motive_snapshot.items():
+        if not isinstance(raw, dict):
+            continue
+        strength = _clamp01(axis_values.get(str(category or "").strip(), 0.0), 0.0)
+        if strength <= 0.0:
+            continue
+        primary_motive = str(raw.get("primary_motive") or "").strip().lower()
+        motive_tension = str(raw.get("motive_tension") or "").strip().lower()
+        if primary_motive:
+            primary_rankings.append((strength, primary_motive))
+        if motive_tension:
+            tension_rankings.append((strength, motive_tension))
+
+    parts: list[str] = []
+    if primary_rankings:
+        primary_strength, primary_motive = max(primary_rankings, key=lambda item: item[0])
+        primary_line = primary_lines.get(primary_motive, "")
+        if primary_line and primary_strength >= 0.36:
+            parts.append(primary_line)
+    if not light_touch and tension_rankings:
+        tension_strength, motive_tension = max(tension_rankings, key=lambda item: item[0])
+        tension_line = tension_lines.get(motive_tension, "")
+        if tension_line and tension_strength >= 0.42 and tension_line not in parts:
+            parts.append(tension_line)
+    return " ".join(parts[: 1 if light_touch else 2])
+
+
 def _plain_contact_ping_needs_relational_guard(
     *,
     bond_state: dict[str, Any] | None,
@@ -115,6 +230,7 @@ def _subjective_runtime_state_hint(
     narrative_boundary = _clamp01(narrative.get("boundary_residue"), 0.0)
     narrative_selfhood = _clamp01(narrative.get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01(narrative.get("agency_drive"), 0.0)
+    motive_hint = _semantic_motive_state_hint(semantic_narrative_profile, light_touch=light_touch)
     parts: list[str] = []
 
     if hurt > 0.18 or boundary_pressure > 0.28 or stance in {"guarded", "watchful"}:
@@ -138,6 +254,10 @@ def _subjective_runtime_state_hint(
         parts.append("刚才留下的在场感还没散，所以开口不用重新搭桥。")
     elif ambient_resonance > 0.56:
         parts.append("周围那点小余波还留在感知里，会自然带进这一句。")
+
+    if motive_hint:
+        insert_at = 1 if parts else 0
+        parts.insert(insert_at, motive_hint)
 
     if narrative_tension > 0.48 or narrative_repair > 0.48:
         parts.append("前面的余波还在，所以语气会自然带一点收放，不会完全当成什么都没发生。")

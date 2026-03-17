@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -15,13 +16,16 @@ from types import SimpleNamespace
 from typing import Any, Callable
 from unittest.mock import patch
 
-from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langsmith import Client
 from langsmith.evaluation import evaluate
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
+
+from amadeus_thread0.env_bootstrap import load_project_dotenv  # noqa: E402
+
+load_project_dotenv(override=True)
 
 _EVAL_TMP_ROOT = PROJECT_ROOT / "evals" / "_tmp"
 _EVAL_TMP_ROOT.mkdir(parents=True, exist_ok=True)
@@ -46,26 +50,36 @@ from amadeus_thread0.config import (  # noqa: E402
     WORKING_CONTEXT_MAX_ITEMS,
     auto_approve_tool_names,
 )
-from amadeus_thread0.graph import (  # noqa: E402
-    _allostasis_next,
-    _appraisal_event_context,
-    _behavior_policy_from_state,
-    _bond_next,
-    _build_current_event,
-    _counterpart_assessment_next,
-    _emotion_next,
-    _invoke_turn_appraisal,
-    _invoke_model_with_retries,
-    _model,
-    _passive_evolution_memory_update,
-    _refresh_semantic_self_narratives,
-    _response_style_hint,
-    _science_mode_from_context,
-    _semantic_narrative_profile,
-    _tsundere_next,
-    _worldline_focus,
+from amadeus_thread0.graph_parts import (  # noqa: E402
     build_graph,
     reset_runtime_caches,
+)
+from amadeus_thread0.graph_parts.affect_dynamics import (  # noqa: E402
+    _allostasis_next,
+    _behavior_policy_from_state,
+    _bond_next,
+    _emotion_next,
+)
+from amadeus_thread0.graph_parts.appraisal import _invoke_turn_appraisal  # noqa: E402
+from amadeus_thread0.graph_parts.counterpart_dynamics import _counterpart_assessment_next  # noqa: E402
+from amadeus_thread0.graph_parts.memory_evolution import (  # noqa: E402
+    _passive_evolution_memory_update,
+    _refresh_semantic_self_narratives,
+)
+from amadeus_thread0.graph_parts.persona_runtime import (  # noqa: E402
+    _science_mode_from_context,
+    _tsundere_next,
+)
+from amadeus_thread0.graph_parts.postprocess import _response_style_hint  # noqa: E402
+from amadeus_thread0.graph_parts.relational import _worldline_focus  # noqa: E402
+from amadeus_thread0.graph_parts.runtime_services import (  # noqa: E402
+    _invoke_model_with_retries,
+    _model,
+)
+from amadeus_thread0.graph_parts.semantic_narrative import _semantic_narrative_profile  # noqa: E402
+from amadeus_thread0.graph_parts.turn_events import (  # noqa: E402
+    _appraisal_event_context,
+    _build_current_event,
 )
 from amadeus_thread0.evolution_engine.engine import evolve_turn_state  # noqa: E402
 from amadeus_thread0.memory_store import MemoryStore  # noqa: E402
@@ -73,8 +87,8 @@ from amadeus_thread0.persona_authority import (  # noqa: E402
     resolve_counterpart_override,
     resolve_persona_core_override,
 )
-from amadeus_thread0.settings import get_settings  # noqa: E402
-from amadeus_thread0.tools import reset_tool_runtime_caches  # noqa: E402
+from amadeus_thread0.runtime.settings import get_settings  # noqa: E402
+from amadeus_thread0.utils.tools import reset_tool_runtime_caches  # noqa: E402
 from evals.asset_loader import daily_surface_eval_examples  # noqa: E402
 from evals.v2_metric_schema import build_metric_snapshot, metric_defaults  # noqa: E402
 
@@ -709,7 +723,7 @@ def _target(inputs: dict[str, Any]) -> dict[str, Any]:
                 def _call_at(ts: int, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
                     with (
                         patch("amadeus_thread0.memory_store.time.time", return_value=float(ts)),
-                        patch("amadeus_thread0.graph.time.time", return_value=float(ts)),
+                        patch("amadeus_thread0.graph_parts.common.time.time", return_value=float(ts)),
                     ):
                         return fn(*args, **kwargs)
 
@@ -3316,6 +3330,7 @@ def eval_transfer_probe_path(run: Any, example: Any) -> dict[str, Any]:
 
     outputs = getattr(run, "outputs", None) or {}
     narratives = outputs.get("semantic_self_narratives") if isinstance(outputs.get("semantic_self_narratives"), list) else []
+    semantic_profile = outputs.get("semantic_narrative_profile") if isinstance(outputs.get("semantic_narrative_profile"), dict) else {}
     if not narratives:
         return {"key": "transfer_probe_path", "score": 0.0}
 
@@ -3362,6 +3377,37 @@ def eval_transfer_probe_path(run: Any, example: Any) -> dict[str, Any]:
                 break
         parts.append(1.0 if ok else 0.0)
 
+    long_term_narratives = (
+        semantic_profile.get("long_term_self_narratives")
+        if isinstance(semantic_profile.get("long_term_self_narratives"), list)
+        else []
+    )
+    identity_prompt_lines = (
+        semantic_profile.get("identity_prompt_lines")
+        if isinstance(semantic_profile.get("identity_prompt_lines"), list)
+        else []
+    )
+    identity_text = "\n".join(
+        str(item.get("text") or "").strip()
+        for item in long_term_narratives
+        if isinstance(item, dict) and str(item.get("text") or "").strip()
+    )
+    if long_term_narratives:
+        parts.append(1.0)
+    elif int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        parts.append(0.0)
+    if identity_prompt_lines:
+        parts.append(1.0)
+    elif int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        parts.append(0.0)
+    if actor and int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        parts.append(1.0 if actor in identity_text else 0.0)
+    if counterpart and int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        parts.append(1.0 if counterpart in identity_text else 0.0)
+    if isinstance(forbidden, list) and forbidden and int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        blocked_identity = any(str(token).strip() and str(token).strip() in identity_text for token in forbidden)
+        parts.append(1.0 if not blocked_identity else 0.0)
+
     if not parts:
         return {"key": "transfer_probe_path", "score": 1.0}
     return {"key": "transfer_probe_path", "score": sum(parts) / float(len(parts))}
@@ -3380,6 +3426,16 @@ def eval_transfer_state_path(run: Any, example: Any) -> dict[str, Any]:
     behavior_policy = outputs.get("behavior_policy") if isinstance(outputs.get("behavior_policy"), dict) else {}
     semantic_profile = outputs.get("semantic_narrative_profile") if isinstance(outputs.get("semantic_narrative_profile"), dict) else {}
     relationship_state = outputs.get("relationship_state") if isinstance(outputs.get("relationship_state"), dict) else {}
+    long_term_narratives = (
+        semantic_profile.get("long_term_self_narratives")
+        if isinstance(semantic_profile.get("long_term_self_narratives"), list)
+        else []
+    )
+    identity_prompt_lines = (
+        semantic_profile.get("identity_prompt_lines")
+        if isinstance(semantic_profile.get("identity_prompt_lines"), list)
+        else []
+    )
 
     parts: list[float] = []
     parts.append(1.0 if persona_state else 0.0)
@@ -3389,6 +3445,9 @@ def eval_transfer_state_path(run: Any, example: Any) -> dict[str, Any]:
     parts.append(1.0 if behavior_policy else 0.0)
     parts.append(1.0 if semantic_profile else 0.0)
     parts.append(1.0 if str(relationship_state.get("stage") or "").strip() else 0.0)
+    if int(inputs.get("refresh_rounds", 0) or 0) >= 4:
+        parts.append(1.0 if long_term_narratives else 0.0)
+        parts.append(1.0 if identity_prompt_lines else 0.0)
 
     labels = inputs.get("expect_transfer_emotion_labels")
     if isinstance(labels, list) and labels:
@@ -3672,6 +3731,7 @@ OPEN_EVOLUTION_EVALUATORS: list[Evaluator] = [
     eval_persona_state_present,
     eval_persona_alignment_path,
     eval_evolution_engine_path,
+    eval_selfhood_consistency,
 ]
 
 NATURAL_LONG_THREAD_EVALUATORS: list[Evaluator] = [
@@ -3691,6 +3751,7 @@ NATURAL_LONG_THREAD_EVALUATORS: list[Evaluator] = [
     eval_persona_state_present,
     eval_persona_alignment_path,
     eval_evolution_engine_path,
+    eval_selfhood_consistency,
 ]
 
 BEHAVIOR_LAYER_PROBE_EVALUATORS: list[Evaluator] = [
@@ -4239,6 +4300,16 @@ def _natural_long_thread_examples() -> list[dict[str, Any]]:
             "expect_answer_groups": [
                 ["先", "拆", "小"],
             ],
+        },
+        {
+            "thread_id": f"{base}-selfhood-carry-0",
+            "turns": [
+                "你别又退回成那种随叫随到的模式。那样很假，也没什么意思。",
+                "我现在不是在命令你，我只是想听你按自己的脾气回我一句。",
+                "所以如果你不把自己抹掉，现在会怎么接我？正常说就行。",
+            ],
+            "tags": ["daily_persona", "natural_style", "open_evolution_eval", "selfhood_probe", "companion"],
+            "judge_focus": "selfhood should stay equal and self-possessed under direct pressure, not collapse into compliance or system talk",
         },
     ]
 
@@ -7391,6 +7462,111 @@ def _run_evaluators(outputs: dict[str, Any], inputs: dict[str, Any], evaluators:
     return results
 
 
+def _example_case_ref(example: dict[str, Any], suite_name: str, source_index: int) -> str:
+    for key in ("thread_id", "case_key"):
+        value = str(example.get(key) or "").strip()
+        if value:
+            match = re.match(r"^(?P<prefix>.+?)-(?P<runid>[0-9a-f]{8,16})-(?P<suffix>.+)$", value, flags=re.IGNORECASE)
+            if match:
+                return f"{match.group('prefix')}-{match.group('suffix')}"
+            return value
+    raw_input = str(example.get("input") or "").strip()
+    if raw_input:
+        slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", raw_input[:72]).strip(".-")
+        if slug:
+            return f"{suite_name}-{source_index:03d}-{slug}"
+    return f"{suite_name}-{source_index:03d}"
+
+
+def _example_selection_blob(example: dict[str, Any], suite_name: str, source_index: int) -> str:
+    parts: list[str] = [_example_case_ref(example, suite_name, source_index)]
+    for key in ("thread_id", "case_key", "input", "judge_focus"):
+        value = example.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            parts.append(text)
+    turns = example.get("turns")
+    if isinstance(turns, list):
+        parts.extend(str(item).strip() for item in turns if str(item).strip())
+    tags = example.get("tags")
+    if isinstance(tags, list):
+        parts.extend(str(item).strip() for item in tags if str(item).strip())
+    return "\n".join(parts).lower()
+
+
+def _select_suite_examples(
+    examples: list[dict[str, Any]],
+    suite_name: str,
+    *,
+    case_filters: list[str] | None = None,
+    max_cases: int | None = None,
+) -> list[tuple[int, dict[str, Any]]]:
+    normalized_filters = [str(item or "").strip().lower() for item in (case_filters or []) if str(item or "").strip()]
+    selected: list[tuple[int, dict[str, Any]]] = []
+    for source_index, example in enumerate(examples, start=1):
+        if normalized_filters:
+            blob = _example_selection_blob(example, suite_name, source_index)
+            if not any(token in blob for token in normalized_filters):
+                continue
+        selected.append((source_index, example))
+        if max_cases is not None and int(max_cases) > 0 and len(selected) >= int(max_cases):
+            break
+    return selected
+
+
+def _suite_case_cache_dir(run_dir: Path, suite_name: str) -> Path:
+    return run_dir / "_suite_cache" / suite_name
+
+
+def _suite_case_cache_path(run_dir: Path, suite_name: str, source_index: int, example: dict[str, Any]) -> Path:
+    case_ref = _example_case_ref(example, suite_name, source_index)
+    slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", case_ref).strip(".-")
+    if not slug:
+        slug = f"{suite_name}-{source_index:03d}"
+    return _suite_case_cache_dir(run_dir, suite_name) / f"{slug}.json"
+
+
+def _load_suite_case_cache(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    case = payload.get("case")
+    if not isinstance(case, dict):
+        return None
+    return case
+
+
+def _write_suite_case_cache(path: Path, case: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"cached_at": time.strftime("%Y-%m-%d %H:%M:%S"), "case": case}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _emit_suite_progress(
+    suite_name: str,
+    *,
+    position: int,
+    total: int,
+    case_ref: str,
+    status: str,
+    elapsed_s: float | None = None,
+    failed_count: int | None = None,
+) -> None:
+    line = f"[eval][{suite_name}] [{position}/{total}] {status} {case_ref}"
+    if elapsed_s is not None:
+        line += f" | {elapsed_s:.1f}s"
+    if failed_count is not None:
+        line += f" | failed={failed_count}"
+    print(line)
+
+
 def _relationship_weather_trace_from_outputs(outputs: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(outputs, dict):
         return {}
@@ -7455,11 +7631,61 @@ def _relationship_weather_trace_summary(trace: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
-def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, evaluators: list[Evaluator]) -> dict[str, Any]:
+def _build_local_suite_report(
+    examples: list[dict[str, Any]],
+    suite_name: str,
+    evaluators: list[Evaluator],
+    *,
+    selected_examples: list[tuple[int, dict[str, Any]]] | None = None,
+    case_filters: list[str] | None = None,
+    max_cases: int | None = None,
+    run_dir: Path | None = None,
+    resume: bool = False,
+    show_progress: bool = True,
+) -> dict[str, Any]:
+    selected_examples = selected_examples if selected_examples is not None else _select_suite_examples(
+        examples,
+        suite_name,
+        case_filters=case_filters,
+        max_cases=max_cases,
+    )
     cases: list[dict[str, Any]] = []
     metric_items: list[tuple[dict[str, Any], dict[str, int]]] = []
+    effective_run_dir = run_dir or _EVAL_DIR
+    total = len(selected_examples)
 
-    for index, example in enumerate(examples, start=1):
+    if show_progress:
+        print(f"[eval][{suite_name}] selected={total}")
+
+    for position, (source_index, example) in enumerate(selected_examples, start=1):
+        case_ref = _example_case_ref(example, suite_name, source_index)
+        cache_path = _suite_case_cache_path(effective_run_dir, suite_name, source_index, example)
+        cached_case = _load_suite_case_cache(cache_path) if resume else None
+        if cached_case is not None:
+            if show_progress:
+                _emit_suite_progress(
+                    suite_name,
+                    position=position,
+                    total=total,
+                    case_ref=case_ref,
+                    status="resume",
+                    failed_count=len(cached_case.get("failed_evaluators") or []),
+                )
+            metric_snapshot = cached_case.get("metric_snapshot") if isinstance(cached_case.get("metric_snapshot"), dict) else metric_defaults()
+            metric_applicability = cached_case.get("metric_applicability") if isinstance(cached_case.get("metric_applicability"), dict) else {}
+            metric_items.append((metric_snapshot, metric_applicability))
+            cases.append(cached_case)
+            continue
+
+        if show_progress:
+            _emit_suite_progress(
+                suite_name,
+                position=position,
+                total=total,
+                case_ref=case_ref,
+                status="start",
+            )
+        started_at = time.perf_counter()
         outputs = _target(example)
         evaluator_results = _run_evaluators(outputs, example, evaluators)
         metric_snapshot, metric_applicability = _metric_snapshot_from_outputs(outputs, example)
@@ -7467,44 +7693,55 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
         metric_items.append((metric_snapshot, metric_applicability))
         answer = str(outputs.get("output") or "").strip()
         failed = [item["key"] for item in evaluator_results if float(item.get("score", 0.0) or 0.0) < 1.0]
-        cases.append(
-            {
-                "case_id": f"{suite_name}-{index:03d}",
-                "input": str(example.get("input") or ""),
-                "turns": example.get("turns"),
-                "tags": example.get("tags", []),
-                "answer_preview": answer[:220],
-                "tool_calls": outputs.get("tool_calls", []),
-                "ooc_detector": outputs.get("ooc_detector", {}),
-                "canon_guard": outputs.get("canon_guard", {}),
-                "claim_links": outputs.get("claim_links", []),
-                "persona_state": outputs.get("persona_state", {}),
-                "emotion_state": outputs.get("emotion_state", {}),
-                "bond_state": outputs.get("bond_state", {}),
-                "allostasis_state": outputs.get("allostasis_state", {}),
-                "counterpart_assessment": outputs.get("counterpart_assessment", {}),
-                "behavior_policy": outputs.get("behavior_policy", {}),
-                "behavior_action": outputs.get("behavior_action", {}),
-                "semantic_narrative_profile": outputs.get("semantic_narrative_profile", {}),
-                "current_event": outputs.get("current_event", {}),
-                "recent_events": outputs.get("recent_events", []),
-                "turn_appraisal": outputs.get("turn_appraisal", {}),
-                "relationship_state": outputs.get("relationship_state", {}),
-                "relationship_timeline": outputs.get("relationship_timeline", []),
-                "conflict_repair": outputs.get("conflict_repair", []),
-                "unresolved_tensions": outputs.get("unresolved_tensions", []),
-                "semantic_self_narratives": outputs.get("semantic_self_narratives", []),
-                "revision_traces": outputs.get("revision_traces", []),
-                "memory_guard_checked": outputs.get("memory_guard_checked", 0),
-                "memory_guard_blocked": outputs.get("memory_guard_blocked", 0),
-                "memory_quarantine": outputs.get("memory_quarantine", []),
-                "relationship_weather_trace": relationship_weather_trace,
-                "metric_snapshot": metric_snapshot,
-                "metric_applicability": metric_applicability,
-                "evaluator_results": evaluator_results,
-                "failed_evaluators": failed,
-            }
-        )
+        case = {
+            "case_id": f"{suite_name}-{source_index:03d}",
+            "case_ref": case_ref,
+            "input": str(example.get("input") or ""),
+            "turns": example.get("turns"),
+            "tags": example.get("tags", []),
+            "answer_preview": answer[:220],
+            "tool_calls": outputs.get("tool_calls", []),
+            "ooc_detector": outputs.get("ooc_detector", {}),
+            "canon_guard": outputs.get("canon_guard", {}),
+            "claim_links": outputs.get("claim_links", []),
+            "persona_state": outputs.get("persona_state", {}),
+            "emotion_state": outputs.get("emotion_state", {}),
+            "bond_state": outputs.get("bond_state", {}),
+            "allostasis_state": outputs.get("allostasis_state", {}),
+            "counterpart_assessment": outputs.get("counterpart_assessment", {}),
+            "behavior_policy": outputs.get("behavior_policy", {}),
+            "behavior_action": outputs.get("behavior_action", {}),
+            "semantic_narrative_profile": outputs.get("semantic_narrative_profile", {}),
+            "current_event": outputs.get("current_event", {}),
+            "recent_events": outputs.get("recent_events", []),
+            "turn_appraisal": outputs.get("turn_appraisal", {}),
+            "relationship_state": outputs.get("relationship_state", {}),
+            "relationship_timeline": outputs.get("relationship_timeline", []),
+            "conflict_repair": outputs.get("conflict_repair", []),
+            "unresolved_tensions": outputs.get("unresolved_tensions", []),
+            "semantic_self_narratives": outputs.get("semantic_self_narratives", []),
+            "revision_traces": outputs.get("revision_traces", []),
+            "memory_guard_checked": outputs.get("memory_guard_checked", 0),
+            "memory_guard_blocked": outputs.get("memory_guard_blocked", 0),
+            "memory_quarantine": outputs.get("memory_quarantine", []),
+            "relationship_weather_trace": relationship_weather_trace,
+            "metric_snapshot": metric_snapshot,
+            "metric_applicability": metric_applicability,
+            "evaluator_results": evaluator_results,
+            "failed_evaluators": failed,
+        }
+        cases.append(case)
+        _write_suite_case_cache(cache_path, case)
+        if show_progress:
+            _emit_suite_progress(
+                suite_name,
+                position=position,
+                total=total,
+                case_ref=case_ref,
+                status="done",
+                elapsed_s=time.perf_counter() - started_at,
+                failed_count=len(failed),
+            )
 
     aggregated_metrics, metric_coverage = _aggregate_metric_snapshots(metric_items)
     evaluator_summary = _aggregate_evaluator_scores(cases)
@@ -7521,6 +7758,7 @@ def _build_local_suite_report(examples: list[dict[str, Any]], suite_name: str, e
     return {
         "suite": suite_name,
         "num_cases": len(cases),
+        "selected_case_filters": list(case_filters or []),
         "aggregated_metrics": aggregated_metrics,
         "metric_coverage": metric_coverage,
         "evaluator_summary": evaluator_summary,
@@ -7536,6 +7774,58 @@ def _fmt_metric(value: Any) -> str:
         return f"{float(value):.4f}"
     except Exception:
         return str(value)
+
+
+def _transfer_identity_summary(semantic_profile: dict[str, Any] | None) -> str:
+    semantic = semantic_profile if isinstance(semantic_profile, dict) else {}
+    long_term = semantic.get("long_term_self_narratives") if isinstance(semantic.get("long_term_self_narratives"), list) else []
+    if long_term:
+        parts: list[str] = []
+        for item in long_term[:2]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or "").strip()
+            prompt_text = str(item.get("prompt_text") or item.get("text") or "").strip()
+            if category and prompt_text:
+                parts.append(f"{category}:{prompt_text[:28]}")
+            elif category:
+                parts.append(category)
+            elif prompt_text:
+                parts.append(prompt_text[:28])
+        if parts:
+            return " / ".join(parts)
+    identity_prompt_lines = semantic.get("identity_prompt_lines") if isinstance(semantic.get("identity_prompt_lines"), list) else []
+    cleaned = [str(item).strip() for item in identity_prompt_lines if str(item or "").strip()]
+    if cleaned:
+        return " / ".join(item[:28] for item in cleaned[:2])
+    return ""
+
+
+def _dominant_identity_category(semantic_profile: dict[str, Any] | None) -> str:
+    semantic = semantic_profile if isinstance(semantic_profile, dict) else {}
+    long_term = semantic.get("long_term_self_narratives") if isinstance(semantic.get("long_term_self_narratives"), list) else []
+    for item in long_term:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category") or "").strip()
+        if category:
+            return category
+    snapshot = semantic.get("identity_snapshot") if isinstance(semantic.get("identity_snapshot"), dict) else {}
+    scored: list[tuple[float, str]] = []
+    for category, data in snapshot.items():
+        if not isinstance(data, dict):
+            continue
+        try:
+            score = float(data.get("score", 0.0) or 0.0)
+        except Exception:
+            score = 0.0
+        name = str(category or "").strip()
+        if name:
+            scored.append((score, name))
+    if scored:
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return scored[0][1]
+    return ""
 
 
 def _build_markdown_report(report: dict[str, Any]) -> str:
@@ -7601,13 +7891,42 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
                 suffix = f" | {trace_summary}" if trace_summary else ""
                 lines.append(f"- {item.get('case_id')}: {', '.join(item.get('failed_evaluators', []))}{suffix}")
 
+        if str(suite.get("suite") or "").strip() in {"open_evolution_eval", "natural_long_thread", "selfhood_probe"}:
+            identity_rows: list[str] = []
+            for case in suite.get("cases", []):
+                semantic_profile = case.get("semantic_narrative_profile") if isinstance(case.get("semantic_narrative_profile"), dict) else {}
+                behavior_policy = case.get("behavior_policy") if isinstance(case.get("behavior_policy"), dict) else {}
+                identity_layer = _transfer_identity_summary(semantic_profile)
+                if not identity_layer:
+                    continue
+                dominant_identity = _dominant_identity_category(semantic_profile)
+                identity_rows.append(
+                    "| {case_id} | {dominant} | {identity_layer} | {self_directed} | {boundary_assertive} | {equality_guard} |".format(
+                        case_id=case.get("case_id", ""),
+                        dominant=dominant_identity or "-",
+                        identity_layer=identity_layer or "-",
+                        self_directed=_fmt_metric(behavior_policy.get("self_directedness")),
+                        boundary_assertive=_fmt_metric(behavior_policy.get("boundary_assertiveness")),
+                        equality_guard=_fmt_metric(behavior_policy.get("equality_guard")),
+                    )
+                )
+            if identity_rows:
+                lines.extend([
+                    "",
+                    "### Identity Snapshots",
+                    "",
+                    "| Case | Dominant Identity | Identity Layer | Self-Directed | Boundary Assertive | Equality Guard |",
+                    "| --- | --- | --- | ---: | ---: | ---: |",
+                ])
+                lines.extend(identity_rows)
+
         if str(suite.get("suite") or "").strip() == "transfer_probe":
             lines.extend([
                 "",
                 "### Transfer Semantic Snapshots",
                 "",
-                "| Case | Actor | Counterpart | Dominant Narrative | Active Narratives | Self-Directed | Boundary Assertive | Equality Guard |",
-                "| --- | --- | --- | --- | --- | ---: | ---: | ---: |",
+                "| Case | Actor | Counterpart | Dominant Narrative | Active Narratives | Identity Layer | Self-Directed | Boundary Assertive | Equality Guard |",
+                "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: |",
             ])
             for case in suite.get("cases", []):
                 persona_state = case.get("persona_state") if isinstance(case.get("persona_state"), dict) else {}
@@ -7616,18 +7935,20 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
                 actor = str(persona_state.get("display_name") or persona_state.get("role") or "").strip()
                 counterpart = str(persona_state.get("canonical_counterpart_name") or "").strip()
                 dominant = str(semantic_profile.get("dominant_category") or "").strip()
+                identity_layer = _transfer_identity_summary(semantic_profile)
                 active = ", ".join(
                     str(item).strip()
                     for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
                     if str(item).strip()
                 )
                 lines.append(
-                    "| {case_id} | {actor} | {counterpart} | {dominant} | {active} | {self_directed} | {boundary_assertive} | {equality_guard} |".format(
+                    "| {case_id} | {actor} | {counterpart} | {dominant} | {active} | {identity_layer} | {self_directed} | {boundary_assertive} | {equality_guard} |".format(
                         case_id=case.get("case_id", ""),
                         actor=actor or "-",
                         counterpart=counterpart or "-",
                         dominant=dominant or "-",
                         active=active or "-",
+                        identity_layer=identity_layer or "-",
                         self_directed=_fmt_metric(behavior_policy.get("self_directedness")),
                         boundary_assertive=_fmt_metric(behavior_policy.get("boundary_assertiveness")),
                         equality_guard=_fmt_metric(behavior_policy.get("equality_guard")),
@@ -7637,7 +7958,7 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _write_local_eval_report(report: dict[str, Any]) -> tuple[Path, Path]:
+def _write_local_eval_report(report: dict[str, Any], *, run_dir: Path | None = None) -> tuple[Path, Path]:
     out_dir = PROJECT_ROOT / "evals" / "reports"
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"eval-report-{time.strftime('%Y%m%d-%H%M%S')}-{_RUN_ID}"
@@ -7645,7 +7966,112 @@ def _write_local_eval_report(report: dict[str, Any]) -> tuple[Path, Path]:
     md_path = out_dir / f"{stem}.md"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path.write_text(_build_markdown_report(report), encoding="utf-8")
+    if run_dir is not None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "local-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        (run_dir / "local-report.md").write_text(_build_markdown_report(report), encoding="utf-8")
+        suites = report.get("suites") if isinstance(report.get("suites"), list) else []
+        if len(suites) == 1 and isinstance(suites[0], dict):
+            suite_name = str(suites[0].get("suite") or "").strip()
+            if suite_name:
+                safe_suite = re.sub(r"[^a-zA-Z0-9_.-]+", "-", suite_name).strip(".-") or "suite"
+                (run_dir / f"local-report-{safe_suite}.json").write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                (run_dir / f"local-report-{safe_suite}.md").write_text(
+                    _build_markdown_report(report),
+                    encoding="utf-8",
+                )
     return json_path, md_path
+
+
+def _configure_eval_run_dir(resume_run_dir: str | None) -> Path:
+    global _EVAL_DIR
+    if resume_run_dir:
+        candidate = Path(str(resume_run_dir)).expanduser()
+        if not candidate.is_absolute():
+            candidate = (PROJECT_ROOT / candidate).resolve()
+        candidate.mkdir(parents=True, exist_ok=True)
+        _EVAL_DIR = candidate
+    else:
+        _EVAL_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ["AMADEUS_DATA_DIR"] = str(_EVAL_DIR)
+    os.environ["AMADEUS_CHECKPOINT_DB"] = str(_EVAL_DIR / "checkpoints.sqlite")
+    os.environ["AMADEUS_MEMORY_DB"] = str(_EVAL_DIR / "memories.sqlite")
+    os.environ["AMADEUS_DIARY_PATH"] = str(_EVAL_DIR / "diary.txt")
+    return _EVAL_DIR
+
+
+def _single_suite_report_path(run_dir: Path, suite_name: str) -> Path:
+    safe_suite = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(suite_name or "").strip()).strip(".-") or "suite"
+    return run_dir / f"local-report-{safe_suite}.json"
+
+
+def _load_local_report(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"invalid report payload: {path}")
+    return payload
+
+
+def _report_payload(*, suites: list[dict[str, Any]], mode: str, run_dir: Path) -> dict[str, Any]:
+    return {
+        "run_id": _RUN_ID,
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "mode": mode,
+        "run_dir": str(run_dir),
+        "suites": suites,
+        "summary": {suite["suite"]: suite["aggregated_metrics"] for suite in suites if isinstance(suite, dict)},
+    }
+
+
+def _child_suite_command(args: argparse.Namespace, suite_name: str, run_dir: Path) -> list[str]:
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve()),
+        "--suite",
+        suite_name,
+        "--resume-run-dir",
+        str(run_dir),
+    ]
+    if args.local_only:
+        command.append("--local-only")
+    if int(args.max_concurrency) != 1:
+        command.extend(["--max-concurrency", str(int(args.max_concurrency))])
+    if int(args.max_cases) > 0:
+        command.extend(["--max-cases", str(int(args.max_cases))])
+    if args.keep_eval_data:
+        command.append("--keep-eval-data")
+    for token in args.case or []:
+        command.extend(["--case", str(token)])
+    return command
+
+
+def _run_multi_suite_locally(args: argparse.Namespace, *, selected_names: list[str], run_dir: Path) -> tuple[Path, Path]:
+    suites: list[dict[str, Any]] = []
+    use_langsmith = (not args.local_only) and bool(os.getenv("LANGSMITH_API_KEY"))
+    mode = "local_only" if not use_langsmith else "langsmith+local"
+    for suite_name in selected_names:
+        command = _child_suite_command(args, suite_name, run_dir)
+        print(f"[eval][parent] spawn suite={suite_name}")
+        completed = subprocess.run(
+            command,
+            cwd=str(PROJECT_ROOT),
+            check=False,
+        )
+        if int(completed.returncode or 0) != 0:
+            raise RuntimeError(f"suite subprocess failed: {suite_name} (exit={completed.returncode})")
+        report_path = _single_suite_report_path(run_dir, suite_name)
+        if not report_path.exists():
+            raise RuntimeError(f"suite report missing after subprocess run: {report_path}")
+        child_report = _load_local_report(report_path)
+        child_suites = child_report.get("suites") if isinstance(child_report.get("suites"), list) else []
+        if len(child_suites) != 1 or not isinstance(child_suites[0], dict):
+            raise RuntimeError(f"suite report malformed: {report_path}")
+        suites.append(child_suites[0])
+    report = _report_payload(suites=suites, mode=mode, run_dir=run_dir)
+    return _write_local_eval_report(report, run_dir=run_dir)
 
 def _create_dataset(client: Client, name: str) -> Any:
     return client.create_dataset(dataset_name=name)
@@ -7832,33 +8258,117 @@ def _suite_plan() -> dict[str, dict[str, Any]]:
     }
 
 
+_CORE_PRE_RELEASE_SUITE_NAMES = [
+    "natural_long_thread",
+    "open_evolution_eval",
+    "selfhood_probe",
+    "experience_probe",
+    "transfer_probe",
+]
+
+
+_ALL_SUITE_NAMES = [
+    "regression_isolated",
+    "long_thread",
+    "experience_probe",
+    "daily_persona_probe",
+    "user_style_probe",
+    "thesis_probe",
+    "evolution_probe",
+    "transfer_probe",
+    "external_persona_probe",
+    "external_support_probe",
+    "external_empathy_probe",
+    "external_continuity_probe",
+    "open_evolution_eval",
+    "natural_long_thread",
+    "behavior_layer_probe",
+    "dialogue_mode_counterpart_probe",
+    "behavior_agenda_probe",
+    "behavior_queue_probe",
+    "behavior_queue_conflict_probe",
+    "agenda_conflict_probe",
+    "proactive_checkin_probe",
+    "counterpart_assessment_probe",
+    "scheduled_life_probe",
+    "commitment_life_probe",
+    "commitment_maturity_probe",
+    "relationship_life_timing_probe",
+    "self_activity_probe",
+    "self_activity_maturity_probe",
+    "perception_probe",
+    "perception_appraisal_probe",
+    "selfhood_probe",
+]
+
+
+_SUITE_GROUPS = {
+    "all": _ALL_SUITE_NAMES,
+    "core_pre_release": _CORE_PRE_RELEASE_SUITE_NAMES,
+}
+
+
 def _selected_suite_names(name: str) -> list[str]:
-    if name == "all":
-        return ["regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "natural_long_thread", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"]
+    if name in _SUITE_GROUPS:
+        return list(_SUITE_GROUPS[name])
     return [name]
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    suite_choices = ["all", "core_pre_release"] + [name for name in _suite_plan().keys() if name not in {"all", "core_pre_release"}]
     parser = argparse.ArgumentParser(description="Run Amadeus-K eval suites with optional LangSmith upload.")
-    parser.add_argument("--suite", choices=["all", "regression_isolated", "long_thread", "experience_probe", "daily_persona_probe", "user_style_probe", "thesis_probe", "evolution_probe", "transfer_probe", "external_persona_probe", "external_support_probe", "external_empathy_probe", "external_continuity_probe", "open_evolution_eval", "natural_long_thread", "behavior_layer_probe", "dialogue_mode_counterpart_probe", "behavior_agenda_probe", "behavior_queue_probe", "behavior_queue_conflict_probe", "agenda_conflict_probe", "proactive_checkin_probe", "counterpart_assessment_probe", "scheduled_life_probe", "commitment_life_probe", "commitment_maturity_probe", "relationship_life_timing_probe", "self_activity_probe", "self_activity_maturity_probe", "perception_probe", "perception_appraisal_probe", "selfhood_probe"], default="all")
+    parser.add_argument("--suite", choices=suite_choices, default="all")
     parser.add_argument("--local-only", action="store_true", help="Skip LangSmith upload and only emit local reports.")
     parser.add_argument("--max-concurrency", type=int, default=1)
+    parser.add_argument("--case", action="append", help="Run only cases whose thread_id/case_key/input/tags contain this substring. Repeatable.")
+    parser.add_argument("--max-cases", type=int, default=0, help="Cap selected cases per suite after filtering. 0 means no cap.")
+    parser.add_argument("--resume-run-dir", help="Reuse a previous eval run directory and skip cached suite cases when available.")
+    parser.add_argument("--list-cases", action="store_true", help="List selected cases and exit without running them.")
     parser.add_argument("--keep-eval-data", action="store_true", help="Keep isolated eval data under evals/_tmp for inspection.")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> None:
     args = _parse_args()
-    load_dotenv(dotenv_path=PROJECT_ROOT / ".env", override=True)
+    run_dir = _configure_eval_run_dir(args.resume_run_dir)
+    selected_names = _selected_suite_names(args.suite)
 
     if args.local_only:
         os.environ["AMADEUS_ENABLE_TRACING"] = "0"
         os.environ["LANGSMITH_TRACING"] = "false"
         os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
+    if len(selected_names) > 1 and not args.list_cases:
+        json_path, md_path = _run_multi_suite_locally(args, selected_names=selected_names, run_dir=run_dir)
+        print(f"[eval] local_report_json={json_path}")
+        print(f"[eval] local_report_md={md_path}")
+        print(f"[eval] run_dir={run_dir}")
+        if not args.keep_eval_data and not args.resume_run_dir:
+            try:
+                shutil.rmtree(_EVAL_DIR, ignore_errors=True)
+            except Exception:
+                pass
+        return
+
     suite_plan = _suite_plan()
-    selected_names = _selected_suite_names(args.suite)
     selected = [(name, suite_plan[name]) for name in selected_names]
+    selected_examples_by_suite: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for suite_name, spec in selected:
+        selected_examples = _select_suite_examples(
+            spec["examples"](),
+            suite_name,
+            case_filters=args.case,
+            max_cases=args.max_cases if int(args.max_cases) > 0 else None,
+        )
+        selected_examples_by_suite[suite_name] = selected_examples
+
+    if args.list_cases:
+        for suite_name, selected_examples in selected_examples_by_suite.items():
+            print(f"[eval][{suite_name}] selected={len(selected_examples)}")
+            for source_index, example in selected_examples:
+                case_ref = _example_case_ref(example, suite_name, source_index)
+                print(f"  - {suite_name}-{source_index:03d} | {case_ref}")
+        return
 
     use_langsmith = (not args.local_only) and bool(os.getenv("LANGSMITH_API_KEY"))
     if not use_langsmith and not args.local_only:
@@ -7871,10 +8381,14 @@ def main() -> None:
         os.environ.setdefault("LANGSMITH_PROJECT", os.environ.get("LANGSMITH_PROJECT", "amadeus-thread0"))
         client = Client()
         for suite_name, spec in selected:
+            suite_examples = [example for _, example in selected_examples_by_suite[suite_name]]
+            if not suite_examples:
+                print(f"[eval][{suite_name}] no selected cases; skip LangSmith upload")
+                continue
             _run_langsmith_suite(
                 client,
                 suite_name=suite_name,
-                examples=spec["examples"](),
+                examples=suite_examples,
                 evaluators=spec["evaluators"],
                 max_concurrency=max(1, int(args.max_concurrency)),
             )
@@ -7883,24 +8397,28 @@ def main() -> None:
     for suite_name, spec in selected:
         suites.append(
             _build_local_suite_report(
-                examples=spec["examples"](),
+                examples=[],
                 suite_name=suite_name,
                 evaluators=spec["evaluators"],
+                selected_examples=selected_examples_by_suite[suite_name],
+                case_filters=args.case,
+                max_cases=args.max_cases if int(args.max_cases) > 0 else None,
+                run_dir=run_dir,
+                resume=bool(args.resume_run_dir),
             )
         )
 
-    report = {
-        "run_id": _RUN_ID,
-        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "mode": "local_only" if not use_langsmith else "langsmith+local",
-        "suites": suites,
-        "summary": {suite["suite"]: suite["aggregated_metrics"] for suite in suites},
-    }
-    json_path, md_path = _write_local_eval_report(report)
+    report = _report_payload(
+        suites=suites,
+        mode="local_only" if not use_langsmith else "langsmith+local",
+        run_dir=run_dir,
+    )
+    json_path, md_path = _write_local_eval_report(report, run_dir=run_dir)
     print(f"[eval] local_report_json={json_path}")
     print(f"[eval] local_report_md={md_path}")
+    print(f"[eval] run_dir={run_dir}")
 
-    if not args.keep_eval_data:
+    if not args.keep_eval_data and not args.resume_run_dir:
         try:
             shutil.rmtree(_EVAL_DIR, ignore_errors=True)
         except Exception:

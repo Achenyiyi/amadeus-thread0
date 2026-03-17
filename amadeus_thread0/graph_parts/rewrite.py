@@ -6,7 +6,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .common import _clamp01, _norm_text
-from .dialogue_guidance import _event_behavior_preference_lines
+from .dialogue_guidance import _event_behavior_preference_lines, _semantic_motive_state_hint
 from .generation_profile import (
     _daily_surface_alignment_metrics,
     _daily_surface_prompt_similarity,
@@ -263,6 +263,7 @@ def _rewrite_light_dialog_answer(
     current_event: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     focus = str(focus_text or "").strip()
@@ -277,6 +278,10 @@ def _rewrite_light_dialog_answer(
     relationship_weather_guidance = _relationship_weather_rewrite_guidance(
         relationship_weather,
         strength=relationship_weather_strength,
+    )
+    motive_state_hint = _semantic_motive_state_hint(
+        semantic_narrative_profile,
+        light_touch=True,
     )
     if not draft_text or (not notes and not focus and not positives and not negatives):
         return ""
@@ -299,6 +304,8 @@ def _rewrite_light_dialog_answer(
             request_parts.extend(f"- {item}\n" for item in negatives[:1])
         if relationship_weather_guidance:
             request_parts.append(f"关系余波：{relationship_weather_guidance}\n")
+        if motive_state_hint:
+            request_parts.append(f"当前更自然的主动倾向：{motive_state_hint}\n")
         if stagey_ping_reset:
             request_parts.append("别再用点名加反问的固定招呼开场，像熟人重新接上线那样自然一点。\n")
         if extra_guidance:
@@ -630,6 +637,7 @@ def _rewrite_natural_dialog_answer(
     current_event: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     if not draft_text or not notes:
@@ -653,6 +661,10 @@ def _rewrite_natural_dialog_answer(
     relationship_weather_guidance = _relationship_weather_rewrite_guidance(
         relationship_weather,
         strength=relationship_weather_strength,
+    )
+    motive_state_hint = _semantic_motive_state_hint(
+        semantic_narrative_profile,
+        light_touch=False,
     )
 
     def _rewrite_once(system_prompt: str, request_text: str, *, max_tokens: int) -> str:
@@ -721,6 +733,7 @@ def _rewrite_natural_dialog_answer(
         f"当前草稿：{draft_text}\n"
         "把这句收回到更自然的人与人对话尺度，保留同一轮情绪和立场，不新增设定。\n"
         f"{'关系余波：' + relationship_weather_guidance + chr(10) if relationship_weather_guidance else ''}"
+        f"{'当前更自然的主动倾向：' + motive_state_hint + chr(10) if motive_state_hint else ''}"
         f"修正点：\n{note_block}\n"
         "只输出修正后的最终话语。"
     )

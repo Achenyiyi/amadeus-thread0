@@ -1,6 +1,6 @@
 import unittest
 
-from amadeus_thread0.graph import (
+from amadeus_thread0.graph_parts.appraisal import (
     _coerce_appraisal_payload,
     _postprocess_appraisal_payload,
     _soft_accept_appraisal_payload,

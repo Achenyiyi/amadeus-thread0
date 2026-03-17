@@ -1770,6 +1770,7 @@ class MemoryStore:
         source: str = "",
         confidence: float = 0.75,
         source_refs: list[int] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         ns = str(namespace or "").strip()
         if not ns:
@@ -1781,6 +1782,7 @@ class MemoryStore:
         reason_text = str(reason or "").strip()
         operator_text = str(operator or "system").strip() or "system"
         source_text = str(source or "").strip()
+        meta = dict(metadata or {})
         now = int(time.time())
         for it in reversed(items[-12:]):
             if (
@@ -1790,22 +1792,30 @@ class MemoryStore:
                 and str(it.get("after_summary") or it.get("content", {}).get("after_summary") or "").strip() == after_text
                 and abs(now - int(it.get("updated_at") or it.get("created_at") or 0)) <= 120
             ):
+                content = it.get("content") if isinstance(it.get("content"), dict) else {}
+                for key, value in meta.items():
+                    content[key] = value
+                    it[key] = value
+                it["content"] = content
                 it["updated_at"] = now
                 self._put_ns_items("revision_traces", items)
                 return it
+        content = {
+            "namespace": ns,
+            "target_id": target_key,
+            "before_summary": before_text,
+            "after_summary": after_text,
+            "reason": reason_text,
+            "operator": operator_text,
+            "source": source_text,
+        }
+        for key, value in meta.items():
+            content[key] = value
         return self._append_ns_item(
             "revision_traces",
             self._to_memory_record(
                 record_type="revision_trace",
-                content={
-                    "namespace": ns,
-                    "target_id": target_key,
-                    "before_summary": before_text,
-                    "after_summary": after_text,
-                    "reason": reason_text,
-                    "operator": operator_text,
-                    "source": source_text,
-                },
+                content=content,
                 confidence=float(confidence),
                 source_refs=source_refs,
             ),

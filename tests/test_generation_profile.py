@@ -1,6 +1,6 @@
 import unittest
 
-from amadeus_thread0.graph import _generation_profile
+from amadeus_thread0.graph_parts.generation_profile import _generation_profile
 
 
 class GenerationProfileRhythmTests(unittest.TestCase):

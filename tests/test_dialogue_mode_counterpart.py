@@ -2,15 +2,17 @@ import unittest
 
 from amadeus_thread0.evolution_engine.engine import evolve_turn_state
 from amadeus_thread0.evolution_engine.state import transition_counterpart_assessment
-from amadeus_thread0.graph import (
-    _allostasis_next,
-    _behavior_action_from_state,
-    _bond_next,
-    _canon_okabe_recontact_baseline,
-    _counterpart_window_profile,
+from amadeus_thread0.graph_parts.affect_dynamics import _allostasis_next, _bond_next, _emotion_next
+from amadeus_thread0.graph_parts.behavior_runtime import _behavior_action_from_state
+from amadeus_thread0.graph_parts.counterpart_dynamics import (
     _counterpart_assessment_next,
-    _emotion_next,
+    _counterpart_window_profile,
+)
+from amadeus_thread0.graph_parts.persona_runtime import (
+    _canon_okabe_recontact_baseline,
     _prefer_explicit_state_dict,
+)
+from amadeus_thread0.graph_parts.relational import (
     _prefer_refreshed_relationship_state,
     _relationship_runtime_snapshot,
 )
@@ -242,6 +244,110 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertLess(float(continued.get("required_maturity") or 1.0), float(baseline.get("required_maturity") or 1.0))
         self.assertLess(int(continued.get("recheck_min") or 999), int(baseline.get("recheck_min") or 999))
         self.assertGreater(float(continued.get("continuity_bonus") or 0.0), 0.0)
+
+    def test_shared_window_profile_uses_semantic_motive_residue_snapshots(self):
+        baseline = _counterpart_window_profile(
+            family="shared",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={},
+            interaction_carryover={},
+            current_event=self.shared_window_due_event,
+            prior_counterpart_assessment={},
+        )
+        infused = _counterpart_window_profile(
+            family="shared",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={
+                "residue_snapshot": {
+                    "presence_style": 0.72,
+                    "ambient_style": 0.66,
+                },
+                "persistence_snapshot": {
+                    "agency_style": 0.78,
+                },
+                "motive_snapshot": {
+                    "presence_style": {
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "self_rhythm_vs_contact",
+                    },
+                    "ambient_style": {
+                        "primary_motive": "reconnect_shared_history",
+                        "motive_tension": "past_vs_present",
+                    },
+                    "agency_style": {
+                        "primary_motive": "open_shared_window",
+                    },
+                },
+            },
+            interaction_carryover={},
+            current_event=self.shared_window_due_event,
+            prior_counterpart_assessment={},
+        )
+        self.assertGreater(float(infused.get("continuity_bonus") or 0.0), float(baseline.get("continuity_bonus") or 0.0))
+        self.assertLess(float(infused.get("required_maturity") or 1.0), float(baseline.get("required_maturity") or 1.0))
+        self.assertLess(int(infused.get("recheck_min") or 999), int(baseline.get("recheck_min") or 999))
+
+    def test_life_window_profile_uses_semantic_motive_boundary_residue(self):
+        baseline = _counterpart_window_profile(
+            family="life",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={},
+            interaction_carryover={},
+            current_event=self.life_window_due_event,
+            prior_counterpart_assessment={},
+        )
+        guarded = _counterpart_window_profile(
+            family="life",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={
+                "residue_snapshot": {
+                    "boundary_style": 0.74,
+                },
+                "persistence_snapshot": {
+                    "rhythm_style": 0.78,
+                },
+                "motive_snapshot": {
+                    "boundary_style": {
+                        "primary_motive": "protect_boundary",
+                        "motive_tension": "boundary_vs_closeness",
+                    },
+                    "rhythm_style": {
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                    },
+                },
+            },
+            interaction_carryover={},
+            current_event=self.life_window_due_event,
+            prior_counterpart_assessment={},
+        )
+        self.assertGreater(float(guarded.get("required_maturity") or 0.0), float(baseline.get("required_maturity") or 0.0))
+        self.assertGreater(int(guarded.get("recheck_min") or 0), int(baseline.get("recheck_min") or 0))
+        self.assertLess(float(guarded.get("continuity_bonus") or 0.0), float(baseline.get("continuity_bonus") or 0.0))
 
     def test_work_window_profile_gets_continuity_bonus_from_task_residue(self):
         event = {
@@ -916,6 +1022,8 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
         self.assertEqual(str(action.get("task_focus") or ""), "light")
         self.assertEqual(str(action.get("followup_intent") or ""), "soft")
+        self.assertEqual(str(action.get("primary_motive") or ""), "open_shared_window")
+        self.assertEqual(str(action.get("motive_tension") or ""), "none")
 
     def test_scheduled_life_window_from_own_rhythm_stays_light_and_personal(self):
         action = _behavior_action_from_state(
@@ -980,6 +1088,9 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("initiative_shape") or ""), "micro_opening")
         self.assertEqual(str(action.get("task_focus") or ""), "light")
         self.assertEqual(str(action.get("followup_intent") or ""), "soft")
+        self.assertEqual(str(action.get("primary_motive") or ""), "honor_continuity")
+        self.assertEqual(str(action.get("motive_tension") or ""), "self_rhythm_vs_contact")
+        self.assertIn("生活上的惦记", str(action.get("goal_frame") or ""))
 
     def test_counterpart_assessment_preserves_guarded_companion_read(self):
         next_state = _counterpart_assessment_next(
@@ -1378,6 +1489,99 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         infused_policy = dict(infused.get("behavior_policy") or {})
         self.assertGreater(float(infused_policy.get("self_directedness") or 0.0), float(plain_policy.get("self_directedness") or 0.0))
         self.assertGreater(float(infused_policy.get("history_weight") or 0.0), float(plain_policy.get("history_weight") or 0.0))
+
+    def test_engine_behavior_policy_receives_motive_snapshot_bias(self):
+        appraisal = {
+            "used": True,
+            "confidence": 0.90,
+            "emotion_label": "neutral",
+            "emotion": {"valence": 0.20, "arousal": 0.12, "linger": 1, "recovery_rate": 0.9, "volatility": 0.06},
+            "bond_delta": {"trust": 0.04, "closeness": 0.04, "hurt": -0.01, "irritation": -0.01, "engagement_drive": 0.05, "repair_confidence": 0.02},
+            "allostasis_delta": {"safety_need": -0.04, "closeness_need": 0.04, "competence_need": 0.0, "autonomy_need": 0.04, "cognitive_budget": 0.04},
+            "signals": {"repair": False, "withdrawal": False, "care": True, "conflict": False, "memory_salient": True},
+            "interaction_frame": "companion",
+            "salience": {"task": 0.04, "relationship": 0.50, "memory": 0.28, "selfhood": 0.14, "companionship": 0.72},
+        }
+        semantic_profile = {
+            "bond_depth": 0.64,
+            "presence_carry": 0.62,
+            "ambient_attunement": 0.46,
+            "rhythm_continuity": 0.70,
+            "commitment_carry": 0.54,
+            "boundary_residue": 0.48,
+            "selfhood_integrity": 0.58,
+            "agency_drive": 0.70,
+            "history_weight": 0.72,
+        }
+        plain = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment=self.open_counterpart,
+            relationship=self.relationship,
+            semantic_narrative_profile=semantic_profile,
+            appraisal=appraisal,
+            current_event=self.companion_event,
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        infused = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment=self.open_counterpart,
+            relationship=self.relationship,
+            semantic_narrative_profile={
+                **semantic_profile,
+                "motive_snapshot": {
+                    "rhythm_style": {
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame_examples": ["先维持自己的节奏，不急着把全部注意力交出去。"],
+                    },
+                    "presence_style": {
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame_examples": ["先把前面那点生活上的惦记轻轻接回来。"],
+                    },
+                    "boundary_style": {
+                        "primary_motive": "protect_boundary",
+                        "motive_tension": "boundary_vs_closeness",
+                        "goal_frame_examples": ["先守住边界和自我位置，再决定要不要继续靠近。"],
+                    },
+                },
+            },
+            appraisal=appraisal,
+            current_event=self.companion_event,
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        plain_policy = dict(plain.get("behavior_policy") or {})
+        infused_policy = dict(infused.get("behavior_policy") or {})
+        self.assertGreater(
+            float(infused_policy.get("self_directedness") or 0.0),
+            float(plain_policy.get("self_directedness") or 0.0),
+        )
+        self.assertGreater(
+            float(infused_policy.get("boundary_assertiveness") or 0.0),
+            float(plain_policy.get("boundary_assertiveness") or 0.0),
+        )
+        self.assertGreater(
+            float(infused_policy.get("motive_self_rhythm_pull") or 0.0),
+            0.0,
+        )
+        self.assertGreater(
+            float(infused_policy.get("motive_boundary_pull") or 0.0),
+            0.0,
+        )
 
     def test_engine_guarded_companion_scene_stays_guarded(self):
         appraisal = {

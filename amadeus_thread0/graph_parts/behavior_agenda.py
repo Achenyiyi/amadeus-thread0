@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from .state import BehaviorAgendaEntryPayload, EventPayload
+from .state import AgendaLifecycleResiduePayload, BehaviorAgendaEntryPayload, EventPayload
 from .turn_events import _now_ts
 
 QUEUEABLE_BEHAVIOR_PLAN_KINDS = {"deferred_checkin", "self_activity_continue"}
@@ -45,6 +45,9 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
     carryover_mode = str(prior_behavior_plan.get("carryover_mode") or "").strip()
     carryover_strength = _clamp01(prior_behavior_plan.get("carryover_strength"), 0.0)
     relationship_weather = str(prior_behavior_plan.get("relationship_weather") or "").strip().lower()
+    primary_motive = str(prior_behavior_plan.get("primary_motive") or "").strip()
+    motive_tension = str(prior_behavior_plan.get("motive_tension") or "").strip()
+    goal_frame = str(prior_behavior_plan.get("goal_frame") or "").strip()
     attention_target = str(prior_behavior_plan.get("attention_target") or "").strip()
     nonverbal_signal = str(prior_behavior_plan.get("nonverbal_signal") or "").strip()
     presence_residue = _clamp01(prior_behavior_plan.get("presence_residue"), 0.0)
@@ -125,6 +128,9 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "carryover_mode": carryover_mode or "own_rhythm",
                 "carryover_strength": round(max(carryover_strength, self_activity_momentum), 3),
                 "relationship_weather": relationship_weather,
+                "primary_motive": primary_motive,
+                "motive_tension": motive_tension,
+                "goal_frame": goal_frame,
                 "presence_residue": round(presence_residue, 3),
                 "ambient_resonance": round(ambient_resonance, 3),
                 "self_activity_momentum": round(self_activity_momentum, 3),
@@ -215,6 +221,9 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             "carryover_mode": effective_carryover_mode,
             "carryover_strength": round(max(carryover_strength, presence_residue, ambient_resonance), 3),
             "relationship_weather": relationship_weather,
+            "primary_motive": primary_motive,
+            "motive_tension": motive_tension,
+            "goal_frame": goal_frame,
             "presence_residue": round(presence_residue, 3),
             "ambient_resonance": round(ambient_resonance, 3),
             "self_activity_momentum": round(self_activity_momentum, 3),
@@ -354,6 +363,9 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             "priority": max(0.0, min(1.0, priority)),
             "trigger_family": str(entry.get("trigger_family") or "none").strip() or "none",
             "allow_interrupt": bool(entry.get("allow_interrupt", True)),
+            "primary_motive": str(entry.get("primary_motive") or "").strip(),
+            "motive_tension": str(entry.get("motive_tension") or "").strip(),
+            "goal_frame": str(entry.get("goal_frame") or "").strip(),
             "note": str(entry.get("note") or "").strip(),
             "source_event_kind": str(entry.get("source_event_kind") or "").strip(),
             "created_at": int(entry.get("created_at") or _now_ts()),
@@ -592,6 +604,9 @@ def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[s
         "priority": _behavior_agenda_priority_from_plan(current_event, plan),
         "trigger_family": str(plan.get("trigger_family") or "none").strip() or "none",
         "allow_interrupt": bool(plan.get("allow_interrupt", True)),
+        "primary_motive": str(plan.get("primary_motive") or "").strip(),
+        "motive_tension": str(plan.get("motive_tension") or "").strip(),
+        "goal_frame": str(plan.get("goal_frame") or "").strip(),
         "note": str(plan.get("note") or "").strip(),
         "source_event_kind": str(current_event.get("kind") or "").strip(),
         "created_at": _now_ts(),
@@ -756,6 +771,111 @@ def _behavior_agenda_should_release(
     return False
 
 
+def _behavior_agenda_release_strategy(
+    entry: dict[str, Any],
+    current_event: dict[str, Any],
+    idle_minutes: int,
+    counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    next_hold_count: int | None = None,
+) -> str:
+    if not _behavior_agenda_should_release(
+        entry,
+        current_event,
+        idle_minutes,
+        counterpart_assessment=counterpart_assessment,
+        next_hold_count=next_hold_count,
+    ):
+        return ""
+
+    hold_count = max(0, int(next_hold_count if next_hold_count is not None else entry.get("hold_count") or 0))
+    event_tags = {
+        str(item).strip()
+        for item in (current_event.get("tags") if isinstance(current_event.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    trigger_family = str(entry.get("trigger_family") or "").strip().lower()
+    carryover_mode = str(entry.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _clamp01(entry.get("carryover_strength"), 0.0)
+    self_activity_momentum = _clamp01(entry.get("self_activity_momentum"), 0.0)
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    scene = str(assessment.get("scene") or "").strip().lower()
+    respect_scene = bool({"user_busy", "cognitive_load", "respect_space"} & event_tags)
+
+    if (
+        trigger_family == "life_window"
+        and hold_count >= 3
+        and respect_scene
+        and scene not in {"boundary_non_compliance", "relationship_degradation"}
+        and (
+            carryover_mode in {"own_rhythm", "life_window", "small_opening"}
+            or self_activity_momentum >= 0.54
+            or carryover_strength >= 0.44
+        )
+    ):
+        return "return_to_self_activity"
+    return "drop"
+
+
+def _released_life_window_to_self_activity_event(
+    event: EventPayload,
+    entry: dict[str, Any],
+) -> EventPayload:
+    base_tags = [
+        str(item).strip()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    ]
+    carryover_strength = _clamp01(entry.get("carryover_strength"), 0.0)
+    presence_residue = _clamp01(entry.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(entry.get("ambient_resonance"), 0.0)
+    self_activity_momentum = max(0.58, _clamp01(entry.get("self_activity_momentum"), 0.0))
+    merged_tags = list(
+        dict.fromkeys(
+            [
+                *base_tags,
+                "self_activity",
+                "own_task",
+                "released_from_life_window",
+                "deep_focus" if self_activity_momentum >= 0.64 else "",
+                "quiet_presence" if presence_residue >= 0.28 else "",
+                "ambient_echo" if ambient_resonance >= 0.30 else "",
+            ]
+        )
+    )
+    promoted_text = "那点生活上的惦记没有继续往前推，你把它收回心里，又回到了自己的节奏里。"
+    if self_activity_momentum >= 0.64:
+        promoted_text = "那点生活上的小惦记没有必要硬往前推，你顺手把它收回心里，继续忙自己的事。"
+    elif presence_residue >= 0.30:
+        promoted_text = "那点生活上的惦记还在，但你没有追着说下去，只是把它收回心里，继续自己的节奏。"
+    promoted_frame = (
+        "这点生活上的惦记先留在心里，不再继续挂着；她把注意力慢慢收回自己的节奏里。"
+    )
+    if ambient_resonance >= 0.30:
+        promoted_frame += " 环境里的细小动静还留在她的感知里。"
+    return {
+        **event,
+        "kind": "self_activity_state",
+        "source": "self",
+        "text": promoted_text,
+        "effective_text": promoted_text,
+        "semantic_goal": "把没说出口的生活惦记收回心里，继续自己的节奏。",
+        "event_frame": promoted_frame,
+        "tags": merged_tags,
+        "derived_from_plan_kind": "released_deferred_checkin",
+        "trigger_family": str(entry.get("trigger_family") or "").strip() or "life_window",
+        "scheduled_after_min": max(0, int(entry.get("scheduled_after_min") or 0)),
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": round(max(carryover_strength, self_activity_momentum), 3),
+        "relationship_weather": str(entry.get("relationship_weather") or "").strip().lower(),
+        "presence_residue": round(presence_residue, 3),
+        "ambient_resonance": round(ambient_resonance, 3),
+        "self_activity_momentum": round(self_activity_momentum, 3),
+        "attention_target_hint": "own_task",
+        "nonverbal_signal_hint": "inward_focus",
+    }
+
+
 def _behavior_agenda_next_recheck_min(
     entry: dict[str, Any],
     current_event: dict[str, Any],
@@ -844,28 +964,192 @@ def _reschedule_held_behavior_agenda(
     }
 
 
-def _promote_due_behavior_agenda_event(
+def _agenda_entry_signal_summary(entry: dict[str, Any]) -> tuple[str, float, float, float, float, float, float]:
+    carryover_mode = str(entry.get("carryover_mode") or "").strip().lower()
+    carryover_strength = _clamp01(entry.get("carryover_strength"), 0.0)
+    presence_residue = _clamp01(entry.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(entry.get("ambient_resonance"), 0.0)
+    self_activity_momentum = _clamp01(entry.get("self_activity_momentum"), 0.0)
+    recontact_echo = max(
+        presence_residue,
+        0.82 * ambient_resonance,
+        carryover_strength if carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"} else 0.0,
+    )
+    own_rhythm_bias = max(
+        self_activity_momentum,
+        carryover_strength if carryover_mode == "own_rhythm" else 0.45 * carryover_strength if carryover_mode == "small_opening" else 0.0,
+    )
+    return (
+        carryover_mode,
+        carryover_strength,
+        presence_residue,
+        ambient_resonance,
+        self_activity_momentum,
+        recontact_echo,
+        own_rhythm_bias,
+    )
+
+
+def _select_primary_agenda_entry(entries: list[BehaviorAgendaEntryPayload]) -> BehaviorAgendaEntryPayload | None:
+    if not entries:
+        return None
+    ranked = sorted(
+        entries,
+        key=lambda item: (
+            -float(item.get("priority") or 0.0),
+            int(item.get("created_at") or 0),
+            str(item.get("agenda_id") or ""),
+        ),
+    )
+    return ranked[0] if ranked else None
+
+
+def _agenda_lifecycle_residue(
+    *,
+    kind: str,
+    event: EventPayload,
+    entry: dict[str, Any],
+    counterpart_assessment: dict[str, Any] | None = None,
+    hold_count: int | None = None,
+    promoted_event: dict[str, Any] | None = None,
+) -> AgendaLifecycleResiduePayload:
+    assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
+    event_tags = [
+        str(item).strip().lower()
+        for item in (event.get("tags") if isinstance(event.get("tags"), list) else [])
+        if str(item).strip()
+    ]
+    (
+        carryover_mode,
+        carryover_strength,
+        presence_residue,
+        ambient_resonance,
+        self_activity_momentum,
+        recontact_echo,
+        own_rhythm_bias,
+    ) = _agenda_entry_signal_summary(entry)
+    stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
+    effective_hold_count = max(0, int(hold_count if hold_count is not None else entry.get("hold_count") or 0))
+    residue_mode = carryover_mode
+    residue_strength = carryover_strength
+
+    if kind in {"released_to_self_activity", "dropped", "expired"}:
+        residue_mode = "own_rhythm"
+        residue_strength = max(own_rhythm_bias, 0.34 + 0.04 * min(4, effective_hold_count))
+    elif kind == "held":
+        if own_rhythm_bias >= max(0.34, recontact_echo + 0.04):
+            residue_mode = "own_rhythm"
+            residue_strength = max(own_rhythm_bias, 0.32 + 0.03 * min(4, effective_hold_count))
+        else:
+            residue_mode = "quiet_recontact"
+            residue_strength = max(0.16, min(0.44, recontact_echo * 0.84))
+    elif kind == "promoted" and isinstance(promoted_event, dict):
+        residue_mode = str(promoted_event.get("carryover_mode") or residue_mode).strip().lower() or residue_mode
+        residue_strength = max(residue_strength, _clamp01(promoted_event.get("carryover_strength"), 0.0))
+        presence_residue = max(presence_residue, _clamp01(promoted_event.get("presence_residue"), 0.0))
+        ambient_resonance = max(ambient_resonance, _clamp01(promoted_event.get("ambient_resonance"), 0.0))
+        self_activity_momentum = max(self_activity_momentum, _clamp01(promoted_event.get("self_activity_momentum"), 0.0))
+        _, _, _, _, _, recontact_echo, own_rhythm_bias = _agenda_entry_signal_summary(
+            {
+                **entry,
+                "carryover_mode": residue_mode,
+                "carryover_strength": residue_strength,
+                "presence_residue": presence_residue,
+                "ambient_resonance": ambient_resonance,
+                "self_activity_momentum": self_activity_momentum,
+            }
+        )
+
+    counterpart_scene_bias = ""
+    counterpart_boundary_delta = 0.0
+    if {"user_busy", "cognitive_load", "respect_space"} & set(event_tags):
+        if scene not in {"relationship_degradation", "boundary_non_compliance"}:
+            counterpart_scene_bias = "busy_not_disrespectful"
+            counterpart_boundary_delta = -0.04 if stance != "guarded" else -0.01
+    elif kind in {"held", "dropped", "expired"} and stance in {"watchful", "guarded"}:
+        counterpart_boundary_delta = 0.02 if stance == "watchful" else 0.01
+
+    if kind == "released_to_self_activity":
+        note = "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。"
+    elif kind == "held":
+        note = "这次先把窗口按住，没有顺势往前推进。"
+    elif kind == "dropped":
+        note = "前面那点接近窗口这次就让它自然落下，不再继续挂着。"
+    elif kind == "expired":
+        note = "前面的窗口已经自然过期，不再继续占着注意力。"
+    else:
+        note = "前面的窗口已经转成了这轮真正生效的行为余波。"
+
+    return {
+        "kind": kind,
+        "source_event_kind": str(event.get("kind") or "time_idle").strip().lower() or "time_idle",
+        "trigger_family": str(entry.get("trigger_family") or "").strip().lower(),
+        "carryover_mode": residue_mode,
+        "carryover_strength": round(_clamp01(residue_strength), 3),
+        "relationship_weather": str(entry.get("relationship_weather") or "").strip().lower(),
+        "hold_count": effective_hold_count,
+        "idle_minutes": max(0, int(event.get("idle_minutes") or 0)),
+        "attention_target": str(entry.get("attention_target") or "").strip(),
+        "nonverbal_signal": str(entry.get("nonverbal_signal") or "").strip(),
+        "note": note,
+        "source_tags": list(
+            dict.fromkeys(
+                item
+                for item in [
+                    *event_tags,
+                    "agenda_lifecycle",
+                    kind,
+                    str(entry.get("trigger_family") or "").strip().lower(),
+                ]
+                if item
+            )
+        ),
+        "presence_residue": round(presence_residue, 3),
+        "ambient_resonance": round(ambient_resonance, 3),
+        "self_activity_momentum": round(self_activity_momentum, 3),
+        "own_rhythm_bias": round(own_rhythm_bias, 3),
+        "recontact_cooldown": round(_clamp01(max(own_rhythm_bias, 0.82 * effective_hold_count / 4.0 - 0.18 * recontact_echo)), 3),
+        "counterpart_scene_bias": counterpart_scene_bias,
+        "counterpart_boundary_delta": round(counterpart_boundary_delta, 3),
+        "created_at": _now_ts(),
+    }
+
+
+def _promote_due_behavior_agenda_event_with_residue(
     event: EventPayload,
     prior_behavior_agenda: Any,
     counterpart_assessment: dict[str, Any] | None = None,
-) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload]]:
+) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload], AgendaLifecycleResiduePayload]:
     agenda = _normalize_behavior_agenda(prior_behavior_agenda)
     if not isinstance(event, dict) or not event or str(event.get("kind") or "").strip() != "time_idle":
-        return event, agenda
+        return event, agenda, {}
     try:
         idle_minutes = max(0, int(event.get("idle_minutes") or 0))
     except Exception:
         idle_minutes = 0
 
+    expired_entries = [entry for entry in agenda if _behavior_agenda_is_expired(entry, idle_minutes)]
     active_agenda = [entry for entry in agenda if not _behavior_agenda_is_expired(entry, idle_minutes)]
     active_agenda = _reprioritize_behavior_agenda(active_agenda, event, counterpart_assessment=counterpart_assessment)
     due_entries = [entry for entry in active_agenda if _behavior_agenda_is_due(entry, idle_minutes)]
     if not due_entries:
-        return event, _normalize_behavior_agenda(active_agenda)
+        residue: AgendaLifecycleResiduePayload = {}
+        primary_expired = _select_primary_agenda_entry(expired_entries)
+        if isinstance(primary_expired, dict):
+            residue = _agenda_lifecycle_residue(
+                kind="expired",
+                event=event,
+                entry=primary_expired,
+                counterpart_assessment=counterpart_assessment,
+                hold_count=max(0, int(primary_expired.get("hold_count") or 0)),
+            )
+        return event, _normalize_behavior_agenda(active_agenda), residue
 
     held_ids: set[str] = set()
-    released_ids: set[str] = set()
+    released_strategies: dict[str, str] = {}
     ready_entries: list[BehaviorAgendaEntryPayload] = []
+    held_counts: dict[str, int] = {}
     for entry in due_entries:
         next_hold_count = max(0, int(entry.get("hold_count") or 0)) + 1
         if _behavior_agenda_should_hold(
@@ -874,22 +1158,73 @@ def _promote_due_behavior_agenda_event(
             idle_minutes,
             counterpart_assessment=counterpart_assessment,
         ):
-            if _behavior_agenda_should_release(
+            release_strategy = _behavior_agenda_release_strategy(
                 entry,
                 event,
                 idle_minutes,
                 counterpart_assessment=counterpart_assessment,
                 next_hold_count=next_hold_count,
-            ):
-                released_ids.add(str(entry.get("agenda_id") or ""))
+            )
+            if release_strategy:
+                released_strategies[str(entry.get("agenda_id") or "")] = release_strategy
+                held_counts[str(entry.get("agenda_id") or "")] = next_hold_count
                 continue
             held_ids.add(str(entry.get("agenda_id") or ""))
+            held_counts[str(entry.get("agenda_id") or "")] = next_hold_count
             continue
         ready_entries.append(entry)
     if not ready_entries:
+        promoted_release = event
+        residue: AgendaLifecycleResiduePayload = {}
+        if released_strategies:
+            released_entries = [
+                entry for entry in active_agenda if str(entry.get("agenda_id") or "") in released_strategies
+            ]
+            released_entries.sort(
+                key=lambda item: (
+                    -float(item.get("priority") or 0.0),
+                    int(item.get("created_at") or 0),
+                    str(item.get("agenda_id") or ""),
+                )
+            )
+            for entry in released_entries:
+                release_strategy = released_strategies.get(str(entry.get("agenda_id") or ""))
+                if release_strategy == "return_to_self_activity":
+                    promoted_release = _released_life_window_to_self_activity_event(event, entry)
+                    residue = _agenda_lifecycle_residue(
+                        kind="released_to_self_activity",
+                        event=event,
+                        entry=entry,
+                        counterpart_assessment=counterpart_assessment,
+                        hold_count=held_counts.get(str(entry.get("agenda_id") or ""), max(0, int(entry.get("hold_count") or 0))),
+                        promoted_event=promoted_release,
+                    )
+                    break
+            if not residue and released_entries:
+                primary_released = released_entries[0]
+                residue = _agenda_lifecycle_residue(
+                    kind="dropped",
+                    event=event,
+                    entry=primary_released,
+                    counterpart_assessment=counterpart_assessment,
+                    hold_count=held_counts.get(str(primary_released.get("agenda_id") or ""), max(0, int(primary_released.get("hold_count") or 0))),
+                )
+        elif held_ids:
+            held_entries = [
+                entry for entry in active_agenda if str(entry.get("agenda_id") or "") in held_ids
+            ]
+            primary_held = _select_primary_agenda_entry(held_entries)
+            if isinstance(primary_held, dict):
+                residue = _agenda_lifecycle_residue(
+                    kind="held",
+                    event=event,
+                    entry=primary_held,
+                    counterpart_assessment=counterpart_assessment,
+                    hold_count=held_counts.get(str(primary_held.get("agenda_id") or ""), max(0, int(primary_held.get("hold_count") or 0))),
+                )
         rescheduled: list[BehaviorAgendaEntryPayload] = []
         for entry in active_agenda:
-            if str(entry.get("agenda_id") or "") in released_ids:
+            if str(entry.get("agenda_id") or "") in released_strategies:
                 continue
             if str(entry.get("agenda_id") or "") in held_ids:
                 rescheduled.append(
@@ -902,13 +1237,37 @@ def _promote_due_behavior_agenda_event(
                 )
             else:
                 rescheduled.append(entry)
-        return event, _normalize_behavior_agenda(rescheduled)
+        return promoted_release, _normalize_behavior_agenda(rescheduled), residue
 
     ready_entries.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
     selected = ready_entries[0]
     promoted = _promote_due_behavior_plan_event(event, selected)
     if promoted == event:
-        return event, _normalize_behavior_agenda(active_agenda)
+        return event, _normalize_behavior_agenda(active_agenda), {}
     remaining = [entry for entry in active_agenda if str(entry.get("agenda_id") or "") != str(selected.get("agenda_id") or "")]
-    return promoted, _normalize_behavior_agenda(remaining)
+    return (
+        promoted,
+        _normalize_behavior_agenda(remaining),
+        _agenda_lifecycle_residue(
+            kind="promoted",
+            event=event,
+            entry=selected,
+            counterpart_assessment=counterpart_assessment,
+            hold_count=max(0, int(selected.get("hold_count") or 0)),
+            promoted_event=promoted,
+        ),
+    )
+
+
+def _promote_due_behavior_agenda_event(
+    event: EventPayload,
+    prior_behavior_agenda: Any,
+    counterpart_assessment: dict[str, Any] | None = None,
+) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload]]:
+    promoted, agenda, _ = _promote_due_behavior_agenda_event_with_residue(
+        event,
+        prior_behavior_agenda,
+        counterpart_assessment=counterpart_assessment,
+    )
+    return promoted, agenda
 

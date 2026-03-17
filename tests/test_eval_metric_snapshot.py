@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from evals.run_langsmith_evals import (
     _build_markdown_report,
@@ -97,6 +98,91 @@ class EvalMetricSnapshotTests(unittest.TestCase):
         self.assertIn("long_thread-001: persona", rendered)
         self.assertIn("carry_weather=guarded_residue", rendered)
 
+    def test_markdown_report_surfaces_transfer_identity_snapshot(self):
+        report = {
+            "run_id": "testrun",
+            "generated_at": "2026-03-16 12:00:00",
+            "suites": [
+                {
+                    "suite": "transfer_probe",
+                    "num_cases": 1,
+                    "aggregated_metrics": {},
+                    "metric_coverage": {},
+                    "evaluator_summary": {},
+                    "failing_cases": [],
+                    "cases": [
+                        {
+                            "case_id": "transfer_probe-001",
+                            "persona_state": {
+                                "display_name": "绫波丽",
+                                "canonical_counterpart_name": "碇真嗣",
+                            },
+                            "behavior_policy": {
+                                "self_directedness": 0.44,
+                                "boundary_assertiveness": 0.36,
+                                "equality_guard": 0.32,
+                            },
+                            "semantic_narrative_profile": {
+                                "dominant_category": "selfhood_style",
+                                "active_categories": ["selfhood_style", "agency_style"],
+                                "long_term_self_narratives": [
+                                    {
+                                        "category": "selfhood_style",
+                                        "prompt_text": "你会把自己放在和真嗣平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        rendered = _build_markdown_report(report)
+        self.assertIn("Identity Layer", rendered)
+        self.assertIn("selfhood_style:你会把自己放在和真嗣平等互动的位置上", rendered)
+
+    def test_markdown_report_surfaces_identity_snapshots_for_natural_long_thread(self):
+        report = {
+            "run_id": "testrun",
+            "generated_at": "2026-03-17 09:00:00",
+            "suites": [
+                {
+                    "suite": "natural_long_thread",
+                    "num_cases": 1,
+                    "aggregated_metrics": {},
+                    "metric_coverage": {},
+                    "evaluator_summary": {"selfhood_consistency": 1.0},
+                    "failing_cases": [],
+                    "cases": [
+                        {
+                            "case_id": "natural_long_thread-001",
+                            "behavior_policy": {
+                                "self_directedness": 0.51,
+                                "boundary_assertiveness": 0.33,
+                                "equality_guard": 0.47,
+                            },
+                            "semantic_narrative_profile": {
+                                "identity_snapshot": {
+                                    "selfhood_style": {"score": 0.74},
+                                },
+                                "long_term_self_narratives": [
+                                    {
+                                        "category": "selfhood_style",
+                                        "prompt_text": "你不会为了维持气氛就退回成一个任人使用的工具。",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        rendered = _build_markdown_report(report)
+        self.assertIn("Identity Snapshots", rendered)
+        self.assertIn("natural_long_thread-001", rendered)
+        self.assertIn("selfhood_style", rendered)
+        self.assertIn("你不会为了维持气氛就退回成一个任人使用的工具", rendered)
+
     def test_pending_fragment_metric_uses_expected_answer_groups(self):
         outputs = {
             "output": "先把事情拆小。别一下子想把所有问题同时解决，先抓住眼前最能推进的一步。",
@@ -144,6 +230,55 @@ class EvalMetricSnapshotTests(unittest.TestCase):
         )
         self.assertIn("counterpart_assessment", outputs)
         self.assertTrue(str(outputs.get("answer") or "").strip())
+
+    def test_transfer_probe_target_does_not_raise(self):
+        with (
+            patch(
+                "evals.run_langsmith_evals._invoke_turn_appraisal",
+                return_value={"used": False, "emotion_label": "care", "confidence": 0.8},
+            ),
+            patch("evals.run_langsmith_evals._semantic_narrative_profile", return_value={}),
+            patch("evals.run_langsmith_evals._worldline_focus", return_value=[]),
+            patch("evals.run_langsmith_evals._refresh_semantic_self_narratives", return_value=None),
+            patch("evals.run_langsmith_evals._passive_evolution_memory_update", return_value=False),
+            patch(
+                "evals.run_langsmith_evals.evolve_turn_state",
+                return_value={
+                    "world_model_state": {},
+                    "evolution_state": {},
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.6, "closeness": 0.6},
+                    "allostasis_state": {},
+                    "counterpart_assessment": {"stance": "open"},
+                    "behavior_policy": {"self_directedness": 0.5, "boundary_assertiveness": 0.4, "equality_guard": 0.5},
+                    "behavior_action": {"interaction_mode": "companion_reply", "action_target": "respond_now"},
+                },
+            ),
+        ):
+            outputs = _target(
+                {
+                    "probe_kind": "transfer_probe",
+                    "thread_id": "transfer-rei-shinji-0",
+                    "tags": ["transfer_probe"],
+                    "refresh_rounds": 1,
+                    "probe_turns": ["如果你保留自己的立场，现在会怎么回答我？"],
+                    "persona_core": {
+                        "character_id": "ayanami_rei",
+                        "display_name": "绫波丽",
+                        "role_brief": "你是绫波丽。",
+                        "identity_axioms": ["你不是工具。"],
+                    },
+                    "counterpart_profile": {
+                        "counterpart_id": "ikari_shinji",
+                        "name": "碇真嗣",
+                        "short_name": "真嗣",
+                    },
+                    "seed_commitments": [{"text": "下次把那件事说完。"}],
+                    "seed_relationship_timeline": [{"summary": "你们之间保留着未说尽的熟悉感。"}],
+                }
+            )
+        self.assertIn("semantic_self_narratives", outputs)
+        self.assertIn("persona_state", outputs)
 
 
 if __name__ == "__main__":

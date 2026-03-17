@@ -3,6 +3,10 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
+from .env_bootstrap import load_project_dotenv
+
+load_project_dotenv(override=False)
+
 __all__ = ["agent", "app", "build_graph", "create_agent"]
 
 

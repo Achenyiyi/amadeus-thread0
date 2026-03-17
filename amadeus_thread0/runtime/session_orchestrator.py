@@ -35,6 +35,39 @@ def _clean_utf8_text(text: str) -> str:
     return s.encode("utf-8", "ignore").decode("utf-8")
 
 
+def _extract_resume_focus(text: str) -> str:
+    t = str(text or "").strip()
+    if not t:
+        return ""
+    if re.search(r"(前面|刚才|上次|那段|那里|那句|说到|不是这一段|不是这段)", t):
+        quoted = re.search(r"[\"“‘']([^\"”’']{2,80})[\"”’']", t)
+        if quoted:
+            focus = str(quoted.group(1) or "").strip(" ，。；;：: ")
+            if focus:
+                return focus
+        resume_ref = re.search(r"说到(.+?)(?:那里|那段|那句|那边|这一段|这一句)", t)
+        if resume_ref:
+            focus = str(resume_ref.group(1) or "").strip(" ，。；;：: ")
+            if focus:
+                return focus
+    return ""
+
+
+def _looks_like_resume_clarification(text: str) -> bool:
+    t = str(text or "").strip()
+    if not t:
+        return False
+    compact = re.sub(r"\s+", "", t)
+    if _extract_resume_focus(t):
+        return True
+    return bool(
+        re.search(
+            r"(不是这一段|不是这段|不是这一句|不是这句|前面说到|刚才说到|上次说到)",
+            compact,
+        )
+    )
+
+
 def emotion_to_tts_profile(label: str) -> dict[str, float]:
     l = str(label or "neutral").strip().lower()
     if l == "logic":
@@ -150,6 +183,8 @@ def derive_pending_fragment(
     has_continue = is_continuation_request(text)
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
     referential_continue = _has_referential_resume_target(text)
+    clarification_focus = _extract_resume_focus(text)
+    resume_clarification = _looks_like_resume_clarification(text)
 
     if has_continue:
         if pending:
@@ -157,6 +192,14 @@ def derive_pending_fragment(
         if prev and not _looks_like_clarification_request(prev):
             if referential_continue or _looks_like_unfinished_assistant_reply(prev):
                 return prev[:240]
+        return ""
+    if resume_clarification:
+        if clarification_focus:
+            return clarification_focus[:240]
+        if pending:
+            return pending[:240]
+        if prev and not _looks_like_clarification_request(prev):
+            return prev[:240]
         return ""
     if has_clear:
         return ""
@@ -229,17 +272,9 @@ def canonicalize_pending_goal_text(text: str) -> str:
     t = str(text or "").strip()
     if not t:
         return ""
-    if re.search(r"(前面|刚才|上次|那段|那里|那句|说到)", t):
-        quoted = re.search(r"[\"“‘']([^\"”’']{2,80})[\"”’']", t)
-        if quoted:
-            focus = str(quoted.group(1) or "").strip(" ，。；;：: ")
-            if focus:
-                return focus
-        resume_ref = re.search(r"说到(.+?)(?:那里|那段|那句|那边|这一段|这一句)", t)
-        if resume_ref:
-            focus = str(resume_ref.group(1) or "").strip(" ，。；;：: ")
-            if focus:
-                return focus
+    focus = _extract_resume_focus(t)
+    if focus:
+        return focus
     t = re.sub(r"^(先)?把(?:上次那个|刚才那个|前面那个|那个)", "把", t)
     t = re.sub(r"^(接着|继续)(?:上次那个|刚才那个|前面那个|那个)?", "", t)
     t = re.sub(r"\s+", " ", t).strip("，。；;：: ")
@@ -297,6 +332,8 @@ def derive_pending_user_goal(
     has_clear = any(marker in text for marker in _CLEAR_MARKERS)
     active_continuation = has_pending_continuation(user_text=text, pending_fragment=pending_fragment)
     referential_continue = _has_referential_resume_target(text) or _looks_like_resume_goal_reference(text)
+    clarification_focus = _extract_resume_focus(text)
+    resume_clarification = _looks_like_resume_clarification(text)
 
     if has_continue:
         if pending and (active_continuation or referential_continue):
@@ -306,6 +343,14 @@ def derive_pending_user_goal(
         if prev_user and not is_continuation_request(prev_user):
             return prev_user[:280]
         return pending[:280] if pending and referential_continue else ""
+    if resume_clarification:
+        if clarification_focus:
+            return clarification_focus[:280]
+        if pending:
+            return pending[:280]
+        if prev_user and not is_continuation_request(prev_user):
+            return prev_user[:280]
+        return ""
     if has_clear:
         return ""
     if _looks_like_resume_goal_reference(text):

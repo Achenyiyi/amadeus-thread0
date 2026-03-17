@@ -19,6 +19,7 @@ Amadeus-K 是一个基于 LangChain/LangGraph 的角色连续体后端原型，�
 
 核心文档：
 
+- `docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md`
 - `docs/PERSONA_SYSTEM_CONSTITUTION.md`
 - `docs/ARCHITECTURE_ALIGNMENT_MAP.md`
 - `docs/PERCEPTION_EVENT_BANK.md`
@@ -212,6 +213,7 @@ python evals\run_langsmith_evals.py --local-only --suite external_persona_probe
 python evals\run_langsmith_evals.py --local-only --suite external_support_probe
 python evals\run_langsmith_evals.py --local-only --suite external_empathy_probe
 python evals\run_langsmith_evals.py --local-only --suite external_continuity_probe
+python evals\run_langsmith_evals.py --local-only --suite core_pre_release --resume-run-dir evals\_tmp\core-pre-release
 python evals\run_langsmith_evals.py --local-only --suite all
 python evals\run_backend_reliability_checks.py
 python evals\run_appraisal_calibration.py --max-per-label 1
@@ -232,6 +234,22 @@ python evals\export_thesis_tables.py
 python scripts\run_canonical_baseline.py --include-subjective
 python scripts\run_canonical_baseline.py --include-supporting
 ```
+
+推荐在冻结当前技术预发布基线时优先跑：
+
+```bash
+python evals\run_langsmith_evals.py --local-only --suite core_pre_release --resume-run-dir evals\_tmp\core-pre-release --keep-eval-data
+```
+
+这个组会顺序运行：
+
+- `natural_long_thread`
+- `open_evolution_eval`
+- `selfhood_probe`
+- `experience_probe`
+- `transfer_probe`
+
+如果中途被打断，再次执行同一条命令即可从 `_suite_cache` 续跑，不需要重头开始。
 
 输出产物：
 

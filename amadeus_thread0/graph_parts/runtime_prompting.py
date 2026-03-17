@@ -329,12 +329,12 @@ def _renderer_guidance(
         else:
             parts.append("更像顺手想起一件生活里的小事，轻轻提一下，不要说成任务提醒。")
     elif interaction_mode == "self_activity_reopen":
-        parts.append("像从自己的节奏里抬头顺手接一句，不要突然把整段关系推得太满。")
+        parts.append("先轻轻接住这句，留一点余地，不要一下子把气氛铺满。")
     elif interaction_mode == "science_partner":
         parts.append("先贴着当前问题走，再顺手带出态度，不要铺成讲解稿。")
 
     if attention_target == "self_then_counterpart":
-        parts.append("更像先从自己的状态里抬头，再把注意力递过去，不必一上来就全压向对方。")
+        parts.append("注意力先轻轻递过去一点，不必一上来就全压向对方。")
     elif attention_target == "shared_window":
         parts.append("重心落在这次顺手就能一起接上的空当上，让那句邀约像自然冒出来的。")
     elif attention_target == "shared_task":

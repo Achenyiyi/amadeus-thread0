@@ -1,0 +1,46 @@
+{
+  "cached_at": "2026-03-17 14:54:24",
+  "case": {
+    "case_id": "natural_long_thread-001",
+    "case_ref": "natural-long-selfhood-carry-0",
+    "input": "hello",
+    "turns": null,
+    "tags": [
+      "companion"
+    ],
+    "answer_preview": "cached",
+    "tool_calls": [],
+    "ooc_detector": {},
+    "canon_guard": {},
+    "claim_links": [],
+    "persona_state": {},
+    "emotion_state": {},
+    "bond_state": {},
+    "allostasis_state": {},
+    "counterpart_assessment": {},
+    "behavior_policy": {},
+    "behavior_action": {},
+    "semantic_narrative_profile": {},
+    "current_event": {},
+    "recent_events": [],
+    "turn_appraisal": {},
+    "relationship_state": {},
+    "relationship_timeline": [],
+    "conflict_repair": [],
+    "unresolved_tensions": [],
+    "semantic_self_narratives": [],
+    "revision_traces": [],
+    "memory_guard_checked": 0,
+    "memory_guard_blocked": 0,
+    "memory_quarantine": [],
+    "relationship_weather_trace": {},
+    "metric_snapshot": {
+      "ooc_rate": 0.0
+    },
+    "metric_applicability": {
+      "ooc_rate": 1
+    },
+    "evaluator_results": [],
+    "failed_evaluators": []
+  }
+}

@@ -23,8 +23,8 @@ os.environ.setdefault("AMADEUS_TTS_ENABLED", "0")
 os.environ.setdefault("LANGSMITH_TRACING", "false")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 
-from amadeus_thread0.graph import reset_runtime_caches  # noqa: E402
-from amadeus_thread0.tools import reset_tool_runtime_caches  # noqa: E402
+from amadeus_thread0.graph_parts import reset_runtime_caches  # noqa: E402
+from amadeus_thread0.utils.tools import reset_tool_runtime_caches  # noqa: E402
 from evals.asset_loader import daily_surface_marker_set, daily_surface_provider_cases  # noqa: E402
 from evals.run_langsmith_evals import _run_graph  # noqa: E402
 

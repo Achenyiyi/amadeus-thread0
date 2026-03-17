@@ -4,6 +4,10 @@ import re
 from typing import Any
 
 from ..config import CANON_COUNTERPART_NAME
+from ..evolution_engine.reconsolidation import (
+    derive_agenda_lifecycle_consequence,
+    derive_behavior_consequence,
+)
 from ..memory_store import MemoryStore
 from .common import _clamp01
 from .dialogue_guidance import _narrative_actor_profile
@@ -19,7 +23,11 @@ from .postprocess import (
     _selfhood_preference_scene_from_text,
 )
 from .retrieval import _query_overlap_score, _record_value, _tension_salience
-from .semantic_narrative import _semantic_narrative_decay_multiplier, _semantic_narrative_decay_rate
+from .semantic_narrative import (
+    _semantic_identity_bonus,
+    _semantic_narrative_decay_multiplier,
+    _semantic_narrative_decay_rate,
+)
 from .turn_events import _now_ts
 
 SELFHOOD_STYLE_MARKERS = (
@@ -89,6 +97,19 @@ def _selfhood_preference_scene(user_text: str, appraisal: dict[str, Any] | None 
     return _selfhood_preference_scene_from_text(user_text)
 
 
+def _behavior_motive_snapshot(
+    *,
+    behavior_action: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+) -> tuple[str, str, str]:
+    action = behavior_action if isinstance(behavior_action, dict) else {}
+    event = current_event if isinstance(current_event, dict) else {}
+    primary_motive = str(action.get("primary_motive") or event.get("primary_motive") or "").strip().lower()
+    motive_tension = str(action.get("motive_tension") or event.get("motive_tension") or "").strip().lower()
+    goal_frame = str(action.get("goal_frame") or event.get("goal_frame") or "").strip()
+    return primary_motive, motive_tension, goal_frame
+
+
 def _semantic_self_evidence_records(
     *,
     user_text: str,
@@ -99,6 +120,7 @@ def _semantic_self_evidence_records(
     counterpart_profile: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     text = str(user_text or "").strip()
     app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
@@ -119,6 +141,10 @@ def _semantic_self_evidence_records(
     world_presence = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient = _clamp01(world.get("ambient_resonance"), 0.0)
     world_rhythm = _clamp01(world.get("self_activity_momentum"), 0.0)
+    primary_motive, motive_tension, _goal_frame = _behavior_motive_snapshot(
+        behavior_action=behavior_action,
+        current_event=event,
+    )
     scene = _selfhood_preference_scene(text, appraisal=app) if text else ""
     self_activity_like = event_kind in {"self_activity_state", "time_idle"}
     scheduled_like = event_kind in {"scheduled_checkin_due", "scheduled_life_due"}
@@ -150,7 +176,7 @@ def _semantic_self_evidence_records(
         and relationship_salience >= 0.60
         and (bool(signals.get("conflict")) or bool(signals.get("withdrawal")))
         and (emotion_label in {"hurt", "angry"} or hurt > 0.16)
-    )
+    ) or primary_motive == "protect_boundary"
     selfhood_trigger = scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"} or bool(
         interaction_frame == "selfhood" and selfhood_salience >= 0.58
     )
@@ -171,6 +197,12 @@ def _semantic_self_evidence_records(
         scheduled_like
         and world_rhythm >= 0.50
         and bool({"shared_activity_window", "offer_window", "task_window", "brief_presence", "quiet_presence"} & event_tags)
+    ) or bool(
+        primary_motive in {"preserve_self_rhythm", "open_shared_window"}
+        or (
+            primary_motive == "honor_continuity"
+            and (self_activity_like or scheduled_like or motive_tension == "self_rhythm_vs_contact")
+        )
     )
     presence_trigger = bool(
         world_presence >= 0.54
@@ -184,6 +216,15 @@ def _semantic_self_evidence_records(
             or closeness >= 0.52
             or bool({"presence_ping", "quiet_presence", "brief_presence", "care_opportunity", "gesture", "reapproach"} & event_tags)
         )
+    ) or bool(
+        primary_motive in {
+            "gentle_recontact",
+            "confirm_presence",
+            "support_without_pressure",
+            "honor_continuity",
+            "reconnect_shared_history",
+        }
+        and (trust >= 0.46 or closeness >= 0.46 or companionship_salience >= 0.28 or relationship_salience >= 0.28)
     )
     ambient_trigger = bool(
         world_ambient >= 0.52
@@ -194,6 +235,10 @@ def _semantic_self_evidence_records(
             or companionship_salience >= 0.30
             or relationship_salience >= 0.28
         )
+    ) or bool(
+        primary_motive in {"maintain_natural_contact", "reconnect_shared_history"}
+        and world_ambient >= 0.46
+        and (event_kind == "user_utterance" or perception_like or scheduled_like)
     )
     rhythm_trigger = bool(
         world_rhythm >= 0.58
@@ -206,6 +251,9 @@ def _semantic_self_evidence_records(
             or relationship_salience >= 0.32
             or bool({"self_activity", "own_task", "deep_focus", "break_window", "small_opening", "reapproach", "respect_space", "task_window"} & event_tags)
         )
+    ) or bool(
+        (motive_tension == "self_rhythm_vs_contact" or primary_motive in {"preserve_self_rhythm", "gentle_recontact", "honor_continuity"})
+        and (world_rhythm >= 0.40 or self_activity_like or scheduled_like or trust >= 0.46 or closeness >= 0.46)
     )
 
     if boundary_trigger:
@@ -214,6 +262,8 @@ def _semantic_self_evidence_records(
             if scene == "relationship_degradation"
             else f"{actor_name}不会把越界和冒犯只当成一时气氛问题；边界被碰到之后，会继续影响她之后和{counterpart_name}的收放。"
         )
+        if primary_motive == "protect_boundary" or motive_tension == "boundary_vs_closeness":
+            summary += " 她会先确认自己的位置，再决定要不要继续靠近。"
         if emotion_label in {"hurt", "angry"} or hurt > 0.16:
             summary += " 这种警惕会真实留痕。"
         records.append(
@@ -246,6 +296,8 @@ def _semantic_self_evidence_records(
 
     if agency_trigger:
         summary = f"{actor_name}有自己的节奏和在做的事情；她会自己决定什么时候靠近{counterpart_name}、什么时候先安静，不会永远围着他转。"
+        if primary_motive in {"preserve_self_rhythm", "open_shared_window"} or motive_tension == "self_rhythm_vs_contact":
+            summary += " 靠近之前，她会先让自己的节奏说话。"
         if trust >= 0.56:
             summary += " 靠近是她的主动选择，不是被随叫随到。"
         records.append(
@@ -260,6 +312,16 @@ def _semantic_self_evidence_records(
         summary = (
             f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前一轮留下的在场感会继续带进下一次开口时的距离感。"
         )
+        if primary_motive in {
+            "gentle_recontact",
+            "confirm_presence",
+            "support_without_pressure",
+            "honor_continuity",
+            "reconnect_shared_history",
+        }:
+            summary += " 她更倾向于把重新接回做得轻一点，而不是一下子把距离推得很近。"
+        if primary_motive == "reconnect_shared_history":
+            summary += " 共同历史会被她当成自然搭桥的东西，而不是生硬翻旧账。"
         if trust >= 0.56 or closeness >= 0.58:
             summary += " 熟悉之后，这种靠近会更轻一点，但仍然是她自己判断后的靠近。"
         records.append(
@@ -274,6 +336,10 @@ def _semantic_self_evidence_records(
         summary = (
             f"{actor_name}会把周围环境留下的细小余波也算进感知里；风声、光线和眼前的小变化不会只是背景，也会自然带进她对{counterpart_name}的注意力里。"
         )
+        if primary_motive == "maintain_natural_contact":
+            summary += " 她的接近更像顺着眼前的小变化自然发生。"
+        elif primary_motive == "reconnect_shared_history":
+            summary += " 有时候，环境回声也会顺手把旧的熟悉感带回来。"
         if bool(signals.get("memory_salient")) or bool({"ambient", "ambient_echo"} & event_tags):
             summary += " 这种环境回声会顺手进入她的切入点和措辞。"
         records.append(
@@ -288,6 +354,8 @@ def _semantic_self_evidence_records(
         summary = (
             f"{actor_name}不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事、停顿的惯性和思路会继续留到下一次开口之前。"
         )
+        if motive_tension == "self_rhythm_vs_contact" or primary_motive in {"preserve_self_rhythm", "gentle_recontact", "honor_continuity"}:
+            summary += " 她会先把回应放回自己的内在节奏里转一下，再决定给出多少注意力。"
         if trust >= 0.56 or closeness >= 0.58:
             summary += " 所以她的靠近更像主动转身，而不是随叫随到。"
         records.append(
@@ -505,6 +573,48 @@ def _refresh_semantic_self_narratives(
             out.append(item)
         return out
 
+    def _semantic_evidence_motive_state(items: list[Any]) -> dict[str, Any]:
+        motive_counts: dict[str, int] = {}
+        tension_counts: dict[str, int] = {}
+        motive_order: dict[str, int] = {}
+        tension_order: dict[str, int] = {}
+        goal_frames: list[str] = []
+        seen_goal_frames: set[str] = set()
+        support_count = 0
+        for idx, item in enumerate(items):
+            primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
+            motive_tension = str(_record_value(item, "motive_tension", "") or "").strip().lower()
+            goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+            if primary_motive or motive_tension or goal_frame:
+                support_count += 1
+            if primary_motive:
+                motive_counts[primary_motive] = motive_counts.get(primary_motive, 0) + 1
+                motive_order.setdefault(primary_motive, idx)
+            if motive_tension:
+                tension_counts[motive_tension] = tension_counts.get(motive_tension, 0) + 1
+                tension_order.setdefault(motive_tension, idx)
+            if goal_frame:
+                norm_goal = goal_frame[:220]
+                if norm_goal not in seen_goal_frames:
+                    seen_goal_frames.add(norm_goal)
+                    goal_frames.append(norm_goal)
+
+        def _pick_dominant(counts: dict[str, int], order: dict[str, int]) -> str:
+            if not counts:
+                return ""
+            return max(counts.items(), key=lambda kv: (kv[1], -order.get(kv[0], 10_000), kv[0]))[0]
+
+        dominant_primary_motive = _pick_dominant(motive_counts, motive_order)
+        dominant_motive_tension = _pick_dominant(tension_counts, tension_order)
+        signature_parts = [part for part in [dominant_primary_motive, dominant_motive_tension] if part]
+        return {
+            "dominant_primary_motive": dominant_primary_motive,
+            "dominant_motive_tension": dominant_motive_tension,
+            "goal_frame_examples": goal_frames[:2],
+            "motive_support_count": support_count,
+            "motive_signature": ":".join(signature_parts),
+        }
+
     relationship_sources = relationship_timeline + shared_events + repairs + tensions + resolved_tensions + repair_traces
     boundary_evidence = _semantic_evidence_items("boundary_style")
     selfhood_evidence = _semantic_evidence_items("selfhood_style")
@@ -512,6 +622,14 @@ def _refresh_semantic_self_narratives(
     presence_evidence = _semantic_evidence_items("presence_style")
     ambient_evidence = _semantic_evidence_items("ambient_style")
     rhythm_evidence = _semantic_evidence_items("rhythm_style")
+    semantic_motive_states = {
+        "boundary_style": _semantic_evidence_motive_state(boundary_evidence),
+        "selfhood_style": _semantic_evidence_motive_state(selfhood_evidence),
+        "agency_style": _semantic_evidence_motive_state(agency_evidence),
+        "presence_style": _semantic_evidence_motive_state(presence_evidence),
+        "ambient_style": _semantic_evidence_motive_state(ambient_evidence),
+        "rhythm_style": _semantic_evidence_motive_state(rhythm_evidence),
+    }
     boundary_sources = _filter_narrative_items(
         boundary_evidence + relationship_sources,
         markers=BOUNDARY_MEMORY_MARKERS,
@@ -715,6 +833,41 @@ def _refresh_semantic_self_narratives(
         except Exception:
             return _clamp01(default, default)
 
+    def _narrative_motive_state(category: str, prev: dict[str, Any] | None = None) -> dict[str, Any]:
+        current = dict(semantic_motive_states.get(str(category or "").strip(), {}) or {})
+        prev_goal_frames = [
+            str(item).strip()
+            for item in (_record_value(prev or {}, "goal_frame_examples", []) or [])
+            if str(item or "").strip()
+        ]
+        if not str(current.get("dominant_primary_motive") or "").strip():
+            current["dominant_primary_motive"] = str(_record_value(prev or {}, "dominant_primary_motive", "") or "").strip()
+        if not str(current.get("dominant_motive_tension") or "").strip():
+            current["dominant_motive_tension"] = str(_record_value(prev or {}, "dominant_motive_tension", "") or "").strip()
+        if not isinstance(current.get("goal_frame_examples"), list) or not current.get("goal_frame_examples"):
+            current["goal_frame_examples"] = prev_goal_frames[:2]
+        else:
+            current["goal_frame_examples"] = [
+                str(item).strip()
+                for item in current.get("goal_frame_examples", [])
+                if str(item or "").strip()
+            ][:2]
+        support_count = int(current.get("motive_support_count") or 0)
+        if support_count <= 0:
+            support_count = max(0, int(_record_value(prev or {}, "motive_support_count", 0) or 0))
+        current["motive_support_count"] = support_count
+        if not str(current.get("motive_signature") or "").strip():
+            signature_parts = [
+                part
+                for part in [
+                    str(current.get("dominant_primary_motive") or "").strip(),
+                    str(current.get("dominant_motive_tension") or "").strip(),
+                ]
+                if part
+            ]
+            current["motive_signature"] = ":".join(signature_parts)
+        return current
+
     def _dormant_narrative_text(category: str, prev_text: str) -> str:
         if category == "commitment_style":
             return f"{actor_name}和{counterpart_name}认真说过的事仍会继续留在心里，即使这轮没被提起，也还是长期参照。"
@@ -737,6 +890,60 @@ def _refresh_semantic_self_narratives(
         if category == "rhythm_style":
             return f"{actor_name}不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事和思路惯性还会继续留在下一轮开口之前。"
         return prev_text
+
+    def _identity_narrative_texts(category: str) -> tuple[str, str]:
+        cat = str(category or "").strip().lower()
+        if cat == "commitment_style":
+            return (
+                f"{actor_name}会把和{counterpart_name}认真说过的事长期留在心里，那已经不只是临时记起，而是默认会顾及的参照。",
+                f"你会把和{counterpart_name}认真说过的事长期留在心里，那已经不只是临时记起，而是你默认会顾及的参照。",
+            )
+        if cat == "repair_style":
+            return (
+                f"{actor_name}不会把已经说开的修复只当成一阵情绪过去；那些缓和下来的变化已经开始沉成之后相处的底色。",
+                f"你不会把已经说开的修复只当成一阵情绪过去；那些缓和下来的变化已经开始沉成之后相处的底色。",
+            )
+        if cat == "tension_style":
+            return (
+                f"没完全说开的余波在{actor_name}这里会继续留下判断惯性，不会因为表面平静就当成自动消失。",
+                "没完全说开的余波会继续留在你这里，不会因为表面平静就当成自动消失。",
+            )
+        if cat == "bond_style":
+            return (
+                f"{actor_name}和{counterpart_name}之间累积下来的共同历史，已经开始沉进她默认的回应方式里。",
+                f"你和{counterpart_name}之间累积下来的共同历史，已经开始沉进你的默认回应方式里。",
+            )
+        if cat == "presence_style":
+            return (
+                f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感已经成了默认的距离感判断。",
+                f"你不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感已经成了你的默认距离感判断。",
+            )
+        if cat == "ambient_style":
+            return (
+                f"{actor_name}会自然把环境里的小变化也算进感知里，那已经不只是偶发反应，而是她开口前默认会经过的一层感受。",
+                "你会自然把环境里的小变化也算进感知里，那已经不只是偶发反应，而是你开口前默认会经过的一层感受。",
+            )
+        if cat == "boundary_style":
+            return (
+                f"{actor_name}会把边界是否被尊重持续放在判断里，不会为了气氛好看就轻易把这层感觉撤掉。",
+                "你会把边界是否被尊重持续放在判断里，不会为了气氛好看就轻易把这层感觉撤掉。",
+            )
+        if cat == "selfhood_style":
+            return (
+                f"{actor_name}会把自己放在和{counterpart_name}平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+                f"你会把自己放在和{counterpart_name}平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+            )
+        if cat == "agency_style":
+            return (
+                f"{actor_name}会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着{counterpart_name}转。",
+                f"你会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着{counterpart_name}转。",
+            )
+        if cat == "rhythm_style":
+            return (
+                f"{actor_name}会把自己的内部节奏延续到下一轮开口之前，不会每次回应{counterpart_name}都把自己清零。",
+                f"你会把自己的内部节奏延续到下一轮开口之前，不会每次回应{counterpart_name}都把自己清零。",
+            )
+        return ("", "")
 
     def _anchor_basis_items(category: str) -> list[Any]:
         cat = str(category or "").strip().lower()
@@ -954,6 +1161,13 @@ def _refresh_semantic_self_narratives(
     def _upsert_narrative(*, category: str, text: str, stability: float, confidence: float) -> None:
         prev = existing_by_category.get(category)
         prev_text = str(_record_value(prev or {}, "text", "") or "").strip()
+        prev_identity_ready = bool(_record_value(prev or {}, "identity_ready", False))
+        prev_identity_strength = _clamp01(_record_value(prev or {}, "identity_strength", 0.0), 0.0)
+        prev_identity_text = str(_record_value(prev or {}, "identity_text", "") or "").strip()
+        prev_identity_prompt_text = str(_record_value(prev or {}, "identity_prompt_text", "") or "").strip()
+        motive_state = _narrative_motive_state(category, prev=prev)
+        motive_support_count = max(0, int(motive_state.get("motive_support_count") or 0))
+        motive_signature = str(motive_state.get("motive_signature") or "").strip()
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
         prev_refresh = max(0, int(_record_value(prev or {}, "refresh_count", 0) or 0))
         prev_consolidation = max(0, int(_record_value(prev or {}, "consolidation_count", 0) or 0))
@@ -982,16 +1196,16 @@ def _refresh_semantic_self_narratives(
             support_count = max(weighted_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(bond_sources, limit=3)}|stage={stage}|count={weighted_count}"
         elif category == "presence_style":
-            support_count = max(len(presence_sources), prev_support, 1)
+            support_count = max(len(presence_sources), motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(presence_sources, limit=3)}|count={len(presence_sources)}"
         elif category == "ambient_style":
-            support_count = max(len(ambient_sources), prev_support, 1)
+            support_count = max(len(ambient_sources), motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(ambient_sources, limit=3)}|count={len(ambient_sources)}"
         elif category == "boundary_style":
-            support_count = max(len(boundary_sources), prev_support, 1)
+            support_count = max(len(boundary_sources), motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(boundary_sources, limit=3)}|count={len(boundary_sources)}"
         elif category == "selfhood_style":
-            support_count = max(len(selfhood_sources), prev_support, 1)
+            support_count = max(len(selfhood_sources), motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(selfhood_sources, limit=3)}|count={len(selfhood_sources)}"
         elif category == "agency_style":
             source_items = agency_sources if agency_sources else relationship_timeline + shared_events + commitments + repairs
@@ -999,14 +1213,16 @@ def _refresh_semantic_self_narratives(
                 weighted_count = len(agency_sources)
             else:
                 weighted_count = max(len(relationship_timeline), (len(shared_events) + 1) // 2) + len(commitments) + len(repairs)
-            support_count = max(weighted_count, prev_support, 1)
+            support_count = max(weighted_count, motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(source_items, limit=3)}|stage={stage}|count={weighted_count}"
         elif category == "rhythm_style":
-            support_count = max(len(rhythm_sources), prev_support, 1)
+            support_count = max(len(rhythm_sources), motive_support_count, prev_support, 1)
             support_signature = f"{category}|{_anchor_join(rhythm_sources, limit=3)}|count={len(rhythm_sources)}"
         else:
             support_count = max(prev_support, 1)
             support_signature = f"{category}|stable"
+        if motive_signature and category in semantic_motive_states:
+            support_signature += f"|motive={motive_signature}"
         prev_signature = str(_record_value(prev or {}, "support_signature", "") or "").strip()
         signature_changed = prev_signature != support_signature
         refresh_count = prev_refresh + 1
@@ -1158,6 +1374,44 @@ def _refresh_semantic_self_narratives(
             * (1.0 - 0.16 * contradiction_pressure),
             3,
         )
+        identity_bonus = _semantic_identity_bonus(horizon_tag, support_span_s, reactivation_hits)
+        identity_threshold = 0.54 if category in {"commitment_style", "bond_style", "selfhood_style"} else 0.58
+        identity_seed = (
+            0.18 * stability_score
+            + 0.22 * persistence_score
+            + 0.18 * integration_score
+            + 0.14 * sedimentation_score
+            + 0.10 * support_effect
+            + 0.08 * consolidation_effect
+            + 0.06 * temporal_depth
+            + 0.04 * reactivation_norm
+            + identity_bonus
+        )
+        if prev_identity_ready:
+            identity_seed = max(identity_seed, prev_identity_strength * max(gap_decay, 0.90))
+        identity_strength = round(_clamp01(identity_seed * (1.0 - 0.26 * contradiction_pressure)), 3)
+        identity_ready = (
+            identity_strength >= identity_threshold
+            and contradiction_pressure < 0.58
+            and (
+                horizon_tag == "long_term"
+                or (support_span_s >= 3 * 24 * 3600 and consolidation_count >= 4)
+                or (reactivation_hits >= 2 and support_span_s >= 24 * 3600)
+            )
+        )
+        if prev_identity_ready and persistence_score >= 0.46 and contradiction_pressure < 0.62:
+            identity_ready = True
+        identity_text_base, identity_prompt_base = _identity_narrative_texts(category)
+        identity_text = (
+            prev_identity_text
+            if prev_identity_ready and prev_identity_text
+            else identity_text_base
+        )
+        identity_prompt_text = (
+            prev_identity_prompt_text
+            if prev_identity_ready and prev_identity_prompt_text
+            else identity_prompt_base
+        )
         metadata = {
             "support_count": support_count,
             "refresh_count": refresh_count,
@@ -1189,6 +1443,19 @@ def _refresh_semantic_self_narratives(
             "prompt_anchor_text": prompt_anchor_text,
             "anchor_basis_texts": anchor_basis_texts,
             "anchor_strength": anchor_strength,
+            "dominant_primary_motive": str(motive_state.get("dominant_primary_motive") or "").strip(),
+            "dominant_motive_tension": str(motive_state.get("dominant_motive_tension") or "").strip(),
+            "goal_frame_examples": [
+                str(item).strip()
+                for item in (motive_state.get("goal_frame_examples") or [])
+                if str(item or "").strip()
+            ][:2],
+            "motive_support_count": motive_support_count,
+            "motive_signature": motive_signature,
+            "identity_ready": identity_ready,
+            "identity_strength": identity_strength,
+            "identity_text": identity_text if identity_ready else "",
+            "identity_prompt_text": identity_prompt_text if identity_ready else "",
             "dormant": False,
         }
         rec = store.add_semantic_self_narrative(
@@ -1221,6 +1488,10 @@ def _refresh_semantic_self_narratives(
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
         prev_refresh = max(0, int(_record_value(prev or {}, "refresh_count", 0) or 0))
         prev_consolidation = max(0, int(_record_value(prev or {}, "consolidation_count", 0) or 0))
+        prev_identity_ready = bool(_record_value(prev or {}, "identity_ready", False))
+        prev_identity_strength = _clamp01(_record_value(prev or {}, "identity_strength", 0.0), 0.0)
+        prev_identity_text = str(_record_value(prev or {}, "identity_text", "") or "").strip()
+        prev_identity_prompt_text = str(_record_value(prev or {}, "identity_prompt_text", "") or "").strip()
         prev_first = int(_record_value(prev or {}, "first_supported_at", now_ts) or now_ts)
         prev_last = int(_record_value(prev or {}, "last_supported_at", prev_first) or prev_first)
         prev_meaningful = int(_record_value(prev or {}, "last_meaningful_refresh_at", prev_last) or prev_last)
@@ -1272,6 +1543,34 @@ def _refresh_semantic_self_narratives(
             * (1.0 - 0.16 * contradiction_pressure),
             3,
         )
+        identity_bonus = _semantic_identity_bonus(horizon_tag, support_span_s, prev_reactivation_hits)
+        identity_threshold = 0.54 if category in {"commitment_style", "bond_style", "selfhood_style"} else 0.58
+        identity_seed = (
+            0.16 * _narrative_stability(prev)
+            + 0.24 * persistence_score
+            + 0.18 * integration_score
+            + 0.14 * sedimentation_score
+            + 0.10 * cadence_score
+            + 0.08 * prev_decay_resistance
+            + identity_bonus
+        )
+        if prev_identity_ready:
+            identity_seed = max(identity_seed, prev_identity_strength * max(decay_multiplier, 0.90))
+        identity_strength = round(_clamp01(identity_seed * (1.0 - 0.24 * contradiction_pressure)), 3)
+        identity_ready = (
+            identity_strength >= identity_threshold
+            and contradiction_pressure < 0.62
+            and (
+                horizon_tag == "long_term"
+                or support_span_s >= 3 * 24 * 3600
+                or prev_consolidation >= 4
+            )
+        )
+        if prev_identity_ready and persistence_score >= 0.42 and contradiction_pressure < 0.66:
+            identity_ready = True
+        identity_text_base, identity_prompt_base = _identity_narrative_texts(category)
+        identity_text = prev_identity_text or identity_text_base
+        identity_prompt_text = prev_identity_prompt_text or identity_prompt_base
         metadata = {
             "support_count": prev_support,
             "refresh_count": prev_refresh + 1,
@@ -1303,6 +1602,10 @@ def _refresh_semantic_self_narratives(
             "prompt_anchor_text": prompt_anchor_text,
             "anchor_basis_texts": anchor_basis_texts,
             "anchor_strength": anchor_strength,
+            "identity_ready": identity_ready,
+            "identity_strength": identity_strength,
+            "identity_text": identity_text if identity_ready else "",
+            "identity_prompt_text": identity_prompt_text if identity_ready else "",
             "dormant": True,
         }
         rec = store.add_semantic_self_narrative(
@@ -1441,6 +1744,159 @@ def _recent_summary_overlap(items: list[dict[str, Any]], text: str, *, field: st
     return False
 
 
+def _record_behavior_consequence(
+    store: MemoryStore,
+    *,
+    current_event: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    consequence = derive_behavior_consequence(
+        current_event=current_event,
+        behavior_action=behavior_action,
+    )
+    kind = str(consequence.get("kind") or "").strip()
+    summary = str(consequence.get("summary") or "").strip()
+    if not kind or not summary:
+        return False
+
+    metadata = {
+        "consequence_kind": kind,
+        "relationship_effect": str(consequence.get("relationship_effect") or "").strip(),
+        "self_effect": str(consequence.get("self_effect") or "").strip(),
+        "primary_motive": str((behavior_action or {}).get("primary_motive") or "").strip(),
+        "motive_tension": str((behavior_action or {}).get("motive_tension") or "").strip(),
+        "goal_frame": str((behavior_action or {}).get("goal_frame") or "").strip()[:220],
+        "trigger_family": str(consequence.get("trigger_family") or "").strip(),
+        "relationship_weather": str(consequence.get("relationship_weather") or "").strip(),
+        "carryover_mode": str(consequence.get("carryover_mode") or "").strip(),
+        "timing_window_min": int(consequence.get("timing_window_min") or 0),
+        "silent": bool(consequence.get("silent")),
+        "delayed": bool(consequence.get("delayed")),
+        "stale_window": bool(consequence.get("stale_window")),
+    }
+    recent = [
+        item
+        for item in store.list_revision_traces(limit=20)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "behavior_consequence"
+    ]
+    wrote = False
+    if not _recent_summary_overlap(recent, summary, field="after_summary", threshold=0.90):
+        store.add_revision_trace(
+            namespace="behavior_consequence",
+            target_id=kind,
+            before_summary="",
+            after_summary=summary[:180],
+            reason=f"behavior_consequence:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata=metadata,
+        )
+        wrote = True
+
+    category_summaries = consequence.get("category_summaries") if isinstance(consequence.get("category_summaries"), dict) else {}
+    for category, text in category_summaries.items():
+        category_name = str(category or "").strip()
+        category_summary = str(text or "").strip()
+        if not category_name or not category_summary:
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category_name,
+            before_summary="",
+            after_summary=category_summary[:180],
+            reason=f"behavior_consequence:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata={
+                **metadata,
+                "evidence_category": category_name,
+            },
+        )
+        wrote = True
+    return wrote
+
+
+def _record_agenda_lifecycle_consequence(
+    store: MemoryStore,
+    *,
+    agenda_lifecycle_residue: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    consequence = derive_agenda_lifecycle_consequence(
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
+    )
+    kind = str(consequence.get("kind") or "").strip()
+    summary = str(consequence.get("summary") or "").strip()
+    if not kind or not summary:
+        return False
+
+    metadata = {
+        "lifecycle_kind": kind,
+        "source_event_kind": str(consequence.get("source_event_kind") or "").strip(),
+        "trigger_family": str(consequence.get("trigger_family") or "").strip(),
+        "relationship_weather": str(consequence.get("relationship_weather") or "").strip(),
+        "carryover_mode": str(consequence.get("carryover_mode") or "").strip(),
+        "carryover_strength": float(consequence.get("carryover_strength") or 0.0),
+        "hold_count": int(consequence.get("hold_count") or 0),
+        "recontact_cooldown": float(consequence.get("recontact_cooldown") or 0.0),
+        "presence_residue": float(consequence.get("presence_residue") or 0.0),
+        "ambient_resonance": float(consequence.get("ambient_resonance") or 0.0),
+        "self_activity_momentum": float(consequence.get("self_activity_momentum") or 0.0),
+        "own_rhythm_bias": float(consequence.get("own_rhythm_bias") or 0.0),
+        "counterpart_scene_bias": str(consequence.get("counterpart_scene_bias") or "").strip(),
+        "primary_motive": str(consequence.get("primary_motive") or "").strip(),
+        "motive_tension": str(consequence.get("motive_tension") or "").strip(),
+        "goal_frame": str(consequence.get("goal_frame") or "").strip()[:220],
+    }
+    recent = [
+        item
+        for item in store.list_revision_traces(limit=20)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "agenda_lifecycle"
+    ]
+    wrote = False
+    if not _recent_summary_overlap(recent, summary, field="after_summary", threshold=0.90):
+        store.add_revision_trace(
+            namespace="agenda_lifecycle",
+            target_id=kind,
+            before_summary="",
+            after_summary=summary[:180],
+            reason=f"agenda_lifecycle:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata=metadata,
+        )
+        wrote = True
+
+    category_summaries = consequence.get("category_summaries") if isinstance(consequence.get("category_summaries"), dict) else {}
+    for category, text in category_summaries.items():
+        category_name = str(category or "").strip()
+        category_summary = str(text or "").strip()
+        if not category_name or not category_summary:
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category_name,
+            before_summary="",
+            after_summary=category_summary[:180],
+            reason=f"agenda_lifecycle:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata={
+                **metadata,
+                "evidence_category": category_name,
+            },
+        )
+        wrote = True
+    return wrote
+
+
 def _record_semantic_self_evidence(
     store: MemoryStore,
     *,
@@ -1452,8 +1908,13 @@ def _record_semantic_self_evidence(
     counterpart_profile: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
     source: str,
 ) -> bool:
+    primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
     records = _semantic_self_evidence_records(
         user_text=user_text,
         appraisal=appraisal,
@@ -1463,6 +1924,7 @@ def _record_semantic_self_evidence(
         counterpart_profile=counterpart_profile,
         current_event=current_event,
         world_model_state=world_model_state,
+        behavior_action=behavior_action,
     )
     if not records:
         return False
@@ -1474,6 +1936,15 @@ def _record_semantic_self_evidence(
         reason = str(record.get("reason") or f"semantic_evidence:{category}").strip()
         if not category or not summary:
             continue
+        trace_metadata: dict[str, Any] = {}
+        if category:
+            trace_metadata["evidence_category"] = category
+        if primary_motive:
+            trace_metadata["primary_motive"] = primary_motive
+        if motive_tension:
+            trace_metadata["motive_tension"] = motive_tension
+        if goal_frame:
+            trace_metadata["goal_frame"] = goal_frame[:220]
         store.add_revision_trace(
             namespace="semantic_self_evidence",
             target_id=category,
@@ -1483,6 +1954,7 @@ def _record_semantic_self_evidence(
             operator="system",
             source=source,
             confidence=max(0.72, confidence),
+            metadata=trace_metadata or None,
         )
         wrote = True
     return wrote
@@ -1546,6 +2018,8 @@ def _passive_evolution_memory_update(
     counterpart_profile: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+    agenda_lifecycle_residue: dict[str, Any] | None = None,
 ) -> bool:
     text = str(user_text or "").strip()
     event = current_event if isinstance(current_event, dict) else {}
@@ -1740,6 +2214,25 @@ def _passive_evolution_memory_update(
     summary = text[:180]
     wrote = False
 
+    consequence_written = _record_behavior_consequence(
+        store,
+        current_event=current_event,
+        behavior_action=behavior_action,
+        source="auto:passive_evolution",
+        confidence=confidence,
+    )
+    if consequence_written:
+        wrote = True
+
+    lifecycle_written = _record_agenda_lifecycle_consequence(
+        store,
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
+        source="auto:passive_evolution",
+        confidence=confidence,
+    )
+    if lifecycle_written:
+        wrote = True
+
     if has_text and unresolved_like and not resolution_like and not repair_like:
         severity = round(_clamp01(0.48 + 0.30 * hurt + 0.20 * irritation, 0.58), 3)
         open_items = store.list_unresolved_tensions(limit=8)
@@ -1840,6 +2333,7 @@ def _passive_evolution_memory_update(
         counterpart_profile=counterpart_profile,
         current_event=current_event,
         world_model_state=world_model_state,
+        behavior_action=behavior_action,
         source="auto:passive_evolution",
     )
     if semantic_evidence_written:

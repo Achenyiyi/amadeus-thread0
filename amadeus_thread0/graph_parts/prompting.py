@@ -32,6 +32,7 @@ from .dialogue_guidance import (
     _narrative_actor_profile,
     _plain_contact_ping_needs_relational_guard,
     _scene_persona_axioms,
+    _semantic_motive_state_hint,
     _selfhood_preference_lines,
     _subjective_runtime_state_hint,
 )
@@ -53,6 +54,23 @@ from .semantic_narrative import (
     _semantic_narrative_profile,
 )
 from .state import ThreadState
+
+
+def _memory_grounding_hint(
+    *,
+    response_style_hint: str,
+    science_mode: bool,
+    worldline_lines: list[str],
+    relationship_lines: list[str],
+    repair_lines: list[str],
+) -> str:
+    hint = str(response_style_hint or "").strip().lower()
+    if science_mode or hint not in {"relationship", "companion", "natural", "casual", "memory_recall", "selfhood"}:
+        return ""
+    if not any([worldline_lines, relationship_lines, repair_lines]):
+        return ""
+    return "涉及共同记忆、当前关系或后续安排时，先把真正记得的具体内容说出来，再自然给出概括，不要把细节抹平成空泛总结。"
+
 
 def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -> str:
     profile = _active_counterpart_profile(state, store)
@@ -257,6 +275,10 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         bond_state=bond_state,
         counterpart_assessment=counterpart_assessment,
     )
+    motive_state_hint = _semantic_motive_state_hint(
+        semantic_narrative_profile,
+        light_touch=light_free_dialog,
+    )
     if bool(ABLATE_LIGHT_DIALOG_SHAPING):
         light_free_dialog = False
         plain_contact_ping = False
@@ -300,6 +322,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 context_lines.append(counterpart_line)
             if semantic_narrative_hint and not plain_contact_ping:
                 context_lines.append(f"- 这段时间沉下来的熟悉感：{semantic_narrative_hint}")
+            if motive_state_hint and not plain_contact_ping:
+                context_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
             if pending_user_goal and not plain_contact_ping:
                 context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
             elif pending_fragment and not plain_contact_ping:
@@ -321,6 +345,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 context_lines.extend(rule_lines[:2])
             if semantic_narrative_hint:
                 context_lines.append(f"- 这段时间沉下来的关系余波：{semantic_narrative_hint}")
+            if motive_state_hint:
+                context_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
             if pending_user_goal:
                 context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
             elif pending_fragment:
@@ -477,6 +503,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     if not science_mode and response_style_hint in {"relationship", "companion", "natural", "casual", "memory_recall", "selfhood"}:
         if subjective_state_hint:
             runtime_brief_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
+        if motive_state_hint:
+            runtime_brief_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
         if relationship_summary:
             runtime_brief_lines.append(f"- 你和{counterpart_name}此刻关系上的基本感觉：{relationship_summary}")
         if counterpart_assessment_hint:
@@ -489,6 +517,15 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             runtime_brief_lines.append(f"- 背景里还挂着的事：{background_agenda_hint}")
         elif background_scene_hint:
             runtime_brief_lines.append(f"- 刚才的后台场景余波：{background_scene_hint}")
+        memory_grounding_hint = _memory_grounding_hint(
+            response_style_hint=response_style_hint,
+            science_mode=science_mode,
+            worldline_lines=worldline_lines,
+            relationship_lines=relationship_lines,
+            repair_lines=repair_lines,
+        )
+        if memory_grounding_hint:
+            runtime_brief_lines.append(f"- {memory_grounding_hint}")
     runtime_brief_block = (
         "内在延续：\n" + "\n".join(runtime_brief_lines) + "\n\n"
         if runtime_brief_lines

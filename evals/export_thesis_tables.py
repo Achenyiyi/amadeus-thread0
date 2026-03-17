@@ -185,6 +185,23 @@ def build_transfer_snapshot_rows() -> list[list[object]]:
         persona_state = case.get("persona_state") if isinstance(case.get("persona_state"), dict) else {}
         semantic_profile = case.get("semantic_narrative_profile") if isinstance(case.get("semantic_narrative_profile"), dict) else {}
         behavior_policy = case.get("behavior_policy") if isinstance(case.get("behavior_policy"), dict) else {}
+        long_term = (
+            semantic_profile.get("long_term_self_narratives")
+            if isinstance(semantic_profile.get("long_term_self_narratives"), list)
+            else []
+        )
+        identity_layer = " / ".join(
+            (
+                f"{str(item.get('category') or '').strip()}:{str(item.get('prompt_text') or item.get('text') or '').strip()[:28]}"
+                if isinstance(item, dict)
+                else ""
+            )
+            for item in long_term[:2]
+            if isinstance(item, dict) and (
+                str(item.get("category") or "").strip()
+                or str(item.get("prompt_text") or item.get("text") or "").strip()
+            )
+        )
         rows.append(
             [
                 case.get("case_id"),
@@ -196,6 +213,7 @@ def build_transfer_snapshot_rows() -> list[list[object]]:
                     for item in (semantic_profile.get("active_categories") if isinstance(semantic_profile.get("active_categories"), list) else [])
                     if str(item).strip()
                 ),
+                identity_layer,
                 behavior_policy.get("self_directedness"),
                 behavior_policy.get("boundary_assertiveness"),
                 behavior_policy.get("equality_guard"),
@@ -336,6 +354,7 @@ def main() -> None:
         "counterpart",
         "dominant_narrative",
         "active_narratives",
+        "identity_layer",
         "self_directedness",
         "boundary_assertiveness",
         "equality_guard",
