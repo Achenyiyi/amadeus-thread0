@@ -19,6 +19,7 @@ from amadeus_thread0.graph_parts.behavior_runtime import (
     _behavior_action_from_state,
     _behavior_plan_from_action,
 )
+from amadeus_thread0.graph_parts.dialogue_guidance import _subjective_runtime_state_hint
 from amadeus_thread0.graph_parts.memory_evolution import (
     _passive_evolution_memory_update,
     _record_semantic_self_evidence,
@@ -254,6 +255,97 @@ class WorldModelResidueTests(unittest.TestCase):
                 self.assertEqual(str(rhythm.get("dominant_motive_tension") or ""), "self_rhythm_vs_contact")
                 self.assertIn("自己的节奏", " ".join(rhythm.get("goal_frame_examples") or []))
                 self.assertIn("motive=gentle_recontact:self_rhythm_vs_contact", str(rhythm.get("support_signature") or ""))
+            finally:
+                store.close()
+
+    def test_refresh_semantic_narratives_prefers_high_confidence_motive_evidence_over_recent_low_confidence_trace(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_revision_trace(
+                    namespace="semantic_self_evidence",
+                    target_id="rhythm_style",
+                    before_summary="",
+                    after_summary="先顺着自己的节奏把注意力留住。",
+                    reason="semantic_evidence:rhythm_style",
+                    operator="test",
+                    source="test:motive_weighting",
+                    confidence=0.96,
+                    metadata={
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先顺着自己的节奏把注意力留住。",
+                    },
+                )
+                store.add_revision_trace(
+                    namespace="semantic_self_evidence",
+                    target_id="rhythm_style",
+                    before_summary="",
+                    after_summary="刚好有空就把整个人都转过去。",
+                    reason="semantic_evidence:rhythm_style",
+                    operator="test",
+                    source="test:motive_weighting",
+                    confidence=0.36,
+                    metadata={
+                        "primary_motive": "open_shared_window",
+                        "motive_tension": "space_vs_contact",
+                        "goal_frame": "刚好有空就把整个人都转过去。",
+                    },
+                )
+                _refresh_semantic_self_narratives(store, source="test:motive_weighting")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                rhythm = next(item for item in narratives if str(item.get("category") or "") == "rhythm_style")
+                self.assertEqual(str(rhythm.get("dominant_primary_motive") or ""), "preserve_self_rhythm")
+                self.assertEqual(int(rhythm.get("motive_support_count") or 0), 2)
+                self.assertLess(float(rhythm.get("motive_support_mass") or 0.0), 2.0)
+                self.assertGreater(float(rhythm.get("motive_confidence_avg") or 0.0), 0.55)
+            finally:
+                store.close()
+
+    def test_dormant_semantic_narrative_decays_weighted_support_mass(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                now_ts = int(time.time())
+                store.add_semantic_self_narrative(
+                    text="她不会把每次重新靠近都当成从零开始。",
+                    category="presence_style",
+                    stability=0.78,
+                    confidence=0.82,
+                    metadata={
+                        "support_count": 4,
+                        "support_mass": 3.52,
+                        "support_quality": 0.86,
+                        "support_confidence_avg": 0.88,
+                        "fresh_support_ratio": 0.72,
+                        "refresh_count": 4,
+                        "consolidation_count": 4,
+                        "sedimentation_score": 0.76,
+                        "persistence_score": 0.80,
+                        "residue_score": 0.72,
+                        "integration_score": 0.74,
+                        "first_supported_at": now_ts - 12 * 24 * 3600,
+                        "last_supported_at": now_ts - 8 * 24 * 3600,
+                        "last_meaningful_refresh_at": now_ts - 8 * 24 * 3600,
+                        "last_reactivated_at": now_ts - 8 * 24 * 3600,
+                        "support_span_s": 4 * 24 * 3600,
+                        "reactivation_gap_s": 8 * 24 * 3600,
+                        "reactivation_hits": 2,
+                        "reactivation_rate_per_day": 0.7,
+                        "reactivation_cadence_score": 0.58,
+                        "horizon_tag": "long_term",
+                        "support_signature": "presence_style|old|count=4",
+                        "decay_rate_per_day": 0.05,
+                        "decay_resistance": 0.72,
+                    },
+                )
+                _refresh_semantic_self_narratives(store, source="test:dormant_support_decay")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                presence = next(item for item in narratives if str(item.get("category") or "") == "presence_style")
+                self.assertTrue(bool(presence.get("dormant")))
+                self.assertLess(float(presence.get("support_mass") or 0.0), 3.52)
+                self.assertLess(float(presence.get("fresh_support_ratio") or 0.0), 0.72)
+                self.assertGreater(float(presence.get("support_quality") or 0.0), 0.30)
             finally:
                 store.close()
 
@@ -1450,6 +1542,44 @@ class WorldModelResidueTests(unittest.TestCase):
                 )
                 self.assertEqual(str(rhythm_narrative.get("dominant_primary_motive") or ""), "preserve_self_rhythm")
                 self.assertEqual(str(rhythm_narrative.get("dominant_motive_tension") or ""), "self_rhythm_vs_contact")
+                worldline = store.list_worldline_events(limit=8)
+                self.assertTrue(
+                    any(
+                        str(item.get("category") or item.get("content", {}).get("category") or "") == "self_rhythm"
+                        and "自己的节奏" in str(item.get("summary") or item.get("content", {}).get("summary") or "")
+                        for item in worldline
+                    )
+                )
+                relationship_timeline = store.list_relationship_timeline(limit=8)
+                relationship_memory = next(
+                    item
+                    for item in relationship_timeline
+                    if "不会把沉默直接误判成冷淡" in str(item.get("summary") or item.get("content", {}).get("summary") or "")
+                )
+                self.assertGreater(float(relationship_memory.get("trust_delta") or 0.0), 0.0)
+                self.assertGreater(float(relationship_memory.get("affinity_delta") or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_refresh_semantic_narratives_uses_self_rhythm_worldline_memory_as_support(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.add_worldline_event(
+                    "她会把没继续往前推的窗口收回自己的节奏里，等真正想重新靠近时再转身。",
+                    category="self_rhythm",
+                    importance=0.72,
+                    tags=["agenda_lifecycle", "own_rhythm", "released_to_self_activity"],
+                    confidence=0.84,
+                )
+                _refresh_semantic_self_narratives(store, source="test:self_rhythm_worldline")
+                narratives = store.list_semantic_self_narratives(limit=12)
+                categories = {str(item.get("category") or "") for item in narratives}
+                self.assertIn("agency_style", categories)
+                self.assertIn("rhythm_style", categories)
+                rhythm = next(item for item in narratives if str(item.get("category") or "") == "rhythm_style")
+                self.assertIn("自己的节奏", str(rhythm.get("anchor_text") or ""))
+                self.assertGreater(float(rhythm.get("support_mass") or 0.0), 0.0)
             finally:
                 store.close()
 
@@ -1617,6 +1747,43 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("内部节奏", compact_hint)
         self.assertIn("环境回声", appraisal_hint)
         self.assertIn("内部节奏", appraisal_hint)
+
+    def test_subjective_runtime_hint_mentions_own_rhythm_from_long_term_profile(self):
+        hint = _subjective_runtime_state_hint(
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.64, "closeness": 0.60, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={
+                "boundary_pressure": 0.10,
+                "reciprocity": 0.62,
+                "respect_level": 0.64,
+                "stance": "open",
+            },
+            semantic_narrative_profile={
+                "bond_depth": 0.56,
+                "agency_drive": 0.60,
+                "rhythm_continuity": 0.82,
+                "presence_carry": 0.34,
+                "motive_snapshot": {
+                    "rhythm_style": {
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                    }
+                },
+            },
+            behavior_policy={
+                "approach_vs_withdraw": 0.56,
+                "warmth": 0.58,
+                "self_directedness": 0.52,
+            },
+            world_model_state={
+                "presence_residue": 0.18,
+                "ambient_resonance": 0.12,
+                "self_activity_momentum": 0.20,
+            },
+            behavior_action={"interaction_mode": "companion_reply"},
+        )
+        self.assertIn("自己的节奏", hint)
 
     def test_continuity_axes_do_not_reset_across_plain_followup_turns(self):
         semantic_profile = _semantic_narrative_profile(
@@ -2068,8 +2235,8 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(base_action.get("interaction_mode") or ""), "steady_reply")
         self.assertEqual(str(base_action.get("action_target") or ""), "respond_now")
-        self.assertEqual(str(infused_action.get("interaction_mode") or ""), "brief_presence")
-        self.assertEqual(str(infused_action.get("action_target") or ""), "confirm_presence")
+        self.assertEqual(str(infused_action.get("interaction_mode") or ""), "self_activity_reopen")
+        self.assertEqual(str(infused_action.get("action_target") or ""), "offer_small_opening")
         self.assertLess(
             float(infused_action.get("proactive_checkin_readiness") or 0.0),
             float(base_action.get("proactive_checkin_readiness") or 0.0),
@@ -2078,6 +2245,7 @@ class WorldModelResidueTests(unittest.TestCase):
             float(infused_policy.get("motive_self_rhythm_pull") or 0.0),
             float(base_policy.get("motive_self_rhythm_pull") or 0.0),
         )
+        self.assertIn("自己的节奏", str(infused_action.get("goal_frame") or ""))
 
     def test_idle_presence_reaches_out_when_contact_motives_cross_threshold(self):
         world_model_state = {
@@ -2828,6 +2996,50 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(carryover.get("relationship_weather") or ""), "warm_residue")
         self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.16)
+
+    def test_recent_interaction_carryover_does_not_turn_positive_brief_presence_into_guarded_residue(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "其实也没别的事。",
+                "tags": ["companion", "care"],
+            },
+            prior_behavior_action={
+                "interaction_mode": "brief_presence",
+                "approach_style": "steady",
+                "affect_surface": "warm",
+                "followup_intent": "soft",
+                "disclosure_posture": "guarded",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "brief_notice",
+                "initiative_level": 0.60,
+                "engagement_level": 0.72,
+                "action_target": "confirm_presence",
+                "primary_motive": "confirm_presence",
+                "motive_tension": "none",
+                "goal_frame": "先确认在场，不急着把这轮互动推进太多。",
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "care_bid",
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.72,
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "其实也没别的事。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "我就是有点想靠近你一点，所以来找你说话。",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "warm_residue")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
 
     def test_recent_interaction_carryover_keeps_guarded_weather_for_watchful_repair_boundary(self):
         carryover = _recent_interaction_carryover(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..evolution_engine.motive import semantic_motive_vector
 from .counterpart_dynamics import (
     _clamp01,
     _counterpart_dialogue_mode_profile,
@@ -162,12 +163,41 @@ def _behavior_action_from_state(
     counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
     counterpart_scene = str((counterpart_assessment or {}).get("scene") or "").strip().lower()
     narrative_bond = _clamp01((semantic_narrative_profile or {}).get("bond_depth"), 0.0)
+    narrative_presence = _clamp01((semantic_narrative_profile or {}).get("presence_carry"), 0.0)
+    narrative_ambient = _clamp01((semantic_narrative_profile or {}).get("ambient_attunement"), 0.0)
+    narrative_rhythm = _clamp01((semantic_narrative_profile or {}).get("rhythm_continuity"), 0.0)
+    narrative_history = _clamp01((semantic_narrative_profile or {}).get("history_weight"), 0.0)
     narrative_commitment = _clamp01((semantic_narrative_profile or {}).get("commitment_carry"), 0.0)
     narrative_repair = _clamp01((semantic_narrative_profile or {}).get("repair_residue"), 0.0)
     narrative_tension = _clamp01((semantic_narrative_profile or {}).get("tension_residue"), 0.0)
     narrative_boundary = _clamp01((semantic_narrative_profile or {}).get("boundary_residue"), 0.0)
     narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
+    motive_vector = semantic_motive_vector(semantic_narrative_profile)
+    motive_boundary = _clamp01(
+        (behavior_policy or {}).get("motive_boundary_pull"),
+        _clamp01(motive_vector.get("boundary_pull"), 0.0),
+    )
+    motive_self_rhythm = _clamp01(
+        (behavior_policy or {}).get("motive_self_rhythm_pull"),
+        _clamp01(motive_vector.get("self_rhythm_pull"), 0.0),
+    )
+    motive_continuity = _clamp01(
+        (behavior_policy or {}).get("motive_continuity_pull"),
+        _clamp01(motive_vector.get("continuity_pull"), 0.0),
+    )
+    motive_memory = _clamp01(
+        (behavior_policy or {}).get("motive_memory_pull"),
+        _clamp01(motive_vector.get("memory_pull"), 0.0),
+    )
+    motive_support = _clamp01(
+        (behavior_policy or {}).get("motive_support_pull"),
+        _clamp01(motive_vector.get("support_pull"), 0.0),
+    )
+    motive_shared_window = _clamp01(
+        (behavior_policy or {}).get("motive_shared_window_pull"),
+        _clamp01(motive_vector.get("shared_window_pull"), 0.0),
+    )
     world = dict(world_model_state or {})
     world_presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
@@ -229,6 +259,38 @@ def _behavior_action_from_state(
         own_rhythm_carryover_active
         or effective_carryover_mode in {"own_rhythm", "small_opening"}
         or explicit_own_rhythm_hint
+    )
+    semantic_presence_echo = max(
+        world_presence_residue,
+        narrative_presence,
+        0.78 * narrative_history,
+        0.86 * motive_continuity,
+        0.72 * motive_support,
+        0.76 * motive_shared_window,
+    )
+    semantic_memory_echo = max(
+        world_ambient_resonance,
+        narrative_ambient,
+        0.82 * narrative_history,
+        0.90 * motive_memory,
+        0.58 * motive_continuity,
+    )
+    semantic_contact_bias = max(
+        narrative_presence,
+        0.74 * narrative_history,
+        0.88 * motive_continuity,
+        0.72 * motive_support,
+        0.76 * motive_shared_window,
+    )
+    semantic_narrative_rhythm_bias = max(
+        0.72 * narrative_rhythm,
+        0.68 * narrative_agency,
+        0.92 * motive_self_rhythm,
+        0.58 * motive_boundary,
+    )
+    semantic_own_rhythm_bias = max(
+        effective_own_rhythm_load,
+        semantic_narrative_rhythm_bias,
     )
     prior_counterpart = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
     prior_bond = prior_bond_state if isinstance(prior_bond_state, dict) else {}
@@ -316,9 +378,23 @@ def _behavior_action_from_state(
     if event_kind == "user_utterance" and soft_reply_window and not science_stress:
         if own_rhythm_carryover_active and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
             interaction_mode = "self_activity_reopen"
-        elif world_presence_residue >= 0.54 and interaction_mode in {"steady_reply", "companion_reply"}:
+        elif (
+            counterpart_scene == "busy_not_disrespectful"
+            and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}
+            and semantic_own_rhythm_bias >= 0.48
+            and self_directedness >= 0.40
+        ):
+            interaction_mode = "self_activity_reopen"
+        elif (
+            interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}
+            and semantic_narrative_rhythm_bias >= 0.62
+            and self_directedness >= 0.44
+            and semantic_narrative_rhythm_bias >= semantic_contact_bias + 0.10
+        ):
+            interaction_mode = "self_activity_reopen"
+        elif semantic_presence_echo >= 0.54 and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "brief_presence"
-        elif world_ambient_resonance >= 0.56 and interaction_mode == "steady_reply":
+        elif semantic_memory_echo >= 0.56 and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
 
     carryover_soft_scene = (
@@ -374,6 +450,8 @@ def _behavior_action_from_state(
         task_focus = "light"
     elif event_kind == "user_utterance" and own_rhythm_trace_active:
         task_focus = "light"
+    elif event_kind == "user_utterance" and max(semantic_presence_echo, 0.82 * semantic_memory_echo) >= 0.50:
+        task_focus = "light"
     else:
         task_focus = "balanced"
 
@@ -416,6 +494,19 @@ def _behavior_action_from_state(
             followup_intent = "soft"
         elif followup_intent == "soft" and effective_own_rhythm_load >= 0.74:
             followup_intent = "none"
+    elif event_kind == "user_utterance":
+        if semantic_own_rhythm_bias >= 0.62:
+            if followup_intent == "active":
+                followup_intent = "soft"
+            elif followup_intent == "soft" and semantic_own_rhythm_bias >= 0.74:
+                followup_intent = "none"
+        elif (
+            semantic_contact_bias >= 0.60
+            and followup_intent == "none"
+            and counterpart_stance != "guarded"
+            and max(narrative_boundary, motive_boundary) < 0.42
+        ):
+            followup_intent = "soft"
 
     if emotion_label in {"hurt", "sad"}:
         affect_surface = "tender"
@@ -438,8 +529,12 @@ def _behavior_action_from_state(
         + 0.12 * closeness
         + 0.06 * reliability_read
         + 0.06 * min(narrative_agency, narrative_bond)
+        + 0.04 * max(0.0, semantic_contact_bias - 0.48)
+        + 0.03 * motive_memory
         - 0.24 * autonomy_need
         - 0.18 * boundary_pressure
+        - 0.08 * semantic_own_rhythm_bias
+        - 0.06 * motive_boundary
         - (0.14 if respect_space else 0.0)
     )
     scheduled_window_profile: dict[str, Any] = {}
@@ -864,7 +959,7 @@ def _behavior_action_from_state(
             nonverbal_signal = "hold_back"
             initiative_shape = "pause"
     elif interaction_mode == "self_activity_reopen":
-        action_target = "respond_now"
+        action_target = "offer_small_opening"
         attention_target = carryover_attention_target or "self_then_counterpart"
         nonverbal_signal = carryover_nonverbal_signal or "thought_glance"
         initiative_shape = "micro_opening"
@@ -1162,10 +1257,22 @@ def _behavior_action_from_state(
             initiative_shape = "micro_opening"
             disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
         narrative_notes.append("刚从你自己的节奏里抬头时，不会一下子把自己全交出去")
+    elif semantic_own_rhythm_bias >= 0.62 and event_kind == "user_utterance":
+        if action_target == "respond_now" and interaction_mode in {"steady_reply", "companion_reply"}:
+            interaction_mode = "self_activity_reopen"
+            attention_target = "self_then_counterpart"
+            nonverbal_signal = "thought_glance"
+            initiative_shape = "micro_opening"
+            disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
+        narrative_notes.append("长期留下的自我节奏会继续压住这轮靠近的速度")
     if world_presence_residue >= 0.54 and event_kind == "user_utterance" and action_target in {"respond_now", "confirm_presence"}:
         narrative_notes.append("上一轮留下的在场感会让这次开口更轻更近")
+    if semantic_presence_echo >= 0.54 and event_kind == "user_utterance" and action_target in {"respond_now", "confirm_presence"}:
+        narrative_notes.append("长线沉下来的在场感会让这轮更像轻一点的确认")
     if world_ambient_resonance >= 0.56 and event_kind == "user_utterance" and interaction_mode in {"companion_reply", "brief_presence"}:
         narrative_notes.append("周围环境的小余波还会顺手带进这轮说话")
+    if semantic_memory_echo >= 0.56 and event_kind == "user_utterance" and interaction_mode in {"companion_reply", "brief_presence"}:
+        narrative_notes.append("长期叙事里的熟悉感会把这轮语气往自然生活面拉近一点")
 
     motive_state = _derive_behavior_motive(
         event_kind=event_kind,

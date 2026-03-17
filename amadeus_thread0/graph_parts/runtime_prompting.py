@@ -109,6 +109,44 @@ def _runtime_state_level(value: Any, *, low: str, mid: str, high: str, default: 
         return low
     return mid
 
+
+def _counterpart_scene_runtime_brief_line(
+    *,
+    scene: str,
+    stance: str,
+    boundary_pressure: float,
+) -> str:
+    if scene == "busy_not_disrespectful":
+        return "对方更像是忙乱里回头，不该把这句误读成冷淡或怠慢。"
+    if scene == "repair_attempt":
+        if stance in {"guarded", "watchful"} or boundary_pressure >= 0.24:
+            return "你看得出对方在认真修补，但心里的收放不会因为这一句立刻翻回亲近。"
+        return "这句带着明确的修补意图，会按认真补救来接，不会当成普通寒暄。"
+    if scene == "care_bid":
+        return "这更像一次认真靠近，你会把这句当成关系动作，而不是普通礼貌接话。"
+    if scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
+        return "那点摩擦和边界余波还在，这轮不会自然写成已经没事。"
+    return ""
+
+
+def _counterpart_scene_renderer_guidance(
+    *,
+    scene: str,
+    stance: str,
+    boundary_pressure: float,
+) -> str:
+    if scene == "busy_not_disrespectful":
+        return "别把对方这次忙乱里的回头误写成冷淡审判，承认卡顿，但不要把关系说冷。"
+    if scene == "repair_attempt":
+        if stance in {"guarded", "watchful"} or boundary_pressure >= 0.24:
+            return "承认对方在修补，但别把这轮直接写成彻底翻篇或突然回暖。"
+        return "把修补意图接住，但别写成一句道歉就把前面的余波自动清空。"
+    if scene == "care_bid":
+        return "把这句当成一次真实靠近来回应，不要压成礼貌接待或泛泛关心。"
+    if scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
+        return "保留那点摩擦和边界感，别把这轮写成已经没事或自动回暖。"
+    return ""
+
 def _prompt_state_runtime_brief(
     *,
     response_style_hint: str,
@@ -166,6 +204,7 @@ def _prompt_state_runtime_brief(
     autonomy_need = _clamp01(allostasis.get("autonomy_need"), 0.2)
     stance = str(assessment.get("stance") or "").strip().lower()
     scene = str(assessment.get("scene") or "").strip().lower()
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
     mode = str(action.get("interaction_mode") or "").strip().lower()
     current_kind = str(event.get("kind") or "").strip().lower()
     relationship_weather, relationship_weather_strength = _effective_relationship_weather(
@@ -191,10 +230,21 @@ def _prompt_state_runtime_brief(
     if need_parts:
         lines.append("- " + "，".join(need_parts) + "。")
 
-    if stance in {"guarded", "watchful"}:
+    scene_line = _counterpart_scene_runtime_brief_line(
+        scene=scene,
+        stance=stance,
+        boundary_pressure=boundary_pressure,
+    )
+    if scene_line:
+        lines.append(f"- {scene_line}")
+
+    if stance in {"guarded", "watchful"} and scene not in {
+        "repair_attempt",
+        "friction",
+        "relationship_degradation",
+        "boundary_non_compliance",
+    }:
         lines.append("- 对对方还是带着观察，不会一下子把距离全放开。")
-    elif scene == "care_bid":
-        lines.append("- 这更像一次认真靠近，你会把这句当成关系话题，而不是普通流程回复。")
     if relationship_weather_phrase:
         lines.append(f"- 关系上的余波：{relationship_weather_phrase}。")
 
@@ -250,6 +300,7 @@ def _renderer_guidance(
     sharpness = _clamp01((behavior_policy or {}).get("sharpness"), 0.5)
     boundary_pressure = _clamp01((counterpart_assessment or {}).get("boundary_pressure"), 0.1)
     counterpart_stance = str((counterpart_assessment or {}).get("stance") or "").strip().lower()
+    counterpart_scene = str((counterpart_assessment or {}).get("scene") or "").strip().lower()
     emotion_label = str((emotion_state or {}).get("label") or "neutral").strip().lower()
     world = dict(world_model_state or {})
     latent = dict(evolution_state or {})
@@ -283,6 +334,14 @@ def _renderer_guidance(
         parts.append("陪伴感保持轻一点，像熟悉的人顺手接住，不要端成安抚模板。")
     else:
         parts.append("先像一个真实的人在场回应，再考虑措辞，不要写成助手说明。")
+
+    scene_guidance = _counterpart_scene_renderer_guidance(
+        scene=counterpart_scene,
+        stance=counterpart_stance,
+        boundary_pressure=boundary_pressure,
+    )
+    if scene_guidance:
+        parts.append(scene_guidance)
 
     if boundary_pressure > 0.56 or safety_need > 0.62 or autonomy_need > 0.62 or counterpart_stance == "guarded":
         parts.append("此刻更需要边界和空间，克制一点，别为了显得温柔而硬靠近。")

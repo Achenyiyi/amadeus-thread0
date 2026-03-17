@@ -1,8 +1,14 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from amadeus_thread0.graph_parts.dialogue_guidance import _event_behavior_preference_lines
+from amadeus_thread0.graph_parts.dialogue_guidance import (
+    _event_behavior_preference_lines,
+    _user_turn_behavior_preference_lines,
+)
+from amadeus_thread0.graph_parts.guards import _persona_gap
 from amadeus_thread0.graph_parts.generation_profile import (
     _daily_surface_preference_lines,
     _daily_surface_profile,
@@ -21,6 +27,8 @@ from amadeus_thread0.graph_parts.prompting import _build_task_prompt
 from amadeus_thread0.graph_parts.rewrite import (
     _light_dialog_rewrite_notes,
     _relationship_weather_rewrite_guidance,
+    _rewrite_light_dialog_answer,
+    _rewrite_natural_dialog_answer,
     _should_run_light_dialog_rewrite,
     _should_run_natural_dialog_rewrite,
 )
@@ -80,7 +88,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
         lines = _daily_surface_preference_lines("你好呀", science_mode=False)
         self.assertLessEqual(len(lines), 1)
         self.assertTrue(lines)
-        self.assertIn("这类轻场景更重视", lines[0])
+        self.assertIn("这类轻场景常见的自然落点是", lines[0])
         self.assertNotIn("更自然的落点参考", lines[0])
 
     def test_event_behavior_preference_lines_separate_shared_and_work_windows(self):
@@ -105,6 +113,21 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertTrue(life_lines)
         self.assertIn("又忽然想起对方眼下怎么样", life_lines[0])
         self.assertIn("不要写成该收尾了", life_lines[1])
+
+    def test_user_turn_behavior_preference_lines_surface_small_opening(self):
+        lines = _user_turn_behavior_preference_lines(
+            behavior_action={
+                "interaction_mode": "self_activity_reopen",
+                "action_target": "offer_small_opening",
+                "followup_intent": "soft",
+            },
+            counterpart_assessment={"stance": "open"},
+            semantic_narrative_profile={"rhythm_continuity": 0.62},
+            world_model_state={"self_activity_momentum": 0.68},
+        )
+        self.assertTrue(lines)
+        self.assertIn("自己的节奏里抬头接住对方", lines[0])
+        self.assertIn("半步延伸", lines[1])
 
     def test_plain_contact_ping_detects_simple_greetings_but_not_support_requests(self):
         self.assertTrue(_is_plain_contact_ping("你好呀"))
@@ -234,7 +257,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
             finally:
                 store.close()
         self.assertIn("这段时间沉下来的熟悉感", prompt)
-        self.assertIn("这轮说话会自然带着", prompt)
+        self.assertIn("表面语气落点", prompt)
         self.assertIn("刚修补回来的那点小心和回暖还在", prompt)
 
     def test_event_prompt_includes_event_preference_block_for_shared_window(self):
@@ -273,7 +296,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 prompt = _build_task_prompt(state, "", store)
             finally:
                 store.close()
-        self.assertIn("事件余味", prompt)
+        self.assertIn("事件带出的自然倾向", prompt)
         self.assertIn("刚好有个能一起做点什么的空当时", prompt)
 
     def test_light_dialog_prompt_includes_motive_lean_line(self):
@@ -309,8 +332,10 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 prompt = _build_task_prompt(state, "今天在忙什么呀", store)
             finally:
                 store.close()
-        self.assertIn("这段时间慢慢定下来的主动倾向", prompt)
+        self.assertIn("当前主动倾向", prompt)
         self.assertIn("顺着自己的节奏转过来", prompt)
+        self.assertIn("这轮互动自然倾向", prompt)
+        self.assertIn("自己的节奏里抬头接住对方", prompt)
 
     def test_relationship_prompt_prefers_subjective_runtime_brief(self):
         with TemporaryDirectory() as td:
@@ -352,7 +377,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 store.close()
         self.assertIn("内在延续", prompt)
         self.assertIn("你此刻更像是从这样的内在状态开口", prompt)
-        self.assertIn("这段时间慢慢定下来的主动倾向", prompt)
+        self.assertIn("当前主动倾向", prompt)
         self.assertIn("当前上下文", prompt)
         self.assertIn("运行态摘记", prompt)
         self.assertIn("这轮说话的自然落点", prompt)
@@ -360,6 +385,136 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("relationship_memory:", prompt)
         self.assertNotIn("conflict_repair_memory:", prompt)
         self.assertNotIn("[memory]", prompt)
+
+    def test_relationship_prompt_runtime_brief_keeps_counterpart_scene_specificity(self):
+        cases = [
+            {
+                "scene": "busy_not_disrespectful",
+                "stance": "open",
+                "emotion": "neutral",
+                "bond": {"trust": 0.72, "closeness": 0.74, "hurt": 0.04},
+                "boundary_pressure": 0.12,
+                "expected": [
+                    "不该把这句误读成冷淡或怠慢",
+                    "不要把关系说冷",
+                ],
+            },
+            {
+                "scene": "repair_attempt",
+                "stance": "guarded",
+                "emotion": "hurt",
+                "bond": {"trust": 0.52, "closeness": 0.56, "hurt": 0.24},
+                "boundary_pressure": 0.34,
+                "expected": [
+                    "认真修补",
+                    "不会因为这一句立刻翻回亲近",
+                    "别把这轮直接写成彻底翻篇或突然回暖",
+                ],
+            },
+            {
+                "scene": "care_bid",
+                "stance": "open",
+                "emotion": "care",
+                "bond": {"trust": 0.76, "closeness": 0.8, "hurt": 0.04},
+                "boundary_pressure": 0.1,
+                "expected": [
+                    "这更像一次认真靠近",
+                    "一次真实靠近来回应",
+                ],
+            },
+            {
+                "scene": "friction",
+                "stance": "watchful",
+                "emotion": "stress",
+                "bond": {"trust": 0.48, "closeness": 0.52, "hurt": 0.18},
+                "boundary_pressure": 0.3,
+                "expected": [
+                    "那点摩擦和边界余波还在",
+                    "别把这轮写成已经没事或自动回暖",
+                ],
+            },
+        ]
+        for case in cases:
+            with self.subTest(scene=case["scene"]):
+                with TemporaryDirectory() as td:
+                    store = MemoryStore(Path(td) / "memories.sqlite")
+                    try:
+                        state = {
+                            "response_style_hint": "relationship",
+                            "science_mode": False,
+                            "emotion_state": {"label": case["emotion"]},
+                            "bond_state": case["bond"],
+                            "allostasis_state": {"safety_need": 0.22, "autonomy_need": 0.38},
+                            "counterpart_assessment": {
+                                "stance": case["stance"],
+                                "scene": case["scene"],
+                                "respect_level": 0.74,
+                                "reciprocity": 0.7,
+                                "boundary_pressure": case["boundary_pressure"],
+                            },
+                            "behavior_policy": {"warmth": 0.66, "approach_vs_withdraw": 0.56, "self_directedness": 0.42},
+                            "behavior_action": {
+                                "interaction_mode": "relationship_sensitive",
+                                "followup_intent": "soft",
+                            },
+                            "interaction_carryover": {
+                                "carryover_mode": "relationship_residue",
+                                "strength": 0.46,
+                                "attention_target": "selfhood",
+                            },
+                            "pending_user_goal": "",
+                            "worldline_focus": [],
+                            "retrieved_context": {},
+                            "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                            "recent_events": [],
+                        }
+                        prompt = _build_task_prompt(
+                            state,
+                            "别绕回系统说明，直接说你现在会怎么接这句话。",
+                            store,
+                        )
+                    finally:
+                        store.close()
+                for fragment in case["expected"]:
+                    self.assertIn(fragment, prompt)
+
+    def test_light_prompt_prefers_goal_frame_evidence_for_motive_hint(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.68, "closeness": 0.64, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.16, "autonomy_need": 0.34},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.74, "reciprocity": 0.70},
+                    "behavior_policy": {"warmth": 0.64, "approach_vs_withdraw": 0.58, "self_directedness": 0.42},
+                    "behavior_action": {"interaction_mode": "self_activity_reopen", "followup_intent": "soft"},
+                    "semantic_narrative_profile": {
+                        "agency_drive": 0.72,
+                        "rhythm_continuity": 0.69,
+                        "motive_snapshot": {
+                            "rhythm_style": {
+                                "primary_motive": "preserve_self_rhythm",
+                                "motive_tension": "self_rhythm_vs_contact",
+                                "goal_frame_examples": ["先维持自己的节奏，不急着把全部注意力交出去。"],
+                            }
+                        },
+                    },
+                    "interaction_carryover": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "今天在忙什么呀", store)
+            finally:
+                store.close()
+        self.assertIn("当前主动倾向", prompt)
+        self.assertIn("先维持自己的节奏，不急着把全部注意力交出去。", prompt)
+        self.assertNotIn("顺着自己的节奏转过来", prompt)
 
     def test_relationship_prompt_surfaces_guarded_relationship_weather(self):
         with TemporaryDirectory() as td:
@@ -436,11 +591,11 @@ class DailySurfaceGatingTests(unittest.TestCase):
         warm = _relationship_weather_rewrite_guidance("warm_residue", strength=0.50)
         repair = _relationship_weather_rewrite_guidance("repair_residue", strength=0.48)
         self.assertIn("别扭和防备", guarded)
-        self.assertIn("别把这句一下子写回热络", guarded)
+        self.assertIn("没回到热络放松", guarded)
         self.assertIn("熟悉感和回暖还在", warm)
-        self.assertIn("别把这句改冷", warm)
-        self.assertIn("别装成什么都没发生", repair)
-        self.assertIn("保留一点小心和回暖", repair)
+        self.assertIn("不该突然转冷", warm)
+        self.assertIn("不像已经彻底翻篇", repair)
+        self.assertIn("小心和回暖", repair)
 
     def test_relationship_prompt_keeps_background_agenda_hint(self):
         with TemporaryDirectory() as td:
@@ -632,7 +787,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 prompt = _build_task_prompt(state, "要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？", store)
             finally:
                 store.close()
-        self.assertIn("关系/自我余味", prompt)
+        self.assertIn("关系/自我侧写", prompt)
         self.assertIn("不会永远围着对方转", prompt)
 
     def test_relationship_prompt_falls_back_to_background_scene_hint_without_agenda(self):
@@ -812,6 +967,48 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("presence_check_questioning", issues)
 
+    def test_dialogue_surface_issues_allow_single_followup_question_when_behavior_is_active(self):
+        issues = _dialogue_surface_issues(
+            "今天有点乱",
+            "要不要先说最卡的那一下？我先陪你理一理。",
+            response_style_hint="natural",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "active",
+            },
+        )
+        self.assertNotIn("overquestioning", issues)
+
+    def test_dialogue_surface_issues_flag_single_followup_question_when_behavior_is_not_active(self):
+        issues = _dialogue_surface_issues(
+            "今天有点乱",
+            "要不要先说最卡的那一下？我先陪你理一理。",
+            response_style_hint="natural",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "brief_presence",
+                "followup_intent": "none",
+            },
+        )
+        self.assertIn("overquestioning", issues)
+
+    def test_persona_gap_uses_behavior_aware_surface_detection(self):
+        state = {
+            "response_style_hint": "natural",
+            "science_mode": False,
+            "emotion_state": {"label": "care"},
+            "messages": [SimpleNamespace(content="今天有点乱")],
+            "current_event": {"kind": "user_utterance"},
+            "behavior_action": {
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "active",
+            },
+        }
+        gap, flags = _persona_gap("要不要先说最卡的那一下？我先陪你理一理。", state)
+        self.assertLess(gap, 0.18)
+        self.assertNotIn("overquestioning", flags)
+
     def test_dialogue_surface_issues_flag_soft_presence_checkin_questioning(self):
         issues = _dialogue_surface_issues(
             "别切到什么系统播报。像平时那样回我一句就行。",
@@ -967,7 +1164,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
             science_mode=False,
         )
         joined = " ".join(notes)
-        self.assertIn("共同记忆收成纯反呛", joined)
+        self.assertIn("共同记忆收成了纯反呛", joined)
 
     def test_light_dialog_rewrite_notes_cover_technical_relational_metaphor(self):
         notes = _light_dialog_rewrite_notes(
@@ -977,7 +1174,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
             science_mode=False,
         )
         joined = " ".join(notes)
-        self.assertIn("技术隐喻说关系", joined)
+        self.assertIn("技术隐喻", joined)
 
     def test_light_dialog_rewrite_notes_cover_servile_availability(self):
         notes = _light_dialog_rewrite_notes(
@@ -998,6 +1195,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         joined = " ".join(notes)
         self.assertIn("确认你还在", joined)
+        self.assertIn("反问回抛", joined)
 
     def test_should_run_light_dialog_rewrite_skips_single_soft_issue(self):
         self.assertFalse(
@@ -1037,6 +1235,22 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_run_light_dialog_rewrite_skips_soft_pressure_when_behavior_consistency_is_strong(self):
+        self.assertFalse(
+            _should_run_light_dialog_rewrite(
+                user_text="你在干嘛呀",
+                answer="刚忙完手头那点事。中间顺手把几个零碎想法理了一下。现在算是缓下来一点了。要不要把你那边那点乱也顺一下？",
+                response_style_hint="natural",
+                science_mode=False,
+                penalty=0.88,
+                preference={"used": True, "score": -0.10, "chosen_support": 0.28, "rejected_pull": 0.34},
+                behavior_action={
+                    "interaction_mode": "companion_reply",
+                    "followup_intent": "active",
+                },
+            )
+        )
+
     def test_should_run_natural_dialog_rewrite_skips_single_soft_issue(self):
         self.assertFalse(
             _should_run_natural_dialog_rewrite(
@@ -1053,11 +1267,19 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
-    def test_should_run_natural_dialog_rewrite_runs_for_single_overquestioning_issue(self):
-        self.assertTrue(
+    def test_should_run_natural_dialog_rewrite_skips_single_overquestioning_issue_when_gap_is_small(self):
+        self.assertFalse(
             _should_run_natural_dialog_rewrite(
                 targeted_flags=["overquestioning"],
                 draft_gap=0.18,
+            )
+        )
+
+    def test_should_run_natural_dialog_rewrite_runs_for_single_overquestioning_issue_when_gap_is_high(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["overquestioning"],
+                draft_gap=0.56,
             )
         )
 
@@ -1076,6 +1298,19 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 draft_gap=0.18,
                 semantic_history_weight=0.66,
                 prompt_anchor_count=2,
+            )
+        )
+
+    def test_should_run_natural_dialog_rewrite_skips_single_medium_issue_when_behavior_consistency_is_strong(self):
+        self.assertFalse(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["overquestioning"],
+                draft_gap=0.34,
+                answer="我会认真说这件事。你要不要先把你最在意的那一层直接说出来？",
+                behavior_action={
+                    "interaction_mode": "relationship_sensitive",
+                    "followup_intent": "active",
+                },
             )
         )
 
@@ -1226,6 +1461,31 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("要不要我继续", cleaned)
         self.assertIn("知道了", cleaned)
 
+    def test_sanitize_final_answer_keeps_active_followup_tail_for_companion_reply(self):
+        cleaned = _sanitize_final_answer(
+            "刚忙完手头那点事。现在算是缓下来一点了。要不要把你那边那点乱也顺一下？",
+            "你在干嘛呀",
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "active",
+            },
+        )
+        self.assertIn("刚忙完手头那点事", cleaned)
+        self.assertIn("现在算是缓下来一点了", cleaned)
+        self.assertIn("要不要把你那边那点乱也顺一下", cleaned)
+
+    def test_sanitize_final_answer_still_trims_followup_tail_when_followup_none(self):
+        cleaned = _sanitize_final_answer(
+            "刚忙完手头那点事。现在算是缓下来一点了。要不要把你那边那点乱也顺一下？",
+            "你在干嘛呀",
+            behavior_action={
+                "interaction_mode": "brief_presence",
+                "followup_intent": "none",
+            },
+        )
+        self.assertIn("刚忙完手头那点事", cleaned)
+        self.assertNotIn("要不要把你那边那点乱也顺一下", cleaned)
+
     def test_sanitize_final_answer_trims_meta_self_explainer_clause(self):
         cleaned = _sanitize_final_answer(
             "我是AI助手，但我现在就在这。你先把话说完。",
@@ -1337,6 +1597,126 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
         self.assertTrue(any("残缺引号" in item for item in notes))
+
+    def test_light_dialog_rewrite_request_keeps_user_turn_behavior_hint(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="我刚才还在忙别的，不过现在看你了。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_light_dialog_answer(
+                    user_text="今天在忙什么呀",
+                    draft_text="我在整理缓存和数据流。",
+                    rewrite_notes=["这版把自己说成了技术状态。"],
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={
+                        "interaction_mode": "self_activity_reopen",
+                        "action_target": "offer_small_opening",
+                        "followup_intent": "soft",
+                    },
+                    semantic_narrative_profile={"rhythm_continuity": 0.68},
+                    counterpart_assessment={"stance": "open"},
+                    world_model_state={"self_activity_momentum": 0.72},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("这轮互动自然倾向", request_blob)
+        self.assertIn("自己的节奏里抬头接住对方", request_blob)
+
+    def test_light_dialog_rewrite_request_keeps_counterpart_scene_guidance(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="刚从忙里回头，不至于当成在甩脸色。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_light_dialog_answer(
+                    user_text="你刚才是在忙吗？",
+                    draft_text="哦，我刚才没空理你。",
+                    rewrite_notes=["这句把对方的忙乱写成了冷处理。"],
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={
+                        "interaction_mode": "companion_reply",
+                        "action_target": "respond_now",
+                        "followup_intent": "soft",
+                    },
+                    counterpart_assessment={
+                        "stance": "open",
+                        "scene": "busy_not_disrespectful",
+                        "boundary_pressure": 0.12,
+                    },
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("你对这句的当前判断", request_blob)
+        self.assertIn("忙乱里回头", request_blob)
+        self.assertIn("不是冷淡或怠慢", request_blob)
+
+    def test_natural_dialog_rewrite_request_keeps_user_turn_behavior_hint(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="这件事我会认真回答，但不会拿系统说明来敷衍你。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="别讲系统边界，我想听你自己会怎么看这种关系。",
+                    draft_text="按系统设定，我会遵守关系边界。",
+                    rewrite_notes=["这句掉回了 AI / 系统式自我说明。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "relationship_sensitive",
+                        "action_target": "protect_relationship_boundary",
+                        "followup_intent": "soft",
+                    },
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    counterpart_assessment={"stance": "open"},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("这轮互动自然倾向", request_blob)
+        self.assertIn("关系话题当真来回应", request_blob)
+
+    def test_natural_dialog_rewrite_request_keeps_counterpart_scene_guidance(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="我知道你是来修补的，但别指望我一句话就当没事。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="我不是想装作没发生，我是认真来跟你道歉的。",
+                    draft_text="好吧，那就算了。",
+                    rewrite_notes=["这句把修补场景写得太轻了。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "relationship_sensitive",
+                        "action_target": "protect_relationship_boundary",
+                        "followup_intent": "soft",
+                    },
+                    counterpart_assessment={
+                        "stance": "guarded",
+                        "scene": "repair_attempt",
+                        "boundary_pressure": 0.32,
+                    },
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("你对这句的当前判断", request_blob)
+        self.assertIn("认真修补", request_blob)
+        self.assertIn("别把这句写成已经彻底翻篇", request_blob)
 
     def test_effective_natural_dialog_flags_include_producer_issues(self):
         effective = _effective_natural_dialog_target_flags(

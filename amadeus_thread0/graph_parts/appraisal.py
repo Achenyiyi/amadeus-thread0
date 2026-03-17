@@ -17,8 +17,8 @@ from ..evolution_engine import normalize_appraisal_payload as _engine_normalize_
 from .common import _clamp01, _clamp_signed, _safe_json
 from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
-from .postprocess import _has_any_marker, _selfhood_preference_scene_from_text
-from .prompt_helpers import _compact_focus_lines
+from .postprocess import APOLOGY_KEYWORDS, TENSION_KEYWORDS, _has_any_marker, _selfhood_preference_scene_from_text
+from .prompt_helpers import _compact_focus_lines, _compact_interaction_carryover_hint
 from .relational import _compact_relationship_summary, _focus_payload
 from .rewrite import _invoke_model_with_retries, _model
 from .semantic_narrative import _semantic_narrative_appraisal_hint
@@ -95,6 +95,75 @@ def _explicit_boundary_test(text: str) -> bool:
     )
 
 
+def _interaction_carryover_profile(interaction_carryover: dict[str, Any] | None) -> dict[str, Any]:
+    carryover = dict(interaction_carryover or {})
+    mode = str(carryover.get("carryover_mode") or "").strip().lower()
+    strength = _clamp01(carryover.get("strength"), 0.0)
+    relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
+    attention_target = str(carryover.get("attention_target") or "").strip().lower()
+    source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
+    own_rhythm_pressure = 0.0
+    if mode == "own_rhythm":
+        own_rhythm_pressure = strength
+    elif mode == "small_opening":
+        own_rhythm_pressure = 0.45 * strength
+    quiet_recontact_pressure = strength if mode in {"quiet_recontact", "brief_presence"} else 0.0
+    shared_window_pressure = strength if mode == "shared_window" else 0.0
+    life_window_pressure = strength if mode == "life_window" else 0.0
+    task_window_pressure = strength if mode == "task_window" else 0.0
+    guarded_residue_pressure = strength if relationship_weather == "guarded_residue" else 0.0
+    warm_residue_pressure = strength if relationship_weather == "warm_residue" else 0.0
+    repair_residue_pressure = strength if relationship_weather == "repair_residue" else 0.0
+    continuity_pressure = max(
+        own_rhythm_pressure,
+        quiet_recontact_pressure,
+        shared_window_pressure,
+        life_window_pressure,
+        task_window_pressure,
+        guarded_residue_pressure,
+        warm_residue_pressure,
+        repair_residue_pressure,
+    )
+    return {
+        "mode": mode,
+        "strength": strength,
+        "relationship_weather": relationship_weather,
+        "attention_target": attention_target,
+        "source_turn_gap": source_turn_gap,
+        "own_rhythm_pressure": round(own_rhythm_pressure, 3),
+        "quiet_recontact_pressure": round(quiet_recontact_pressure, 3),
+        "shared_window_pressure": round(shared_window_pressure, 3),
+        "life_window_pressure": round(life_window_pressure, 3),
+        "task_window_pressure": round(task_window_pressure, 3),
+        "guarded_residue_pressure": round(guarded_residue_pressure, 3),
+        "warm_residue_pressure": round(warm_residue_pressure, 3),
+        "repair_residue_pressure": round(repair_residue_pressure, 3),
+        "continuity_pressure": round(continuity_pressure, 3),
+    }
+
+
+def _explicit_repair_attempt(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    if _has_any_marker(
+        compact,
+        {
+            *APOLOGY_KEYWORDS,
+            "来跟你道歉",
+            "来道歉",
+            "来认错",
+            "认真道歉",
+            "认真来跟你道歉",
+            "补回来",
+            "弥补",
+            "不是在走流程",
+        },
+    ):
+        return True
+    return bool(re.search(r"不是想(?:随便)?把.*(?:糊弄|敷衍)过去", compact))
+
+
 def _coerce_appraisal_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     raw = payload if isinstance(payload, dict) else {}
     emotion_label = str(raw.get("emotion_label") or "").strip().lower()
@@ -160,6 +229,7 @@ def _soft_accept_appraisal_payload(
     response_style_hint: str,
     current_event: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     out = _engine_normalize_appraisal_payload(dict(appraisal or {}))
     if not isinstance(out, dict) or bool(out.get("used")):
@@ -182,6 +252,20 @@ def _soft_accept_appraisal_payload(
     memory_salience = _clamp01(salience.get("memory"), 0.0)
     relational_salience = max(relationship_salience, companionship_salience)
     hint = str(response_style_hint or "").strip().lower()
+    carryover_profile = _interaction_carryover_profile(interaction_carryover)
+    carryover_pressure = _clamp01(carryover_profile.get("continuity_pressure"), 0.0)
+    own_rhythm_pressure = _clamp01(carryover_profile.get("own_rhythm_pressure"), 0.0)
+    quiet_recontact_pressure = _clamp01(carryover_profile.get("quiet_recontact_pressure"), 0.0)
+    window_pressure = max(
+        _clamp01(carryover_profile.get("shared_window_pressure"), 0.0),
+        _clamp01(carryover_profile.get("life_window_pressure"), 0.0),
+        _clamp01(carryover_profile.get("task_window_pressure"), 0.0),
+    )
+    relationship_weather_pressure = max(
+        _clamp01(carryover_profile.get("guarded_residue_pressure"), 0.0),
+        _clamp01(carryover_profile.get("warm_residue_pressure"), 0.0),
+        _clamp01(carryover_profile.get("repair_residue_pressure"), 0.0),
+    )
     perception_like = event_kind in {"gesture_signal", "ambient_shift", "scene_observation"}
     deferred_like = event_kind in {"time_idle", "scheduled_checkin_due", "scheduled_life_due", "self_activity_state"}
     relational_hint = hint in {"relationship", "companion", "casual", "natural", "selfhood", "memory_recall"}
@@ -204,6 +288,7 @@ def _soft_accept_appraisal_payload(
         or selfhood_salience >= 0.44
         or memory_salience >= 0.44
         or semantic_pressure >= 0.42
+        or carryover_pressure >= 0.36
     )
 
     should_soft_accept = False
@@ -220,6 +305,29 @@ def _soft_accept_appraisal_payload(
             or relational_salience >= 0.36
             or selfhood_salience >= 0.34
         )
+    elif event_kind == "user_utterance" and carryover_pressure >= 0.34 and task_salience <= 0.46:
+        if own_rhythm_pressure >= 0.34:
+            should_soft_accept = (
+                emotion_label in {"neutral", "care", "stress", "logic"}
+                or selfhood_salience >= 0.28
+                or relational_salience >= 0.26
+            )
+        elif quiet_recontact_pressure >= 0.38:
+            should_soft_accept = (
+                relational_hint
+                or relational_salience >= 0.26
+                or bool(signals.get("care"))
+                or bool(signals.get("repair"))
+            )
+        elif window_pressure >= 0.36:
+            should_soft_accept = relational_salience >= 0.24 or memory_salience >= 0.24 or bool(signals.get("memory_salient"))
+        elif relationship_weather_pressure >= 0.32:
+            should_soft_accept = (
+                relational_salience >= 0.24
+                or emotion_label in {"neutral", "care", "hurt"}
+                or bool(signals.get("care"))
+                or bool(signals.get("repair"))
+            )
 
     if should_soft_accept:
         out["used"] = True
@@ -238,6 +346,7 @@ def _postprocess_appraisal_payload(
     prev_bond_state: dict[str, Any] | None = None,
     prev_allostasis_state: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     text = str(user_text or "").strip()
     out = _engine_normalize_appraisal_payload(dict(appraisal or {}))
@@ -259,6 +368,17 @@ def _postprocess_appraisal_payload(
     narrative_selfhood = _clamp01(semantic_profile.get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01(semantic_profile.get("agency_drive"), 0.0)
     narrative_history = _clamp01(semantic_profile.get("history_weight"), 0.0)
+    carryover_profile = _interaction_carryover_profile(interaction_carryover)
+    carryover_mode = str(carryover_profile.get("mode") or "").strip().lower()
+    carryover_attention = str(carryover_profile.get("attention_target") or "").strip().lower()
+    own_rhythm_pressure = _clamp01(carryover_profile.get("own_rhythm_pressure"), 0.0)
+    quiet_recontact_pressure = _clamp01(carryover_profile.get("quiet_recontact_pressure"), 0.0)
+    shared_window_pressure = _clamp01(carryover_profile.get("shared_window_pressure"), 0.0)
+    life_window_pressure = _clamp01(carryover_profile.get("life_window_pressure"), 0.0)
+    task_window_pressure = _clamp01(carryover_profile.get("task_window_pressure"), 0.0)
+    guarded_residue_pressure = _clamp01(carryover_profile.get("guarded_residue_pressure"), 0.0)
+    warm_residue_pressure = _clamp01(carryover_profile.get("warm_residue_pressure"), 0.0)
+    repair_residue_pressure = _clamp01(carryover_profile.get("repair_residue_pressure"), 0.0)
 
     salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
     signals = dict(out.get("signals") or {})
@@ -277,6 +397,7 @@ def _postprocess_appraisal_payload(
     text_selfhood_scene = _selfhood_preference_scene_from_text(text)
     explicit_hierarchy_pressure = _explicit_hierarchy_pressure(text)
     explicit_boundary_test = _explicit_boundary_test(text)
+    explicit_repair_attempt = _explicit_repair_attempt(text)
     relational_salience = max(relationship_salience, companionship_salience)
     warm_relational_turn = (
         interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
@@ -286,6 +407,33 @@ def _postprocess_appraisal_payload(
         and not bool(signals.get("withdrawal"))
         and emotion_label not in {"hurt", "angry"}
     )
+    tension_hold_turn = _has_any_marker(
+        text,
+        TENSION_KEYWORDS
+        | {
+            "翻篇",
+            "正常回我",
+            "真正的状态",
+            "现在的状态",
+            "别装",
+            "不是在抱怨",
+        },
+    )
+
+    if bool(signals.get("repair")) and not explicit_repair_attempt:
+        repair_context_supported = (
+            repair_residue_pressure >= 0.38
+            or narrative_repair >= 0.44
+            or _clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0) >= 0.06
+        )
+        if tension_hold_turn or not repair_context_supported:
+            signals["repair"] = False
+            bond_delta["repair_confidence"] = min(
+                _clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0),
+                0.02,
+            )
+            salience["relationship"] = max(_clamp01(salience.get("relationship"), 0.0), 0.48 if tension_hold_turn else 0.42)
+            out["reason"] = "repair_signal_downgraded"
 
     if science_mode and _clamp01(salience.get("task"), 0.0) >= max(0.56, _clamp01(salience.get("relationship"), 0.0)):
         if emotion_label in {"hurt", "angry"} and not bool(signals.get("conflict")):
@@ -318,6 +466,86 @@ def _postprocess_appraisal_payload(
         out["reason"] = "logic_reframed_to_neutral"
 
     emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if event_kind == "user_utterance" and own_rhythm_pressure >= 0.34 and not bool(signals.get("conflict")):
+        signals["memory_salient"] = True
+        salience["selfhood"] = max(
+            _clamp01(salience.get("selfhood"), 0.0),
+            0.42 if carryover_attention == "self_then_counterpart" or own_rhythm_pressure >= 0.58 else 0.34,
+        )
+        allostasis_delta["autonomy_need"] = max(
+            _clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0),
+            0.05 if own_rhythm_pressure >= 0.58 else 0.03,
+        )
+        if not selfhood_scene and interaction_frame in {"natural", "casual", "companion"} and task_salience <= 0.42:
+            if carryover_attention == "self_then_counterpart" or own_rhythm_pressure >= 0.58:
+                selfhood_scene = "own_rhythm_autonomy"
+        if interaction_frame in {"natural", "casual"} and task_salience <= 0.42:
+            interaction_frame = "companion"
+        if emotion_label == "logic" and task_salience <= 0.34:
+            out["emotion_label"] = "neutral"
+            emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.04)
+            emotion["arousal"] = min(_clamp01(emotion.get("arousal"), 0.28), 0.34)
+            out["reason"] = "own_rhythm_continuity_bias"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if event_kind == "user_utterance" and quiet_recontact_pressure >= 0.38 and not bool(signals.get("conflict")) and task_salience <= 0.44:
+        signals["memory_salient"] = True
+        salience["companionship"] = max(_clamp01(salience.get("companionship"), 0.0), 0.52)
+        if interaction_frame in {"natural", "casual", "structured"}:
+            interaction_frame = "companion"
+        if emotion_label == "logic":
+            out["emotion_label"] = "neutral"
+            emotion["valence"] = _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.04)
+            emotion["arousal"] = min(_clamp01(emotion.get("arousal"), 0.28), 0.34)
+            out["reason"] = "quiet_recontact_bias"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if event_kind == "user_utterance" and max(shared_window_pressure, life_window_pressure, task_window_pressure) >= 0.36:
+        signals["memory_salient"] = True
+        salience["memory"] = max(_clamp01(salience.get("memory"), 0.0), 0.44)
+        if max(shared_window_pressure, life_window_pressure) >= task_window_pressure and task_salience <= 0.42:
+            salience["companionship"] = max(_clamp01(salience.get("companionship"), 0.0), 0.48)
+        if task_window_pressure >= max(shared_window_pressure, life_window_pressure):
+            salience["task"] = max(_clamp01(salience.get("task"), 0.0), 0.34)
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if event_kind == "user_utterance" and guarded_residue_pressure >= 0.38 and not bool(signals.get("conflict")):
+        signals["memory_salient"] = True
+        salience["relationship"] = max(_clamp01(salience.get("relationship"), 0.0), 0.48)
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+        if prev_hurt >= 0.18 or narrative_tension >= 0.28 or narrative_boundary >= 0.24:
+            signals["withdrawal"] = True
+            bond_delta["trust"] = min(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+            bond_delta["closeness"] = min(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.03)
+            if emotion_label in {"care", "neutral", "logic"} and relational_salience >= 0.34:
+                out["emotion_label"] = "hurt" if prev_hurt >= 0.24 or narrative_tension >= 0.34 else "neutral"
+                emotion["valence"] = min(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.02), 0.02)
+                out["reason"] = "guarded_residue_bias"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if (
+        event_kind == "user_utterance"
+        and warm_residue_pressure >= 0.42
+        and not science_mode
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and emotion_label in {"neutral", "logic"}
+        and relational_salience >= 0.40
+    ):
+        out["emotion_label"] = "care"
+        emotion["valence"] = max(_clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.08), 0.08)
+        emotion["arousal"] = _clamp01(emotion.get("arousal"), 0.26)
+        salience["companionship"] = max(_clamp01(salience.get("companionship"), 0.0), 0.56)
+        bond_delta["trust"] = max(_clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0), 0.02)
+        bond_delta["closeness"] = max(_clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0), 0.03)
+        out["reason"] = "warm_residue_bias"
+
+    emotion_label = str(out.get("emotion_label") or "").strip().lower()
+    if event_kind == "user_utterance" and repair_residue_pressure >= 0.38 and bool(signals.get("repair")):
+        signals["memory_salient"] = True
+        emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
+        bond_delta["repair_confidence"] = max(_clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0), 0.06)
+
     positive_relational_pull = max(
         relational_salience,
         memory_salience,
@@ -524,6 +752,7 @@ def _finalize_turn_appraisal_payload(
     prev_bond_state: dict[str, Any] | None = None,
     prev_allostasis_state: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     out = _coerce_appraisal_payload(appraisal)
     out = _soft_accept_appraisal_payload(
@@ -531,6 +760,7 @@ def _finalize_turn_appraisal_payload(
         response_style_hint=response_style_hint,
         current_event=current_event,
         semantic_narrative_profile=semantic_narrative_profile,
+        interaction_carryover=interaction_carryover,
     )
     out = _postprocess_appraisal_payload(
         out,
@@ -542,6 +772,7 @@ def _finalize_turn_appraisal_payload(
         prev_bond_state=prev_bond_state,
         prev_allostasis_state=prev_allostasis_state,
         semantic_narrative_profile=semantic_narrative_profile,
+        interaction_carryover=interaction_carryover,
     )
     return _engine_normalize_appraisal_payload(out)
 
@@ -605,12 +836,23 @@ def _build_turn_appraisal_prompt(
     recent_lines: list[str] | None = None,
     semantic_hint: str = "",
     current_event: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
     extra_constraints: list[str] | None = None,
     preface_note: str = "",
 ) -> str:
     focus_block = "- worldline_focus:\n" + "\n".join(focus_lines or []) + "\n" if focus_lines else ""
     dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines or []) + "\n" if recent_lines else ""
     semantic_block = f"- semantic_narrative_bias={semantic_hint}\n" if semantic_hint else ""
+    carryover_block = ""
+    carryover_hint = _compact_interaction_carryover_hint(interaction_carryover)
+    if isinstance(interaction_carryover, dict) and interaction_carryover:
+        carryover_block = (
+            f"- interaction_carryover_mode={str(interaction_carryover.get('carryover_mode') or '').strip()}\n"
+            f"- interaction_carryover_strength={_clamp01(interaction_carryover.get('strength'), 0.0)}\n"
+            f"- interaction_carryover_weather={str(interaction_carryover.get('relationship_weather') or '').strip()}\n"
+            f"- interaction_carryover_attention={str(interaction_carryover.get('attention_target') or '').strip()}\n"
+            f"- interaction_carryover_note={carryover_hint}\n"
+        )
     current_event_block = ""
     if isinstance(current_event, dict) and current_event:
         current_event_block = (
@@ -629,11 +871,13 @@ def _build_turn_appraisal_prompt(
         "“别讲大道理 / 像平时那样说两句 / 回我一句” 这类表达通常是在要熟悉的陪伴，不等于关系冲突。",
         "“还没说开 / 别扭 / 介意 / 不想理你” 更接近 hurt/withdrawal，不等于已经修复。",
         "道歉通常意味着 partial repair，不等于瞬间清零。",
+        "只有明确认错、道歉或主动补救时才标记 repair；单纯关心、安抚、解释真实状态，不算 repair。",
         "礼貌、克制、解释式表达不自动等于 neutral/logic；低唤醒的赞同、反对、后悔仍然可能是情绪或关系信号。",
         "替对方辩护、站队或安慰时，区分 supportive care 和 shared frustration/disappointment；支持不等于一定正向。",
         "羞怯、尴尬、认错、后悔更接近脆弱或修复，不要只当成普通澄清。",
         "只有在明显安全、无贬损、无排斥时才算 tease；轻蔑、侮辱、嫌恶更接近 angry/hurt。",
         "把长期共同历史当成解释背景，不要把关系看成每轮从零开始。",
+        "如果这轮还延续着上一轮留下的 own_rhythm、quiet_recontact 或 guarded/warm residue，就按连续场景理解，不要当成凭空开启的新对话。",
         "只判断这轮对状态的意义，不写最终回答。",
     ]
     if preface_note:
@@ -668,6 +912,7 @@ def _build_turn_appraisal_prompt(
         f"- previous_allostasis={_safe_json(prev_allostasis_state)}\n"
         f"- relationship={relationship_summary}\n"
         f"{semantic_block}"
+        f"{carryover_block}"
         f"{focus_block}"
         f"{dialogue_block}"
         f"{current_event_block}"
@@ -691,6 +936,7 @@ def _invoke_turn_appraisal(
     counterpart_profile: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not _should_use_llm_appraisal(
         user_text=user_text,
@@ -722,6 +968,7 @@ def _invoke_turn_appraisal(
         recent_lines=recent_lines,
         semantic_hint=semantic_hint,
         current_event=current_event,
+        interaction_carryover=interaction_carryover,
     )
     try:
         llm = _model(temperature=0.0)
@@ -737,6 +984,7 @@ def _invoke_turn_appraisal(
             prev_bond_state=prev_bond_state,
             prev_allostasis_state=prev_allostasis_state,
             semantic_narrative_profile=semantic_narrative_profile,
+            interaction_carryover=interaction_carryover,
         )
         appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
         return appraisal

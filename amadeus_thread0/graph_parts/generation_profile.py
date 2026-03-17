@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import EVAL_MODE, EXPERIENCE_SAMPLING_JITTER
+from ..evolution_engine.motive import semantic_motive_vector
 from .postprocess import (
     DAILY_SURFACE_DRIFT_MARKERS,
     MEMORY_RECALL_KEYWORDS,
@@ -315,7 +316,7 @@ def _daily_surface_preference_lines(user_text: str, *, science_mode: bool = Fals
     focus_text = top_focus[:72].rstrip("。！？!?；;，, ")
     if not focus_text:
         return []
-    return [f"这类轻场景更重视：{focus_text}。"]
+    return [f"这类轻场景常见的自然落点是：{focus_text}。"]
 
 
 def _is_free_dialog_style(style_hint: str, user_text: str, science_mode: bool) -> bool:
@@ -454,6 +455,7 @@ def _generation_profile(
     world_model_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     hint = str(response_style_hint or "").strip() or "natural"
     event = dict(current_event or {})
@@ -465,16 +467,20 @@ def _generation_profile(
     world = dict(world_model_state or {})
     action = dict(behavior_action or {})
     carryover = dict(interaction_carryover or {})
+    narrative = dict(semantic_narrative_profile or {})
 
     reply_bias = _clamp01(policy.get("reply_length_bias"), 0.5)
     warmth = _clamp01(policy.get("warmth"), 0.5)
     sharpness = _clamp01(policy.get("sharpness"), 0.5)
     approach = _clamp01(policy.get("approach_vs_withdraw"), 0.5)
+    self_directedness = _clamp01(policy.get("self_directedness"), 0.25)
     trust = _clamp01(bond.get("trust"), 0.5)
     hurt = _clamp01(bond.get("hurt"), 0.0)
     cognitive_budget = _clamp01(allostasis.get("cognitive_budget"), 0.7)
     safety_need = _clamp01(allostasis.get("safety_need"), 0.2)
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    counterpart_stance = str(assessment.get("stance") or "").strip().lower()
+    counterpart_scene = str(assessment.get("scene") or "").strip().lower()
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
     event_kind = str(event.get("kind") or "user_utterance").strip().lower()
     task_focus = str(action.get("task_focus") or "").strip().lower()
@@ -483,6 +489,13 @@ def _generation_profile(
     attention_target = str(action.get("attention_target") or "").strip().lower()
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    narrative_presence = _clamp01(narrative.get("presence_carry"), 0.0)
+    narrative_history = _clamp01(narrative.get("history_weight"), 0.0)
+    narrative_agency = _clamp01(narrative.get("agency_drive"), 0.0)
+    narrative_rhythm = _clamp01(narrative.get("rhythm_continuity"), 0.0)
+    motive_vector = semantic_motive_vector(narrative)
+    motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
+    motive_continuity = _clamp01(motive_vector.get("continuity_pull"), 0.0)
     relationship_weather, relationship_weather_strength = _effective_relationship_weather(
         interaction_carryover=carryover,
         current_event=event,
@@ -510,10 +523,14 @@ def _generation_profile(
     own_rhythm_load = max(
         self_activity_momentum,
         carryover_strength if carryover_mode in {"own_rhythm", "small_opening", "quiet_recontact"} else 0.0,
+        0.84 * narrative_rhythm,
+        0.74 * narrative_agency,
+        0.92 * motive_self_rhythm,
     )
     background_window_load = max(
         carryover_strength if carryover_mode in {"shared_window", "task_window", "life_window"} else 0.0,
         self_activity_momentum if attention_target in {"shared_task"} else 0.0,
+        0.72 * max(narrative_presence, narrative_history, motive_continuity),
     )
     focused_user_turn = (
         event_kind == "user_utterance"
@@ -523,6 +540,14 @@ def _generation_profile(
             or attention_target in {"own_task", "self_then_counterpart", "shared_task"}
             or own_rhythm_load >= 0.56
         )
+    )
+    semantic_own_rhythm_turn = (
+        event_kind == "user_utterance"
+        and not science_mode
+        and interaction_mode in {"steady_reply", "companion_reply", "brief_presence", "self_activity_reopen"}
+        and followup_intent in {"none", "soft"}
+        and own_rhythm_load >= 0.56
+        and self_directedness >= 0.46
     )
     background_window_turn = (
         event_kind == "user_utterance"
@@ -542,6 +567,14 @@ def _generation_profile(
         and relationship_weather in {"guarded_residue", "warm_residue", "repair_residue"}
         and relationship_weather_strength >= 0.22
     )
+    busy_scene_turn = event_kind == "user_utterance" and counterpart_scene == "busy_not_disrespectful"
+    repair_scene_turn = event_kind == "user_utterance" and counterpart_scene == "repair_attempt"
+    care_scene_turn = event_kind == "user_utterance" and counterpart_scene == "care_bid"
+    friction_scene_turn = event_kind == "user_utterance" and counterpart_scene in {
+        "friction",
+        "relationship_degradation",
+        "boundary_non_compliance",
+    }
     low_followup_turn = event_kind == "user_utterance" and followup_intent == "none"
     default_sampling_candidate = (
         event_kind == "user_utterance"
@@ -554,9 +587,14 @@ def _generation_profile(
         and cognitive_budget >= 0.42
         and repetition_pressure < 0.18
         and not focused_user_turn
+        and not semantic_own_rhythm_turn
         and not background_window_turn
         and not life_window_turn
         and not relational_weather_turn
+        and not busy_scene_turn
+        and not repair_scene_turn
+        and not care_scene_turn
+        and not friction_scene_turn
         and not low_followup_turn
         and not _wants_quick_judgment(user_text)
         and not _needs_structured_answer(user_text, "")
@@ -644,6 +682,10 @@ def _generation_profile(
         top_p = min(top_p, 0.82 if exploratory else 0.78)
         if own_rhythm_load >= 0.64 or attention_target in {"own_task", "self_then_counterpart"}:
             temperature = min(temperature, 0.28 if exploratory else 0.22)
+    elif semantic_own_rhythm_turn:
+        max_tokens = _cap_tokens(max_tokens, 168 if exploratory else 148)
+        top_p = min(top_p, 0.82 if exploratory else 0.78)
+        temperature = min(temperature, 0.28 if exploratory else 0.22)
     elif background_window_turn:
         max_tokens = _cap_tokens(max_tokens, 208 if exploratory else 176)
         top_p = min(top_p, 0.84 if exploratory else 0.80)
@@ -662,6 +704,22 @@ def _generation_profile(
         elif relationship_weather == "warm_residue":
             max_tokens = _cap_tokens(max_tokens, 200 if exploratory else 176)
             top_p = min(top_p, 0.86 if exploratory else 0.82)
+    if busy_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 184 if exploratory else 156)
+        temperature = min(temperature, 0.28 if exploratory else 0.22)
+        top_p = min(top_p, 0.84 if exploratory else 0.80)
+    if repair_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 188 if exploratory else 156)
+        temperature = min(temperature, 0.28 if exploratory else 0.22)
+        top_p = min(top_p, 0.82 if exploratory else 0.78)
+    if care_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 204 if exploratory else 172)
+        temperature = min(temperature, 0.30 if exploratory else 0.24)
+        top_p = min(top_p, 0.86 if exploratory else 0.80)
+    if friction_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 144)
+        temperature = min(temperature, 0.26 if exploratory else 0.20)
+        top_p = min(top_p, 0.80 if exploratory else 0.76)
     if low_followup_turn and not science_mode:
         max_tokens = _cap_tokens(max_tokens, 160 if exploratory else 136)
         top_p = min(top_p, 0.80)
@@ -682,6 +740,9 @@ def _generation_profile(
     if focused_user_turn:
         frequency_penalty += 0.05
         presence_penalty = max(0.0, presence_penalty - 0.02)
+    elif semantic_own_rhythm_turn:
+        frequency_penalty += 0.04
+        presence_penalty = max(0.0, presence_penalty - 0.02)
     elif background_window_turn:
         frequency_penalty += 0.03
         presence_penalty = max(0.0, presence_penalty - 0.01)
@@ -695,6 +756,18 @@ def _generation_profile(
             frequency_penalty += 0.02
         elif relationship_weather == "warm_residue":
             presence_penalty += 0.01
+    if busy_scene_turn:
+        frequency_penalty += 0.02
+    if repair_scene_turn:
+        frequency_penalty += 0.03
+        presence_penalty = max(0.0, presence_penalty - 0.01)
+    if care_scene_turn:
+        presence_penalty += 0.01
+    if friction_scene_turn:
+        frequency_penalty += 0.04
+        presence_penalty = max(0.0, presence_penalty - 0.02)
+        if counterpart_stance in {"guarded", "watchful"}:
+            frequency_penalty += 0.01
     if low_followup_turn:
         frequency_penalty += 0.03
         presence_penalty = max(0.0, presence_penalty - 0.02)

@@ -94,6 +94,33 @@ class AppraisalCalibrationTests(unittest.TestCase):
         self.assertTrue(bool(rescued.get("used")))
         self.assertEqual(str(rescued.get("source") or ""), "llm_soft")
 
+    def test_soft_accepts_user_turn_with_own_rhythm_carryover(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.54,
+                emotion_label="neutral",
+                interaction_frame="natural",
+                salience={"task": 0.18, "companionship": 0.20, "selfhood": 0.14},
+                valence=0.02,
+                arousal=0.24,
+            )
+        )
+        self.assertFalse(bool(appraisal.get("used")))
+
+        rescued = _soft_accept_appraisal_payload(
+            appraisal,
+            response_style_hint="natural",
+            current_event={"kind": "user_utterance"},
+            semantic_narrative_profile={},
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.72,
+                "attention_target": "self_then_counterpart",
+            },
+        )
+        self.assertTrue(bool(rescued.get("used")))
+        self.assertEqual(str(rescued.get("source") or ""), "llm_soft")
+
     def test_postprocess_reframes_logic_to_neutral_for_low_task_relational_turn(self):
         appraisal = _coerce_appraisal_payload(
             _raw_appraisal(
@@ -117,6 +144,112 @@ class AppraisalCalibrationTests(unittest.TestCase):
             semantic_narrative_profile={},
         )
         self.assertEqual(str(out.get("emotion_label") or ""), "neutral")
+
+    def test_postprocess_own_rhythm_carryover_marks_selfhood_continuity(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.70,
+                emotion_label="neutral",
+                interaction_frame="natural",
+                salience={"task": 0.14, "companionship": 0.26, "relationship": 0.18, "selfhood": 0.10},
+                valence=0.03,
+                arousal=0.22,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="我刚刚没打扰到你吧？",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.60, "closeness": 0.58, "hurt": 0.02},
+            prev_allostasis_state={"safety_need": 0.18, "autonomy_need": 0.14},
+            semantic_narrative_profile={},
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.76,
+                "attention_target": "self_then_counterpart",
+            },
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "companion")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "own_rhythm_autonomy")
+        salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
+        allostasis_delta = out.get("allostasis_delta") if isinstance(out.get("allostasis_delta"), dict) else {}
+        signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+        self.assertGreaterEqual(float(salience.get("selfhood") or 0.0), 0.42)
+        self.assertGreaterEqual(float(allostasis_delta.get("autonomy_need") or 0.0), 0.05)
+        self.assertTrue(bool(signals.get("memory_salient")))
+
+    def test_postprocess_quiet_recontact_reframes_logic_to_companion(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.68,
+                emotion_label="logic",
+                interaction_frame="structured",
+                salience={"task": 0.20, "companionship": 0.18, "relationship": 0.16, "memory": 0.10},
+                valence=0.02,
+                arousal=0.28,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="你刚刚想和我说什么来着？",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.64, "closeness": 0.60, "hurt": 0.02},
+            prev_allostasis_state={"safety_need": 0.18},
+            semantic_narrative_profile={},
+            interaction_carryover={
+                "carryover_mode": "quiet_recontact",
+                "strength": 0.58,
+                "attention_target": "counterpart_state",
+            },
+        )
+        self.assertEqual(str(out.get("emotion_label") or ""), "neutral")
+        self.assertEqual(str(out.get("interaction_frame") or ""), "companion")
+        salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
+        self.assertGreaterEqual(float(salience.get("companionship") or 0.0), 0.52)
+
+    def test_postprocess_guarded_residue_keeps_withdrawal_without_new_conflict(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.74,
+                emotion_label="care",
+                interaction_frame="relationship",
+                salience={"task": 0.06, "companionship": 0.54, "relationship": 0.48},
+                signals={"care": True},
+                bond_delta={"trust": 0.08, "closeness": 0.10},
+                valence=0.12,
+                arousal=0.24,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="我还是想和你好好说，不想再弄得更别扭。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "hurt", "linger": 1},
+            prev_bond_state={"trust": 0.50, "closeness": 0.46, "hurt": 0.26},
+            prev_allostasis_state={"safety_need": 0.30},
+            semantic_narrative_profile={"tension_residue": 0.34, "boundary_residue": 0.26},
+            interaction_carryover={
+                "carryover_mode": "quiet_recontact",
+                "strength": 0.52,
+                "relationship_weather": "guarded_residue",
+            },
+        )
+        signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+        emotion = out.get("emotion") if isinstance(out.get("emotion"), dict) else {}
+        bond_delta = out.get("bond_delta") if isinstance(out.get("bond_delta"), dict) else {}
+        self.assertTrue(bool(signals.get("withdrawal")))
+        self.assertTrue(bool(signals.get("memory_salient")))
+        self.assertGreaterEqual(int(emotion.get("linger") or 0), 1)
+        self.assertLessEqual(float(bond_delta.get("trust") or 0.0), 0.02)
+        self.assertLessEqual(float(bond_delta.get("closeness") or 0.0), 0.03)
 
     def test_postprocess_promotes_warm_relational_low_affect_to_care(self):
         appraisal = _coerce_appraisal_payload(
@@ -180,6 +313,36 @@ class AppraisalCalibrationTests(unittest.TestCase):
         self.assertLessEqual(float(bond_delta.get("trust") or 0.0), 0.06)
         self.assertLessEqual(float(bond_delta.get("closeness") or 0.0), 0.04)
         self.assertGreaterEqual(int(emotion.get("linger") or 0), 1)
+
+    def test_postprocess_downgrades_repair_on_busy_concern_without_apology(self):
+        appraisal = _coerce_appraisal_payload(
+            _raw_appraisal(
+                confidence=0.80,
+                emotion_label="care",
+                interaction_frame="companion",
+                salience={"task": 0.08, "companionship": 0.62, "relationship": 0.42, "memory": 0.24},
+                signals={"repair": True, "care": True, "memory_salient": True},
+                bond_delta={"trust": 0.06, "closeness": 0.05, "repair_confidence": 0.10},
+                valence=0.14,
+                arousal=0.22,
+            )
+        )
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.66, "closeness": 0.64, "hurt": 0.04},
+            prev_allostasis_state={"safety_need": 0.18},
+            semantic_narrative_profile={},
+        )
+        signals = out.get("signals") if isinstance(out.get("signals"), dict) else {}
+        bond_delta = out.get("bond_delta") if isinstance(out.get("bond_delta"), dict) else {}
+        self.assertFalse(bool(signals.get("repair")))
+        self.assertTrue(bool(signals.get("care")))
+        self.assertLessEqual(float(bond_delta.get("repair_confidence") or 0.0), 0.02)
 
     def test_postprocess_care_signal_does_not_override_sad_distress(self):
         appraisal = _coerce_appraisal_payload(

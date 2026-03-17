@@ -18,6 +18,7 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertIn("event-window-naturalness", _available_presets())
         self.assertIn("relationship-selfhood", _available_presets())
         self.assertIn("relationship-weather", _available_presets())
+        self.assertIn("counterpart-scene", _available_presets())
 
     def test_daily_naturalness_preset_selects_ordinary_cases(self):
         selected = _select_cases(None, None, preset="daily-naturalness")
@@ -75,6 +76,19 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertEqual(mix["warm_residue"], 1)
         self.assertEqual(mix["repair_residue"], 1)
 
+    def test_counterpart_scene_preset_selects_scene_probe_cases(self):
+        selected = _select_cases(None, None, preset="counterpart-scene")
+        names = {str(item.get("name") or "").strip() for item in selected}
+        self.assertEqual(
+            names,
+            {
+                "busy_scene_user",
+                "repair_scene_okabe",
+                "care_scene_user",
+                "friction_scene_okabe",
+            },
+        )
+
     def test_render_markdown_labels_event_transcript_turns(self):
         report = {
             "run_id": "testrun",
@@ -93,6 +107,7 @@ class SubjectiveReviewPackTests(unittest.TestCase):
                     "speaker_style_label": "冈部伦太郎视角",
                     "review_targets": ["event_window"],
                     "expected_relationship_weather": "guarded_residue",
+                    "expected_counterpart_scene": "busy_not_disrespectful",
                     "status": "ok",
                     "elapsed_s": 1.2,
                     "transcript": [
@@ -132,6 +147,7 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertIn("**Amadeus**: 喂，我只是顺手想起来而已。", rendered)
         self.assertIn("当前关系余波覆盖：`guarded 1` / `warm 0` / `repair 0`", rendered)
         self.assertIn("Expected Relationship Weather: `guarded_residue`", rendered)
+        self.assertIn("Expected Counterpart Scene: `busy_not_disrespectful`", rendered)
         self.assertIn("### Relationship Weather Trace", rendered)
         self.assertIn("weather=`guarded_residue`", rendered)
 

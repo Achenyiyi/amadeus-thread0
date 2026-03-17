@@ -16,6 +16,15 @@ class PersonaRuntimeTests(unittest.TestCase):
             )
         )
 
+    def test_science_mode_does_not_inherit_from_assistant_technical_wording_alone(self):
+        self.assertFalse(
+            _science_mode_from_context(
+                "你别装普通寒暄，正常回我嘛。",
+                previous_user_text="其实也没别的事。",
+                previous_assistant_text="别误会，我只是刚好也没在忙什么重要的实验而已。",
+            )
+        )
+
     def test_external_probe_detects_rolebench_and_probe_counterpart(self):
         self.assertTrue(
             _is_external_probe_context(

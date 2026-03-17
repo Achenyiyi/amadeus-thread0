@@ -88,6 +88,7 @@ class EvalMetricSnapshotTests(unittest.TestCase):
                             "case_id": "long_thread-001",
                             "failed_evaluators": ["persona"],
                             "relationship_weather_summary": "event=scheduled_checkin_due, carry_weather=guarded_residue, behavior=brief_presence->confirm_presence",
+                            "behavior_snapshot_summary": "behavior_mode=brief_presence, followup=none, target=confirm_presence",
                         }
                     ],
                     "cases": [],
@@ -97,6 +98,7 @@ class EvalMetricSnapshotTests(unittest.TestCase):
         rendered = _build_markdown_report(report)
         self.assertIn("long_thread-001: persona", rendered)
         self.assertIn("carry_weather=guarded_residue", rendered)
+        self.assertIn("behavior_mode=brief_presence", rendered)
 
     def test_markdown_report_surfaces_transfer_identity_snapshot(self):
         report = {

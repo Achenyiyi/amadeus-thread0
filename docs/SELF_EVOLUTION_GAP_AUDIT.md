@@ -171,7 +171,7 @@ Important nuance:
 What is still weak:
 
 - reconsolidation quality depends on the quality of evidence promotion, not storage availability
-- category-level narrative updating exists, but evidence aging / forgetting / contradiction resolution can still be improved
+- category-level narrative updating now includes confidence-aware and freshness-aware refresh weighting, but longer-horizon forgetting policy and richer contradiction arbitration can still be improved
 
 ### Behavior Policy Engine
 
@@ -226,6 +226,7 @@ So the real remaining gaps are:
 
 4. `long-horizon own-rhythm credibility`
    - whether behavior agenda promotion, self-activity carryover, and scheduled life events feel like a living rhythm rather than an engineering artifact
+   - current closure direction: persist strong agenda lifecycle outcomes into durable worldline / relationship memory so own-rhythm survives beyond transient runtime residue
 
 5. `evaluation realism`
    - whether the current subjective and probe suites actually stress natural interaction instead of only structural success conditions
@@ -242,9 +243,9 @@ So the real remaining gaps are:
 ### Priority P1
 
 - strengthen reconsolidation policy:
-  - evidence aging
-  - contradiction handling
-  - confidence-aware narrative refresh
+  - longer-horizon evidence aging / forgetting
+  - contradiction handling beyond current weighted pressure model
+  - calibration of confidence-aware narrative refresh
 - improve how self activity and ambient perception are surfaced in ordinary turns
 - tighten subjective review packs around "is she alive" rather than "did the field update"
 

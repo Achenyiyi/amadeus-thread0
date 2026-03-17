@@ -11,10 +11,20 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
     residue_snapshot = narrative.get("residue_snapshot") if isinstance(narrative.get("residue_snapshot"), dict) else {}
     persistence_snapshot = narrative.get("persistence_snapshot") if isinstance(narrative.get("persistence_snapshot"), dict) else {}
     axis_values = {
+        "bond_style": max(
+            clamp01(narrative.get("bond_depth"), 0.0),
+            clamp01(residue_snapshot.get("bond_style"), 0.0),
+            0.72 * clamp01(persistence_snapshot.get("bond_style"), 0.0),
+        ),
         "boundary_style": max(
             clamp01(narrative.get("boundary_residue"), 0.0),
             clamp01(residue_snapshot.get("boundary_style"), 0.0),
             0.72 * clamp01(persistence_snapshot.get("boundary_style"), 0.0),
+        ),
+        "commitment_style": max(
+            clamp01(narrative.get("commitment_carry"), 0.0),
+            clamp01(residue_snapshot.get("commitment_style"), 0.0),
+            0.72 * clamp01(persistence_snapshot.get("commitment_style"), 0.0),
         ),
         "selfhood_style": max(
             clamp01(narrative.get("selfhood_integrity"), 0.0),
@@ -36,10 +46,20 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
             clamp01(residue_snapshot.get("ambient_style"), 0.0),
             0.72 * clamp01(persistence_snapshot.get("ambient_style"), 0.0),
         ),
+        "repair_style": max(
+            clamp01(narrative.get("repair_residue"), 0.0),
+            clamp01(residue_snapshot.get("repair_style"), 0.0),
+            0.72 * clamp01(persistence_snapshot.get("repair_style"), 0.0),
+        ),
         "rhythm_style": max(
             clamp01(narrative.get("rhythm_continuity"), 0.0),
             clamp01(residue_snapshot.get("rhythm_style"), 0.0),
             0.72 * clamp01(persistence_snapshot.get("rhythm_style"), 0.0),
+        ),
+        "tension_style": max(
+            clamp01(narrative.get("tension_residue"), 0.0),
+            clamp01(residue_snapshot.get("tension_style"), 0.0),
+            0.72 * clamp01(persistence_snapshot.get("tension_style"), 0.0),
         ),
     }
     vector = {
@@ -50,23 +70,34 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
         "support_pull": 0.0,
         "shared_window_pull": 0.0,
         "dominant_primary_motive": "",
+        "dominant_primary_category": "",
+        "dominant_primary_strength": 0.0,
+        "dominant_goal_frame": "",
         "dominant_motive_tension": "",
+        "dominant_tension_category": "",
+        "dominant_tension_strength": 0.0,
     }
-    motive_rankings: list[tuple[float, str]] = []
-    tension_rankings: list[tuple[float, str]] = []
+    motive_rankings: list[tuple[float, str, str, str]] = []
+    tension_rankings: list[tuple[float, str, str]] = []
 
     for category, raw in motive_snapshot.items():
         if not isinstance(raw, dict):
             continue
-        strength = clamp01(axis_values.get(str(category or "").strip(), 0.0), 0.0)
+        category_key = str(category or "").strip()
+        strength = clamp01(axis_values.get(category_key, 0.0), 0.0)
         if strength <= 0.0:
             continue
         primary_motive = str(raw.get("primary_motive") or "").strip().lower()
         motive_tension = str(raw.get("motive_tension") or "").strip().lower()
+        goal_frame_examples = [
+            str(item).strip()
+            for item in (raw.get("goal_frame_examples") or [])
+            if str(item or "").strip()
+        ]
         if primary_motive:
-            motive_rankings.append((strength, primary_motive))
+            motive_rankings.append((strength, primary_motive, category_key, goal_frame_examples[0] if goal_frame_examples else ""))
         if motive_tension:
-            tension_rankings.append((strength, motive_tension))
+            tension_rankings.append((strength, motive_tension, category_key))
 
         if primary_motive == "protect_boundary":
             vector["boundary_pull"] = max(float(vector["boundary_pull"]), 1.00 * strength)
@@ -110,7 +141,14 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
         vector[key] = round(clamp01(vector[key], 0.0), 3)
 
     if motive_rankings:
-        vector["dominant_primary_motive"] = max(motive_rankings, key=lambda item: item[0])[1]
+        primary_strength, primary_motive, primary_category, primary_goal_frame = max(motive_rankings, key=lambda item: item[0])
+        vector["dominant_primary_motive"] = primary_motive
+        vector["dominant_primary_category"] = primary_category
+        vector["dominant_primary_strength"] = round(clamp01(primary_strength, 0.0), 3)
+        vector["dominant_goal_frame"] = primary_goal_frame
     if tension_rankings:
-        vector["dominant_motive_tension"] = max(tension_rankings, key=lambda item: item[0])[1]
+        tension_strength, motive_tension, tension_category = max(tension_rankings, key=lambda item: item[0])
+        vector["dominant_motive_tension"] = motive_tension
+        vector["dominant_tension_category"] = tension_category
+        vector["dominant_tension_strength"] = round(clamp01(tension_strength, 0.0), 3)
     return vector

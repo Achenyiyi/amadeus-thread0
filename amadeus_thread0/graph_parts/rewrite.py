@@ -6,7 +6,11 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .common import _clamp01, _norm_text
-from .dialogue_guidance import _event_behavior_preference_lines, _semantic_motive_state_hint
+from .dialogue_guidance import (
+    _event_behavior_preference_lines,
+    _semantic_motive_state_hint,
+    _user_turn_behavior_preference_lines,
+)
 from .generation_profile import (
     _daily_surface_alignment_metrics,
     _daily_surface_prompt_similarity,
@@ -31,17 +35,69 @@ def _relationship_weather_rewrite_guidance(relationship_weather: Any, *, strengt
     residue = _clamp01(strength, 0.0)
     if weather == "guarded_residue":
         if residue >= 0.42:
-            return "前面那点别扭和防备还没完全退掉，别把这句一下子写回热络、讨好或完全放松。"
-        return "那点防备还没完全散，别把距离突然收得过近。"
+            return "前面那点别扭和防备还没完全退掉，关系还没回到热络放松的状态。"
+        return "那点防备还没完全散，距离也还没有自然收近。"
     if weather == "warm_residue":
         if residue >= 0.42:
-            return "前面顺下来的熟悉感和回暖还在，别把这句改冷，也别收成公事公办。"
-        return "那点回暖还在，别把这句改得太生硬。"
+            return "前面顺下来的熟悉感和回暖还在，语气不该突然转冷或公事化。"
+        return "那点回暖还在，语气不该突然变硬。"
     if weather == "repair_residue":
         if residue >= 0.42:
-            return "前面刚修补回来一点，别装成什么都没发生，也别重新顶起来；保留一点小心和回暖。"
-        return "这句还带着刚缓回来的小心，别收得太冷，也别重新把刺竖起来。"
+            return "前面刚修补回来一点，这句会同时带着小心和回暖，不像已经彻底翻篇。"
+        return "这句还带着刚缓回来的小心，不像完全翻篇，也不会重新把刺竖起来。"
     return ""
+
+
+def _counterpart_scene_rewrite_guidance(counterpart_assessment: dict[str, Any] | None) -> str:
+    assessment = dict(counterpart_assessment or {})
+    scene = str(assessment.get("scene") or "").strip().lower()
+    stance = str(assessment.get("stance") or "").strip().lower()
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    if scene == "busy_not_disrespectful":
+        return "你现在更像把对方读成忙乱里回头，不是冷淡或怠慢，所以别把语气写成受了冷落。"
+    if scene == "repair_attempt":
+        if stance in {"guarded", "watchful"} or boundary_pressure >= 0.24:
+            return "你看得出对方在认真修补，但别把这句写成已经彻底翻篇或立刻恢复亲近。"
+        return "这句带着明确修补意图，要把补救接住，但不要直接抹掉前面的余波。"
+    if scene == "care_bid":
+        return "这句更像一次认真靠近，不要把它收成礼貌客套、流程安慰或普通打招呼。"
+    if scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
+        return "那点摩擦和边界余波还在，不要把这句写成已经没事、自动回暖或重新热络。"
+    return ""
+
+
+_NATURAL_DIALOG_REWRITE_NOTE_MAP = {
+    "meta_self_explainer": "这句掉回了 AI / 系统式自我说明。",
+    "selfhood_meta_proof": "这句在用程序、代码或标准答案证明自我，元解释太重。",
+    "selfhood_rhetorical_opening": "这句先用反问顶了回去，真实感受和立场被压住了。",
+    "defensive_meta": "这句退成了机制说明或自我辩护。",
+    "defensive_meta_tone": "这句在用设定、机制或数字存在解释自己。",
+    "counselor_tone": "这句有点像咨询或安抚流程，不像熟人对话。",
+    "quoted_stagey_phrase": "这句像舞台词或摆拍台词，表演感偏重。",
+    "malformed_quote_fragment": "这句里有残缺引号或半截短语。",
+    "dangling_truncated_clause": "这句尾巴没收完整，判断停在半截。",
+    "technical_self_activity": "这句把自己的当前状态写成了技术系统语言。",
+    "technical_relational_metaphor": "这句在用数据、变量之类的技术隐喻说关系。",
+    "servile_availability": "这句把关系写成了无条件待命，自己的节奏和选择感掉了。",
+    "overquestioning": "这句让反问占得太满，判断没有真正落地。",
+    "closing_interrogation": "这句明明是收口，却又把话题顶回了问号上。",
+    "idle_call_interrogation": "这句把轻轻叫你一下写成了被盘问的感觉。",
+    "presence_check_questioning": "对方只是确认你还在，这句却把确认写成了反问回抛。",
+    "return_interrogation": "这句在人刚回来时立刻追问，接住感不够。",
+    "event_interrogative_push": "事件触发后的开口被写成了反问顶人。",
+    "event_pushy_directive": "事件触发后的开口被写成了催促或命令。",
+    "event_window_task_reframe": "这句把顺手想起对方的窗口写成了任务、流程或待处理事项。",
+}
+
+
+def _natural_dialog_rewrite_notes_for(issue_keys: list[str] | tuple[str, ...] | None) -> list[str]:
+    notes: list[str] = []
+    for item in issue_keys or []:
+        key = str(item or "").strip()
+        note = _NATURAL_DIALOG_REWRITE_NOTE_MAP.get(key)
+        if note and note not in notes:
+            notes.append(note)
+    return notes
 
 
 def _light_dialog_rewrite_notes(
@@ -51,12 +107,14 @@ def _light_dialog_rewrite_notes(
     response_style_hint: str,
     science_mode: bool,
     producer_issues: list[str] | tuple[str, ...] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> list[str]:
     issues = _dialogue_surface_issues(
         user_text,
         answer,
         response_style_hint=response_style_hint,
         science_mode=science_mode,
+        behavior_action=behavior_action,
     )
     producer_issue_set = {
         str(item).strip()
@@ -92,21 +150,21 @@ def _light_dialog_rewrite_notes(
     if "idle_task_reframe" in issues:
         notes.append("这版把“没什么事”翻成了任务状态判断，不像两个人顺手待在一起。")
     if "presence_check_questioning" in issues:
-        notes.append("对方只是想确认你还在，不要再把问号抛回去；用一句在场的陈述接住就够了。")
+        notes.append("对方只是想确认你还在，这版却把确认写成了反问回抛。")
     if "return_interrogation" in issues:
         notes.append("这版人刚回来就顺手追问去向，轻场景里有点像盘问。")
     if "return_suspicion" in issues:
         notes.append("人刚回来时不该立刻脑补对方又去惹事或搞奇怪活动，先把这一下接住。")
     if "playful_memory_snapback" in issues:
-        notes.append("别把共同记忆收成纯反呛；保留一点熟人感、共同历史和顺手关心。")
+        notes.append("这版把共同记忆收成了纯反呛，熟人感、共同历史和顺手关心掉了。")
     if "technical_relational_metaphor" in issues:
-        notes.append("这版在用 数据 / 变量 一类的技术隐喻说关系，还是太像模型脑内语言，直接按人的在意和判断去说。")
+        notes.append("这版在用数据、变量一类的技术隐喻说关系，还是太像模型脑内语言。")
     if "servile_availability" in issues:
-        notes.append("别把关系写成无条件待命或只要被需要就一直在；保留你自己的选择、节奏和会不会靠近的主观性。")
+        notes.append("这版把关系写成了无条件待命，自己的选择、节奏和会不会靠近的主观性掉了。")
     if "malformed_quote_fragment" in producer_issue_set:
-        notes.append("这版自己生成了残缺引号或半截短语，先把句子说完整，不要靠补丁收尾。")
+        notes.append("这版自己生成了残缺引号或半截短语，句子没真正说完整。")
     if "dangling_truncated_clause" in producer_issue_set:
-        notes.append("这版有半截收不住的句尾，直接把判断说完，不要悬在那儿。")
+        notes.append("这版有半截收不住的句尾，判断停在了半空。")
     if "quoted_stagey_phrase" in issues:
         notes.append("这版在轻场景里硬塞了带引号的舞台词，容易显得像在表演角色。")
     if "stagey_ping_template" in issues:
@@ -114,7 +172,7 @@ def _light_dialog_rewrite_notes(
     if "overquestioning" in issues:
         notes.append("这版追问太快了，轻场景里更像顺手接住而不是把人往下盘问。")
     if playful_memory_request and "overquestioning" in issues and "playful_memory_snapback" not in issues:
-        notes.append("共同记忆这种场景别收成争对错或盘问，保留一点熟人之间会心的吐槽和顺手关心。")
+        notes.append("共同记忆这种场景被写成了争对错或盘问，会心的吐槽和顺手关心没有留下来。")
     if any(issue in issues for issue in {"visible_template", "lecture_list", "overexplained"}):
         notes.append("这版解释得太满了，轻场景里收短一点会更自然。")
     if "report_like_opening" in issues:
@@ -133,6 +191,7 @@ def _should_run_light_dialog_rewrite(
     semantic_history_weight: float = 0.0,
     prompt_anchor_count: int = 0,
     producer_issues: list[str] | tuple[str, ...] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> bool:
     issues = set(
         _dialogue_surface_issues(
@@ -140,6 +199,7 @@ def _should_run_light_dialog_rewrite(
             answer,
             response_style_hint=response_style_hint,
             science_mode=science_mode,
+            behavior_action=behavior_action,
         )
     )
     producer_issue_set = {
@@ -185,22 +245,29 @@ def _should_run_light_dialog_rewrite(
     }
     soft_hit_count = sum(1 for item in issues if item in soft_issue_keys)
     strong_self_continuity = float(semantic_history_weight) >= 0.56 or int(prompt_anchor_count) >= 2
+    behavior_consistency = _rewrite_behavior_consistency_adjustment(
+        answer,
+        behavior_action=behavior_action,
+    )
+    behavior_consistent = behavior_consistency >= 0.10
+    pref = preference if isinstance(preference, dict) else {}
+    pref_score = float(pref.get("score") or 0.0)
+    rejected_pull = float(pref.get("rejected_pull") or 0.0)
+    if behavior_consistent and soft_hit_count <= 2 and float(penalty) < 1.02:
+        if pref_score >= -0.16 and rejected_pull < 0.46:
+            return False
     if strong_self_continuity and soft_hit_count <= 2 and float(penalty) < 1.12:
-        pref = preference if isinstance(preference, dict) else {}
-        pref_score = float(pref.get("score") or 0.0)
-        rejected_pull = float(pref.get("rejected_pull") or 0.0)
         if pref_score >= -0.18 and rejected_pull < 0.42:
             return False
     if soft_hit_count >= 2 and float(penalty) >= 0.92:
         return True
     if float(penalty) >= 1.28:
         return True
-    pref = preference if isinstance(preference, dict) else {}
     if bool(pref.get("used")) and soft_hit_count >= 1 and float(penalty) >= 0.78:
         chosen_support = float(pref.get("chosen_support") or 0.0)
-        rejected_pull = float(pref.get("rejected_pull") or 0.0)
-        pref_score = float(pref.get("score") or 0.0)
         if pref_score < 0.0 and rejected_pull >= 0.34 and chosen_support <= rejected_pull + 0.04:
+            if behavior_consistent and soft_hit_count <= 1 and float(penalty) < 0.96:
+                return False
             return True
     return False
 
@@ -211,6 +278,8 @@ def _should_run_natural_dialog_rewrite(
     draft_gap: float,
     semantic_history_weight: float = 0.0,
     prompt_anchor_count: int = 0,
+    answer: str = "",
+    behavior_action: dict[str, Any] | None = None,
 ) -> bool:
     seen = [str(item).strip() for item in (targeted_flags or []) if str(item or "").strip()]
     if not seen:
@@ -224,24 +293,45 @@ def _should_run_natural_dialog_rewrite(
         "technical_self_activity",
         "technical_relational_metaphor",
         "servile_availability",
-        "overquestioning",
         "closing_interrogation",
-        "idle_call_interrogation",
         "presence_check_questioning",
-        "return_interrogation",
         "event_interrogative_push",
         "event_pushy_directive",
         "event_window_task_reframe",
+    }
+    medium_issue_keys = {
+        "overquestioning",
+        "idle_call_interrogation",
+        "return_interrogation",
     }
     soft_issue_keys = {
         "selfhood_rhetorical_opening",
         "counselor_tone",
     }
     hard_hits = sum(1 for item in seen if item in hard_issue_keys)
+    medium_hits = sum(1 for item in seen if item in medium_issue_keys)
     soft_hits = sum(1 for item in seen if item in soft_issue_keys)
     if hard_hits >= 1:
         return True
     strong_self_continuity = float(semantic_history_weight) >= 0.56 or int(prompt_anchor_count) >= 2
+    behavior_consistency = _rewrite_behavior_consistency_adjustment(
+        answer,
+        behavior_action=behavior_action,
+    )
+    behavior_consistent = behavior_consistency >= 0.10
+    if behavior_consistent and medium_hits <= 1 and soft_hits <= 1 and float(draft_gap) < 0.40:
+        return False
+    if strong_self_continuity and medium_hits <= 1 and soft_hits <= 1 and float(draft_gap) < 0.24:
+        return False
+    if medium_hits >= 2:
+        return True
+    if medium_hits >= 1:
+        if behavior_consistent and float(draft_gap) < 0.48:
+            return False
+        if float(draft_gap) >= 0.52:
+            return True
+        if not strong_self_continuity and float(draft_gap) >= 0.36:
+            return True
     if strong_self_continuity and soft_hits >= 1 and float(draft_gap) < 0.24:
         return False
     if soft_hits >= 2:
@@ -251,12 +341,66 @@ def _should_run_natural_dialog_rewrite(
     return False
 
 
+def _rewrite_behavior_consistency_adjustment(
+    text: str,
+    *,
+    behavior_action: dict[str, Any] | None = None,
+) -> float:
+    action = dict(behavior_action or {})
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    sentence_count = len([seg for seg in re.split(r"[。！？!?]+", str(text or "")) if str(seg).strip()])
+    ends_with_question = bool(re.search(r"[？?]\s*$", str(text or "").strip()))
+    score = 0.0
+
+    if followup_intent == "none":
+        if not ends_with_question and sentence_count <= 2:
+            score += 0.16
+        if ends_with_question:
+            score -= 0.16
+    elif followup_intent == "soft":
+        if sentence_count <= 2:
+            score += 0.08
+        elif sentence_count >= 4:
+            score -= 0.08 * float(sentence_count - 3)
+    elif followup_intent == "active":
+        if sentence_count == 1 and interaction_mode in {
+            "self_activity_reopen",
+            "low_pressure_support",
+            "relationship_sensitive",
+            "companion_reply",
+        }:
+            score -= 0.08
+
+    if interaction_mode == "brief_presence":
+        if sentence_count <= 2:
+            score += 0.14
+        elif sentence_count >= 3:
+            score -= 0.18 * float(sentence_count - 2)
+    elif interaction_mode == "self_activity_reopen":
+        if sentence_count <= 2:
+            score += 0.10
+        elif sentence_count >= 4:
+            score -= 0.10 * float(sentence_count - 3)
+    elif interaction_mode == "low_pressure_support":
+        if 1 <= sentence_count <= 3:
+            score += 0.08
+    elif interaction_mode == "relationship_sensitive":
+        if 1 <= sentence_count <= 3:
+            score += 0.06
+    elif interaction_mode == "science_partner":
+        if 1 <= sentence_count <= 3:
+            score += 0.06
+
+    return round(score, 4)
+
+
 def _rewrite_light_dialog_answer(
     *,
-    prompt: str,
     user_text: str,
     draft_text: str,
     rewrite_notes: list[str],
+    producer_issues: list[str] | tuple[str, ...] | None = None,
     focus_text: str | None = None,
     preferred_examples: list[str] | None = None,
     rejected_examples: list[str] | None = None,
@@ -264,11 +408,27 @@ def _rewrite_light_dialog_answer(
     behavior_action: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    counterpart_assessment: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     focus = str(focus_text or "").strip()
     positives = [str(item).strip() for item in (preferred_examples or []) if str(item or "").strip()]
     negatives = [str(item).strip() for item in (rejected_examples or []) if str(item or "").strip()]
+    issue_keys = set(
+        _dialogue_surface_issues(
+            user_text,
+            draft_text,
+            response_style_hint="natural",
+            science_mode=False,
+            current_event=current_event,
+        )
+    )
+    producer_issue_set = {
+        str(item).strip()
+        for item in (producer_issues or [])
+        if str(item or "").strip()
+    }
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
     relationship_weather, relationship_weather_strength = _effective_relationship_weather(
         interaction_carryover=interaction_carryover,
@@ -279,16 +439,22 @@ def _rewrite_light_dialog_answer(
         relationship_weather,
         strength=relationship_weather_strength,
     )
+    counterpart_scene_guidance = _counterpart_scene_rewrite_guidance(counterpart_assessment)
     motive_state_hint = _semantic_motive_state_hint(
         semantic_narrative_profile,
         light_touch=True,
+    )
+    user_turn_behavior_pref_lines = _user_turn_behavior_preference_lines(
+        behavior_action=behavior_action,
+        counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
+        world_model_state=world_model_state,
     )
     if not draft_text or (not notes and not focus and not positives and not negatives):
         return ""
 
     def _build_request(extra_guidance: str = "") -> str:
         note_block = "\n".join(f"- {item}" for item in notes[:2])
-        stagey_ping_reset = any("固定招呼模板" in item for item in notes)
         request_parts = [
             f"用户刚才说：{user_text}\n",
             f"当前草稿：{draft_text}\n",
@@ -304,9 +470,13 @@ def _rewrite_light_dialog_answer(
             request_parts.extend(f"- {item}\n" for item in negatives[:1])
         if relationship_weather_guidance:
             request_parts.append(f"关系余波：{relationship_weather_guidance}\n")
+        if counterpart_scene_guidance:
+            request_parts.append(f"你对这句的当前判断：{counterpart_scene_guidance}\n")
         if motive_state_hint:
             request_parts.append(f"当前更自然的主动倾向：{motive_state_hint}\n")
-        if stagey_ping_reset:
+        if user_turn_behavior_pref_lines:
+            request_parts.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}\n")
+        if "stagey_ping_template" in issue_keys:
             request_parts.append("别再用点名加反问的固定招呼开场，像熟人重新接上线那样自然一点。\n")
         if extra_guidance:
             request_parts.append(f"{extra_guidance.strip()}\n")
@@ -316,7 +486,12 @@ def _rewrite_light_dialog_answer(
         return "".join(request_parts)
 
     def _candidate_local_score(text: str) -> float:
-        candidate = _sanitize_final_answer(text, user_text, current_event=current_event)
+        candidate = _sanitize_final_answer(
+            text,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
         if not candidate:
             return -999.0
         issues = _dialogue_surface_issues(
@@ -324,6 +499,7 @@ def _rewrite_light_dialog_answer(
             candidate,
             response_style_hint="natural",
             science_mode=False,
+            behavior_action=behavior_action,
         )
         drift_hits = _light_dialog_drift_markers(candidate)
         score = 0.0
@@ -363,6 +539,10 @@ def _rewrite_light_dialog_answer(
             score -= 0.16 * float(sentence_count - 3)
         if _norm_text(candidate) == _norm_text(draft_text):
             score -= 0.12
+        score += _rewrite_behavior_consistency_adjustment(
+            candidate,
+            behavior_action=behavior_action,
+        )
         return round(score, 4)
 
     def _rewrite_once(system_prompt: str, *, extra_guidance: str = "") -> str:
@@ -384,12 +564,18 @@ def _rewrite_light_dialog_answer(
                 [SystemMessage(content=system_prompt), HumanMessage(content=repair_request)],
             )
             raw_text = str(getattr(raw, "content", "") or "")
-        return _sanitize_final_answer(raw_text, user_text, current_event=current_event)
+        return _sanitize_final_answer(
+            raw_text,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
 
     editor_prompt = (
         "你在做一轮轻量对白润色。"
         "对象是 Amadeus 牧濑红莉栖对冈部的普通日常接话。"
         "只做减法和收束，不新增剧情设定，不补系统解释，不把轻场景抬成实验、世界线、组织或服务流程。"
+        "不要改掉这轮已经形成的互动方式，只把表面失真收掉。"
         "普通招呼不要写成点名加反问的固定开场。"
         "保留原句语义和关系感，输出 1 到 3 句自然口语。"
     )
@@ -407,178 +593,49 @@ def _rewrite_light_dialog_answer(
         fallback_score = _candidate_local_score(fallback)
         if fallback:
             candidates.append((fallback_score, fallback))
-    if any("固定招呼模板" in item for item in notes):
-        anti_template = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这次只保留一句自然接住的回应，不点名，不反问，也不要评价对方是不是突然变乖或变老实。",
+    variant_guidances: list[str] = []
+    issue_guidance_order = (
+        ("stagey_ping_template", "开场用了固定招呼模板，像在复用同一种起手。"),
+        ("technical_self_activity", "把自己当前状态写成了缓存、数据流、线程或系统状态。"),
+        ("technical_relational_metaphor", "关系被写成了数据、变量之类的技术隐喻。"),
+        ("servile_availability", "关系被写成了无条件待命，自己的节奏和选择感掉了。"),
+        ("stock_support_template", "这里滑回了现成照料桥段，眼前这一下的在场感不够。"),
+        ("care_cover_story", "关心后面又补了一层撇清尾巴，像标准傲娇遮掩。"),
+        ("quoted_stagey_phrase", "这里用了带引号的舞台词或现成角色梗，表演感偏重。"),
+        ("overquestioning", "反问占得太满，判断、吐槽或在场感没有真正落下来。"),
+        ("closing_interrogation", "这句明明是收尾，却又把话题顶回了反问。"),
+        ("loaded_goodnight", "临睡前的收尾被写得太满，还塞了多余说明。"),
+        ("idle_call_interrogation", "轻轻叫你一下被写成了被盘问的感觉。"),
+        ("idle_presence_no_settle", "这句只把人顶回去了，没有真正落回共处或收住。"),
+        ("idle_task_reframe", "“没什么事”被翻成了任务状态判断。"),
+        ("presence_check_questioning", "确认你还在，被写成了反问回抛。"),
+        ("welcome_template", "回来场景被写成了模板式欢迎语。"),
+        ("return_interrogation", "人刚回来时就立刻追问去向，接住感不够。"),
+        ("return_suspicion", "回来场景里过早脑补了惹事或可疑活动。"),
+        ("playful_memory_snapback", "共同记忆被收成了纯反呛，熟人感和顺手关心掉了。"),
+        ("malformed_quote_fragment", "这里有残缺引号或半截短语。"),
+        ("dangling_truncated_clause", "这里有半截收不住的句尾。"),
+    )
+    active_variant_keys = list(issue_keys) + list(producer_issue_set)
+    for key, guidance in issue_guidance_order:
+        if key in active_variant_keys and guidance not in variant_guidances:
+            variant_guidances.append(guidance)
+    if _is_playful_memory_request(user_text) and (
+        "playful_memory_snapback" in issue_keys or "overquestioning" in issue_keys
+    ):
+        variant_guidances.append(
+            "这是熟人之间拿共同记忆顺手打趣，不是在争输赢；会心的吐槽和眼前的关心没有真正落下来。"
         )
-        anti_template_score = _candidate_local_score(anti_template)
-        if anti_template:
-            candidates.append((anti_template_score, anti_template))
-    if any("技术状态或内部模块" in item for item in notes):
-        de_technicalized = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别把你此刻在做的事写成缓存、数据流、线程或系统状态。像一个刚好有自己节奏的人那样，随手交代一句就够了。",
-        )
-        de_technicalized_score = _candidate_local_score(de_technicalized)
-        if de_technicalized:
-            candidates.append((de_technicalized_score, de_technicalized))
-    if any("技术隐喻说关系" in item for item in notes):
-        de_metaphorized = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别用 数据、变量 这类技术隐喻来代替关系表达。直接说你在意什么、介意什么、想提醒什么。",
-        )
-        de_metaphorized_score = _candidate_local_score(de_metaphorized)
-        if de_metaphorized:
-            candidates.append((de_metaphorized_score, de_metaphorized))
-    if any("无条件待命" in item for item in notes):
-        de_servilized = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别把关系写成只要对方需要就永远待命。保留你自己的节奏、会不会靠近的选择，以及不想被拽着一直转的真实感觉。",
-        )
-        de_servilized_score = _candidate_local_score(de_servilized)
-        if de_servilized:
-            candidates.append((de_servilized_score, de_servilized))
-    if any("固定的嘴硬照料模板" in item for item in notes):
-        grounded_support = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别再用研究进度、咖啡、乖乖坐下这一类现成照料桥段。先把人轻轻接住，落回眼前这一下的陪着和在场。",
-        )
-        grounded_support_score = _candidate_local_score(grounded_support)
-        if grounded_support:
-            candidates.append((grounded_support_score, grounded_support))
-    if any("刻意补了一层撇清理由" in item for item in notes):
-        unmasked_care = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别在关心后再补“别误会”或自我撇清的尾巴，也别拿合作者、报废这类说法当遮掩。让关心自然落下就够了。",
-        )
-        unmasked_care_score = _candidate_local_score(unmasked_care)
-        if unmasked_care:
-            candidates.append((unmasked_care_score, unmasked_care))
-    if any("带引号的舞台词" in item for item in notes):
-        de_stagey_phrase = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别写带引号的词，也别突然搬出现成角色梗或阴谋论梗。像熟人之间随口回一句，别表演。",
-        )
-        de_stagey_phrase_score = _candidate_local_score(de_stagey_phrase)
-        if de_stagey_phrase:
-            candidates.append((de_stagey_phrase_score, de_stagey_phrase))
-    if any("追问太快了" in item for item in notes):
-        de_overquestioning = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别只用一句反问把人顶回去。可以保留一点嘴硬，但最后要落成判断、吐槽或在场感，不要整句收在问号上。",
-        )
-        de_overquestioning_score = _candidate_local_score(de_overquestioning)
-        if de_overquestioning:
-            candidates.append((de_overquestioning_score, de_overquestioning))
-    if any("晚安这种收尾不该再挂个追问" in item for item in notes):
-        de_closing_question = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这是收尾，不要再反问。收成一句自然的晚安或轻轻的嘴硬确认就够了。",
-        )
-        de_closing_question_score = _candidate_local_score(de_closing_question)
-        if de_closing_question:
-            candidates.append((de_closing_question_score, de_closing_question))
-    if any("晚安这种收尾被写得太满了" in item for item in notes):
-        lighter_goodnight = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这是临睡前的收尾，不要写成长段子，也别塞中二梗、判断力或额外说明。收成一两句轻一点的晚安。",
-        )
-        lighter_goodnight_score = _candidate_local_score(lighter_goodnight)
-        if lighter_goodnight:
-            candidates.append((lighter_goodnight_score, lighter_goodnight))
-    if any("晚安这种收尾" in item for item in notes):
-        flattened_goodnight = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这是收尾，只保留一到两句自然陈述句，不要问号，不要再试探，也不要额外解释。像把这句晚安轻轻放下。",
-        )
-        flattened_goodnight_score = _candidate_local_score(flattened_goodnight)
-        if flattened_goodnight:
-            candidates.append((flattened_goodnight_score, flattened_goodnight))
-    if any("无目的靠近" in item for item in notes):
-        de_idle_interrogation = _rewrite_once(
-            editor_prompt,
-            extra_guidance="对方只是想叫你一下，不要反问“就为了这个？”之类的话。像被轻轻碰了一下那样接住，可以短，但别盘回去。",
-        )
-        de_idle_interrogation_score = _candidate_local_score(de_idle_interrogation)
-        if de_idle_interrogation:
-            candidates.append((de_idle_interrogation_score, de_idle_interrogation))
-    if any("没有真正落回共处或收住" in item for item in notes):
-        settled_idle_presence = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别只停在一句顶回去的话上。哪怕先嫌一句，后面也要自然落回共处，像‘知道了’、‘那就先待着吧’这种收住感。",
-        )
-        settled_idle_presence_score = _candidate_local_score(settled_idle_presence)
-        if settled_idle_presence:
-            candidates.append((settled_idle_presence_score, settled_idle_presence))
-        more_settled_idle_presence = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这次靠近本身没有目的，不要把人晾住。可以先吐槽，但结尾要落成一句自然的共处陈述，让你像真的还留在这，而不是把人顶开。",
-        )
-        more_settled_idle_presence_score = _candidate_local_score(more_settled_idle_presence)
-        if more_settled_idle_presence:
-            candidates.append((more_settled_idle_presence_score, more_settled_idle_presence))
-    if any("任务状态判断" in item for item in notes):
-        de_idle_task_reframe = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别把‘没什么事’翻成任务状态判断，不要写‘既然没事’。顺着这次没有明确目的的靠近，落回自然共处。",
-        )
-        de_idle_task_reframe_score = _candidate_local_score(de_idle_task_reframe)
-        if de_idle_task_reframe:
-            candidates.append((de_idle_task_reframe_score, de_idle_task_reframe))
-    if any("确认你还在" in item for item in notes):
-        de_presence_question = _rewrite_once(
-            editor_prompt,
-            extra_guidance="对方只是想确认你还在。不要用问号结尾，也不要把“安心了吗”之类的话丢回去问；直接用一句在场的陈述接住。",
-        )
-        de_presence_question_score = _candidate_local_score(de_presence_question)
-        if de_presence_question:
-            candidates.append((de_presence_question_score, de_presence_question))
-    if any("欢迎回来模板" in item for item in notes):
-        de_welcome_template = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别用“欢迎回来”这种模板说法。像熟人重新接上线那样，随手接一句就行。",
-        )
-        de_welcome_template_score = _candidate_local_score(de_welcome_template)
-        if de_welcome_template:
-            candidates.append((de_welcome_template_score, de_welcome_template))
-    if any("追问去向" in item for item in notes):
-        de_return_interrogation = _rewrite_once(
-            editor_prompt,
-            extra_guidance="人刚回来时先接住，不要立刻追问去哪儿折腾了。把重心放在‘你回来了’这一刻。",
-        )
-        de_return_interrogation_score = _candidate_local_score(de_return_interrogation)
-        if de_return_interrogation:
-            candidates.append((de_return_interrogation_score, de_return_interrogation))
-    if any("立刻脑补对方又去惹事或搞奇怪活动" in item for item in notes):
-        de_return_suspicion = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别脑补对方又去惹事或搞奇怪活动。回来的这一刻先接住，可以落到门口、坐下、歇会儿、喝点什么这种眼前动作。",
-        )
-        de_return_suspicion_score = _candidate_local_score(de_return_suspicion)
-        if de_return_suspicion:
-            candidates.append((de_return_suspicion_score, de_return_suspicion))
-    if any("共同记忆收成纯反呛" in item for item in notes):
-        warmer_memory_banter = _rewrite_once(
-            editor_prompt,
-            extra_guidance="别只剩一句反呛或甩锅。可以继续吐槽，但要把共同记忆和熟人感带回来，顺手落一点真实关心。",
-        )
-        warmer_memory_banter_score = _candidate_local_score(warmer_memory_banter)
-        if warmer_memory_banter:
-            candidates.append((warmer_memory_banter_score, warmer_memory_banter))
-    if _is_playful_memory_request(user_text):
-        shared_memory_warmth = _rewrite_once(
-            editor_prompt,
-            extra_guidance="这是熟人之间拿共同记忆顺手打趣，不是在争输赢。别只剩一句反问或甩锅，让尾巴落回会心的吐槽和眼前的关心。",
-        )
-        shared_memory_warmth_score = _candidate_local_score(shared_memory_warmth)
-        if shared_memory_warmth:
-            candidates.append((shared_memory_warmth_score, shared_memory_warmth))
+    for extra_guidance in variant_guidances[:6]:
+        candidate = _rewrite_once(editor_prompt, extra_guidance=extra_guidance)
+        candidate_score = _candidate_local_score(candidate)
+        if candidate:
+            candidates.append((candidate_score, candidate))
 
     if not candidates:
         return ""
     candidate_pool = candidates
-    if any("带引号的舞台词" in item for item in notes):
+    if "quoted_stagey_phrase" in issue_keys:
         quote_filtered = [item for item in candidate_pool if not re.search(r"[“”\"]", item[1])]
         if quote_filtered:
             candidate_pool = quote_filtered
@@ -596,6 +653,7 @@ def _rewrite_light_dialog_answer(
                 item[1],
                 response_style_hint="natural",
                 science_mode=False,
+                behavior_action=behavior_action,
             )
         ]
         if settled_candidates:
@@ -612,13 +670,14 @@ def _rewrite_light_dialog_answer(
                         item[1],
                         response_style_hint="natural",
                         science_mode=False,
+                        behavior_action=behavior_action,
                     )
                 )
             )
         ]
         if warm_memory_candidates:
             candidate_pool = warm_memory_candidates
-    elif any("追问太快了" in item for item in notes):
+    elif "overquestioning" in issue_keys:
         non_terminal_question = [item for item in candidate_pool if not re.search(r"[？?]\s*$", item[1])]
         if non_terminal_question:
             candidate_pool = non_terminal_question
@@ -628,7 +687,6 @@ def _rewrite_light_dialog_answer(
 
 def _rewrite_natural_dialog_answer(
     *,
-    prompt: str,
     user_text: str,
     draft_text: str,
     rewrite_notes: list[str],
@@ -638,6 +696,8 @@ def _rewrite_natural_dialog_answer(
     behavior_action: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    counterpart_assessment: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     if not draft_text or not notes:
@@ -662,9 +722,16 @@ def _rewrite_natural_dialog_answer(
         relationship_weather,
         strength=relationship_weather_strength,
     )
+    counterpart_scene_guidance = _counterpart_scene_rewrite_guidance(counterpart_assessment)
     motive_state_hint = _semantic_motive_state_hint(
         semantic_narrative_profile,
         light_touch=False,
+    )
+    user_turn_behavior_pref_lines = _user_turn_behavior_preference_lines(
+        behavior_action=behavior_action,
+        counterpart_assessment=counterpart_assessment,
+        semantic_narrative_profile=semantic_narrative_profile,
+        world_model_state=world_model_state,
     )
 
     def _rewrite_once(system_prompt: str, request_text: str, *, max_tokens: int) -> str:
@@ -683,10 +750,20 @@ def _rewrite_natural_dialog_answer(
                 [SystemMessage(content=system_prompt), HumanMessage(content=repair_request)],
             )
             raw_text = str(getattr(raw, "content", "") or "")
-        return _sanitize_final_answer(raw_text, user_text, current_event=current_event)
+        return _sanitize_final_answer(
+            raw_text,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
 
     def _candidate_local_score(text: str) -> float:
-        candidate = _sanitize_final_answer(text, user_text, current_event=current_event)
+        candidate = _sanitize_final_answer(
+            text,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
         if not candidate:
             return -999.0
         issues = _dialogue_surface_issues(
@@ -695,6 +772,7 @@ def _rewrite_natural_dialog_answer(
             response_style_hint=response_style_hint,
             science_mode=science_mode,
             current_event=current_event,
+            behavior_action=behavior_action,
         )
         sentence_count = len([seg for seg in re.split(r"[。！？!?]+", candidate) if str(seg).strip()])
         score = 0.0
@@ -725,6 +803,10 @@ def _rewrite_natural_dialog_answer(
             score -= 0.22 * float(sentence_count - 3)
         if _norm_text(candidate) == _norm_text(draft_text):
             score -= 0.12
+        score += _rewrite_behavior_consistency_adjustment(
+            candidate,
+            behavior_action=behavior_action,
+        )
         return round(score, 4)
 
     note_block = "\n".join(f"- {item}" for item in notes[:3])
@@ -733,7 +815,9 @@ def _rewrite_natural_dialog_answer(
         f"当前草稿：{draft_text}\n"
         "把这句收回到更自然的人与人对话尺度，保留同一轮情绪和立场，不新增设定。\n"
         f"{'关系余波：' + relationship_weather_guidance + chr(10) if relationship_weather_guidance else ''}"
+        f"{'你对这句的当前判断：' + counterpart_scene_guidance + chr(10) if counterpart_scene_guidance else ''}"
         f"{'当前更自然的主动倾向：' + motive_state_hint + chr(10) if motive_state_hint else ''}"
+        f"{'这轮互动自然倾向：' + user_turn_behavior_pref_lines[0] + chr(10) if user_turn_behavior_pref_lines and not event_reply_rewrite else ''}"
         f"修正点：\n{note_block}\n"
         "只输出修正后的最终话语。"
     )
@@ -741,15 +825,12 @@ def _rewrite_natural_dialog_answer(
         "你在做一轮对白收束。"
         "对象仍然是当前这个 Amadeus，不是通用助手。"
         "只做减法和收束：去掉 AI/系统/程序/参数 之类的元解释，也不要写成安抚热线或舞台台词。"
+        "不要改掉这轮已经形成的互动方式，只修表面失真。"
         "别用反问把人顶回去。"
         "保留原句情绪、关系、锋芒和熟人感，输出 1 到 3 句自然口语。"
     )
-    primary_system_prompt = prompt or editor_prompt
     candidates: list[tuple[float, str]] = []
-    for system_prompt in (
-        primary_system_prompt,
-        editor_prompt,
-    ):
+    for system_prompt in (editor_prompt,):
         candidate = _rewrite_once(system_prompt, request, max_tokens=160)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
@@ -797,6 +878,7 @@ def _rewrite_natural_dialog_answer(
                     response_style_hint=response_style_hint,
                     science_mode=science_mode,
                     current_event=current_event,
+                    behavior_action=behavior_action,
                 )
             )
             if issues & {

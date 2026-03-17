@@ -1,7 +1,7 @@
 import unittest
 
 from amadeus_thread0.evolution_engine.engine import evolve_turn_state
-from amadeus_thread0.evolution_engine.state import transition_counterpart_assessment
+from amadeus_thread0.evolution_engine.state import transition_allostasis_state, transition_counterpart_assessment
 from amadeus_thread0.graph_parts.affect_dynamics import _allostasis_next, _bond_next, _emotion_next
 from amadeus_thread0.graph_parts.behavior_runtime import _behavior_action_from_state
 from amadeus_thread0.graph_parts.counterpart_dynamics import (
@@ -1191,6 +1191,446 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         )
         self.assertEqual(str(next_state.get("stance") or ""), "watchful")
         self.assertEqual(str(next_state.get("scene") or ""), "repair_attempt")
+
+    def test_transition_counterpart_assessment_reads_busy_user_turn_as_not_disrespectful(self):
+        next_state = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={"used": False},
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.68,
+                "closeness": 0.64,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "relationship_maturity": 0.62,
+                "presence_residue": 0.38,
+                "self_activity_momentum": 0.58,
+                "memory_gravity": 0.52,
+                "boundary_load": 0.12,
+                "tension_load": 0.08,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "刚忙完，来和你说一句。",
+                "effective_text": "刚忙完，来和你说一句。",
+                "tags": ["natural"],
+            },
+        )
+        self.assertEqual(str(next_state.get("stance") or ""), "open")
+        self.assertEqual(str(next_state.get("scene") or ""), "busy_not_disrespectful")
+        self.assertLess(float(next_state.get("boundary_pressure") or 1.0), 0.20)
+        self.assertGreater(float(next_state.get("reliability_read") or 0.0), 0.56)
+
+    def test_transition_counterpart_assessment_own_rhythm_carryover_reads_busy_without_world_hint(self):
+        plain = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={"used": False},
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "relationship_maturity": 0.40,
+                "presence_residue": 0.12,
+                "self_activity_momentum": 0.18,
+                "memory_gravity": 0.22,
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "刚忙完，顺手回来和你说一句。",
+                "effective_text": "刚忙完，顺手回来和你说一句。",
+                "tags": ["natural"],
+            },
+        )
+        infused = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={"used": False},
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "relationship_maturity": 0.40,
+                "presence_residue": 0.12,
+                "self_activity_momentum": 0.18,
+                "memory_gravity": 0.22,
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "刚忙完，顺手回来和你说一句。",
+                "effective_text": "刚忙完，顺手回来和你说一句。",
+                "tags": ["natural"],
+            },
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.74,
+                "attention_target": "self_then_counterpart",
+            },
+        )
+        self.assertEqual(str(infused.get("scene") or ""), "busy_not_disrespectful")
+        self.assertGreater(float(infused.get("reliability_read") or 0.0), float(plain.get("reliability_read") or 0.0))
+        self.assertLess(float(infused.get("boundary_pressure") or 1.0), float(plain.get("boundary_pressure") or 1.0))
+
+    def test_transition_counterpart_assessment_guarded_residue_keeps_watchful_on_benign_turn(self):
+        plain = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.62,
+                "reciprocity": 0.60,
+                "boundary_pressure": 0.16,
+                "reliability_read": 0.62,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.82,
+                "signals": {
+                    "repair": False,
+                    "withdrawal": False,
+                    "care": True,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.06,
+                "irritation": 0.03,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.22,
+                "autonomy_need": 0.20,
+            },
+            world_model_state={
+                "boundary_load": 0.12,
+                "tension_load": 0.10,
+                "presence_residue": 0.14,
+                "relationship_maturity": 0.54,
+            },
+            current_event=self.companion_event,
+        )
+        infused = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.62,
+                "reciprocity": 0.60,
+                "boundary_pressure": 0.16,
+                "reliability_read": 0.62,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.82,
+                "signals": {
+                    "repair": False,
+                    "withdrawal": False,
+                    "care": True,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.06,
+                "irritation": 0.03,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.22,
+                "autonomy_need": 0.20,
+            },
+            world_model_state={
+                "boundary_load": 0.12,
+                "tension_load": 0.10,
+                "presence_residue": 0.14,
+                "relationship_maturity": 0.54,
+            },
+            current_event=self.companion_event,
+            interaction_carryover={
+                "carryover_mode": "quiet_recontact",
+                "strength": 0.58,
+                "relationship_weather": "guarded_residue",
+            },
+        )
+        self.assertEqual(str(plain.get("stance") or ""), "open")
+        self.assertEqual(str(infused.get("stance") or ""), "watchful")
+        self.assertEqual(str(infused.get("scene") or ""), "friction")
+        self.assertGreater(float(infused.get("boundary_pressure") or 0.0), float(plain.get("boundary_pressure") or 0.0))
+        self.assertLess(float(infused.get("reliability_read") or 1.0), float(plain.get("reliability_read") or 1.0))
+
+    def test_transition_counterpart_assessment_preserves_busy_scene_on_followup_concern(self):
+        next_state = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.74,
+                "reciprocity": 0.70,
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.72,
+                "stance": "open",
+                "scene": "busy_not_disrespectful",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.84,
+                "signals": {
+                    "repair": False,
+                    "withdrawal": False,
+                    "care": True,
+                    "conflict": False,
+                    "memory_salient": True,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.68,
+                "closeness": 0.66,
+                "hurt": 0.04,
+                "irritation": 0.01,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+                "presence_residue": 0.12,
+                "relationship_maturity": 0.58,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+                "effective_text": "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+                "tags": ["companion", "care"],
+            },
+        )
+        self.assertEqual(str(next_state.get("stance") or ""), "open")
+        self.assertEqual(str(next_state.get("scene") or ""), "busy_not_disrespectful")
+
+    def test_transition_counterpart_assessment_preserves_friction_on_honest_state_prompt(self):
+        next_state = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.60,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.30,
+                "reliability_read": 0.56,
+                "stance": "watchful",
+                "scene": "friction",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.86,
+                "signals": {
+                    "repair": False,
+                    "withdrawal": False,
+                    "care": True,
+                    "conflict": False,
+                    "memory_salient": True,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.56,
+                "closeness": 0.58,
+                "hurt": 0.16,
+                "irritation": 0.10,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.30,
+                "autonomy_need": 0.34,
+            },
+            world_model_state={
+                "boundary_load": 0.20,
+                "tension_load": 0.32,
+                "presence_residue": 0.18,
+                "relationship_maturity": 0.48,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+                "effective_text": "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+                "tags": ["relationship", "memory_salient"],
+            },
+        )
+        self.assertEqual(str(next_state.get("stance") or ""), "watchful")
+        self.assertEqual(str(next_state.get("scene") or ""), "friction")
+
+    def test_transition_allostasis_state_keeps_continuity_and_own_rhythm_bias_alive(self):
+        base = transition_allostasis_state(
+            prev_state={},
+            emotion_state={"label": "neutral", "arousal": 0.30},
+            bond_state={
+                "trust": 0.62,
+                "closeness": 0.60,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.58,
+            },
+            appraisal={"used": False},
+            world_model_state={
+                "relationship_maturity": 0.28,
+                "presence_residue": 0.12,
+                "self_activity_momentum": 0.16,
+                "memory_gravity": 0.16,
+                "agency_load": 0.18,
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+                "companionship_pull": 0.32,
+                "task_pull": 0.18,
+            },
+            science_mode=False,
+        )
+        infused = transition_allostasis_state(
+            prev_state={},
+            emotion_state={"label": "neutral", "arousal": 0.30},
+            bond_state={
+                "trust": 0.62,
+                "closeness": 0.60,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.58,
+            },
+            appraisal={"used": False},
+            world_model_state={
+                "relationship_maturity": 0.62,
+                "presence_residue": 0.40,
+                "self_activity_momentum": 0.58,
+                "memory_gravity": 0.52,
+                "agency_load": 0.56,
+                "boundary_load": 0.18,
+                "tension_load": 0.08,
+                "companionship_pull": 0.32,
+                "task_pull": 0.18,
+            },
+            science_mode=False,
+        )
+        self.assertGreater(float(infused.get("closeness_need") or 0.0), float(base.get("closeness_need") or 0.0))
+        self.assertGreater(float(infused.get("autonomy_need") or 0.0), float(base.get("autonomy_need") or 0.0))
+        self.assertLessEqual(float(infused.get("safety_need") or 1.0), float(base.get("safety_need") or 1.0))
+        self.assertGreater(float(infused.get("cognitive_budget") or 0.0), 0.72)
+
+    def test_engine_counterpart_assessment_receives_interaction_carryover(self):
+        plain = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            relationship=self.relationship,
+            semantic_narrative_profile={},
+            appraisal={"used": False},
+            current_event=self.companion_event,
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        infused = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            relationship=self.relationship,
+            semantic_narrative_profile={},
+            appraisal={"used": False},
+            current_event=self.companion_event,
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.72,
+                "attention_target": "self_then_counterpart",
+            },
+            response_style_hint="companion",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        plain_assessment = dict(plain.get("counterpart_assessment") or {})
+        infused_assessment = dict(infused.get("counterpart_assessment") or {})
+        self.assertEqual(str(infused_assessment.get("scene") or ""), "busy_not_disrespectful")
+        self.assertGreater(float(infused_assessment.get("reliability_read") or 0.0), float(plain_assessment.get("reliability_read") or 0.0))
+        self.assertLess(float(infused_assessment.get("boundary_pressure") or 1.0), float(plain_assessment.get("boundary_pressure") or 1.0))
 
     def test_canon_okabe_recontact_baseline_is_familiar_but_not_overheated(self):
         baseline = _canon_okabe_recontact_baseline(

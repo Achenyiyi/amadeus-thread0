@@ -35,6 +35,7 @@ from .dialogue_guidance import (
     _semantic_motive_state_hint,
     _selfhood_preference_lines,
     _subjective_runtime_state_hint,
+    _user_turn_behavior_preference_lines,
 )
 from .persona_runtime import (
     _active_counterpart_profile,
@@ -291,6 +292,16 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if current_event_kind == "user_utterance" and not science_mode
         else []
     )
+    user_turn_behavior_pref_lines = (
+        _user_turn_behavior_preference_lines(
+            behavior_action=behavior_action,
+            counterpart_assessment=counterpart_assessment,
+            semantic_narrative_profile=semantic_narrative_profile,
+            world_model_state=world_model_state,
+        )
+        if current_event_kind == "user_utterance" and not science_mode
+        else []
+    )
     event_behavior_pref_lines = (
         _event_behavior_preference_lines(current_event, behavior_action)
         if current_event_kind != "user_utterance"
@@ -310,6 +321,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         active_persona_brief = light_dialog_brief if light_free_dialog and light_dialog_brief else persona_brief
         active_persona_brief_line = f"角色底色：{active_persona_brief}\n" if active_persona_brief else ""
         context_lines: list[str] = []
+        alignment_lines: list[str] = []
         if relationship_summary and not plain_contact_ping:
             context_lines.append(f"- 你和{counterpart_name}当前关系：{relationship_summary}")
         if light_free_dialog:
@@ -323,7 +335,13 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if semantic_narrative_hint and not plain_contact_ping:
                 context_lines.append(f"- 这段时间沉下来的熟悉感：{semantic_narrative_hint}")
             if motive_state_hint and not plain_contact_ping:
-                context_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
+                context_lines.append(f"- 当前主动倾向：{motive_state_hint}")
+            if daily_surface_pref_lines and not plain_contact_ping:
+                alignment_lines.append(f"轻场景自然落点：{daily_surface_pref_lines[0]}")
+            if user_turn_behavior_pref_lines and not plain_contact_ping:
+                alignment_lines.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+            if selfhood_pref_lines and not plain_contact_ping:
+                alignment_lines.append(f"关系/自我侧写：{selfhood_pref_lines[0]}")
             if pending_user_goal and not plain_contact_ping:
                 context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
             elif pending_fragment and not plain_contact_ping:
@@ -346,7 +364,13 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if semantic_narrative_hint:
                 context_lines.append(f"- 这段时间沉下来的关系余波：{semantic_narrative_hint}")
             if motive_state_hint:
-                context_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
+                context_lines.append(f"- 当前主动倾向：{motive_state_hint}")
+            if user_turn_behavior_pref_lines:
+                alignment_lines.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+            if selfhood_pref_lines:
+                alignment_lines.append(f"关系/自我侧写：{selfhood_pref_lines[0]}")
+            if event_behavior_pref_lines:
+                alignment_lines.append(f"事件带出的自然倾向：{event_behavior_pref_lines[0]}")
             if pending_user_goal:
                 context_lines.append(f"- 刚才还没说完的话题：{pending_user_goal[:160]}")
             elif pending_fragment:
@@ -363,24 +387,9 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if context_lines
             else ""
         )
-        surface_pref_block = (
-            "轻场景余味：\n" + "\n".join(f"- {item}" for item in daily_surface_pref_lines) + "\n"
-            if daily_surface_pref_lines and not plain_contact_ping
-            else ""
-        )
-        selfhood_pref_block = (
-            "关系/自我余味：\n" + "\n".join(f"- {item}" for item in selfhood_pref_lines) + "\n"
-            if selfhood_pref_lines and not plain_contact_ping
-            else ""
-        )
         self_anchor_block = (
             "当前自我连续性：\n" + "\n".join(f"- {item}" for item in self_narrative_anchor_lines) + "\n"
             if self_narrative_anchor_lines and (not plain_contact_ping or plain_contact_guard)
-            else ""
-        )
-        event_pref_block = (
-            "事件余味：\n" + "\n".join(f"- {item}" for item in event_behavior_pref_lines) + "\n"
-            if event_behavior_pref_lines
             else ""
         )
         inner_state_lines: list[str] = []
@@ -397,8 +406,10 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             )
             if state_hint and (not plain_contact_ping or plain_contact_guard):
                 inner_state_lines.append(state_hint)
+            if alignment_lines and (not plain_contact_ping or plain_contact_guard):
+                inner_state_lines.extend(alignment_lines[:2])
             if renderer_hint and (not plain_contact_ping or plain_contact_guard):
-                inner_state_lines.append(f"这轮说话会自然带着：{renderer_hint}")
+                inner_state_lines.append(f"表面语气落点：{renderer_hint}")
             if carryover_hint and not plain_contact_ping:
                 inner_state_lines.append(carryover_hint)
             if background_agenda_hint and not plain_contact_ping:
@@ -408,8 +419,10 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         else:
             if subjective_state_hint:
                 inner_state_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
+            if alignment_lines:
+                inner_state_lines.extend(f"- {item}" for item in alignment_lines[:2])
             if renderer_hint:
-                inner_state_lines.append(f"- 这轮说话会自然带着：{renderer_hint}")
+                inner_state_lines.append(f"- 表面语气落点：{renderer_hint}")
             if carryover_hint:
                 inner_state_lines.append(f"- 这轮延续的交互余韵：{carryover_hint}")
             if background_agenda_hint:
@@ -435,10 +448,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             f"{persona_axiom_block}"
             f"{persona_value_block}"
             f"{context_block}"
-            f"{surface_pref_block}"
-            f"{selfhood_pref_block}"
             f"{self_anchor_block}"
-            f"{event_pref_block}"
             f"{inner_state_block}"
             f"{event_prompt_block}"
             f"{user_prompt_block}"
@@ -465,16 +475,6 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     semantic_narrative_block = f"- semantic_narrative_hint={semantic_narrative_hint}\n" if semantic_narrative_hint else ""
     evidence_block = "- evidence:\n" + "\n".join(evidence_lines) + "\n" if evidence_lines else ""
     event_block = "- recent_events:\n" + "\n".join(event_lines) + "\n" if event_lines else ""
-    event_pref_block = (
-        "事件余味：\n" + "\n".join(f"- {item}" for item in event_behavior_pref_lines) + "\n"
-        if event_behavior_pref_lines
-        else ""
-    )
-    selfhood_pref_block = (
-        "关系/自我余味：\n" + "\n".join(f"- {item}" for item in selfhood_pref_lines) + "\n"
-        if selfhood_pref_lines
-        else ""
-    )
     continuation_seed = continuation_seed_text(
         pending_user_goal=pending_user_goal,
         pending_fragment=pending_fragment,
@@ -504,13 +504,19 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if subjective_state_hint:
             runtime_brief_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
         if motive_state_hint:
-            runtime_brief_lines.append(f"- 这段时间慢慢定下来的主动倾向：{motive_state_hint}")
+            runtime_brief_lines.append(f"- 当前主动倾向：{motive_state_hint}")
         if relationship_summary:
             runtime_brief_lines.append(f"- 你和{counterpart_name}此刻关系上的基本感觉：{relationship_summary}")
         if counterpart_assessment_hint:
             runtime_brief_lines.append(f"- 你现在对{counterpart_name}的直觉判断：{counterpart_assessment_hint}")
         if semantic_narrative_hint:
             runtime_brief_lines.append(f"- 最近沉下来的关系余波：{semantic_narrative_hint}")
+        if user_turn_behavior_pref_lines:
+            runtime_brief_lines.append(f"- 这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+        if selfhood_pref_lines:
+            runtime_brief_lines.append(f"- 关系/自我侧写：{selfhood_pref_lines[0]}")
+        if event_behavior_pref_lines:
+            runtime_brief_lines.append(f"- 事件带出的自然倾向：{event_behavior_pref_lines[0]}")
         if carryover_hint:
             runtime_brief_lines.append(f"- 延续到这一句的交互余韵：{carryover_hint}")
         if background_agenda_hint:
@@ -606,8 +612,6 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"{relationship_block}"
         f"{repair_block}"
         f"{evidence_block}"
-        f"{selfhood_pref_block}"
-        f"{event_pref_block}"
         f"{current_event_block}"
         f"{event_block}"
         f"{pending_fragment_block}"

@@ -14,6 +14,35 @@ def _appraisal_weight(appraisal: dict[str, Any] | None, low: float, high: float)
     return low + (high - low) * confidence
 
 
+def _interaction_carryover_state(interaction_carryover: dict[str, Any] | None, current_event: dict[str, Any] | None) -> dict[str, Any]:
+    carryover = dict(interaction_carryover or {})
+    event = dict(current_event or {})
+    mode = str(carryover.get("carryover_mode") or event.get("carryover_mode") or "").strip().lower()
+    strength = max(
+        clamp01(carryover.get("strength"), 0.0),
+        clamp01(event.get("carryover_strength"), 0.0),
+    )
+    relationship_weather = str(carryover.get("relationship_weather") or event.get("relationship_weather") or "").strip().lower()
+    attention_target = str(carryover.get("attention_target") or event.get("attention_target_hint") or "").strip().lower()
+    source_turn_gap = max(0, int(carryover.get("source_turn_gap") or 0))
+    return {
+        "mode": mode,
+        "strength": strength,
+        "relationship_weather": relationship_weather,
+        "attention_target": attention_target,
+        "source_turn_gap": source_turn_gap,
+        "quiet_recontact_load": clamp01(
+            strength if mode in {"quiet_recontact", "brief_presence"} else 0.72 * strength if mode == "small_opening" else 0.0,
+            0.0,
+        ),
+        "window_load": clamp01(strength if mode in {"shared_window", "life_window", "task_window"} else 0.0, 0.0),
+        "own_rhythm_load": clamp01(
+            strength if mode == "own_rhythm" else 0.45 * strength if mode == "small_opening" else 0.0,
+            0.0,
+        ),
+    }
+
+
 def transition_emotion_state(
     *,
     prev_state: dict[str, Any] | None,
@@ -197,6 +226,22 @@ def transition_allostasis_state(
     closeness = clamp01(bond.get("closeness"), 0.5)
     trust = clamp01(bond.get("trust"), 0.5)
     engagement = clamp01(bond.get("engagement_drive"), 0.6)
+    continuity_drive = clamp01(
+        max(
+            clamp01(world.get("presence_residue"), 0.0),
+            0.72 * clamp01(world.get("memory_gravity"), 0.0),
+            0.64 * clamp01(world.get("relationship_maturity"), 0.0),
+        ),
+        0.0,
+    )
+    rhythm_drive = clamp01(
+        max(
+            clamp01(world.get("self_activity_momentum"), 0.0),
+            0.84 * clamp01(world.get("agency_load"), 0.0),
+            0.70 * clamp01(world.get("boundary_load"), 0.0),
+        ),
+        0.0,
+    )
     target = {
         "safety_need": clamp01(0.18 + 0.42 * hurt + 0.26 * irritation + 0.10 * clamp01(world.get("boundary_load"), 0.0)),
         "closeness_need": clamp01(0.16 + 0.42 * (1.0 - closeness) + 0.12 * clamp01(world.get("companionship_pull"), 0.0) + 0.10 * clamp01(world.get("presence_residue"), 0.0)),
@@ -204,6 +249,10 @@ def transition_allostasis_state(
         "autonomy_need": clamp01(0.12 + 0.34 * clamp01(world.get("agency_load"), 0.0) + 0.20 * clamp01(world.get("boundary_load"), 0.0) + 0.14 * clamp01(world.get("self_activity_momentum"), 0.0) + 0.12 * irritation),
         "cognitive_budget": clamp01(0.84 - 0.28 * arousal - 0.16 * clamp01(world.get("tension_load"), 0.0) + 0.10 * trust + 0.06 * engagement - 0.08 * clamp01(world.get("self_activity_momentum"), 0.0), 0.60),
     }
+    target["safety_need"] = clamp01(target["safety_need"] - 0.06 * continuity_drive + 0.02 * max(0.0, rhythm_drive - continuity_drive))
+    target["closeness_need"] = clamp01(target["closeness_need"] + 0.08 * continuity_drive - 0.04 * rhythm_drive)
+    target["autonomy_need"] = clamp01(target["autonomy_need"] + 0.08 * rhythm_drive - 0.03 * continuity_drive)
+    target["cognitive_budget"] = clamp01(target["cognitive_budget"] + 0.04 * rhythm_drive + 0.02 * continuity_drive)
     app = normalize_appraisal_payload(appraisal)
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
     deltas = app.get("allostasis_delta") if isinstance(app.get("allostasis_delta"), dict) else {}
@@ -242,6 +291,7 @@ def transition_counterpart_assessment(
     allostasis_state: dict[str, Any] | None,
     world_model_state: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
+    interaction_carryover: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prev = dict(prev_state or {})
     prev_stance = str(prev.get("stance") or "").strip().lower()
@@ -254,6 +304,13 @@ def transition_counterpart_assessment(
     signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
     event = current_event if isinstance(current_event, dict) else {}
     event_kind = str(event.get("kind") or "user_utterance").strip().lower()
+    carryover_state = _interaction_carryover_state(interaction_carryover, current_event)
+    carryover_mode = str(carryover_state.get("mode") or "").strip().lower()
+    carryover_strength = clamp01(carryover_state.get("strength"), 0.0)
+    carryover_weather = str(carryover_state.get("relationship_weather") or "").strip().lower()
+    quiet_recontact_load = clamp01(carryover_state.get("quiet_recontact_load"), 0.0)
+    window_load = clamp01(carryover_state.get("window_load"), 0.0)
+    carryover_own_rhythm = clamp01(carryover_state.get("own_rhythm_load"), 0.0)
 
     trust = clamp01(bond.get("trust"), 0.5)
     closeness = clamp01(bond.get("closeness"), 0.5)
@@ -264,6 +321,53 @@ def transition_counterpart_assessment(
     safety_need = clamp01(allostasis.get("safety_need"), 0.2)
     autonomy_need = clamp01(allostasis.get("autonomy_need"), 0.2)
     relationship_trust = clamp01(0.5 + 0.18 * float(relationship.get("trust_score", 0.0) or 0.0), 0.5)
+    relationship_maturity = clamp01(world.get("relationship_maturity"), 0.0)
+    presence_residue = clamp01(world.get("presence_residue"), 0.0)
+    self_activity_momentum = clamp01(world.get("self_activity_momentum"), 0.0)
+    memory_gravity = clamp01(world.get("memory_gravity"), 0.0)
+    boundary_load = clamp01(world.get("boundary_load"), 0.0)
+    effective_presence_residue = max(presence_residue, quiet_recontact_load, 0.72 * window_load)
+    effective_self_activity_momentum = max(self_activity_momentum, carryover_own_rhythm)
+    continuity_read = clamp01(
+        max(
+            effective_presence_residue,
+            0.72 * memory_gravity,
+            0.64 * relationship_maturity,
+            0.82 * carryover_strength if carryover_weather in {"warm_residue", "repair_residue"} else 0.0,
+            0.58 * carryover_strength if carryover_mode in {"own_rhythm", "small_opening"} else 0.0,
+        ),
+        0.0,
+    )
+    continuity_scene_pressure = clamp01(
+        max(
+            continuity_read,
+            0.64 * effective_self_activity_momentum,
+            0.68 * window_load,
+        ),
+        0.0,
+    )
+    user_busy_not_disrespectful = bool(
+        event_kind == "user_utterance"
+        and effective_self_activity_momentum >= 0.44
+        and continuity_scene_pressure >= 0.38
+        and boundary_load < 0.30
+        and carryover_weather != "guarded_residue"
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and not bool(signals.get("repair"))
+    )
+    soft_recontact_turn = bool(
+        event_kind == "user_utterance"
+        and quiet_recontact_load >= 0.38
+        and carryover_weather != "guarded_residue"
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+    )
+    continuity_window_turn = bool(
+        event_kind == "user_utterance"
+        and window_load >= 0.36
+        and not bool(signals.get("conflict"))
+    )
     repair_gain = 1.0
     if prev_stance == "guarded":
         repair_gain *= 0.45
@@ -299,15 +403,54 @@ def transition_counterpart_assessment(
         boundary_pressure = clamp01(boundary_pressure + 0.08)
     if event_kind in {"time_idle", "self_activity_state"}:
         boundary_pressure = clamp01(boundary_pressure - 0.02)
-    if clamp01(world.get("presence_residue"), 0.0) >= 0.42 and event_kind == "user_utterance":
+    if effective_presence_residue >= 0.42 and event_kind == "user_utterance":
         respect = clamp01(respect + 0.03)
         reciprocity = clamp01(reciprocity + 0.04)
         boundary_pressure = clamp01(boundary_pressure - 0.03)
-    if clamp01(world.get("self_activity_momentum"), 0.0) >= 0.46 and event_kind == "user_utterance":
-        boundary_pressure = clamp01(boundary_pressure + 0.03)
-        reliability = clamp01(reliability + 0.01)
+    if effective_self_activity_momentum >= 0.46 and event_kind == "user_utterance":
+        if user_busy_not_disrespectful:
+            respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read))
+            reciprocity = clamp01(max(reciprocity, 0.50 + 0.04 * continuity_read))
+            boundary_pressure = clamp01(boundary_pressure - 0.03)
+            reliability = clamp01(max(reliability, 0.54 + 0.04 * continuity_read))
+        else:
+            boundary_pressure = clamp01(boundary_pressure + 0.02 + 0.02 * max(0.0, effective_self_activity_momentum - 0.46))
+            reliability = clamp01(reliability + 0.01)
+    if soft_recontact_turn:
+        respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read))
+        reciprocity = clamp01(max(reciprocity, 0.52 + 0.04 * continuity_read))
+        boundary_pressure = clamp01(boundary_pressure - 0.02)
+        reliability = clamp01(max(reliability, 0.54 + 0.05 * continuity_read))
+    if continuity_window_turn:
+        reciprocity = clamp01(max(reciprocity, 0.50 + 0.03 * window_load))
+        reliability = clamp01(max(reliability, 0.54 + 0.04 * window_load))
+        boundary_pressure = clamp01(boundary_pressure - 0.02)
+
+    if carryover_weather == "guarded_residue":
+        respect = clamp01(respect - 0.05)
+        reciprocity = clamp01(reciprocity - 0.06)
+        boundary_pressure = clamp01(boundary_pressure + 0.10)
+        reliability = clamp01(reliability - 0.04)
+        if bool(signals.get("repair")):
+            boundary_pressure = clamp01(boundary_pressure - 0.04)
+            reliability = clamp01(reliability + 0.02)
+    elif carryover_weather == "warm_residue":
+        respect = clamp01(respect + 0.04)
+        reciprocity = clamp01(reciprocity + 0.05)
+        boundary_pressure = clamp01(boundary_pressure - 0.04)
+        reliability = clamp01(reliability + 0.04)
+    elif carryover_weather == "repair_residue":
+        respect = clamp01(respect + 0.02)
+        reciprocity = clamp01(reciprocity + 0.04)
+        boundary_pressure = clamp01(boundary_pressure - 0.03)
+        reliability = clamp01(reliability + 0.05)
 
     weight = 0.14 if event_kind != "user_utterance" else (_appraisal_weight(appraisal, 0.28, 0.54) or 0.30)
+    if event_kind == "user_utterance" and carryover_strength >= 0.36:
+        if carryover_weather == "guarded_residue":
+            weight = max(weight, 0.38)
+        elif carryover_mode in {"own_rhythm", "small_opening", "quiet_recontact", "brief_presence", "shared_window", "life_window", "task_window"}:
+            weight = max(weight, 0.34)
     respect_level = blend(float(prev.get("respect_level", 0.52) or 0.52), respect, weight)
     reciprocity_level = blend(float(prev.get("reciprocity", 0.5) or 0.5), reciprocity, weight)
     boundary_level = blend(float(prev.get("boundary_pressure", 0.1) or 0.1), boundary_pressure, weight)
@@ -318,6 +461,11 @@ def transition_counterpart_assessment(
         stance = "guarded"
     elif boundary_level >= 0.34 or reliability_level < 0.48 or hurt > 0.18 or clamp01(world.get("tension_load"), 0.0) >= 0.36:
         stance = "watchful"
+    if carryover_weather == "guarded_residue" and event_kind == "user_utterance":
+        if stance == "open":
+            stance = "watchful"
+        boundary_level = max(boundary_level, 0.18 if prev_stance == "open" else 0.24 if prev_stance == "watchful" else 0.30)
+        reliability_level = min(reliability_level, 0.66 if prev_stance == "open" else 0.62)
 
     guarded_hold_event = event_kind in {"user_utterance", "gesture_signal", "ambient_shift", "scene_observation"}
     # A previously guarded relational read should not reopen on a single benign contact or perception cue.
@@ -338,14 +486,23 @@ def transition_counterpart_assessment(
         elif stance == "open":
             stance = "watchful"
             boundary_level = max(boundary_level, 0.18)
+    if prev_scene == "friction" and guarded_hold_event and not bool(signals.get("repair")) and prev_stance in {"watchful", "guarded"}:
+        if stance == "open":
+            stance = "watchful"
+        boundary_level = max(boundary_level, 0.18 if prev_stance == "watchful" else 0.24)
+        reliability_level = min(reliability_level, 0.64 if prev_stance == "watchful" else 0.60)
 
     scene = "neutral"
     if bool(signals.get("repair")):
         scene = "repair_attempt"
+    elif carryover_weather == "guarded_residue" and event_kind == "user_utterance" and stance in {"watchful", "guarded"}:
+        scene = prev_scene if prev_scene in {"friction", "relationship_degradation", "boundary_non_compliance"} else "friction"
     elif bool(signals.get("care")):
         scene = "care_bid"
     elif bool(signals.get("conflict")) or bool(signals.get("withdrawal")) or clamp01(world.get("tension_load"), 0.0) >= 0.42:
         scene = "friction"
+    elif user_busy_not_disrespectful:
+        scene = "busy_not_disrespectful"
     elif clamp01(world.get("selfhood_load"), 0.0) >= 0.58:
         scene = str(app.get("selfhood_scene") or "selfhood_reflection")
     elif event_kind == "time_idle":
@@ -359,6 +516,26 @@ def transition_counterpart_assessment(
         and stance == "guarded"
     ):
         scene = prev_scene
+    if (
+        prev_scene == "friction"
+        and guarded_hold_event
+        and not bool(signals.get("repair"))
+        and scene in {"neutral", "care_bid"}
+        and (stance in {"watchful", "guarded"} or prev_stance in {"watchful", "guarded"})
+    ):
+        scene = "friction"
+    if (
+        prev_scene == "busy_not_disrespectful"
+        and event_kind == "user_utterance"
+        and not bool(signals.get("repair"))
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and scene in {"neutral", "care_bid"}
+        and stance == "open"
+        and boundary_level <= 0.22
+        and reliability_level >= 0.58
+    ):
+        scene = "busy_not_disrespectful"
 
     return {
         "respect_level": respect_level,

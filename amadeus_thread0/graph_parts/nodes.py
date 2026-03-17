@@ -112,6 +112,7 @@ from .rewrite import (
     _invoke_model_with_retries,
     _light_dialog_rewrite_notes,
     _model,
+    _natural_dialog_rewrite_notes_for,
     _norm_text,
     _rewrite_light_dialog_answer,
     _rewrite_natural_dialog_answer,
@@ -476,6 +477,21 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         user_text=effective_user_text or user_text,
         current_event=appraisal_event_context,
     )
+    appraisal_interaction_carryover = _recent_interaction_carryover(
+        prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
+        prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
+        prior_agenda_lifecycle_residue=state.get("agenda_lifecycle_residue") if isinstance(state.get("agenda_lifecycle_residue"), dict) else {},
+        prior_counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
+        recent_events=state.get("recent_events"),
+        current_event=appraisal_event_context,
+        response_style_hint=response_style_hint,
+    )
+    if not appraisal_interaction_carryover:
+        appraisal_interaction_carryover = _seeded_interaction_carryover_from_state(
+            state=state,
+            prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
+            prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
+        )
     appraisal_input_text = effective_user_text or user_text
     appraisal = _invoke_turn_appraisal(
         msgs=msgs,
@@ -492,6 +508,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         counterpart_profile=profile,
         current_event=appraisal_event_context,
         semantic_narrative_profile=semantic_narrative_profile_for_appraisal,
+        interaction_carryover=appraisal_interaction_carryover,
     )
     response_style_hint = _response_style_hint(
         effective_user_text or user_text,
@@ -629,6 +646,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             semantic_narrative_profile=semantic_narrative_profile,
             appraisal=appraisal,
             current_event=current_event,
+            interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
             response_style_hint=response_style_hint,
             tsundere_intensity=seed_tsundere_intensity,
@@ -697,6 +715,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
             semantic_narrative_profile=semantic_narrative_profile,
             appraisal=appraisal,
             current_event=current_event,
+            interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
             response_style_hint=response_style_hint,
             tsundere_intensity=tsundere,
@@ -991,6 +1010,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
         behavior_action=behavior_action,
         interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+        semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
     )
     generation_runtime_mode = str(generation_profile.pop("runtime_mode", RUNTIME_MODE) or RUNTIME_MODE)
     generation_repetition_pressure = float(generation_profile.pop("repetition_pressure", 0.0) or 0.0)
@@ -1022,7 +1042,12 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
 
     raw_draft_text = str(ai.content or "")
     draft_generation_issues = _producer_surface_issues(raw_draft_text)
-    draft_text = _sanitize_final_answer(raw_draft_text, user_text, current_event=current_event)
+    draft_text = _sanitize_final_answer(
+        raw_draft_text,
+        user_text,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    )
     aligned = draft_text
     draft_risk, draft_flags = _ooc_risk(draft_text)
     draft_gap, draft_gap_flags = _persona_gap(draft_text, state)
@@ -1032,6 +1057,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
         current_event=current_event,
+        behavior_action=behavior_action,
     )
     alignment_applied = False
     alignment_reasons: list[str] = []
@@ -1073,6 +1099,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
             producer_issues=draft_generation_issues,
+            behavior_action=behavior_action,
         )
         light_dialog_draft_penalty = _light_dialog_surface_penalty(
             user_text,
@@ -1080,6 +1107,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
             producer_issues=draft_generation_issues,
+            behavior_action=behavior_action,
         )
         light_dialog_final_penalty = light_dialog_draft_penalty
         needs_alt_candidate = _should_run_light_dialog_rewrite(
@@ -1092,15 +1120,16 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             semantic_history_weight=semantic_history_weight,
             prompt_anchor_count=semantic_prompt_anchor_count,
             producer_issues=draft_generation_issues,
+            behavior_action=behavior_action,
         )
         if needs_alt_candidate and not light_dialog_rewrite_notes:
             light_dialog_rewrite_notes = ["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"]
         if needs_alt_candidate:
             rewritten = _rewrite_light_dialog_answer(
-                prompt=prompt,
                 user_text=user_text,
                 draft_text=draft_text,
                 rewrite_notes=light_dialog_rewrite_notes,
+                producer_issues=draft_generation_issues,
                 focus_text=str(light_dialog_profile.get("focus") or ""),
                 preferred_examples=list(light_dialog_profile.get("chosen_examples") or []),
                 rejected_examples=list(light_dialog_profile.get("rejected_examples") or []),
@@ -1108,6 +1137,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 behavior_action=behavior_action,
                 interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
                 semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
+                counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
+                world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
             )
             if rewritten:
                 rewritten_pref = _daily_surface_alignment_metrics(rewritten, profile=light_dialog_profile)
@@ -1117,6 +1148,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     rewritten,
                     response_style_hint=response_style_hint,
                     science_mode=bool(state.get("science_mode", False)),
+                    behavior_action=behavior_action,
                 )
                 light_dialog_final_penalty = rewritten_penalty
                 light_dialog_final_pref_score = rewritten_pref_score
@@ -1149,7 +1181,12 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     light_dialog_final_pref_score = light_dialog_draft_pref_score
             else:
                 light_dialog_final_pref_score = light_dialog_draft_pref_score
-        aligned = _sanitize_final_answer(aligned, user_text, current_event=current_event)
+        aligned = _sanitize_final_answer(
+            aligned,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
         if not light_dialog_final_pref_score:
             light_dialog_final_pref_score = light_dialog_draft_pref_score
     if (
@@ -1158,28 +1195,6 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         and not bool(_needs_structured_answer(user_text, draft_text))
         and response_style_hint in {"relationship", "companion", "casual", "natural", "selfhood", "structured"}
     ):
-        rewrite_note_map = {
-            "meta_self_explainer": "别把这句说成 AI、系统、程序、参数 之类的自我解释。",
-            "selfhood_meta_proof": "不要靠“程序 / 代码 / 标准答案”这类元解释来证明自我，直接说被冒犯、边界和你的真实感受。",
-            "selfhood_rhetorical_opening": "别先用反问把人顶回去，直接说你的感受、判断和立场。",
-            "defensive_meta": "别退成机制说明或自我辩护，就按人对人把这句说完。",
-            "defensive_meta_tone": "不要用 设定 / 机制 / 数字存在 来解释自己，直接表态。",
-            "counselor_tone": "别说成树洞或安抚热线，保持熟人对话，不要用 我听着呢 这类咨询腔。",
-            "quoted_stagey_phrase": "别写得像舞台词或摆拍台词，收回自然口语。",
-            "malformed_quote_fragment": "别输出残缺引号或半截短语，把一句话完整说完。",
-            "dangling_truncated_clause": "别把句子悬在“我就”“所以”这类半截尾巴上，直接把判断说完整。",
-            "technical_self_activity": "别把你说成在跑后台、进程或系统状态，收回到自然的人味表达。",
-            "technical_relational_metaphor": "别用 数据、变量 这类技术隐喻替代关系表达，直接说你的在意、判断和边界。",
-            "servile_availability": "别把关系说成无条件待命或只要被需要就一直在；保留你自己的节奏、选择和会不会靠近的主观性。",
-            "overquestioning": "别让反问撑满整句，直接落成自然陈述。",
-            "closing_interrogation": "这是收口，不要再用问号把人顶回去，直接把话放下。",
-            "idle_call_interrogation": "对方只是轻轻叫你一下，先接住，不要反问“就为了这个”。",
-            "presence_check_questioning": "对方是在确认你还在，不要把问号丢回去，直接用在场感接住。",
-            "return_interrogation": "先接住这次回来，不要立刻追问或审问。",
-            "event_interrogative_push": "这是事件触发的开口，不要用反问把气氛顶起来，直接自然落句。",
-            "event_pushy_directive": "别把事件回复说成催促或命令，收回到轻一点的自然提醒。",
-            "event_window_task_reframe": "别把这种顺手又想起对方、或刚好能一起接着做点什么的时刻说成任务进度、后台流程或待处理事项。",
-        }
         rewrite_issue_keys = {
             "meta_self_explainer",
             "selfhood_meta_proof",
@@ -1210,6 +1225,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             response_style_hint=response_style_hint,
             science_mode=bool(state.get("science_mode", False)),
             current_event=current_event,
+            behavior_action=behavior_action,
         )
         effective_targeted_flags = _effective_natural_dialog_target_flags(
             targeted_flags=targeted_flags,
@@ -1217,19 +1233,18 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             active_gap_flags=current_gap_flags,
             producer_issues=draft_generation_issues,
         )
-        natural_dialog_rewrite_notes = [
-            rewrite_note_map[item]
-            for item in effective_targeted_flags
-            if item in rewrite_issue_keys
-        ]
+        natural_dialog_rewrite_notes = _natural_dialog_rewrite_notes_for(
+            [item for item in effective_targeted_flags if item in rewrite_issue_keys]
+        )
         if natural_dialog_rewrite_notes and _should_run_natural_dialog_rewrite(
             targeted_flags=effective_targeted_flags,
             draft_gap=current_gap,
             semantic_history_weight=semantic_history_weight,
             prompt_anchor_count=semantic_prompt_anchor_count,
+            answer=aligned,
+            behavior_action=behavior_action,
         ):
             rewritten = _rewrite_natural_dialog_answer(
-                prompt=prompt,
                 user_text=user_text,
                 draft_text=aligned,
                 rewrite_notes=natural_dialog_rewrite_notes,
@@ -1239,6 +1254,8 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                 behavior_action=behavior_action,
                 interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
                 semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
+                counterpart_assessment=state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {},
+                world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
             )
             if rewritten:
                 rewritten_gap, rewritten_gap_flags = _persona_gap(rewritten, state)
@@ -1248,6 +1265,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     response_style_hint=response_style_hint,
                     science_mode=bool(state.get("science_mode", False)),
                     current_event=current_event,
+                    behavior_action=behavior_action,
                 )
                 targeted_issue_set = set(rewrite_issue_keys)
                 draft_issue_pressure = sum(1 for item in effective_targeted_flags if item in targeted_issue_set)
@@ -1260,48 +1278,17 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
                     alignment_applied = True
                     natural_dialog_rewrite_applied = True
                     alignment_reasons.extend(natural_dialog_rewrite_notes)
-    pre_final_issues = _dialogue_surface_issues(
-        user_text,
-        aligned,
-        response_style_hint=response_style_hint,
-        science_mode=bool(state.get("science_mode", False)),
-        current_event=current_event,
-    )
-    if (
-        "meta_self_explainer" in pre_final_issues
-        and response_style_hint in {"relationship", "companion", "casual", "natural", "selfhood", "structured"}
-        and not bool(_needs_structured_answer(user_text, aligned))
-    ):
-        rewritten = _rewrite_natural_dialog_answer(
-            prompt=prompt,
-            user_text=user_text,
-            draft_text=aligned,
-            rewrite_notes=["不要把自己说成服务器、系统、程序、数据或机制，直接按人对人把这句话说完。"],
-            response_style_hint=response_style_hint,
-            science_mode=bool(state.get("science_mode", False)),
-            current_event=current_event,
-            behavior_action=behavior_action,
-            interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
-            semantic_narrative_profile=state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {},
-        )
-        if rewritten:
-            rewritten_issues = _dialogue_surface_issues(
-                user_text,
-                rewritten,
-                response_style_hint=response_style_hint,
-                science_mode=bool(state.get("science_mode", False)),
-                current_event=current_event,
-            )
-            if "meta_self_explainer" not in rewritten_issues and _norm_text(rewritten) != _norm_text(aligned):
-                aligned = rewritten
-                alignment_applied = True
-                alignment_reasons.append("meta_self_explainer_cleanup")
     aligned = _ensure_response_structure(aligned, user_text)
     claims = [] if bool(ABLATE_CLAIM_ATTRIBUTION) else build_claim_attribution(aligned, evidence_pack)
     ext_tools = set(state.get("last_external_tools") or [])
     if ext_tools and not claims and not bool(ABLATE_CLAIM_ATTRIBUTION):
         aligned = aligned.strip() + "\n\n(外部信息未形成可追溯证据链，以上结论按暂定处理。)"
-        aligned = _sanitize_final_answer(aligned, user_text, current_event=current_event)
+        aligned = _sanitize_final_answer(
+            aligned,
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
         aligned = _ensure_response_structure(aligned, user_text)
         claims = [] if bool(ABLATE_CLAIM_ATTRIBUTION) else build_claim_attribution(aligned, evidence_pack)
 
@@ -1313,10 +1300,17 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
         response_style_hint=response_style_hint,
         science_mode=bool(state.get("science_mode", False)),
         current_event=current_event,
+        behavior_action=behavior_action,
     )
     canon = _canon_guard(aligned, store)
     canon_risk = min(1.0, risk + (0.3 if not bool(canon.get("ok")) else 0.0))
     final_msg = AIMessage(content=aligned)
+    behavior_snapshot = {
+        "interaction_mode": str(behavior_action.get("interaction_mode") or ""),
+        "followup_intent": str(behavior_action.get("followup_intent") or ""),
+        "action_target": str(behavior_action.get("action_target") or ""),
+        "relationship_weather": str(behavior_action.get("relationship_weather") or ""),
+    }
     return {
         "messages": [final_msg],
         "ooc_detector": {
@@ -1346,6 +1340,7 @@ def _node_call_model(state: ThreadState) -> dict[str, Any]:
             "light_dialog_case_match_score": float(light_dialog_profile.get("score") or 0.0),
             "light_dialog_draft_pref_score": light_dialog_draft_pref_score,
             "light_dialog_final_pref_score": light_dialog_final_pref_score,
+            "behavior_snapshot": behavior_snapshot,
             "ablation_persona_alignment": bool(ABLATE_PERSONA_ALIGNMENT),
             "ablation_worldline_memory": bool(ABLATE_WORLDLINE_MEMORY),
             "ablation_claim_attribution": bool(ABLATE_CLAIM_ATTRIBUTION),
