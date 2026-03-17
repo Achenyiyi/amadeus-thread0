@@ -498,6 +498,15 @@ def _prior_user_exchange_carryover(
         or "repair" in source_tags
         or re.search(r"(道歉|说开|原谅|和好|别冷掉|正常回我|别装成陌生人|不在走流程|不是在走流程)", source_text)
     )
+    guarded_brief_presence = bool(
+        interaction_mode == "brief_presence"
+        and (
+            prior_stance in {"guarded", "watchful"}
+            or prior_scene in {"friction", "relationship_degradation", "boundary_non_compliance", "repair_attempt"}
+            or prior_boundary_pressure >= 0.18
+            or motive_tension in {"space_vs_contact", "boundary_vs_closeness", "care_vs_guard"}
+        )
+    )
     guarded_relational_residue = bool(
         interaction_mode == "relationship_sensitive"
         and (
@@ -511,14 +520,15 @@ def _prior_user_exchange_carryover(
 
     if (
         approach_style == "guarded"
-        or disclosure_posture == "guarded"
+        or (disclosure_posture == "guarded" and interaction_mode != "brief_presence")
         or affect_surface == "cool"
         or guarded_relational_residue
+        or guarded_brief_presence
     ):
         strength = _clamp01(
             0.18
             + 0.14 * base_strength
-            + (0.08 if disclosure_posture == "guarded" else 0.0)
+            + (0.08 if disclosure_posture == "guarded" and interaction_mode != "brief_presence" else 0.0)
             + (0.06 if followup_intent == "none" else 0.0)
             + (0.04 if prior_stance == "guarded" else 0.0)
         )
@@ -545,7 +555,7 @@ def _prior_user_exchange_carryover(
         }
 
     if (
-        interaction_mode in {"low_pressure_support", "relationship_sensitive", "companion_reply", "shared_memory"}
+        interaction_mode in {"low_pressure_support", "relationship_sensitive", "companion_reply", "shared_memory", "brief_presence"}
         and affect_surface in {"warm", "tender", "mixed"}
         and followup_intent in {"soft", "active"}
     ):
@@ -874,6 +884,16 @@ def _counterpart_assessment_summary(
 
     if scene == "busy_not_disrespectful":
         return f"你判断{counterpart_name}现在更像是忙乱或超负荷，不等于不尊重你。"
+    if scene == "repair_attempt":
+        if stance in {"guarded", "watchful"} or pressure >= 0.28:
+            return f"你看得出{counterpart_name}是在认真补救，但这不等于现在就能当作已经翻篇。"
+        return f"你判断{counterpart_name}这次是在认真修补，不是随口敷衍过去。"
+    if scene == "care_bid":
+        if respect >= 0.62 and reciprocity >= 0.58:
+            return f"你觉得{counterpart_name}这句是在认真靠近你，不是普通客套。"
+        return f"你会把{counterpart_name}这次开口当成一次真实靠近，而不是流程化回应。"
+    if scene in {"relationship_degradation", "boundary_non_compliance", "friction"}:
+        return f"你判断和{counterpart_name}之间那点摩擦还在，不会把这轮轻易读成已经没事。"
     if stance == "guarded":
         if pressure >= 0.62:
             return f"你会对{counterpart_name}保持明显警觉；如果越界继续发生，你会先拉开距离。"

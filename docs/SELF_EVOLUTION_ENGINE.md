@@ -123,6 +123,8 @@ This prevents naive overwrite and supports gradual identity-consistent growth.
 `semantic_self_narratives` are not plain rolling summaries. They should accumulate:
 
 - `support_count`
+- `support_mass`
+- `support_quality`
 - `refresh_count`
 - `sedimentation_score`
 - `first_supported_at`
@@ -130,6 +132,7 @@ This prevents naive overwrite and supports gradual identity-consistent growth.
 - `horizon_tag`
 
 This allows the system to distinguish an emerging narrative from a long-term, repeatedly reconsolidated narrative.
+`support_count` is the raw number of supporting traces; `support_mass` and `support_quality` are the confidence-aware, freshness-aware support signals that should drive refresh strength more than raw count alone.
 
 Recommended semantic narrative categories in the current Amadeus design:
 
@@ -149,6 +152,8 @@ To avoid making these narratives depend only on explicit relationship records, r
 - autonomy / own-rhythm discussions
 
 These evidence traces should be reconsolidated into semantic narratives over time rather than staying as one-off turn-local labels.
+
+For own-rhythm specifically, agenda lifecycle outcomes should not stop at runtime residue. Strong `held / released_to_self_activity / promoted` transitions should also leave durable worldline or relationship traces, so "she has her own rhythm" survives as lived history rather than only as a turn-local control signal.
 
 These semantic narratives should not remain passive summaries. They must feed back into:
 

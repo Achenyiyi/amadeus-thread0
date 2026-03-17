@@ -23,6 +23,7 @@ class GenerationProfileRhythmTests(unittest.TestCase):
                 "warmth": 0.62,
                 "sharpness": 0.42,
                 "approach_vs_withdraw": 0.58,
+                "self_directedness": 0.34,
             },
             "world_model_state": {},
             "behavior_action": {
@@ -32,6 +33,7 @@ class GenerationProfileRhythmTests(unittest.TestCase):
                 "attention_target": "counterpart_state",
             },
             "interaction_carryover": {},
+            "semantic_narrative_profile": {},
         }
 
     def test_self_activity_reopen_caps_generation_span(self):
@@ -145,6 +147,41 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertIsNone(profile.get("frequency_penalty"))
         self.assertIsNone(profile.get("presence_penalty"))
 
+    def test_long_term_rhythm_memory_keeps_daily_turn_measured_without_explicit_carryover(self):
+        baseline = _generation_profile(**self._base_kwargs())
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "behavior_policy": {
+                    **self._base_kwargs()["behavior_policy"],
+                    "self_directedness": 0.62,
+                },
+                "behavior_action": {
+                    "interaction_mode": "companion_reply",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                },
+                "semantic_narrative_profile": {
+                    "agency_drive": 0.68,
+                    "rhythm_continuity": 0.82,
+                    "presence_carry": 0.34,
+                    "history_weight": 0.58,
+                    "motive_snapshot": {
+                        "rhythm_style": {
+                            "primary_motive": "preserve_self_rhythm",
+                            "motive_tension": "self_rhythm_vs_contact",
+                        }
+                    },
+                },
+            }
+        )
+        self.assertIsNone(baseline.get("max_tokens"))
+        self.assertIsNone(baseline.get("temperature"))
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 148)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
+        self.assertIsNotNone(profile.get("temperature"))
+
     def test_guarded_relationship_weather_keeps_sampling_measured(self):
         profile = _generation_profile(
             **{
@@ -212,6 +249,94 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertIsNotNone(repair_profile.get("temperature"))
         self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), int(warm_profile.get("max_tokens") or 0))
         self.assertGreaterEqual(float(warm_profile.get("top_p") or 0.0), float(repair_profile.get("top_p") or 1.0))
+
+    def test_busy_not_disrespectful_scene_prevents_default_sampling(self):
+        baseline = _generation_profile(**self._base_kwargs())
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "你刚才是在忙吗？",
+                "counterpart_assessment": {
+                    "boundary_pressure": 0.12,
+                    "stance": "open",
+                    "scene": "busy_not_disrespectful",
+                },
+            }
+        )
+        self.assertIsNone(baseline.get("max_tokens"))
+        self.assertIsNotNone(profile.get("max_tokens"))
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 156)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.22)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.80)
+
+    def test_repair_attempt_scene_stays_tighter_than_care_bid(self):
+        repair_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "我不是想随便糊弄过去，我是认真来跟你道歉的。",
+                "emotion_state": {"label": "hurt"},
+                "bond_state": {"trust": 0.6, "closeness": 0.58, "hurt": 0.18},
+                "counterpart_assessment": {
+                    "boundary_pressure": 0.3,
+                    "stance": "guarded",
+                    "scene": "repair_attempt",
+                },
+                "behavior_action": {
+                    "interaction_mode": "relationship_sensitive",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                },
+            }
+        )
+        care_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "我就是突然有点想靠近你一点，所以来找你说话。",
+                "emotion_state": {"label": "care"},
+                "counterpart_assessment": {
+                    "boundary_pressure": 0.1,
+                    "stance": "open",
+                    "scene": "care_bid",
+                },
+                "behavior_action": {
+                    "interaction_mode": "companion_reply",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                },
+            }
+        )
+        self.assertIsNotNone(repair_profile.get("temperature"))
+        self.assertIsNotNone(care_profile.get("temperature"))
+        self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), int(care_profile.get("max_tokens") or 0))
+        self.assertLessEqual(float(repair_profile.get("top_p") or 1.0), float(care_profile.get("top_p") or 0.0))
+        self.assertLessEqual(float(repair_profile.get("temperature") or 1.0), float(care_profile.get("temperature") or 0.0))
+
+    def test_friction_scene_forces_measured_nondefault_sampling(self):
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "我知道你现在对我那句还不太高兴，但我不想装作没发生。",
+                "emotion_state": {"label": "stress"},
+                "bond_state": {"trust": 0.5, "closeness": 0.54, "hurt": 0.16},
+                "counterpart_assessment": {
+                    "boundary_pressure": 0.32,
+                    "stance": "watchful",
+                    "scene": "friction",
+                },
+                "behavior_action": {
+                    "interaction_mode": "relationship_sensitive",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                },
+            }
+        )
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 144)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.20)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.76)
+        self.assertIsNotNone(profile.get("frequency_penalty"))
 
 
 if __name__ == "__main__":

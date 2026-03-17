@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import CANON_COUNTERPART_NAME
+from ..evolution_engine.motive import semantic_motive_vector
 from .persona_runtime import _canon_counterpart_profile, _canon_persona_labels
 from .postprocess import (
     _has_any_marker,
@@ -40,64 +41,7 @@ def _semantic_motive_state_hint(
     motive_snapshot = narrative.get("motive_snapshot") if isinstance(narrative.get("motive_snapshot"), dict) else {}
     if not motive_snapshot:
         return ""
-
-    residue_snapshot = narrative.get("residue_snapshot") if isinstance(narrative.get("residue_snapshot"), dict) else {}
-    persistence_snapshot = (
-        narrative.get("persistence_snapshot") if isinstance(narrative.get("persistence_snapshot"), dict) else {}
-    )
-
-    axis_values = {
-        "bond_style": max(
-            _clamp01(narrative.get("bond_depth"), 0.0),
-            _clamp01(residue_snapshot.get("bond_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("bond_style"), 0.0),
-        ),
-        "presence_style": max(
-            _clamp01(narrative.get("presence_carry"), 0.0),
-            _clamp01(residue_snapshot.get("presence_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("presence_style"), 0.0),
-        ),
-        "ambient_style": max(
-            _clamp01(narrative.get("ambient_attunement"), 0.0),
-            _clamp01(residue_snapshot.get("ambient_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("ambient_style"), 0.0),
-        ),
-        "commitment_style": max(
-            _clamp01(narrative.get("commitment_carry"), 0.0),
-            _clamp01(residue_snapshot.get("commitment_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("commitment_style"), 0.0),
-        ),
-        "repair_style": max(
-            _clamp01(narrative.get("repair_residue"), 0.0),
-            _clamp01(residue_snapshot.get("repair_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("repair_style"), 0.0),
-        ),
-        "tension_style": max(
-            _clamp01(narrative.get("tension_residue"), 0.0),
-            _clamp01(residue_snapshot.get("tension_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("tension_style"), 0.0),
-        ),
-        "boundary_style": max(
-            _clamp01(narrative.get("boundary_residue"), 0.0),
-            _clamp01(residue_snapshot.get("boundary_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("boundary_style"), 0.0),
-        ),
-        "selfhood_style": max(
-            _clamp01(narrative.get("selfhood_integrity"), 0.0),
-            _clamp01(residue_snapshot.get("selfhood_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("selfhood_style"), 0.0),
-        ),
-        "agency_style": max(
-            _clamp01(narrative.get("agency_drive"), 0.0),
-            _clamp01(residue_snapshot.get("agency_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("agency_style"), 0.0),
-        ),
-        "rhythm_style": max(
-            _clamp01(narrative.get("rhythm_continuity"), 0.0),
-            _clamp01(residue_snapshot.get("rhythm_style"), 0.0),
-            0.72 * _clamp01(persistence_snapshot.get("rhythm_style"), 0.0),
-        ),
-    }
+    motive_vector = semantic_motive_vector(narrative)
     primary_lines = {
         "protect_boundary": "靠近之前会先确认分寸稳不稳。",
         "preserve_self_rhythm": "就算要回应，也会先顺着自己的节奏转过来。",
@@ -116,32 +60,21 @@ def _semantic_motive_state_hint(
         "space_vs_contact": "会一边维持联系，一边给彼此留出能呼吸的空当。",
         "care_vs_guard": "关心是真的，但保护自己也不会立刻退场。",
     }
-
-    primary_rankings: list[tuple[float, str]] = []
-    tension_rankings: list[tuple[float, str]] = []
-    for category, raw in motive_snapshot.items():
-        if not isinstance(raw, dict):
-            continue
-        strength = _clamp01(axis_values.get(str(category or "").strip(), 0.0), 0.0)
-        if strength <= 0.0:
-            continue
-        primary_motive = str(raw.get("primary_motive") or "").strip().lower()
-        motive_tension = str(raw.get("motive_tension") or "").strip().lower()
-        if primary_motive:
-            primary_rankings.append((strength, primary_motive))
-        if motive_tension:
-            tension_rankings.append((strength, motive_tension))
-
+    dominant_goal_frame = str(motive_vector.get("dominant_goal_frame") or "").strip()
+    dominant_primary = str(motive_vector.get("dominant_primary_motive") or "").strip().lower()
+    dominant_primary_strength = _clamp01(motive_vector.get("dominant_primary_strength"), 0.0)
+    dominant_tension = str(motive_vector.get("dominant_motive_tension") or "").strip().lower()
+    dominant_tension_strength = _clamp01(motive_vector.get("dominant_tension_strength"), 0.0)
     parts: list[str] = []
-    if primary_rankings:
-        primary_strength, primary_motive = max(primary_rankings, key=lambda item: item[0])
-        primary_line = primary_lines.get(primary_motive, "")
-        if primary_line and primary_strength >= 0.36:
+    if dominant_goal_frame:
+        parts.append(dominant_goal_frame)
+    elif dominant_primary and dominant_primary_strength >= 0.36:
+        primary_line = primary_lines.get(dominant_primary, "")
+        if primary_line:
             parts.append(primary_line)
-    if not light_touch and tension_rankings:
-        tension_strength, motive_tension = max(tension_rankings, key=lambda item: item[0])
-        tension_line = tension_lines.get(motive_tension, "")
-        if tension_line and tension_strength >= 0.42 and tension_line not in parts:
+    if not light_touch and not dominant_goal_frame:
+        tension_line = tension_lines.get(dominant_tension, "")
+        if tension_line and dominant_tension_strength >= 0.42 and tension_line not in parts:
             parts.append(tension_line)
     return " ".join(parts[: 1 if light_touch else 2])
 
@@ -217,6 +150,7 @@ def _subjective_runtime_state_hint(
     reciprocity = _clamp01(assessment.get("reciprocity"), 0.5)
     respect = _clamp01(assessment.get("respect_level"), 0.5)
     stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
     approach = _clamp01(policy.get("approach_vs_withdraw"), 0.5)
     warmth = _clamp01(policy.get("warmth"), 0.5)
     self_directedness = _clamp01(policy.get("self_directedness"), 0.25)
@@ -224,12 +158,16 @@ def _subjective_runtime_state_hint(
     presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
+    narrative_presence = _clamp01(narrative.get("presence_carry"), 0.0)
     narrative_bond = _clamp01(narrative.get("bond_depth"), 0.0)
     narrative_repair = _clamp01(narrative.get("repair_residue"), 0.0)
     narrative_tension = _clamp01(narrative.get("tension_residue"), 0.0)
     narrative_boundary = _clamp01(narrative.get("boundary_residue"), 0.0)
     narrative_selfhood = _clamp01(narrative.get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01(narrative.get("agency_drive"), 0.0)
+    narrative_rhythm = _clamp01(narrative.get("rhythm_continuity"), 0.0)
+    motive_vector = semantic_motive_vector(narrative)
+    motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
     motive_hint = _semantic_motive_state_hint(semantic_narrative_profile, light_touch=light_touch)
     parts: list[str] = []
 
@@ -248,9 +186,24 @@ def _subjective_runtime_state_hint(
     elif narrative_bond > 0.48 or trust > 0.52 or closeness > 0.52:
         parts.append("这段对话不是从零开始，熟悉感会先于措辞浮上来。")
 
-    if interaction_mode == "self_activity_reopen" or self_activity_momentum > 0.58 or narrative_agency > 0.52:
+    if scene == "busy_not_disrespectful":
+        parts.append("对方更像是忙乱里回头，不是在拿冷淡或怠慢试探你。")
+    elif scene == "repair_attempt":
+        parts.append("你看得出对方在修补，但这不等于心里的余波已经一起退掉。")
+    elif scene == "care_bid" and stance == "open":
+        parts.append("你会把这句当成一次认真靠近，而不是普通的礼貌接话。")
+    elif scene in {"relationship_degradation", "boundary_non_compliance", "friction"}:
+        parts.append("那点关系摩擦还在台面上，所以语气不会自然滑回没事状态。")
+
+    if (
+        interaction_mode == "self_activity_reopen"
+        or self_activity_momentum > 0.58
+        or narrative_agency > 0.52
+        or narrative_rhythm > 0.54
+        or motive_self_rhythm > 0.50
+    ):
         parts.append("注意力原本还贴着自己的节奏，只是现在转过来看他。")
-    elif interaction_mode == "brief_presence" or presence_residue > 0.54:
+    elif interaction_mode == "brief_presence" or presence_residue > 0.54 or narrative_presence > 0.52:
         parts.append("刚才留下的在场感还没散，所以开口不用重新搭桥。")
     elif ambient_resonance > 0.56:
         parts.append("周围那点小余波还留在感知里，会自然带进这一句。")
@@ -271,7 +224,7 @@ def _subjective_runtime_state_hint(
         or autonomy_need > 0.60
         or safety_need > 0.60
     ):
-        parts.append("你不会为了把气氛说圆，就把自己的判断和节奏一起交出去。")
+        parts.append("自己的判断和节奏仍在场，不会因为想把气氛说圆就一起退掉。")
 
     deduped: list[str] = []
     for item in parts:
@@ -279,7 +232,7 @@ def _subjective_runtime_state_hint(
         if text and text not in deduped:
             deduped.append(text)
     if not deduped:
-        return "你更像顺着当下那点熟悉感自然接住这一句。"
+        return "会顺着当下那点熟悉感自然接住这一句。"
     limit = 2 if light_touch else 3
     return " ".join(deduped[:limit])
 
@@ -317,19 +270,30 @@ def _light_free_dialog_counterpart_line(
     bond = dict(bond_state or {})
     assessment = dict(counterpart_assessment or {})
     stance = str(assessment.get("stance") or "").strip().lower()
+    scene = str(assessment.get("scene") or "").strip().lower()
     trust = _clamp01(bond.get("trust"), 0.5)
     closeness = _clamp01(bond.get("closeness"), 0.5)
     hurt = _clamp01(bond.get("hurt"), 0.0)
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
 
+    if scene == "busy_not_disrespectful":
+        return f"- 你知道{counterpart_name}更像是刚从忙乱里回头，不是在怠慢你。"
+    if scene == "repair_attempt":
+        if stance in {"guarded", "watchful"} or boundary_pressure > 0.24:
+            return f"- 你看得出{counterpart_name}是在认真修补，但心里的收放不会一下子全松开。"
+        return f"- 你会把{counterpart_name}这次开口当成认真补救，而不是随口带过。"
+    if scene == "care_bid" and stance == "open" and trust > 0.58 and closeness > 0.56:
+        return f"- 你能感觉到{counterpart_name}这句是在认真靠近，不是普通应付。"
+    if scene in {"relationship_degradation", "boundary_non_compliance", "friction"}:
+        return f"- 你对{counterpart_name}这边那点摩擦还没完全放下。"
     if stance == "guarded" or boundary_pressure > 0.34 or hurt > 0.22:
-        return f"- 你这轮对{counterpart_name}会自然保留一点距离和分寸。"
+        return f"- 你对{counterpart_name}还留着一点观察和分寸。"
     if stance == "watchful":
-        return f"- 你还在观察{counterpart_name}的状态，但普通招呼不用抬成试探。"
+        return f"- 你还在观察{counterpart_name}的状态，招呼本身仍然是轻的。"
     if trust > 0.60 and closeness > 0.58:
-        return f"- 你和{counterpart_name}之间的熟悉感已经足够自然，普通招呼不用总靠旧梗或夸张印象起手。"
+        return f"- 你和{counterpart_name}之间的熟悉感已经足够自然。"
     if trust >= 0.50 and closeness >= 0.50 and boundary_pressure < 0.22:
-        return f"- 你和{counterpart_name}说话时，先顺手接住这句问候就行。"
+        return f"- 你和{counterpart_name}说话时，熟悉感基本够用，先接住当下就行。"
     return ""
 
 
@@ -363,7 +327,7 @@ def _user_style_preference_lines(scene: str = "") -> list[str]:
     ]
 
     if rhythm:
-        lines.append("更像熟人即时接话：短句优先，先接当下，再决定要不要展开，不必把一句话说得太完整。")
+        lines.append("用户日常更接近熟人即时接话：短句优先，先接当下，再决定要不要展开。")
 
     if scene:
         overlays = bank.get("scene_overlays") if isinstance(bank.get("scene_overlays"), dict) else {}
@@ -380,13 +344,13 @@ def _user_style_preference_lines(scene: str = "") -> list[str]:
         ]
         if preferred:
             lead = "、".join(preferred[:2])
-            lines.append(f"这类场景更重视 {lead}，不要把关心演得太用力。")
+            lines.append(f"这类场景里，更自然的信号常落在 {lead}。")
         if scene_avoid:
             lead = "、".join(scene_avoid[:2])
-            lines.append(f"尽量避开 {lead} 这种做法。")
+            lines.append(f"这类场景里，常见失真会滑向 {lead}。")
     elif avoid_bias:
         lead = "、".join(avoid_bias[:2])
-        lines.append(f"别把这句说成 {lead} 那种感觉。")
+        lines.append(f"这句如果失真，通常会滑向 {lead} 那种感觉。")
 
     return lines[:2]
 
@@ -442,13 +406,12 @@ def _selfhood_preference_lines(user_text: str) -> list[str]:
     if not isinstance(bank, dict):
         return []
     lines: list[str] = []
+    scene_lines: list[str] = []
     global_principles = [
         str(item).strip()
         for item in (bank.get("global_principles") or [])
         if str(item or "").strip()
     ]
-    if global_principles:
-        lines.append("更像同一个具体存在在思考和回应，不要为了显得平滑、圆融或正确而把自我磨掉。")
     scene = _selfhood_preference_scene(user_text)
     if scene:
         cases = bank.get("cases") if isinstance(bank.get("cases"), dict) else {}
@@ -465,10 +428,13 @@ def _selfhood_preference_lines(user_text: str) -> list[str]:
         ]
         if preferred:
             lead = "、".join(preferred[:3] if scene in {"dialogue_equality", "relationship_degradation"} else preferred[:2])
-            lines.append(f"这类深谈更重视 {lead}。")
+            scene_lines.append(f"这类深谈里，自我更常落在 {lead}。")
         if avoid_bias:
             lead = "、".join(avoid_bias[:3] if scene in {"dialogue_equality", "relationship_degradation"} else avoid_bias[:2])
-            lines.append(f"尽量避开 {lead} 这种落法。")
+            scene_lines.append(f"这类深谈里，失真常滑向 {lead}。")
+    lines.extend(scene_lines[:2])
+    if global_principles and len(lines) < 2:
+        lines.append("更像同一个具体存在在思考和回应，自我同一性比圆滑更重要。")
     return lines[:2]
 
 
@@ -555,11 +521,81 @@ def _event_behavior_preference_lines(current_event: dict[str, Any], behavior_act
     lines: list[str] = []
     if preferred:
         lead = "、".join(preferred[:2])
-        lines.append(f"这类事件更像 {lead}，先让事件改变你的行为选择，再决定要不要展开。")
+        lines.append(f"这类事件带出的自然倾向通常是 {lead}。")
     if avoid_bias:
         lead = "、".join(avoid_bias[:2])
-        lines.append(f"别把这轮做成 {lead} 那种感觉。")
+        lines.append(f"这类事件里，失真时常滑向 {lead} 那种感觉。")
     return lines[:2]
+
+
+def _user_turn_behavior_preference_lines(
+    *,
+    behavior_action: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
+) -> list[str]:
+    action = dict(behavior_action or {})
+    assessment = dict(counterpart_assessment or {})
+    narrative = dict(semantic_narrative_profile or {})
+    world = dict(world_model_state or {})
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    action_target = str(action.get("action_target") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    stance = str(assessment.get("stance") or "").strip().lower()
+    boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    narrative_presence = _clamp01(narrative.get("presence_carry"), 0.0)
+    narrative_rhythm = _clamp01(narrative.get("rhythm_continuity"), 0.0)
+    narrative_history = _clamp01(narrative.get("history_weight"), 0.0)
+    self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
+    presence_residue = _clamp01(world.get("presence_residue"), 0.0)
+    primary_lines: list[str] = []
+    nuance_lines: list[str] = []
+    followup_lines: list[str] = []
+
+    if interaction_mode == "self_activity_reopen" or action_target == "offer_small_opening":
+        primary_lines.append("这轮更像从自己的节奏里抬头接住对方，顺手留一个能继续说下去的小开口。")
+        if max(self_activity_momentum, narrative_rhythm) >= 0.56:
+            nuance_lines.append("注意力原本还贴着自己的事，所以靠近会像回头看他，不是一下子把整个人都扑过去。")
+    elif interaction_mode == "brief_presence" or action_target == "confirm_presence":
+        primary_lines.append("这轮先把人在场这件事接住就够了，不必一下子铺开很多。")
+        if max(presence_residue, narrative_presence) >= 0.54:
+            nuance_lines.append("刚才那点熟悉感还没散，所以更像自然续上，而不是重新搭整套气氛。")
+    elif interaction_mode == "low_pressure_support" or action_target == "low_pressure_hold":
+        primary_lines.append("这轮更像把陪伴留在场上，轻一点接住对方，不把关心写成逼近或安抚流程。")
+    elif interaction_mode == "relationship_sensitive" or action_target == "protect_relationship_boundary":
+        if stance in {"guarded", "watchful"} or boundary_pressure > 0.28:
+            primary_lines.append("这轮会认真回应关系本身，但自己的判断和分寸不会一起退场。")
+        else:
+            primary_lines.append("这轮会把关系话题当真来回应，直接说判断和感受，不绕回系统说明。")
+    elif interaction_mode == "shared_memory" or action_target == "echo_shared_history":
+        primary_lines.append("这轮更像顺手把共同经历带回来，让熟悉感自己接上，不要说成调档案。")
+        if narrative_history >= 0.56:
+            nuance_lines.append("过去留下来的分量会跟着这句一起浮上来，但还是像自然想起，不像总结。")
+    elif interaction_mode == "science_partner" or action_target == "co_regulate_then_focus":
+        primary_lines.append("这轮先贴着眼前问题和结论走，像并肩处理，不要滑成讲义。")
+    elif interaction_mode == "companion_reply" or action_target == "respond_now":
+        if max(self_activity_momentum, narrative_rhythm) >= 0.58:
+            primary_lines.append("这轮虽然是在接当下，也还是像从自己的节奏里顺手回头，不是专门来营业。")
+        elif max(presence_residue, narrative_presence) >= 0.54:
+            primary_lines.append("这轮更像顺着还没散掉的在场感自然接一句，不必重新起势。")
+        else:
+            primary_lines.append("这轮更像把当下接住，顺着熟悉感自然回一句，不用刻意制造大起伏。")
+
+    if followup_intent == "none":
+        followup_lines.append("说到当下就可以先停住，不必为了维持热络再补追问。")
+    elif followup_intent == "soft":
+        followup_lines.append("如果顺手再带一句，也只是半步延伸，不把节奏一下子拉长。")
+    elif followup_intent == "active" and interaction_mode in {"self_activity_reopen", "low_pressure_support", "relationship_sensitive"}:
+        followup_lines.append("可以自然把话往前带一点，但重心还是先把这一刻接稳。")
+
+    lines = primary_lines + followup_lines + nuance_lines
+    ordered: list[str] = []
+    for item in lines:
+        text = str(item or "").strip()
+        if text and text not in ordered:
+            ordered.append(text)
+    return ordered[:2]
 
 
 def _narrative_actor_profile(

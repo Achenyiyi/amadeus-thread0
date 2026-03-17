@@ -84,6 +84,8 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
     quick_judgment = _wants_quick_judgment(user_text)
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
+    current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
+    behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
     label_count = sum(
         1
         for ln in lines
@@ -159,6 +161,8 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         t,
         response_style_hint=style_hint,
         science_mode=science_mode,
+        current_event=current_event,
+        behavior_action=behavior_action,
     ):
         score += float(surface_issue_weights.get(issue, 0.0))
         flags.append(issue)

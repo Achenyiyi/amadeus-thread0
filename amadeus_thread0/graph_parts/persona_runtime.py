@@ -345,11 +345,14 @@ def _science_mode_from_context(
         for part in (
             str(pending_user_goal or "").strip(),
             str(previous_user_text or "").strip(),
-            str(previous_assistant_text or "").strip(),
         )
         if part
     )
-    return _science_mode_from_user(context_blob)
+    if _science_mode_from_user(context_blob):
+        return True
+    # Do not inherit science mode only because the assistant mentioned technical words in its own reply.
+    _ = previous_assistant_text
+    return False
 
 
 def _tsundere_next(

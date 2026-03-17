@@ -26,6 +26,7 @@ def evolve_turn_state(
     semantic_narrative_profile: dict[str, Any] | None,
     appraisal: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
+    interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
     response_style_hint: str,
     tsundere_intensity: float,
@@ -70,6 +71,7 @@ def evolve_turn_state(
         allostasis_state=allostasis_state,
         world_model_state=world_model_state,
         current_event=current_event,
+        interaction_carryover=interaction_carryover,
     )
     latent_state = transition_latent_state(
         prev_state=prev_latent_state,

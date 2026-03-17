@@ -869,8 +869,20 @@ def _is_standalone_stage_direction(line: str) -> bool:
     return any(marker in inner for marker in markers) or len(inner) >= 18
 
 
+def _behavior_action_shape(behavior_action: dict[str, Any] | None = None) -> tuple[str, str]:
+    action = dict(behavior_action or {})
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    followup_intent = str(action.get("followup_intent") or "").strip().lower()
+    return interaction_mode, followup_intent
 
-def _compress_light_smalltalk_answer(answer: str, *, user_text: str = "") -> str:
+
+
+def _compress_light_smalltalk_answer(
+    answer: str,
+    *,
+    user_text: str = "",
+    behavior_action: dict[str, Any] | None = None,
+) -> str:
     text = _normalize_log_tone(str(answer or "")).strip()
     if not text:
         return text
@@ -891,11 +903,23 @@ def _compress_light_smalltalk_answer(answer: str, *, user_text: str = "") -> str
 
     if not sentences:
         return text
+    interaction_mode, followup_intent = _behavior_action_shape(behavior_action)
     target_sentences = 3
     if _wants_brief_presence(user_text):
         target_sentences = 1 if len(sentences) <= 2 else 2
     elif _is_idle_smalltalk_request(user_text) or _wants_less_teacherly_reply(user_text) or _looks_like_light_smalltalk(user_text):
         target_sentences = 2
+    if interaction_mode == "brief_presence" or followup_intent == "none":
+        target_sentences = min(target_sentences, 1 if len(sentences) <= 2 else 2)
+    elif interaction_mode == "self_activity_reopen":
+        target_sentences = min(target_sentences, 2)
+    elif (
+        followup_intent == "active"
+        and interaction_mode in {"companion_reply", "low_pressure_support", "relationship_sensitive", "shared_memory", "science_partner"}
+        and not _wants_brief_presence(user_text)
+        and not _is_plain_contact_ping(user_text)
+    ):
+        target_sentences = max(target_sentences, 3)
 
     if target_sentences <= 1:
         return sentences[0].strip()
@@ -1181,9 +1205,22 @@ def _trim_servile_availability_surface(text: str) -> str:
 
 
 
-def _trim_generic_followup_question_surface(text: str) -> str:
+def _trim_generic_followup_question_surface(
+    text: str,
+    *,
+    user_text: str = "",
+    behavior_action: dict[str, Any] | None = None,
+) -> str:
     chunks = _sentence_like_chunks(text)
     if len(chunks) < 2:
+        return str(text or "").strip()
+    interaction_mode, followup_intent = _behavior_action_shape(behavior_action)
+    if (
+        followup_intent == "active"
+        and interaction_mode in {"companion_reply", "low_pressure_support", "relationship_sensitive", "shared_memory", "science_partner"}
+        and not _wants_brief_presence(user_text)
+        and not _is_plain_contact_ping(user_text)
+    ):
         return str(text or "").strip()
     generic_followup = re.compile(r"(需要我|要不要我|要我继续|还要我|你想我|你想不想|还想继续|还想聊|还想说|要继续吗|还要继续吗|还有什么|要我接着)")
     kept = list(chunks)
@@ -1380,7 +1417,13 @@ def _is_standalone_discourse_fragment(line: str) -> bool:
 
 
 
-def _sanitize_final_answer(text: str, user_text: str, current_event: dict[str, Any] | None = None) -> str:
+def _sanitize_final_answer(
+    text: str,
+    user_text: str,
+    current_event: dict[str, Any] | None = None,
+    *,
+    behavior_action: dict[str, Any] | None = None,
+) -> str:
     raw = _clean_utf8_text(str(text or "")).replace("\r\n", "\n").strip()
     if not raw:
         return raw
@@ -1483,6 +1526,7 @@ def _sanitize_final_answer(text: str, user_text: str, current_event: dict[str, A
                 response_style_hint=style_hint,
                 science_mode=False,
                 current_event=current_event,
+                behavior_action=behavior_action,
             )
         )
         if "duplicate_line" in soft_issues:
@@ -1517,7 +1561,11 @@ def _sanitize_final_answer(text: str, user_text: str, current_event: dict[str, A
             softened = _trim_servile_availability_surface(cleaned)
             if softened:
                 cleaned = softened
-        softened = _trim_generic_followup_question_surface(cleaned)
+        softened = _trim_generic_followup_question_surface(
+            cleaned,
+            user_text=user_text,
+            behavior_action=behavior_action,
+        )
         if softened:
             cleaned = softened
     if _wants_quick_judgment(user_text) or _wants_per_topic_conclusions(user_text):
@@ -1531,7 +1579,11 @@ def _sanitize_final_answer(text: str, user_text: str, current_event: dict[str, A
     if _wants_quick_judgment(user_text):
         cleaned = _compress_quick_judgment_answer(cleaned)
     elif _looks_like_light_smalltalk(user_text) or _wants_less_teacherly_reply(user_text):
-        cleaned = _compress_light_smalltalk_answer(cleaned, user_text=user_text)
+        cleaned = _compress_light_smalltalk_answer(
+            cleaned,
+            user_text=user_text,
+            behavior_action=behavior_action,
+        )
     return cleaned or raw
 
 
@@ -1549,6 +1601,7 @@ def _dialogue_surface_issues(
     response_style_hint: str,
     science_mode: bool,
     current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> list[str]:
     text = str(answer or "").strip()
     if not text:
@@ -1570,6 +1623,22 @@ def _dialogue_surface_issues(
         for item in ((current_event or {}).get("tags") if isinstance((current_event or {}).get("tags"), list) else [])
         if str(item).strip()
     }
+    interaction_mode, followup_intent = _behavior_action_shape(behavior_action)
+    behavior_allows_single_followup_question = (
+        current_event_kind == "user_utterance"
+        and followup_intent == "active"
+        and interaction_mode in {
+            "companion_reply",
+            "low_pressure_support",
+            "relationship_sensitive",
+            "shared_memory",
+            "science_partner",
+        }
+        and not presence_reassurance_scene
+        and not _is_goodnight_closing(user_text)
+        and not _is_idle_presence_call(user_text)
+        and not _is_return_home_ping(user_text)
+    )
 
     if _is_particle_only_reply(text):
         issues.append("particle_only")
@@ -1652,7 +1721,11 @@ def _dialogue_surface_issues(
         if leading_question:
             leading_fragment = re.sub(r"[？?\s，,。！!~…、；;：:\"'“”‘’·-]+", "", leading_question.group(1))
         short_interjection = leading_fragment in {"哈", "啊", "嗯", "唔", "诶", "欸", "哼"}
-        allow_single_rhetorical = _is_return_home_ping(user_text) or _is_idle_presence_call(user_text)
+        allow_single_rhetorical = (
+            _is_return_home_ping(user_text)
+            or _is_idle_presence_call(user_text)
+            or behavior_allows_single_followup_question
+        )
         if (text.count("？") + text.count("?")) >= 2 or (
             leading_question and len(leading_fragment) >= 3 and not short_interjection and not allow_single_rhetorical
         ):
@@ -1750,12 +1823,14 @@ def _light_dialog_surface_penalty(
     response_style_hint: str,
     science_mode: bool,
     producer_issues: list[str] | tuple[str, ...] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> float:
     issues = _dialogue_surface_issues(
         user_text,
         answer,
         response_style_hint=response_style_hint,
         science_mode=science_mode,
+        behavior_action=behavior_action,
     )
     producer_issue_set = {
         str(item).strip()

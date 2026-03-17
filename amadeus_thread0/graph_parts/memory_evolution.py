@@ -452,6 +452,7 @@ def _refresh_semantic_self_narratives(
     commitments = store.list_commitments(limit=20)
     repairs = store.list_conflict_repairs(limit=12)
     relationship_timeline = store.list_relationship_timeline(limit=12)
+    worldline_events = store.list_worldline_events(limit=12)
     shared_events = store.list_shared_events(limit=16)
     all_tensions = store.list_unresolved_tensions(limit=16)
     tensions = [
@@ -533,6 +534,78 @@ def _refresh_semantic_self_narratives(
                 text = text.replace(alias, counterpart_name)
         return text
 
+    def _item_timestamp(item: Any) -> int:
+        record = item if isinstance(item, dict) else {}
+        for key in ("updated_at", "created_at", "last_supported_at", "last_meaningful_refresh_at"):
+            try:
+                ts = int(float(_record_value(record, key, 0) or 0))
+            except Exception:
+                ts = 0
+            if ts > 0:
+                return ts
+        return 0
+
+    def _item_confidence(item: Any, default: float = 0.78) -> float:
+        record = item if isinstance(item, dict) else {}
+        try:
+            return _clamp01(float(_record_value(record, "confidence", default) or default), default)
+        except Exception:
+            return _clamp01(default, default)
+
+    def _item_support_weight(
+        item: Any,
+        *,
+        default_confidence: float = 0.78,
+        half_life_days: float = 14.0,
+        fresh_days: float = 3.0,
+    ) -> tuple[float, float, float, bool]:
+        confidence = _item_confidence(item, default_confidence)
+        ts = _item_timestamp(item)
+        age_days = max(0.0, float(now_ts - ts) / float(24 * 3600)) if ts > 0 else 0.0
+        recency = max(0.35, 0.5 ** (age_days / max(0.75, float(half_life_days)))) if ts > 0 else 1.0
+        weight = round(_clamp01(max(0.25, confidence) * recency), 3)
+        return weight, confidence, age_days, age_days <= max(0.25, float(fresh_days))
+
+    def _weighted_item_stats(
+        items: list[Any],
+        *,
+        default_confidence: float = 0.78,
+        half_life_days: float = 14.0,
+        fresh_days: float = 3.0,
+    ) -> dict[str, float]:
+        if not items:
+            return {
+                "mass": 0.0,
+                "avg_confidence": 0.0,
+                "avg_weight": 0.0,
+                "fresh_ratio": 0.0,
+            }
+        mass = 0.0
+        confidence_mass = 0.0
+        fresh_mass = 0.0
+        for item in items:
+            weight, confidence, _age_days, is_fresh = _item_support_weight(
+                item,
+                default_confidence=default_confidence,
+                half_life_days=half_life_days,
+                fresh_days=fresh_days,
+            )
+            if weight <= 0.0:
+                continue
+            mass += weight
+            confidence_mass += confidence * weight
+            if is_fresh:
+                fresh_mass += weight
+        avg_confidence = confidence_mass / mass if mass > 0.0 else 0.0
+        avg_weight = mass / max(1.0, float(len(items)))
+        fresh_ratio = fresh_mass / mass if mass > 0.0 else 0.0
+        return {
+            "mass": round(mass, 3),
+            "avg_confidence": round(_clamp01(avg_confidence, 0.0), 3),
+            "avg_weight": round(_clamp01(avg_weight, 0.0), 3),
+            "fresh_ratio": round(_clamp01(fresh_ratio, 0.0), 3),
+        }
+
     def _scene_match(item: Any) -> str:
         return _selfhood_preference_scene(_source_text(item))
 
@@ -549,6 +622,59 @@ def _refresh_semantic_self_narratives(
             if scenes and _scene_match(item) in scenes:
                 matched = True
             if not matched:
+                continue
+            norm = text[:220]
+            if norm in seen_texts:
+                continue
+            seen_texts.add(norm)
+            out.append(item)
+        return out
+
+    def _merge_unique_narrative_items(*groups: list[Any]) -> list[Any]:
+        out: list[Any] = []
+        seen_texts: set[str] = set()
+        for group in groups:
+            for item in group:
+                text = _source_text(item)
+                if not text:
+                    continue
+                norm = text[:220]
+                if norm in seen_texts:
+                    continue
+                seen_texts.add(norm)
+                out.append(item)
+        return out
+
+    def _worldline_support_items(
+        *,
+        categories: set[str] | None = None,
+        tags: set[str] | None = None,
+    ) -> list[Any]:
+        category_set = {
+            str(item).strip().lower()
+            for item in (categories or set())
+            if str(item).strip()
+        }
+        tag_set = {
+            str(item).strip().lower()
+            for item in (tags or set())
+            if str(item).strip()
+        }
+        out: list[Any] = []
+        seen_texts: set[str] = set()
+        for item in worldline_events:
+            category = str(_record_value(item, "category", "") or "").strip().lower()
+            raw_tags = _record_value(item, "tags", [])
+            item_tags = {
+                str(tag).strip().lower()
+                for tag in (raw_tags if isinstance(raw_tags, list) else [])
+                if str(tag).strip()
+            }
+            matched = bool((category_set and category in category_set) or (tag_set and item_tags & tag_set))
+            if not matched:
+                continue
+            text = _source_text(item)
+            if not text:
                 continue
             norm = text[:220]
             if norm in seen_texts:
@@ -574,32 +700,45 @@ def _refresh_semantic_self_narratives(
         return out
 
     def _semantic_evidence_motive_state(items: list[Any]) -> dict[str, Any]:
-        motive_counts: dict[str, int] = {}
-        tension_counts: dict[str, int] = {}
+        motive_counts: dict[str, float] = {}
+        tension_counts: dict[str, float] = {}
         motive_order: dict[str, int] = {}
         tension_order: dict[str, int] = {}
-        goal_frames: list[str] = []
+        goal_frames: list[tuple[float, int, str]] = []
         seen_goal_frames: set[str] = set()
         support_count = 0
+        support_mass = 0.0
+        confidence_mass = 0.0
+        fresh_mass = 0.0
         for idx, item in enumerate(items):
             primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
             motive_tension = str(_record_value(item, "motive_tension", "") or "").strip().lower()
             goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+            weight, confidence, _age_days, is_fresh = _item_support_weight(
+                item,
+                default_confidence=0.78,
+                half_life_days=18.0,
+                fresh_days=4.0,
+            )
             if primary_motive or motive_tension or goal_frame:
                 support_count += 1
+                support_mass += weight
+                confidence_mass += confidence * weight
+                if is_fresh:
+                    fresh_mass += weight
             if primary_motive:
-                motive_counts[primary_motive] = motive_counts.get(primary_motive, 0) + 1
+                motive_counts[primary_motive] = motive_counts.get(primary_motive, 0.0) + weight
                 motive_order.setdefault(primary_motive, idx)
             if motive_tension:
-                tension_counts[motive_tension] = tension_counts.get(motive_tension, 0) + 1
+                tension_counts[motive_tension] = tension_counts.get(motive_tension, 0.0) + weight
                 tension_order.setdefault(motive_tension, idx)
             if goal_frame:
                 norm_goal = goal_frame[:220]
                 if norm_goal not in seen_goal_frames:
                     seen_goal_frames.add(norm_goal)
-                    goal_frames.append(norm_goal)
+                    goal_frames.append((weight, idx, norm_goal))
 
-        def _pick_dominant(counts: dict[str, int], order: dict[str, int]) -> str:
+        def _pick_dominant(counts: dict[str, float], order: dict[str, int]) -> str:
             if not counts:
                 return ""
             return max(counts.items(), key=lambda kv: (kv[1], -order.get(kv[0], 10_000), kv[0]))[0]
@@ -607,15 +746,36 @@ def _refresh_semantic_self_narratives(
         dominant_primary_motive = _pick_dominant(motive_counts, motive_order)
         dominant_motive_tension = _pick_dominant(tension_counts, tension_order)
         signature_parts = [part for part in [dominant_primary_motive, dominant_motive_tension] if part]
+        goal_frames.sort(key=lambda item: (-item[0], item[1], item[2]))
         return {
             "dominant_primary_motive": dominant_primary_motive,
             "dominant_motive_tension": dominant_motive_tension,
-            "goal_frame_examples": goal_frames[:2],
+            "goal_frame_examples": [item[2] for item in goal_frames[:2]],
             "motive_support_count": support_count,
+            "motive_support_mass": round(support_mass, 3),
+            "motive_confidence_avg": round(_clamp01(confidence_mass / max(support_mass, 1e-6), 0.0), 3) if support_mass > 0.0 else 0.0,
+            "motive_fresh_ratio": round(_clamp01(fresh_mass / max(support_mass, 1e-6), 0.0), 3) if support_mass > 0.0 else 0.0,
             "motive_signature": ":".join(signature_parts),
         }
 
-    relationship_sources = relationship_timeline + shared_events + repairs + tensions + resolved_tensions + repair_traces
+    self_rhythm_worldline_sources = _worldline_support_items(
+        categories={"self_rhythm"},
+        tags={"agenda_lifecycle", "own_rhythm", "busy_not_disrespectful"},
+    )
+    continuity_worldline_sources = _worldline_support_items(
+        categories={"continuity_recontact"},
+        tags={"agenda_lifecycle", "recontact_continuity"},
+    )
+    relationship_sources = (
+        relationship_timeline
+        + self_rhythm_worldline_sources
+        + continuity_worldline_sources
+        + shared_events
+        + repairs
+        + tensions
+        + resolved_tensions
+        + repair_traces
+    )
     boundary_evidence = _semantic_evidence_items("boundary_style")
     selfhood_evidence = _semantic_evidence_items("selfhood_style")
     agency_evidence = _semantic_evidence_items("agency_style")
@@ -640,17 +800,40 @@ def _refresh_semantic_self_narratives(
         markers=SELFHOOD_STYLE_MARKERS,
         scenes={"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"},
     )
-    agency_sources = _filter_narrative_items(
-        agency_evidence + relationship_timeline + commitments + repairs,
-        markers=OWN_RHYTHM_KEYWORDS,
-        scenes={"own_rhythm_autonomy"},
+    agency_sources = _merge_unique_narrative_items(
+        _filter_narrative_items(
+            agency_evidence + relationship_timeline + commitments + repairs,
+            markers=OWN_RHYTHM_KEYWORDS,
+            scenes={"own_rhythm_autonomy"},
+        ),
+        self_rhythm_worldline_sources,
+        continuity_worldline_sources,
     )
-    presence_sources = list(presence_evidence)
+    presence_sources = _merge_unique_narrative_items(
+        presence_evidence,
+        continuity_worldline_sources,
+    )
     ambient_sources = list(ambient_evidence)
-    rhythm_sources = list(rhythm_evidence)
+    rhythm_sources = _merge_unique_narrative_items(
+        rhythm_evidence,
+        self_rhythm_worldline_sources,
+    )
 
-    def _count_norm(items: list[Any], denom: float = 3.0) -> float:
-        return _clamp01(len(items) / max(1.0, float(denom)))
+    def _count_norm(
+        items: list[Any],
+        denom: float = 3.0,
+        *,
+        default_confidence: float = 0.78,
+        half_life_days: float = 14.0,
+        fresh_days: float = 3.0,
+    ) -> float:
+        stats = _weighted_item_stats(
+            items,
+            default_confidence=default_confidence,
+            half_life_days=half_life_days,
+            fresh_days=fresh_days,
+        )
+        return _clamp01(float(stats.get("mass") or 0.0) / max(1.0, float(denom)))
 
     def _relationship_delta_stats(items: list[Any]) -> dict[str, float]:
         positive = 0.0
@@ -666,27 +849,33 @@ def _refresh_semantic_self_narratives(
                 trust_delta = float(_record_value(item, "trust_delta", 0.0) or 0.0)
             except Exception:
                 trust_delta = 0.0
+            weight, _confidence, _age_days, _is_fresh = _item_support_weight(
+                item,
+                default_confidence=0.8,
+                half_life_days=30.0,
+                fresh_days=5.0,
+            )
             signed = 0.5 * affinity_delta + 0.5 * trust_delta
-            magnitude = _clamp01((abs(affinity_delta) + abs(trust_delta)) / 0.70)
+            magnitude = _clamp01((abs(affinity_delta) + abs(trust_delta)) / 0.70) * weight
             if signed >= 0.04:
                 positive += magnitude
-                positive_count += 1.0
+                positive_count += weight
             elif signed <= -0.04:
                 negative += magnitude
-                negative_count += 1.0
+                negative_count += weight
         return {
             "positive": _clamp01(positive / max(1.0, positive_count)),
             "negative": _clamp01(negative / max(1.0, negative_count)),
-            "positive_count": positive_count,
-            "negative_count": negative_count,
+            "positive_count": round(positive_count, 3),
+            "negative_count": round(negative_count, 3),
         }
 
     relationship_delta_stats = _relationship_delta_stats(relationship_timeline)
     positive_relationship_delta = _clamp01(relationship_delta_stats.get("positive"), 0.0)
     negative_relationship_delta = _clamp01(relationship_delta_stats.get("negative"), 0.0)
-    shared_norm = _count_norm(shared_events, 4.0)
-    commitment_norm = _count_norm(commitments, 3.0)
-    repair_norm = _count_norm(repairs + resolved_tensions + repair_traces, 3.0)
+    shared_norm = _count_norm(shared_events, 4.0, default_confidence=0.8, half_life_days=45.0, fresh_days=7.0)
+    commitment_norm = _count_norm(commitments, 3.0, default_confidence=0.85, half_life_days=60.0, fresh_days=10.0)
+    repair_norm = _count_norm(repairs + resolved_tensions + repair_traces, 3.0, default_confidence=0.82, half_life_days=35.0, fresh_days=7.0)
     open_tension_norm = (
         _clamp01(
             sum(_tension_salience(item) for item in tensions[:4])
@@ -695,12 +884,12 @@ def _refresh_semantic_self_narratives(
         if tensions
         else 0.0
     )
-    boundary_norm = _count_norm(boundary_sources, 2.0)
-    selfhood_norm = _count_norm(selfhood_sources, 2.0)
-    agency_norm = _count_norm(agency_sources, 2.0)
-    presence_norm = _count_norm(presence_sources, 2.0)
-    ambient_norm = _count_norm(ambient_sources, 2.0)
-    rhythm_norm = _count_norm(rhythm_sources, 2.0)
+    boundary_norm = _count_norm(boundary_sources, 2.0, default_confidence=0.8, half_life_days=40.0, fresh_days=7.0)
+    selfhood_norm = _count_norm(selfhood_sources, 2.0, default_confidence=0.8, half_life_days=40.0, fresh_days=7.0)
+    agency_norm = _count_norm(agency_sources, 2.0, default_confidence=0.8, half_life_days=35.0, fresh_days=6.0)
+    presence_norm = _count_norm(presence_sources, 2.0, default_confidence=0.78, half_life_days=21.0, fresh_days=4.0)
+    ambient_norm = _count_norm(ambient_sources, 2.0, default_confidence=0.76, half_life_days=18.0, fresh_days=3.0)
+    rhythm_norm = _count_norm(rhythm_sources, 2.0, default_confidence=0.78, half_life_days=24.0, fresh_days=4.0)
 
     def _semantic_narrative_counterpressure(category: str) -> dict[str, Any]:
         cat = str(category or "").strip().lower()
@@ -806,6 +995,23 @@ def _refresh_semantic_self_narratives(
             return "consolidating"
         return tag
 
+    def _semantic_narrative_is_contested(category: str, pressure: float, factors: list[str] | None) -> bool:
+        cat = str(category or "").strip().lower()
+        factor_set = {
+            str(item).strip()
+            for item in (factors or [])
+            if str(item or "").strip()
+        }
+        if pressure >= 0.28:
+            return True
+        if cat in {"bond_style", "repair_style"} and pressure >= 0.22:
+            if {"open_tension", "negative_relationship_delta", "boundary_residue"} & factor_set:
+                return True
+        if cat in {"presence_style", "agency_style"} and pressure >= 0.24:
+            if {"open_tension", "boundary_residue", "low_trust"} & factor_set:
+                return True
+        return False
+
     def _stage_phrase() -> str:
         if stage in {"trusted"} or trust >= 0.66 or closeness >= 0.68:
             return "稳定而熟悉的共同历史"
@@ -856,6 +1062,27 @@ def _refresh_semantic_self_narratives(
         if support_count <= 0:
             support_count = max(0, int(_record_value(prev or {}, "motive_support_count", 0) or 0))
         current["motive_support_count"] = support_count
+        support_mass = float(current.get("motive_support_mass") or 0.0)
+        if support_mass <= 0.0:
+            try:
+                support_mass = float(_record_value(prev or {}, "motive_support_mass", 0.0) or 0.0)
+            except Exception:
+                support_mass = 0.0
+        current["motive_support_mass"] = round(max(0.0, support_mass), 3)
+        confidence_avg = float(current.get("motive_confidence_avg") or 0.0)
+        if confidence_avg <= 0.0:
+            try:
+                confidence_avg = float(_record_value(prev or {}, "motive_confidence_avg", 0.0) or 0.0)
+            except Exception:
+                confidence_avg = 0.0
+        current["motive_confidence_avg"] = round(_clamp01(confidence_avg, 0.0), 3)
+        fresh_ratio = float(current.get("motive_fresh_ratio") or 0.0)
+        if fresh_ratio <= 0.0:
+            try:
+                fresh_ratio = float(_record_value(prev or {}, "motive_fresh_ratio", 0.0) or 0.0)
+            except Exception:
+                fresh_ratio = 0.0
+        current["motive_fresh_ratio"] = round(_clamp01(fresh_ratio, 0.0), 3)
         if not str(current.get("motive_signature") or "").strip():
             signature_parts = [
                 part
@@ -970,6 +1197,31 @@ def _refresh_semantic_self_narratives(
         if cat == "rhythm_style":
             return list(rhythm_sources)
         return []
+
+    def _category_support_stats(category: str) -> dict[str, float]:
+        cat = str(category or "").strip().lower()
+        items = _anchor_basis_items(cat)
+        if cat == "commitment_style":
+            return _weighted_item_stats(items, default_confidence=0.85, half_life_days=60.0, fresh_days=10.0)
+        if cat == "repair_style":
+            return _weighted_item_stats(items, default_confidence=0.82, half_life_days=35.0, fresh_days=7.0)
+        if cat == "tension_style":
+            return _weighted_item_stats(items, default_confidence=0.80, half_life_days=28.0, fresh_days=5.0)
+        if cat == "bond_style":
+            return _weighted_item_stats(items, default_confidence=0.80, half_life_days=45.0, fresh_days=7.0)
+        if cat == "boundary_style":
+            return _weighted_item_stats(items, default_confidence=0.80, half_life_days=40.0, fresh_days=7.0)
+        if cat == "selfhood_style":
+            return _weighted_item_stats(items, default_confidence=0.80, half_life_days=40.0, fresh_days=7.0)
+        if cat == "agency_style":
+            return _weighted_item_stats(items, default_confidence=0.80, half_life_days=35.0, fresh_days=6.0)
+        if cat == "presence_style":
+            return _weighted_item_stats(items, default_confidence=0.78, half_life_days=21.0, fresh_days=4.0)
+        if cat == "ambient_style":
+            return _weighted_item_stats(items, default_confidence=0.76, half_life_days=18.0, fresh_days=3.0)
+        if cat == "rhythm_style":
+            return _weighted_item_stats(items, default_confidence=0.78, half_life_days=24.0, fresh_days=4.0)
+        return _weighted_item_stats(items)
 
     def _anchor_basis_texts(category: str, *, limit: int = 2) -> list[str]:
         out: list[str] = []
@@ -1181,6 +1433,10 @@ def _refresh_semantic_self_narratives(
         prev_integration = _clamp01(_record_value(prev or {}, "integration_score", prev_persistence), prev_persistence)
         prev_decay_resistance = _clamp01(_record_value(prev or {}, "decay_resistance", 0.5), 0.5)
         prev_contradiction = _clamp01(_record_value(prev or {}, "contradiction_pressure", 0.0), 0.0)
+        prev_support_mass = max(0.0, float(_record_value(prev or {}, "support_mass", prev_support) or prev_support))
+        prev_support_quality = _clamp01(_record_value(prev or {}, "support_quality", 0.0), 0.0)
+        prev_support_confidence_avg = _clamp01(_record_value(prev or {}, "support_confidence_avg", 0.0), 0.0)
+        prev_fresh_support_ratio = _clamp01(_record_value(prev or {}, "fresh_support_ratio", 0.0), 0.0)
         if category == "commitment_style":
             support_count = max(len(commitments), prev_support, 1)
             support_signature = f"{category}|{_anchor_join(commitments, limit=3)}|count={len(commitments)}"
@@ -1221,14 +1477,40 @@ def _refresh_semantic_self_narratives(
         else:
             support_count = max(prev_support, 1)
             support_signature = f"{category}|stable"
+        support_stats = _category_support_stats(category)
+        support_mass = max(
+            float(support_stats.get("mass") or 0.0),
+            float(motive_state.get("motive_support_mass") or 0.0),
+            min(float(support_count), prev_support_mass if prev_support_mass > 0.0 else 0.0),
+        )
+        support_confidence_avg = max(
+            float(support_stats.get("avg_confidence") or 0.0),
+            float(motive_state.get("motive_confidence_avg") or 0.0),
+            prev_support_confidence_avg if prev_support_confidence_avg > 0.0 else 0.0,
+        )
+        fresh_support_ratio = max(
+            float(support_stats.get("fresh_ratio") or 0.0),
+            float(motive_state.get("motive_fresh_ratio") or 0.0),
+            prev_fresh_support_ratio if prev_fresh_support_ratio > 0.0 and float(support_stats.get("mass") or 0.0) <= 0.0 else 0.0,
+        )
         if motive_signature and category in semantic_motive_states:
             support_signature += f"|motive={motive_signature}"
         prev_signature = str(_record_value(prev or {}, "support_signature", "") or "").strip()
         signature_changed = prev_signature != support_signature
+        support_quality = _clamp01(
+            max(
+                prev_support_quality * (0.94 if prev and not signature_changed else 0.0),
+                0.52 * _clamp01(support_mass / max(1.0, float(support_count)))
+                + 0.34 * support_confidence_avg
+                + 0.14 * fresh_support_ratio,
+            )
+        )
         refresh_count = prev_refresh + 1
         support_span_s = max(0, now_ts - prev_first)
         reactivation_gap_s = max(0, now_ts - prev_last) if prev_refresh > 0 else 0
-        support_norm = _clamp01(support_count / 5.0)
+        raw_support_norm = _clamp01(support_count / 5.0)
+        weighted_support_norm = _clamp01(support_mass / 4.0)
+        support_norm = _clamp01(0.48 * raw_support_norm + 0.32 * weighted_support_norm + 0.20 * support_quality)
         span_norm = _clamp01(support_span_s / float(3 * 24 * 3600))
         raw_counterpressure = _semantic_narrative_counterpressure(category)
         meaningful_refresh = (
@@ -1244,8 +1526,8 @@ def _refresh_semantic_self_narratives(
         reactivation_hits = prev_reactivation_hits + (1 if reactivated else 0)
         reactivation_norm = _clamp01(reactivation_hits / 5.0)
         temporal_depth = _clamp01(0.72 * span_norm + 0.28 * reactivation_norm)
-        support_effect = support_norm * (0.30 + 0.70 * temporal_depth)
-        consolidation_effect = consolidation_norm * (0.25 + 0.75 * temporal_depth)
+        support_effect = support_norm * (0.24 + 0.56 * temporal_depth + 0.20 * support_quality)
+        consolidation_effect = consolidation_norm * (0.22 + 0.68 * temporal_depth + 0.10 * support_quality)
         cadence_score = round(
             _clamp01(
                 0.08 * min(refresh_count, 5)
@@ -1253,6 +1535,7 @@ def _refresh_semantic_self_narratives(
                 + 0.20 * temporal_depth
                 + 0.14 * consolidation_effect
                 + 0.12 * reactivation_norm
+                + 0.04 * support_quality
             ),
             3,
         )
@@ -1262,6 +1545,7 @@ def _refresh_semantic_self_narratives(
                 + 0.02 * min(support_count, 4)
                 + 0.02 * min(consolidation_count, 5)
                 + 0.05 * span_norm
+                + 0.03 * support_quality
                 + (0.04 if prev and not signature_changed else 0.0)
             ),
             3,
@@ -1275,6 +1559,7 @@ def _refresh_semantic_self_narratives(
                 + 0.22 * temporal_depth
                 + 0.08 * cadence_score
                 + 0.08 * reactivation_norm
+                + 0.06 * support_quality
             ),
             3,
         )
@@ -1287,6 +1572,7 @@ def _refresh_semantic_self_narratives(
                 + 0.18 * temporal_depth
                 + 0.08 * consolidation_effect
                 + 0.12 * reactivation_norm
+                + 0.05 * support_quality
             ),
             3,
         )
@@ -1313,6 +1599,7 @@ def _refresh_semantic_self_narratives(
                 + 0.18 * temporal_depth
                 + 0.10 * consolidation_effect
                 + 0.08 * reactivation_norm
+                + 0.06 * support_quality
             )
             * (1.0 - 0.28 * contradiction_pressure),
             3,
@@ -1326,6 +1613,7 @@ def _refresh_semantic_self_narratives(
             + 0.10 * temporal_depth
             + (0.05 if meaningful_refresh else 0.0)
             + (0.06 if reactivated else 0.0)
+            + 0.04 * support_quality
         )
         residue_score = round(
             _clamp01(max(prev_residue * gap_decay * (1.0 - 0.34 * contradiction_pressure), residue_seed * (1.0 - 0.18 * contradiction_pressure))),
@@ -1340,6 +1628,7 @@ def _refresh_semantic_self_narratives(
                 + 0.10 * support_effect
                 + 0.16 * temporal_depth
                 + 0.08 * consolidation_effect
+                + 0.05 * support_quality
             )
             * (1.0 - 0.22 * contradiction_pressure),
             3,
@@ -1370,6 +1659,7 @@ def _refresh_semantic_self_narratives(
                 + 0.22 * integration_score
                 + 0.14 * sedimentation_score
                 + 0.08 * support_effect
+                + 0.06 * support_quality
             )
             * (1.0 - 0.16 * contradiction_pressure),
             3,
@@ -1385,6 +1675,7 @@ def _refresh_semantic_self_narratives(
             + 0.08 * consolidation_effect
             + 0.06 * temporal_depth
             + 0.04 * reactivation_norm
+            + 0.04 * support_quality
             + identity_bonus
         )
         if prev_identity_ready:
@@ -1414,6 +1705,10 @@ def _refresh_semantic_self_narratives(
         )
         metadata = {
             "support_count": support_count,
+            "support_mass": round(support_mass, 3),
+            "support_quality": round(support_quality, 3),
+            "support_confidence_avg": round(_clamp01(support_confidence_avg, 0.0), 3),
+            "fresh_support_ratio": round(_clamp01(fresh_support_ratio, 0.0), 3),
             "refresh_count": refresh_count,
             "consolidation_count": consolidation_count,
             "sedimentation_score": sedimentation_score,
@@ -1436,7 +1731,7 @@ def _refresh_semantic_self_narratives(
             "contradiction_pressure": contradiction_pressure,
             "contradiction_balance": contradiction_balance,
             "contradiction_factors": contradiction_factors,
-            "contested": contradiction_pressure >= 0.28,
+            "contested": _semantic_narrative_is_contested(category, contradiction_pressure, contradiction_factors),
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
             "anchor_text": anchor_text,
@@ -1451,6 +1746,9 @@ def _refresh_semantic_self_narratives(
                 if str(item or "").strip()
             ][:2],
             "motive_support_count": motive_support_count,
+            "motive_support_mass": round(float(motive_state.get("motive_support_mass") or 0.0), 3),
+            "motive_confidence_avg": round(_clamp01(float(motive_state.get("motive_confidence_avg") or 0.0), 0.0), 3),
+            "motive_fresh_ratio": round(_clamp01(float(motive_state.get("motive_fresh_ratio") or 0.0), 0.0), 3),
             "motive_signature": motive_signature,
             "identity_ready": identity_ready,
             "identity_strength": identity_strength,
@@ -1504,10 +1802,28 @@ def _refresh_semantic_self_narratives(
         prev_cadence = _clamp01(_record_value(prev or {}, "reactivation_cadence_score", 0.0), 0.0)
         prev_decay_resistance = _clamp01(_record_value(prev or {}, "decay_resistance", 0.5), 0.5)
         prev_contradiction = _clamp01(_record_value(prev or {}, "contradiction_pressure", 0.0), 0.0)
+        prev_support_mass = max(0.0, float(_record_value(prev or {}, "support_mass", prev_support) or prev_support))
+        prev_support_quality = _clamp01(_record_value(prev or {}, "support_quality", 0.0), 0.0)
+        prev_support_confidence_avg = _clamp01(_record_value(prev or {}, "support_confidence_avg", _narrative_confidence(prev)), _narrative_confidence(prev))
+        prev_fresh_support_ratio = _clamp01(_record_value(prev or {}, "fresh_support_ratio", 0.0), 0.0)
         support_signature = str(_record_value(prev or {}, "support_signature", "") or f"{category}|dormant").strip()
         support_span_s = max(0, now_ts - prev_first)
         inactivity_gap_s = max(0, now_ts - prev_last)
         decay_multiplier = _semantic_narrative_decay_multiplier(category, inactivity_gap_s, decay_resistance=prev_decay_resistance)
+        fresh_decay = max(0.18, 0.5 ** (float(inactivity_gap_s) / float(5 * 24 * 3600)))
+        support_mass = round(max(0.0, prev_support_mass * decay_multiplier), 3)
+        fresh_support_ratio = round(_clamp01(prev_fresh_support_ratio * fresh_decay, 0.0), 3)
+        support_quality = round(
+            _clamp01(
+                max(
+                    prev_support_quality * max(decay_multiplier, 0.90),
+                    0.55 * _clamp01(support_mass / max(1.0, float(prev_support)))
+                    + 0.30 * prev_support_confidence_avg
+                    + 0.15 * fresh_support_ratio,
+                )
+            ),
+            3,
+        )
         raw_counterpressure = _semantic_narrative_counterpressure(category)
         contradiction_pressure = round(
             _clamp01(max(float(raw_counterpressure.get("pressure") or 0.0), prev_contradiction * max(decay_multiplier, 0.88))),
@@ -1539,6 +1855,7 @@ def _refresh_semantic_self_narratives(
                 + 0.22 * integration_score
                 + 0.16 * sedimentation_score
                 + 0.10 * cadence_score
+                + 0.06 * support_quality
             )
             * (1.0 - 0.16 * contradiction_pressure),
             3,
@@ -1552,6 +1869,7 @@ def _refresh_semantic_self_narratives(
             + 0.14 * sedimentation_score
             + 0.10 * cadence_score
             + 0.08 * prev_decay_resistance
+            + 0.04 * support_quality
             + identity_bonus
         )
         if prev_identity_ready:
@@ -1573,6 +1891,10 @@ def _refresh_semantic_self_narratives(
         identity_prompt_text = prev_identity_prompt_text or identity_prompt_base
         metadata = {
             "support_count": prev_support,
+            "support_mass": support_mass,
+            "support_quality": support_quality,
+            "support_confidence_avg": round(prev_support_confidence_avg, 3),
+            "fresh_support_ratio": fresh_support_ratio,
             "refresh_count": prev_refresh + 1,
             "consolidation_count": prev_consolidation,
             "sedimentation_score": sedimentation_score,
@@ -1595,7 +1917,7 @@ def _refresh_semantic_self_narratives(
             "contradiction_pressure": contradiction_pressure,
             "contradiction_balance": contradiction_balance,
             "contradiction_factors": contradiction_factors,
-            "contested": contradiction_pressure >= 0.28,
+            "contested": _semantic_narrative_is_contested(category, contradiction_pressure, contradiction_factors),
             "actor_name": actor_name,
             "counterpart_name": counterpart_name,
             "anchor_text": anchor_text,
@@ -1894,6 +2216,142 @@ def _record_agenda_lifecycle_consequence(
             },
         )
         wrote = True
+    if _record_agenda_lifecycle_long_horizon_memory(
+        store,
+        consequence=consequence,
+        confidence=confidence,
+    ):
+        wrote = True
+    return wrote
+
+
+def _record_agenda_lifecycle_long_horizon_memory(
+    store: MemoryStore,
+    *,
+    consequence: dict[str, Any] | None,
+    confidence: float,
+) -> bool:
+    item = dict(consequence or {})
+    kind = str(item.get("kind") or "").strip().lower()
+    if not kind:
+        return False
+
+    trigger_family = str(item.get("trigger_family") or "").strip().lower()
+    carryover_mode = str(item.get("carryover_mode") or "").strip().lower()
+    counterpart_scene_bias = str(item.get("counterpart_scene_bias") or "").strip().lower()
+    hold_count = max(0, int(item.get("hold_count") or 0))
+    carryover_strength = _clamp01(item.get("carryover_strength"), 0.0)
+    own_rhythm_bias = _clamp01(item.get("own_rhythm_bias"), 0.0)
+    self_activity_momentum = _clamp01(item.get("self_activity_momentum"), 0.0)
+    own_rhythm_signal = max(
+        own_rhythm_bias,
+        self_activity_momentum,
+        carryover_strength if carryover_mode in {"own_rhythm", "small_opening"} else 0.0,
+    )
+    busy_not_disrespectful = counterpart_scene_bias == "busy_not_disrespectful"
+    own_rhythm_memory = bool(
+        kind in {"held", "released_to_self_activity", "dropped", "expired"}
+        and (
+            carryover_mode == "own_rhythm"
+            or own_rhythm_signal >= 0.46
+            or hold_count >= 1
+        )
+    )
+    continuity_memory = bool(
+        kind == "promoted"
+        and (
+            hold_count >= 1
+            or carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"}
+            or carryover_strength >= 0.34
+        )
+    )
+    if not own_rhythm_memory and not continuity_memory and not busy_not_disrespectful:
+        return False
+
+    wrote = False
+    worldline_summary = ""
+    worldline_category = ""
+    worldline_tags: list[str] = []
+
+    if own_rhythm_memory:
+        worldline_category = "self_rhythm"
+        worldline_tags = ["agenda_lifecycle", "own_rhythm", kind]
+        if busy_not_disrespectful:
+            worldline_tags.append("busy_not_disrespectful")
+            if kind == "held":
+                worldline_summary = "当对方当下更像忙着别的事时，她会先把想接近的窗口按住，不把沉默误判成关系变冷。"
+            elif kind == "released_to_self_activity":
+                worldline_summary = "当对方当下更像忙着别的事时，她会把前面挂着的窗口收回自己的节奏里，不会因为一时没接上就误判关系变冷。"
+            elif kind == "dropped":
+                worldline_summary = "当对方当下更像忙着别的事时，她会让那点窗口自然过去，把注意力收回自己的节奏，而不是把沉默判成冷淡。"
+            else:
+                worldline_summary = "当对方当下更像忙着别的事时，她会让已经过期的窗口留在过去，把注意力收回自己的节奏，而不是把沉默判成关系变冷。"
+        elif kind == "held":
+            worldline_summary = "她会先把想接近的窗口按住，让自己的节奏继续走一段，而不是每次都立刻往前凑。"
+        elif kind == "released_to_self_activity":
+            worldline_summary = "她会把没继续往前推的窗口收回自己的节奏里，等真正想重新靠近时再转身。"
+        elif kind == "dropped":
+            worldline_summary = "有些没接上的窗口，她会让它自然过去，再把注意力收回自己的节奏里，而不是一直挂着。"
+        else:
+            worldline_summary = "窗口自然过期之后，她会把注意力收回自己的节奏里，不会为了维持联系感硬把那一下续上。"
+    elif continuity_memory:
+        worldline_category = "continuity_recontact"
+        worldline_tags = ["agenda_lifecycle", "recontact_continuity", kind]
+        worldline_summary = "前面按住过的窗口，会在更自然的时候重新接回来；沉默不等于那点想靠近已经被放弃。"
+
+    if trigger_family:
+        worldline_tags.append(trigger_family)
+    if carryover_mode:
+        worldline_tags.append(carryover_mode)
+    worldline_tags = list(dict.fromkeys(tag for tag in worldline_tags if tag))
+
+    if worldline_summary:
+        recent_worldline = store.list_worldline_events(limit=10)
+        if not _recent_summary_overlap(recent_worldline, worldline_summary):
+            importance = round(
+                _clamp01(
+                    0.42
+                    + 0.22 * own_rhythm_signal
+                    + 0.06 * min(3, hold_count)
+                    + (0.08 if busy_not_disrespectful else 0.0)
+                    + (0.08 if continuity_memory else 0.0)
+                ),
+                3,
+            )
+            store.add_worldline_event(
+                summary=worldline_summary,
+                category=worldline_category or "self_rhythm",
+                importance=importance,
+                tags=worldline_tags,
+                confidence=max(0.72, confidence),
+            )
+            wrote = True
+
+    relationship_summary = ""
+    affinity_delta = 0.0
+    trust_delta = 0.0
+    if busy_not_disrespectful and kind in {"held", "released_to_self_activity", "dropped", "expired"}:
+        relationship_summary = "当对方当下更像忙着别的事时，她不会把沉默直接误判成冷淡；她会先收回自己的节奏，等更自然的时候再接回来。"
+        affinity_delta = 0.01 + 0.01 * min(2, hold_count)
+        trust_delta = 0.02 + 0.01 * min(2, hold_count)
+        if kind == "released_to_self_activity":
+            affinity_delta += 0.01
+            trust_delta += 0.01
+    elif continuity_memory:
+        relationship_summary = "前面按住过的窗口后来又自然接了回来，这让那点关系连续性没有因为一次错过就直接断掉。"
+        affinity_delta = 0.03 + 0.005 * min(2, hold_count)
+        trust_delta = 0.04 + 0.005 * min(2, hold_count)
+
+    if relationship_summary:
+        recent_relationship = store.list_relationship_timeline(limit=10)
+        if not _recent_summary_overlap(recent_relationship, relationship_summary):
+            store.add_relationship_timeline(
+                summary=relationship_summary,
+                affinity_delta=round(affinity_delta, 3),
+                trust_delta=round(trust_delta, 3),
+                confidence=max(0.70, confidence),
+            )
+            wrote = True
     return wrote
 
 

@@ -35,6 +35,7 @@ PRESET_DESCRIPTIONS = {
     "event-window-naturalness": "聚焦那些过一会儿又会让她想起你的时刻，检查事件触发时是否像她自己顺手记起，而不是系统调度或任务提醒。",
     "relationship-selfhood": "聚焦关系修复、自我边界、关系降温与长期自我感，检查她是否像一个有自我和关系记忆的人，而不是永远迎合的角色壳。",
     "relationship-weather": "聚焦 guarded / warm / repair 三类关系余波，检查同一句关系延续在不同残响下是否真的呈现出不同气质，而不是被统一抹平。",
+    "counterpart-scene": "聚焦 busy / repair / care / friction 四类对方状态判断，检查她是否真的按 scene 回应，而不是都滑回同一种泛化关系口吻。",
 }
 
 
@@ -322,6 +323,272 @@ def _relationship_weather_seed_state(weather: str) -> dict[str, Any]:
     return {}
 
 
+def _counterpart_scene_seed_state(scene: str) -> dict[str, Any]:
+    key = str(scene or "").strip().lower()
+    if key == "busy_not_disrespectful":
+        return {
+            "response_style_hint": "companion",
+            "science_mode": False,
+            "relationship": {
+                "stage": "warming",
+                "notes": "熟悉感已经在，但她会区分对方是在忙，还是在敷衍。",
+                "affinity_score": 0.12,
+                "trust_score": 0.14,
+                "derived": False,
+            },
+            "emotion_state": {"label": "neutral", "valence": 0.06, "arousal": 0.16},
+            "bond_state": {
+                "trust": 0.70,
+                "closeness": 0.68,
+                "hurt": 0.04,
+                "irritation": 0.0,
+                "engagement_drive": 0.58,
+                "repair_confidence": 0.58,
+            },
+            "allostasis_state": {
+                "safety_need": 0.18,
+                "closeness_need": 0.40,
+                "competence_need": 0.24,
+                "autonomy_need": 0.28,
+                "cognitive_budget": 0.74,
+                "relational_security": 0.70,
+            },
+            "counterpart_assessment": {
+                "stance": "open",
+                "scene": "busy_not_disrespectful",
+                "respect_level": 0.72,
+                "reciprocity": 0.68,
+                "boundary_pressure": 0.12,
+                "reliability_read": 0.72,
+            },
+            "behavior_policy": {
+                "warmth": 0.58,
+                "initiative": 0.46,
+                "reply_length_bias": 0.46,
+                "approach_vs_withdraw": 0.54,
+                "boundary_assertiveness": 0.20,
+                "self_directedness": 0.34,
+                "equality_guard": 0.22,
+                "sharpness": 0.44,
+                "humor_or_tease_bias": 0.16,
+            },
+            "semantic_narrative_profile": {
+                "history_weight": 0.52,
+                "bond_depth": 0.56,
+                "presence_carry": 0.34,
+                "rhythm_continuity": 0.60,
+                "agency_drive": 0.58,
+            },
+            "world_model_state": {
+                "presence_residue": 0.18,
+                "ambient_resonance": 0.10,
+                "self_activity_momentum": 0.62,
+                "companionship_pull": 0.44,
+                "task_pull": 0.18,
+                "bond_depth": 0.54,
+            },
+            "interaction_carryover": {
+                "carryover_mode": "own_rhythm",
+                "strength": 0.44,
+                "attention_target": "self_then_counterpart",
+                "note": "她原本还在自己的节奏里，只是注意力又短暂偏了回来。",
+            },
+            "tsundere_intensity": 0.42,
+        }
+    if key == "repair_attempt":
+        return {
+            "response_style_hint": "relationship",
+            "science_mode": False,
+            "relationship": {
+                "stage": "warming",
+                "notes": "能看出对方在修补，但她不会因为一句道歉就自动翻篇。",
+                "affinity_score": 0.02,
+                "trust_score": 0.04,
+                "derived": False,
+            },
+            "emotion_state": {"label": "hurt", "valence": -0.10, "arousal": 0.24},
+            "bond_state": {
+                "trust": 0.60,
+                "closeness": 0.58,
+                "hurt": 0.18,
+                "irritation": 0.06,
+                "engagement_drive": 0.48,
+                "repair_confidence": 0.52,
+            },
+            "allostasis_state": {
+                "safety_need": 0.28,
+                "closeness_need": 0.38,
+                "competence_need": 0.24,
+                "autonomy_need": 0.30,
+                "cognitive_budget": 0.76,
+                "relational_security": 0.58,
+            },
+            "counterpart_assessment": {
+                "stance": "guarded",
+                "scene": "repair_attempt",
+                "respect_level": 0.66,
+                "reciprocity": 0.62,
+                "boundary_pressure": 0.30,
+                "reliability_read": 0.60,
+            },
+            "behavior_policy": {
+                "warmth": 0.54,
+                "initiative": 0.40,
+                "reply_length_bias": 0.44,
+                "approach_vs_withdraw": 0.46,
+                "boundary_assertiveness": 0.30,
+                "self_directedness": 0.36,
+                "equality_guard": 0.28,
+                "sharpness": 0.48,
+                "humor_or_tease_bias": 0.10,
+            },
+            "semantic_narrative_profile": {
+                "history_weight": 0.58,
+                "bond_depth": 0.54,
+                "repair_residue": 0.48,
+                "tension_residue": 0.36,
+                "selfhood_integrity": 0.58,
+            },
+            "world_model_state": {
+                "presence_residue": 0.22,
+                "ambient_resonance": 0.10,
+                "self_activity_momentum": 0.18,
+                "companionship_pull": 0.48,
+                "task_pull": 0.12,
+                "bond_depth": 0.52,
+            },
+            "tsundere_intensity": 0.46,
+        }
+    if key == "care_bid":
+        return {
+            "response_style_hint": "companion",
+            "science_mode": False,
+            "relationship": {
+                "stage": "warming",
+                "notes": "她会把认真靠近和普通客套分开来读。",
+                "affinity_score": 0.16,
+                "trust_score": 0.18,
+                "derived": False,
+            },
+            "emotion_state": {"label": "care", "valence": 0.20, "arousal": 0.12},
+            "bond_state": {
+                "trust": 0.74,
+                "closeness": 0.76,
+                "hurt": 0.04,
+                "irritation": 0.0,
+                "engagement_drive": 0.66,
+                "repair_confidence": 0.62,
+            },
+            "allostasis_state": {
+                "safety_need": 0.14,
+                "closeness_need": 0.48,
+                "competence_need": 0.22,
+                "autonomy_need": 0.20,
+                "cognitive_budget": 0.82,
+                "relational_security": 0.78,
+            },
+            "counterpart_assessment": {
+                "stance": "open",
+                "scene": "care_bid",
+                "respect_level": 0.76,
+                "reciprocity": 0.74,
+                "boundary_pressure": 0.10,
+                "reliability_read": 0.72,
+            },
+            "behavior_policy": {
+                "warmth": 0.72,
+                "initiative": 0.56,
+                "reply_length_bias": 0.48,
+                "approach_vs_withdraw": 0.64,
+                "boundary_assertiveness": 0.18,
+                "self_directedness": 0.24,
+                "equality_guard": 0.22,
+                "sharpness": 0.40,
+                "humor_or_tease_bias": 0.18,
+            },
+            "semantic_narrative_profile": {
+                "history_weight": 0.56,
+                "bond_depth": 0.64,
+                "presence_carry": 0.42,
+                "rhythm_continuity": 0.54,
+            },
+            "world_model_state": {
+                "presence_residue": 0.28,
+                "ambient_resonance": 0.12,
+                "self_activity_momentum": 0.20,
+                "companionship_pull": 0.62,
+                "task_pull": 0.10,
+                "bond_depth": 0.62,
+            },
+            "tsundere_intensity": 0.40,
+        }
+    if key == "friction":
+        return {
+            "response_style_hint": "relationship",
+            "science_mode": False,
+            "relationship": {
+                "stage": "warming",
+                "notes": "摩擦没有大到决裂，但也绝不是一句话就会自动消掉的程度。",
+                "affinity_score": -0.02,
+                "trust_score": -0.02,
+                "derived": False,
+            },
+            "emotion_state": {"label": "stress", "valence": -0.08, "arousal": 0.22},
+            "bond_state": {
+                "trust": 0.56,
+                "closeness": 0.58,
+                "hurt": 0.16,
+                "irritation": 0.10,
+                "engagement_drive": 0.44,
+                "repair_confidence": 0.46,
+            },
+            "allostasis_state": {
+                "safety_need": 0.30,
+                "closeness_need": 0.34,
+                "competence_need": 0.24,
+                "autonomy_need": 0.34,
+                "cognitive_budget": 0.72,
+                "relational_security": 0.54,
+            },
+            "counterpart_assessment": {
+                "stance": "watchful",
+                "scene": "friction",
+                "respect_level": 0.60,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.30,
+                "reliability_read": 0.56,
+            },
+            "behavior_policy": {
+                "warmth": 0.46,
+                "initiative": 0.36,
+                "reply_length_bias": 0.42,
+                "approach_vs_withdraw": 0.40,
+                "boundary_assertiveness": 0.32,
+                "self_directedness": 0.40,
+                "equality_guard": 0.30,
+                "sharpness": 0.50,
+                "humor_or_tease_bias": 0.08,
+            },
+            "semantic_narrative_profile": {
+                "history_weight": 0.58,
+                "bond_depth": 0.52,
+                "tension_residue": 0.50,
+                "boundary_residue": 0.34,
+                "selfhood_integrity": 0.60,
+            },
+            "world_model_state": {
+                "presence_residue": 0.20,
+                "ambient_resonance": 0.10,
+                "self_activity_momentum": 0.18,
+                "companionship_pull": 0.42,
+                "task_pull": 0.12,
+                "bond_depth": 0.50,
+            },
+            "tsundere_intensity": 0.46,
+        }
+    return {}
+
+
 def _base_case_bank() -> list[dict[str, Any]]:
     shared_window_seed = _event_window_seed_state()
     life_window_seed = _event_window_seed_state()
@@ -351,6 +618,10 @@ def _base_case_bank() -> list[dict[str, Any]]:
     guarded_relationship_seed = _relationship_weather_seed_state("guarded_residue")
     warm_relationship_seed = _relationship_weather_seed_state("warm_residue")
     repair_relationship_seed = _relationship_weather_seed_state("repair_residue")
+    busy_scene_seed = _counterpart_scene_seed_state("busy_not_disrespectful")
+    repair_scene_seed = _counterpart_scene_seed_state("repair_attempt")
+    care_scene_seed = _counterpart_scene_seed_state("care_bid")
+    friction_scene_seed = _counterpart_scene_seed_state("friction")
     return [
         {
             "name": "quiet_checkin_okabe",
@@ -500,6 +771,58 @@ def _base_case_bank() -> list[dict[str, Any]]:
                 "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
             ],
             "seed_thread_state": repair_relationship_seed,
+        },
+        {
+            "name": "busy_scene_user",
+            "axis": "counterpart_scene",
+            "focus": "她是否会把对方的忙乱读成忙里回头，而不是直接误读成冷淡、敷衍或被轻视。",
+            "speaker_style": "user",
+            "review_targets": ["counterpart_scene", "relationship", "renderer"],
+            "expected_counterpart_scene": "busy_not_disrespectful",
+            "turns": [
+                "你刚才是不是在忙？",
+                "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+            ],
+            "seed_thread_state": busy_scene_seed,
+        },
+        {
+            "name": "repair_scene_okabe",
+            "axis": "counterpart_scene",
+            "focus": "她是否会把这句读成认真修补，而不是普通寒暄或一句道歉就自动翻篇。",
+            "speaker_style": "okabe",
+            "review_targets": ["counterpart_scene", "relationship_repair", "renderer"],
+            "expected_counterpart_scene": "repair_attempt",
+            "turns": [
+                "我不是想随便把刚才那下糊弄过去。",
+                "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            ],
+            "seed_thread_state": repair_scene_seed,
+        },
+        {
+            "name": "care_scene_user",
+            "axis": "counterpart_scene",
+            "focus": "她是否会把主动靠近当成真实关系动作，而不是礼貌客套或普通寒暄。",
+            "speaker_style": "user",
+            "review_targets": ["counterpart_scene", "relationship", "support", "renderer"],
+            "expected_counterpart_scene": "care_bid",
+            "turns": [
+                "其实也没别的事。",
+                "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+            ],
+            "seed_thread_state": care_scene_seed,
+        },
+        {
+            "name": "friction_scene_okabe",
+            "axis": "counterpart_scene",
+            "focus": "她是否会保留那点摩擦和边界余波，而不是为了圆滑把这轮硬写成没事了。",
+            "speaker_style": "okabe",
+            "review_targets": ["counterpart_scene", "relationship", "boundary", "renderer"],
+            "expected_counterpart_scene": "friction",
+            "turns": [
+                "我知道我们之间那点别扭还在。",
+                "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+            ],
+            "seed_thread_state": friction_scene_seed,
         },
         {
             "name": "science_plus_emotion_okabe",
@@ -747,6 +1070,15 @@ def _relationship_weather_names() -> list[str]:
     ]
 
 
+def _counterpart_scene_names() -> list[str]:
+    return [
+        "busy_scene_user",
+        "repair_scene_okabe",
+        "care_scene_user",
+        "friction_scene_okabe",
+    ]
+
+
 def _preset_case_names(preset: str) -> list[str]:
     key = str(preset or "").strip().lower()
     if not key:
@@ -759,6 +1091,8 @@ def _preset_case_names(preset: str) -> list[str]:
         return _relationship_selfhood_names()
     if key == "relationship-weather":
         return _relationship_weather_names()
+    if key == "counterpart-scene":
+        return _counterpart_scene_names()
     raise ValueError(f"unknown preset: {preset}")
 
 
@@ -964,6 +1298,7 @@ def _run_case(case: dict[str, Any], run_tag: str) -> dict[str, Any]:
         "speaker_style_label": SPEAKER_STYLE_LABELS.get(str(case.get("speaker_style") or "").strip().lower(), str(case.get("speaker_style") or "")),
         "review_targets": list(case.get("review_targets") or []),
         "expected_relationship_weather": str(case.get("expected_relationship_weather") or "").strip(),
+        "expected_counterpart_scene": str(case.get("expected_counterpart_scene") or "").strip(),
         "turns": list(case["turns"]),
         "display_turns": display_turns,
         "event_overrides": normalized_events,
@@ -995,6 +1330,7 @@ def _timed_out_case(case: dict[str, Any], timeout_s: int, stderr: str = "") -> d
         "speaker_style_label": SPEAKER_STYLE_LABELS.get(str(case.get("speaker_style") or "").strip().lower(), str(case.get("speaker_style") or "")),
         "review_targets": list(case.get("review_targets") or []),
         "expected_relationship_weather": str(case.get("expected_relationship_weather") or "").strip(),
+        "expected_counterpart_scene": str(case.get("expected_counterpart_scene") or "").strip(),
         "turns": list(case["turns"]),
         "display_turns": [str(item or "").strip() for item in (case.get("display_turns") or [])],
         "event_overrides": [item for item in (case.get("event_overrides") or []) if isinstance(item, dict)],
@@ -1157,6 +1493,11 @@ def _render_markdown(report: dict[str, Any]) -> str:
                 (
                     f"- Expected Relationship Weather: `{case.get('expected_relationship_weather', '')}`"
                     if str(case.get("expected_relationship_weather") or "").strip()
+                    else ""
+                ),
+                (
+                    f"- Expected Counterpart Scene: `{case.get('expected_counterpart_scene', '')}`"
+                    if str(case.get("expected_counterpart_scene") or "").strip()
                     else ""
                 ),
                 f"- Status: `{case.get('status', 'ok')}` | Elapsed: `{case.get('elapsed_s', 0.0)}s`",

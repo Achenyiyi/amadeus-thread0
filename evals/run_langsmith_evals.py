@@ -7631,6 +7631,28 @@ def _relationship_weather_trace_summary(trace: dict[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _behavior_snapshot_summary(detector: dict[str, Any] | None) -> str:
+    if not isinstance(detector, dict) or not detector:
+        return ""
+    snapshot = detector.get("behavior_snapshot") if isinstance(detector.get("behavior_snapshot"), dict) else {}
+    if not snapshot:
+        return ""
+    interaction_mode = str(snapshot.get("interaction_mode") or "").strip()
+    followup_intent = str(snapshot.get("followup_intent") or "").strip()
+    action_target = str(snapshot.get("action_target") or "").strip()
+    relationship_weather = str(snapshot.get("relationship_weather") or "").strip()
+    parts: list[str] = []
+    if interaction_mode or followup_intent:
+        parts.append(f"behavior_mode={interaction_mode or '-'}")
+        if followup_intent:
+            parts.append(f"followup={followup_intent}")
+    if action_target:
+        parts.append(f"target={action_target}")
+    if relationship_weather:
+        parts.append(f"behavior_weather={relationship_weather}")
+    return ", ".join(parts)
+
+
 def _build_local_suite_report(
     examples: list[dict[str, Any]],
     suite_name: str,
@@ -7751,6 +7773,7 @@ def _build_local_suite_report(
             "failed_evaluators": case["failed_evaluators"],
             "relationship_weather_trace": case.get("relationship_weather_trace", {}),
             "relationship_weather_summary": _relationship_weather_trace_summary(case.get("relationship_weather_trace", {})),
+            "behavior_snapshot_summary": _behavior_snapshot_summary(case.get("ooc_detector", {})),
         }
         for case in cases
         if case["failed_evaluators"]
@@ -7888,7 +7911,9 @@ def _build_markdown_report(report: dict[str, Any]) -> str:
         else:
             for item in failures[:12]:
                 trace_summary = str(item.get("relationship_weather_summary") or "").strip()
-                suffix = f" | {trace_summary}" if trace_summary else ""
+                behavior_summary = str(item.get("behavior_snapshot_summary") or "").strip()
+                suffix_parts = [part for part in (trace_summary, behavior_summary) if part]
+                suffix = f" | {' | '.join(suffix_parts)}" if suffix_parts else ""
                 lines.append(f"- {item.get('case_id')}: {', '.join(item.get('failed_evaluators', []))}{suffix}")
 
         if str(suite.get("suite") or "").strip() in {"open_evolution_eval", "natural_long_thread", "selfhood_probe"}:
