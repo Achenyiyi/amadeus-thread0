@@ -15,10 +15,12 @@ from .postprocess import (
     MEMORY_RECALL_KEYWORDS,
     SCIENCE_KEYWORDS,
     _has_any_marker,
+    _is_presence_reassurance_check,
     _is_idle_smalltalk_request,
     _is_nonrelational_science_stress,
     _is_nonrelational_support_request,
     _is_playful_memory_request,
+    _is_soft_presence_checkin_request,
     _looks_like_light_smalltalk,
     _needs_structured_answer,
     _norm_for_compare,
@@ -26,6 +28,7 @@ from .postprocess import (
     _response_style_hint,
     _soften_natural_answer,
     _wants_brief_presence,
+    _wants_presence_reassurance,
     _wants_less_teacherly_reply,
     _wants_quick_judgment,
 )
@@ -98,6 +101,8 @@ def _looks_like_daily_surface_scene(text: str, *, science_mode: bool = False) ->
     if not raw:
         return False
     if _looks_like_light_smalltalk(raw):
+        return True
+    if _is_soft_presence_checkin_request(raw) or _wants_presence_reassurance(raw):
         return True
     return _is_nonrelational_support_request(raw, science_mode)
 
@@ -279,9 +284,18 @@ def _daily_surface_alignment_metrics(answer: str, *, profile: dict[str, Any] | N
     rows = prof.get("rows") if isinstance(prof.get("rows"), list) else []
     text = str(answer or "").strip()
     if not text or not rows:
-        return {"used": False, "score": 0.0, "chosen_support": 0.0, "rejected_pull": 0.0}
+        return {
+            "used": False,
+            "case_name": "",
+            "score": 0.0,
+            "chosen_support": 0.0,
+            "rejected_pull": 0.0,
+            "brevity_penalty": 0.0,
+            "length_ratio": 1.0,
+        }
 
     chosen_scores: list[float] = []
+    chosen_lengths: list[int] = []
     rejected_scores: list[float] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -290,18 +304,35 @@ def _daily_surface_alignment_metrics(answer: str, *, profile: dict[str, Any] | N
         rejected = str(row.get("rejected") or "").strip()
         if chosen:
             chosen_scores.append(_daily_surface_prompt_similarity(text, chosen))
+            chosen_lengths.append(len(_norm_for_compare(chosen)))
         if rejected:
             rejected_scores.append(_daily_surface_prompt_similarity(text, rejected))
     chosen_scores.sort(reverse=True)
     rejected_scores.sort(reverse=True)
     chosen_support = sum(chosen_scores[:3]) / max(1, len(chosen_scores[:3]))
     rejected_pull = sum(rejected_scores[:3]) / max(1, len(rejected_scores[:3]))
-    score = chosen_support - 0.82 * rejected_pull
+    chosen_length_anchor = (
+        sum(chosen_lengths[:3]) / max(1, len(chosen_lengths[:3]))
+        if chosen_lengths
+        else 0.0
+    )
+    compact_length = len(_norm_for_compare(text))
+    length_ratio = compact_length / max(1.0, chosen_length_anchor) if chosen_length_anchor else 1.0
+    brevity_penalty = 0.0
+    if chosen_length_anchor >= 8 and compact_length > 0:
+        if length_ratio < 0.42:
+            brevity_penalty = min(0.34, (0.42 - length_ratio) / 0.42 * 0.34)
+        elif length_ratio < 0.56 and chosen_support < 0.80:
+            brevity_penalty = min(0.12, (0.56 - length_ratio) / 0.14 * 0.12)
+    score = chosen_support - 0.82 * rejected_pull - brevity_penalty
     return {
         "used": True,
+        "case_name": str(prof.get("case_name") or "").strip(),
         "score": round(score, 4),
         "chosen_support": round(chosen_support, 4),
         "rejected_pull": round(rejected_pull, 4),
+        "brevity_penalty": round(brevity_penalty, 4),
+        "length_ratio": round(length_ratio, 4),
     }
 
 
@@ -567,6 +598,15 @@ def _generation_profile(
         and relationship_weather in {"guarded_residue", "warm_residue", "repair_residue"}
         and relationship_weather_strength >= 0.22
     )
+    presence_reassurance_turn = (
+        event_kind == "user_utterance"
+        and (
+            _wants_presence_reassurance(user_text)
+            or _is_presence_reassurance_check(user_text)
+            or _is_soft_presence_checkin_request(user_text)
+        )
+    )
+    brief_presence_turn = event_kind == "user_utterance" and interaction_mode == "brief_presence"
     busy_scene_turn = event_kind == "user_utterance" and counterpart_scene == "busy_not_disrespectful"
     repair_scene_turn = event_kind == "user_utterance" and counterpart_scene == "repair_attempt"
     care_scene_turn = event_kind == "user_utterance" and counterpart_scene == "care_bid"
@@ -591,6 +631,8 @@ def _generation_profile(
         and not background_window_turn
         and not life_window_turn
         and not relational_weather_turn
+        and not presence_reassurance_turn
+        and not brief_presence_turn
         and not busy_scene_turn
         and not repair_scene_turn
         and not care_scene_turn
@@ -616,7 +658,7 @@ def _generation_profile(
         else:
             temperature = 0.22 + 0.08 * reply_bias
             top_p = 0.78 + 0.08 * max(approach, trust)
-        max_tokens = 240 if exploratory else 192
+        max_tokens = 216 if exploratory else 160
     else:
         if exploratory:
             temperature = 0.32 + 0.16 * max(reply_bias, warmth) + 0.04 * approach
@@ -644,6 +686,10 @@ def _generation_profile(
         max_tokens = _cap_tokens(max_tokens, 256)
     if _wants_brief_presence(user_text):
         max_tokens = _cap_tokens(max_tokens, 96)
+        top_p = min(top_p, 0.78)
+    if presence_reassurance_turn:
+        max_tokens = _cap_tokens(max_tokens, 96)
+        temperature = min(temperature, 0.22)
         top_p = min(top_p, 0.78)
 
     if event_kind != "user_utterance":
@@ -704,6 +750,10 @@ def _generation_profile(
         elif relationship_weather == "warm_residue":
             max_tokens = _cap_tokens(max_tokens, 200 if exploratory else 176)
             top_p = min(top_p, 0.86 if exploratory else 0.82)
+    if brief_presence_turn:
+        max_tokens = _cap_tokens(max_tokens, 112 if exploratory else 96)
+        temperature = min(temperature, 0.24 if exploratory else 0.22)
+        top_p = min(top_p, 0.80 if exploratory else 0.78)
     if busy_scene_turn:
         max_tokens = _cap_tokens(max_tokens, 184 if exploratory else 156)
         temperature = min(temperature, 0.28 if exploratory else 0.22)

@@ -38,9 +38,15 @@ from .rewrite import (
 from .state import ThreadState
 
 _NATURAL_REWRITE_ISSUE_KEYS = {
+    "visible_template",
+    "lecture_list",
+    "overexplained",
     "meta_self_explainer",
     "selfhood_meta_proof",
+    "selfhood_preemptive_excusal",
     "selfhood_rhetorical_opening",
+    "selfhood_abstract_manifesto",
+    "selfhood_strategy_tone",
     "defensive_meta",
     "defensive_meta_tone",
     "counselor_tone",
@@ -55,6 +61,11 @@ _NATURAL_REWRITE_ISSUE_KEYS = {
     "illusion_stagey_surface",
     "support_scene_drift",
     "support_frame_echo",
+    "support_overdirective",
+    "support_no_landing",
+    "wording_meta_detour",
+    "generic_scold_template",
+    "passive_waiting_posture",
     "overquestioning",
     "dangling_ellipsis_ending",
     "closing_interrogation",
@@ -208,6 +219,7 @@ def _finalize_text_response(
                 focus_text=str(light_dialog_profile.get("focus") or ""),
                 preferred_examples=list(light_dialog_profile.get("chosen_examples") or []),
                 rejected_examples=list(light_dialog_profile.get("rejected_examples") or []),
+                profile_rows=list(light_dialog_profile.get("rows") or []),
                 current_event=current_event,
                 behavior_action=behavior_action,
                 interaction_carryover=state.get("interaction_carryover")

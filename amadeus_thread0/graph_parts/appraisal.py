@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from ..config import (
@@ -11,8 +12,13 @@ from ..config import (
     LLM_APPRAISAL_CONFIDENCE_MIN,
     LLM_APPRAISAL_ENABLED,
     LLM_APPRAISAL_MAX_HISTORY_MESSAGES,
+    LLM_APPRAISAL_INVOKE_MAX_RETRIES,
+    LLM_APPRAISAL_MODEL_MAX_RETRIES,
     LLM_APPRAISAL_SOFT_CONFIDENCE_MIN,
+    LLM_APPRAISAL_TIMEOUT_S,
 )
+from ..runtime.modeling import _normalize_provider, _resolve_api_key
+from ..runtime.settings import get_settings
 from ..evolution_engine import normalize_appraisal_payload as _engine_normalize_appraisal_payload
 from .common import _clamp01, _clamp_signed, _safe_json
 from .dialogue_guidance import _narrative_actor_profile
@@ -21,6 +27,7 @@ from .postprocess import APOLOGY_KEYWORDS, TENSION_KEYWORDS, _has_any_marker, _s
 from .prompt_helpers import _compact_focus_lines, _compact_interaction_carryover_hint
 from .relational_runtime import _compact_relationship_summary, _focus_payload
 from .rewrite import _invoke_model_with_retries, _model
+from .runtime_services import _audit_jsonl
 from .semantic_narrative import _semantic_narrative_appraisal_hint
 
 __all__ = [
@@ -920,6 +927,74 @@ def _build_turn_appraisal_prompt(
     )
 
 
+def _appraisal_prefers_direct_transport() -> bool:
+    settings = get_settings()
+    provider = _normalize_provider(settings.model_provider)
+    base_url = str(settings.model_base_url or "").strip()
+    return provider in {"qwen_native", "openai_compatible"} and bool(base_url)
+
+
+def _coerce_chat_completion_text(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    message = choices[0].get("message") if isinstance(choices[0], dict) else {}
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _invoke_turn_appraisal_via_http(prompt: str) -> str:
+    settings = get_settings()
+    provider = _normalize_provider(settings.model_provider)
+    api_key = _resolve_api_key(provider)
+    base_url = str(settings.model_base_url or "").strip().rstrip("/")
+    if not api_key or not base_url:
+        raise RuntimeError("direct transport unavailable")
+
+    url = base_url if base_url.endswith("/chat/completions") else f"{base_url}/chat/completions"
+    timeout_s = max(1.0, float(LLM_APPRAISAL_TIMEOUT_S))
+    timeout = httpx.Timeout(
+        timeout=timeout_s,
+        connect=min(timeout_s, 5.0),
+        read=timeout_s,
+        write=min(timeout_s, 5.0),
+        pool=min(timeout_s, 5.0),
+    )
+    payload = {
+        "model": settings.model_name,
+        "messages": [{"role": "system", "content": prompt}],
+        "temperature": 0.0,
+        "max_tokens": 320,
+        "stream": False,
+    }
+    with httpx.Client(timeout=timeout) as client:
+        response = client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("invalid appraisal response payload")
+    return _coerce_chat_completion_text(data)
+
+
 def _invoke_turn_appraisal(
     *,
     msgs: list[BaseMessage],
@@ -971,9 +1046,22 @@ def _invoke_turn_appraisal(
         interaction_carryover=interaction_carryover,
     )
     try:
-        llm = _model(temperature=0.0)
-        out = _invoke_model_with_retries(llm, [SystemMessage(content=prompt)])
-        obj = _extract_json_block(str(getattr(out, "content", "") or ""))
+        raw_text = ""
+        if _appraisal_prefers_direct_transport():
+            raw_text = _invoke_turn_appraisal_via_http(prompt)
+        else:
+            llm = _model(
+                temperature=0.0,
+                timeout=float(LLM_APPRAISAL_TIMEOUT_S),
+                max_retries=max(0, int(LLM_APPRAISAL_MODEL_MAX_RETRIES)),
+            )
+            out = _invoke_model_with_retries(
+                llm,
+                [SystemMessage(content=prompt)],
+                max_retries=max(0, int(LLM_APPRAISAL_INVOKE_MAX_RETRIES)),
+            )
+            raw_text = str(getattr(out, "content", "") or "")
+        obj = _extract_json_block(raw_text)
         appraisal = _finalize_turn_appraisal_payload(
             obj,
             user_text=user_text,
@@ -986,9 +1074,18 @@ def _invoke_turn_appraisal(
             semantic_narrative_profile=semantic_narrative_profile,
             interaction_carryover=interaction_carryover,
         )
-        appraisal["raw"] = str(getattr(out, "content", "") or "")[:600]
+        appraisal["raw"] = raw_text[:600]
         return appraisal
     except Exception as exc:
+        _audit_jsonl(
+            "decision_audit.jsonl",
+            {
+                "event": "appraisal_transport_error",
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:300],
+                "direct_transport": _appraisal_prefers_direct_transport(),
+            },
+        )
         return {
             "used": False,
             "source": "rule_fallback",

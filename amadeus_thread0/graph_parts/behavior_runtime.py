@@ -11,7 +11,12 @@ from .counterpart_dynamics import (
     _counterpart_window_profile,
     _selfhood_preference_scene,
 )
-from .postprocess import _is_nonrelational_support_request
+from .postprocess import (
+    _is_nonrelational_support_request,
+    _is_presence_reassurance_check,
+    _is_soft_presence_checkin_request,
+    _wants_presence_reassurance,
+)
 from .state import BehaviorActionPayload, BehaviorPlanPayload, BehaviorWindowProfilePayload
 
 
@@ -462,17 +467,29 @@ def _behavior_action_from_state(
         idle_minutes = 0
     soft_reply_window = response_style_hint in {"companion", "casual", "natural"}
     science_stress = science_mode and emotion_label in {"logic", "stress"}
+    explicit_presence_reassurance = (
+        event_kind == "user_utterance"
+        and soft_reply_window
+        and not science_stress
+        and (
+            _wants_presence_reassurance(user_text)
+            or _is_presence_reassurance_check(user_text)
+            or _is_soft_presence_checkin_request(user_text)
+        )
+    )
     explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
     support_request = (
         soft_reply_window
         and not science_stress
         and explicit_support_request
+        and not explicit_presence_reassurance
         and approach > 0.40
         and safety_need < 0.52
         and semantic_contested_contact < 0.52
     )
     brief_presence = (
         event_kind == "gesture_signal"
+        or explicit_presence_reassurance
         or (
             soft_reply_window
             and reply_length < 0.40
@@ -496,6 +513,7 @@ def _behavior_action_from_state(
     )
     gentle_guidance = science_mode and (emotion_label in {"logic", "stress"} or response_style_hint == "structured")
     withdrawal_hold_request = brief_presence and hurt > 0.10 and trust > 0.52 and counterpart_stance != "guarded"
+    presence_mode_locked = explicit_presence_reassurance
 
     interaction_mode = "steady_reply"
     stale_idle = event_kind == "time_idle" and ("stale_window" in event_tags or event_frame == "time_idle_stale")
@@ -520,12 +538,14 @@ def _behavior_action_from_state(
         interaction_mode = "companion_reply"
     elif event_kind == "scene_observation":
         interaction_mode = "low_pressure_support" if "care_opportunity" in event_tags else "steady_reply"
+    elif explicit_presence_reassurance:
+        interaction_mode = "brief_presence"
+    elif support_request:
+        interaction_mode = "low_pressure_support"
     elif brief_presence and withdrawal_hold_request:
         interaction_mode = "low_pressure_support"
     elif brief_presence or presence_checkin:
         interaction_mode = "brief_presence"
-    elif support_request:
-        interaction_mode = "low_pressure_support"
     elif science_stress:
         interaction_mode = "science_partner"
     elif response_style_hint == "memory_recall":
@@ -535,7 +555,7 @@ def _behavior_action_from_state(
     elif response_style_hint == "companion":
         interaction_mode = "companion_reply"
 
-    if event_kind == "user_utterance" and soft_reply_window and not science_stress:
+    if event_kind == "user_utterance" and soft_reply_window and not science_stress and not presence_mode_locked:
         if own_rhythm_carryover_active and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
             interaction_mode = "self_activity_reopen"
         elif (
@@ -568,7 +588,7 @@ def _behavior_action_from_state(
         and soft_reply_window
         and not science_stress
     )
-    if carryover_soft_scene:
+    if carryover_soft_scene and not presence_mode_locked:
         if effective_carryover_mode == "own_rhythm" and interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}:
             interaction_mode = "self_activity_reopen"
         elif effective_carryover_mode == "quiet_recontact" and interaction_mode in {"steady_reply", "companion_reply"}:
@@ -654,6 +674,8 @@ def _behavior_action_from_state(
         else:
             followup_intent = "soft"
     elif event_kind == "self_activity_state":
+        followup_intent = "none"
+    elif explicit_presence_reassurance:
         followup_intent = "none"
     elif brief_presence and not withdrawal_hold_request:
         followup_intent = "none"
@@ -1402,6 +1424,14 @@ def _behavior_action_from_state(
             disclosure_posture = "measured"
         if followup_intent == "none" and counterpart_stance != "guarded":
             followup_intent = "soft"
+    if presence_mode_locked:
+        interaction_mode = "brief_presence"
+        action_target = "confirm_presence"
+        attention_target = "counterpart_state"
+        nonverbal_signal = "brief_notice"
+        initiative_shape = "ping"
+        followup_intent = "none"
+        disclosure_posture = "guarded" if disclosure_posture == "open" else disclosure_posture
     if event_kind in {"scheduled_checkin_due", "scheduled_life_due"} and initiative_shape == "micro_opening" and followup_intent == "active":
         followup_intent = "soft"
 

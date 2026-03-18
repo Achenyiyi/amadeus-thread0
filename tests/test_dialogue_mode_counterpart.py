@@ -199,6 +199,128 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
         self.assertEqual(str(action.get("followup_intent") or ""), "none")
 
+    def test_presence_reassurance_turn_prefers_brief_presence_over_support(self):
+        prompt = "助手，还在吧。今天脑子有点乱。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "quiet presence reassurance",
+            "response_style_hint": "companion",
+            "event_frame": "low-pressure companion dialogue",
+            "tags": ["companion", "care"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="companion",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment=self.open_counterpart,
+            semantic_narrative_profile={},
+            behavior_policy=self.behavior_policy,
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "brief_presence")
+        self.assertEqual(str(action.get("action_target") or ""), "confirm_presence")
+        self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_presence_reassurance_stays_brief_even_under_warm_carryover(self):
+        prompt = "别切到什么系统播报。像平时那样回我一句就行。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "quiet presence reassurance",
+            "response_style_hint": "companion",
+            "event_frame": "low-pressure companion dialogue",
+            "tags": ["companion", "care"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="companion",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment=self.open_counterpart,
+            semantic_narrative_profile={"presence_carry": 0.62, "bond_depth": 0.60},
+            behavior_policy=self.behavior_policy,
+            world_model_state={"presence_residue": 0.30},
+            interaction_carryover={
+                "carryover_mode": "brief_presence",
+                "strength": 0.42,
+                "relationship_weather": "warm_residue",
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "brief_presence")
+        self.assertEqual(str(action.get("action_target") or ""), "confirm_presence")
+        self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_soft_support_prompt_prefers_low_pressure_support_over_brief_presence(self):
+        prompt = "别讲大道理，像平时那样跟我说两句。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "casual support with familiar tone",
+            "response_style_hint": "companion",
+            "event_frame": "low-pressure companion dialogue",
+            "tags": ["companion", "care"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="companion",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment=self.open_counterpart,
+            semantic_narrative_profile={},
+            behavior_policy=self.behavior_policy,
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "low_pressure_support")
+        self.assertEqual(str(action.get("action_target") or ""), "low_pressure_hold")
+
+    def test_availability_ping_prefers_brief_presence(self):
+        prompt = "助手，在吗。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "availability ping",
+            "response_style_hint": "companion",
+            "event_frame": "ordinary ongoing interaction",
+            "tags": ["companion"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="companion",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment=self.open_counterpart,
+            semantic_narrative_profile={},
+            behavior_policy=self.behavior_policy,
+            world_model_state={},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "brief_presence")
+        self.assertEqual(str(action.get("action_target") or ""), "confirm_presence")
+
     def test_soft_repair_with_residue_reads_as_repair_attempt_not_plain_friction(self):
         assessment = _counterpart_assessment_next(
             self.open_counterpart,

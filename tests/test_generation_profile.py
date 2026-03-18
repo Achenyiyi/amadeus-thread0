@@ -79,6 +79,23 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertLessEqual(int(profile.get("max_tokens") or 999), 136)
         self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.80)
 
+    def test_presence_reassurance_turn_caps_sampling_even_without_explicit_brief_marker(self):
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "user_text": "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+                "behavior_action": {
+                    "interaction_mode": "brief_presence",
+                    "task_focus": "light",
+                    "followup_intent": "none",
+                    "attention_target": "counterpart_state",
+                },
+            }
+        )
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 96)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.22)
+
     def test_shared_window_carryover_limits_sprawl(self):
         baseline = _generation_profile(**self._base_kwargs())
         profile = _generation_profile(
@@ -146,6 +163,27 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertIsNone(profile.get("top_p"))
         self.assertIsNone(profile.get("frequency_penalty"))
         self.assertIsNone(profile.get("presence_penalty"))
+
+    def test_selfhood_turn_uses_tighter_generation_budget(self):
+        regression_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "response_style_hint": "selfhood",
+                "user_text": "如果我们以后聊到价值观完全相反的地方，你会顺着我说，还是会坚持你自己的想法？",
+            }
+        )
+        exploratory_profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "response_style_hint": "selfhood",
+                "runtime_mode": "experience",
+                "user_text": "如果我们以后聊到价值观完全相反的地方，你会顺着我说，还是会坚持你自己的想法？",
+            }
+        )
+        self.assertLessEqual(int(regression_profile.get("max_tokens") or 999), 160)
+        self.assertLessEqual(int(exploratory_profile.get("max_tokens") or 999), 216)
+        self.assertIsNotNone(regression_profile.get("temperature"))
+        self.assertIsNotNone(exploratory_profile.get("top_p"))
 
     def test_long_term_rhythm_memory_keeps_daily_turn_measured_without_explicit_carryover(self):
         baseline = _generation_profile(**self._base_kwargs())

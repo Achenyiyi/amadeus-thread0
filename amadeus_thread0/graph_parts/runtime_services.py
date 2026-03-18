@@ -67,8 +67,15 @@ def _is_transient_model_error(exc: Exception) -> bool:
     return False
 
 
-def _invoke_model_with_retries(llm_runnable: Any, call_msgs: list[BaseMessage]) -> Any:
-    attempts = max(1, int(MODEL_MAX_RETRIES) + 1)
+def _invoke_model_with_retries(
+    llm_runnable: Any,
+    call_msgs: list[BaseMessage],
+    *,
+    max_retries: int | None = None,
+    audit_file_name: str = "decision_audit.jsonl",
+) -> Any:
+    retry_budget = MODEL_MAX_RETRIES if max_retries is None else max(0, int(max_retries))
+    attempts = max(1, int(retry_budget) + 1)
     last_exc: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
@@ -81,7 +88,7 @@ def _invoke_model_with_retries(llm_runnable: Any, call_msgs: list[BaseMessage]) 
             if (not _is_transient_model_error(exc)) or attempt >= attempts:
                 raise
             _audit_jsonl(
-                "decision_audit.jsonl",
+                audit_file_name,
                 {
                     "event": "model_invoke_retry",
                     "attempt": attempt,

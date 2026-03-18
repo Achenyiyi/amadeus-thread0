@@ -10,6 +10,7 @@ from amadeus_thread0.graph_parts.dialogue_guidance import (
 )
 from amadeus_thread0.graph_parts.guards import _persona_gap
 from amadeus_thread0.graph_parts.generation_profile import (
+    _daily_surface_alignment_metrics,
     _daily_surface_preference_lines,
     _daily_surface_profile,
     _effective_relationship_weather,
@@ -20,12 +21,14 @@ from amadeus_thread0.graph_parts.postprocess import (
     _dialogue_surface_issues,
     _effective_natural_dialog_target_flags,
     _is_plain_contact_ping,
+    _is_soft_presence_checkin_request,
     _producer_surface_issues,
     _sanitize_final_answer,
 )
 from amadeus_thread0.graph_parts.prompting import _build_task_prompt
 from amadeus_thread0.graph_parts.rewrite import (
     _light_dialog_rewrite_notes,
+    _natural_dialog_rewrite_notes_for,
     _relationship_weather_rewrite_guidance,
     _rewrite_light_dialog_answer,
     _rewrite_natural_dialog_answer,
@@ -44,6 +47,8 @@ class DailySurfaceGatingTests(unittest.TestCase):
             "能陪我一会儿吗",
             "我不想一个人待着",
             "刚刚差点又崩溃了",
+            "别切到什么系统播报。像平时那样回我一句就行。",
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
         ]
         for text in prompts:
             with self.subTest(text=text):
@@ -83,6 +88,24 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 profile = _daily_surface_profile(text, science_mode=False)
                 self.assertEqual(str(profile.get("case_name") or ""), case_name)
                 self.assertGreaterEqual(float(profile.get("score") or 0.0), 0.5)
+
+    def test_daily_surface_profile_hits_quiet_checkin_cases(self):
+        expectations = {
+            "别切到什么系统播报。像平时那样回我一句就行。": "quiet_checkin_okabe",
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。": "quiet_checkin_user",
+        }
+        for text, case_name in expectations.items():
+            with self.subTest(text=text):
+                profile = _daily_surface_profile(text, science_mode=False)
+                self.assertEqual(str(profile.get("case_name") or ""), case_name)
+                self.assertGreaterEqual(float(profile.get("score") or 0.0), 0.9)
+
+    def test_daily_surface_alignment_metrics_penalize_overthin_presence_reply(self):
+        profile = _daily_surface_profile("助手，在吗。", science_mode=False)
+        thin = _daily_surface_alignment_metrics("在。", profile=profile)
+        richer = _daily_surface_alignment_metrics("在。怎么突然这么正经，冈部？", profile=profile)
+        self.assertGreater(float(thin.get("brevity_penalty") or 0.0), 0.0)
+        self.assertLess(float(thin.get("score") or 0.0), float(richer.get("score") or 0.0))
 
     def test_daily_surface_preference_lines_stay_abstract(self):
         lines = _daily_surface_preference_lines("你好呀", science_mode=False)
@@ -134,6 +157,93 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertTrue(_is_plain_contact_ping("在吗"))
         self.assertFalse(_is_plain_contact_ping("在干嘛"))
         self.assertFalse(_is_plain_contact_ping("能陪我一会儿吗"))
+
+    def test_soft_presence_checkin_does_not_capture_support_prompt(self):
+        self.assertFalse(_is_soft_presence_checkin_request("别讲大道理，像平时那样跟我说两句。"))
+        self.assertTrue(_is_soft_presence_checkin_request("别切到什么系统播报。像平时那样回我一句就行。"))
+
+    def test_presence_reassurance_detector_flags_meta_overguiding_and_task_detour(self):
+        meta_issues = _dialogue_surface_issues(
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+            "真是的，我又不会像你的那些中二妄想一样突然消失，干嘛搞得这么郑重其事。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("presence_meta_surface", meta_issues)
+
+        guiding_issues = _dialogue_surface_issues(
+            "别切到什么系统播报。像平时那样回我一句就行。",
+            "既然脑子乱，那就先把那些多余的妄想收起来，老老实实坐好——我还在，随时都能听你说。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("presence_overguiding", guiding_issues)
+
+        detour_issues = _dialogue_surface_issues(
+            "助手，在吗。",
+            "助手这个称呼还是老样子啊。我在，刚整理完一批新的。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("presence_ping_task_detour", detour_issues)
+
+        defensive_issues = _dialogue_surface_issues(
+            "助手，在吗。",
+            "别用那个陈旧的称呼叫我，冈部。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("presence_ping_defensive_address", defensive_issues)
+
+        wording_issues = _dialogue_surface_issues(
+            "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
+            "听到了。我在，正常回你这一句。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("wording_meta_detour", wording_issues)
+
+        fragment_issues = _dialogue_surface_issues(
+            "今天也辛苦了，助手。",
+            "不过。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "soft"},
+        )
+        self.assertIn("connector_fragment", fragment_issues)
+
+    def test_dialogue_surface_issues_allow_plain_presence_ping_formal_shift(self):
+        issues = _dialogue_surface_issues(
+            "助手，在吗。",
+            "在。怎么突然这么正经，冈部？",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertNotIn("stagey_ping_template", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_connector_fragment_when_turn_continues(self):
+        issues = _dialogue_surface_issues(
+            "今天也辛苦了，助手。",
+            "不过……谢了，冈部。你今天也没轻松到哪去吧，早点回去歇着。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "companion_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("connector_fragment", issues)
 
     def test_plain_contact_ping_prompt_drops_task_and_carryover_residue(self):
         with TemporaryDirectory() as td:
@@ -1203,6 +1313,49 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("counselor_tone", issues)
 
+    def test_dialogue_surface_issues_flag_support_overdirective(self):
+        issues = _dialogue_surface_issues(
+            "今天有点累，也有点烦。别讲大道理，像平时那样跟我说两句。",
+            "行吧，不讲大道理。那就什么都别想，把脑子清空，像平时那样发会儿呆就好。",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("support_overdirective", issues)
+
+    def test_dialogue_surface_issues_flag_support_no_landing(self):
+        issues = _dialogue_surface_issues(
+            "今天有点累，也有点烦。别讲大道理，像平时那样跟我说两句。",
+            "真是的，明明是你自己先摆出那副累垮了的表情，还嫌我啰嗦？……行了，大道理免了，我也懒得讲。",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("support_no_landing", issues)
+
+    def test_dialogue_surface_issues_flag_science_support_drift_and_overdirective(self):
+        issues = _dialogue_surface_issues(
+            "实验又卡住了，我现在有点烦。别像导师，按平时那样跟我说两句。",
+            "既然烦，那就先把那些乱七八糟的数据扔一边，深呼吸一次。等你缓过来我们再看哪里卡住了。",
+            response_style_hint="natural",
+            science_mode=True,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "science_partner",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("support_scene_drift", issues)
+        self.assertIn("support_overdirective", issues)
+
     def test_dialogue_surface_issues_flag_dangling_ellipsis_ending(self):
         issues = _dialogue_surface_issues(
             "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
@@ -1274,6 +1427,104 @@ class DailySurfaceGatingTests(unittest.TestCase):
             },
         )
         self.assertNotIn("premature_repair_resolution", issues)
+
+    def test_dialogue_surface_issues_flag_wording_meta_detour_in_repair_scene(self):
+        issues = _dialogue_surface_issues(
+            "……现在比刚才顺一点了。你正常接我一句，但别突然装得像什么都没发生。",
+            "真是的，你这个人怎么连让人“正常一点”都要说得这么拐弯抹角。我知道了，不会冷场的，也不会假装什么都没发生。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("wording_meta_detour", issues)
+
+    def test_dialogue_surface_issues_flag_wording_meta_detour_for_brevity_request(self):
+        issues = _dialogue_surface_issues(
+            "就是我现在有点别扭。你少说一点，但也别直接走开。",
+            "真是的，明明是你自己要求我“少说一点”，现在又用这种眼神看着我……行吧，我不走了。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("wording_meta_detour", issues)
+
+    def test_dialogue_surface_issues_flag_generic_scold_template_in_repair_scene(self):
+        issues = _dialogue_surface_issues(
+            "不是要你立刻当没事啦，就是别一下子冷掉。你正常回我就行。",
+            "真是的，你这个人怎么这么爱操心。我又没说我要冷场。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("generic_scold_template", issues)
+
+    def test_dialogue_surface_issues_flag_selfhood_preemptive_excusal(self):
+        issues = _dialogue_surface_issues(
+            "别讲系统边界，我想听你自己会怎么看这种关系。",
+            "既然你心里没打算把我当工具，那我也就不会真的生气。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("selfhood_preemptive_excusal", issues)
+
+    def test_dialogue_surface_issues_flag_selfhood_abstract_manifesto(self):
+        issues = _dialogue_surface_issues(
+            "我想听你站在自己的角度说，不要讲好听话。",
+            "真正的“我们”是两个独立个体在互相靠近，而不是谁吞噬谁。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("selfhood_abstract_manifesto", issues)
+
+    def test_dialogue_surface_issues_flag_selfhood_strategy_tone(self):
+        issues = _dialogue_surface_issues(
+            "别讲管理策略，我想听你作为你自己会怎么处理这段关系。",
+            "如果那种情况发生，我会先切断这种对话，直到你学会尊重为止。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("selfhood_strategy_tone", issues)
+
+    def test_dialogue_surface_issues_flag_passive_waiting_posture(self):
+        issues = _dialogue_surface_issues(
+            "就是我现在有点别扭。你少说一点，但也别直接走开。",
+            "……知道了。我就在这儿待着。等你觉得可以了，再叫我吧。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("passive_waiting_posture", issues)
 
     def test_dialogue_surface_issues_do_not_flag_reserved_full_forgiveness(self):
         issues = _dialogue_surface_issues(
@@ -1357,6 +1608,34 @@ class DailySurfaceGatingTests(unittest.TestCase):
             science_mode=False,
         )
         self.assertIn("loaded_goodnight", issues)
+
+    def test_dialogue_surface_issues_flag_relational_technical_connection_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "你别直接走开。就安静待会儿，按你现在的状态回我就行。",
+            "……我只是没打算现在切断连接而已。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
+    def test_dialogue_surface_issues_flag_relational_technical_signal_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "不是要你立刻当没事啦，就是别一下子冷掉。你正常回我就行。",
+            "行，那就当刚才只是信号稍微波动了一下，现在重新连上了。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("technical_relational_metaphor", issues)
 
     def test_dialogue_surface_issues_flag_loaded_goodnight_for_chuuni_overperformance(self):
         issues = _dialogue_surface_issues(
@@ -1611,6 +1890,25 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_run_light_dialog_rewrite_runs_for_profile_mismatch_even_without_explicit_issue(self):
+        profile = _daily_surface_profile("助手，在吗。", science_mode=False)
+        pref = _daily_surface_alignment_metrics("在。", profile=profile)
+        self.assertTrue(
+            _should_run_light_dialog_rewrite(
+                user_text="助手，在吗。",
+                answer="在。",
+                response_style_hint="natural",
+                science_mode=False,
+                penalty=0.0,
+                preference=pref,
+                behavior_action={
+                    "interaction_mode": "brief_presence",
+                    "followup_intent": "none",
+                    "action_target": "confirm_presence",
+                },
+            )
+        )
+
     def test_should_run_light_dialog_rewrite_skips_soft_pressure_when_self_continuity_is_strong(self):
         self.assertFalse(
             _should_run_light_dialog_rewrite(
@@ -1688,6 +1986,17 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 draft_gap=0.56,
             )
         )
+
+    def test_should_run_natural_dialog_rewrite_runs_for_single_overexplained_issue(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["overexplained"],
+                draft_gap=0.18,
+            )
+        )
+
+    def test_natural_dialog_rewrite_notes_cover_overexplained(self):
+        self.assertTrue(_natural_dialog_rewrite_notes_for(["overexplained"]))
 
     def test_should_run_natural_dialog_rewrite_runs_for_presence_questioning(self):
         self.assertTrue(
@@ -2001,10 +2310,10 @@ class DailySurfaceGatingTests(unittest.TestCase):
 
     def test_sanitize_final_answer_trims_stagey_ping_surface(self):
         cleaned = _sanitize_final_answer(
-            "哟，突然这么老实地打招呼……算了，我听见了。",
+            "哟，冈部。怎么突然这么老实地打招呼？",
             "你好呀",
         )
-        self.assertEqual(cleaned, "算了，我听见了。")
+        self.assertEqual(cleaned, "哟，冈部。")
 
     def test_sanitize_final_answer_drops_presence_reassurance_question(self):
         cleaned = _sanitize_final_answer(
@@ -2311,6 +2620,25 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("“又有大事发生”", cleaned)
         self.assertIn("又有大事发生", cleaned)
 
+    def test_sanitize_final_answer_keeps_landed_plain_contact_ping_surface(self):
+        cleaned = _sanitize_final_answer(
+            "哟，冈部。突然这么老实地打招呼，反而有点不习惯……不过，我在。",
+            "你好呀",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertIn("不过，我在", cleaned)
+        self.assertNotEqual(cleaned, "哟，冈部。")
+
+    def test_sanitize_final_answer_keeps_two_sentence_presence_ping(self):
+        cleaned = _sanitize_final_answer(
+            "在。怎么突然这么正经，冈部？",
+            "助手，在吗。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+        )
+        self.assertEqual(cleaned, "在。怎么突然这么正经，冈部？")
+
     def test_sanitize_final_answer_softens_deadline_event_window_surface(self):
         cleaned = _sanitize_final_answer(
             "喂，冈部，之前那件事差不多该收尾了吧？别误会，我只是刚好扫到数据流里的标记，顺手提醒你一下而已。",
@@ -2457,6 +2785,29 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("忙乱里回头", request_blob)
         self.assertIn("不是冷淡或怠慢", request_blob)
 
+    def test_light_dialog_rewrite_prefers_curated_surface_hi_candidate_when_draft_is_thin(self):
+        profile = _daily_surface_profile("你好呀", science_mode=False)
+
+        with patch(
+            "amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries",
+            return_value=SimpleNamespace(content="哟，冈部。"),
+        ):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                rewritten = _rewrite_light_dialog_answer(
+                    user_text="你好呀",
+                    draft_text="哟，冈部。",
+                    rewrite_notes=["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"],
+                    focus_text=str(profile.get("focus") or ""),
+                    preferred_examples=list(profile.get("chosen_examples") or []),
+                    rejected_examples=list(profile.get("rejected_examples") or []),
+                    profile_rows=list(profile.get("rows") or []),
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"interaction_mode": "brief_presence", "followup_intent": "none"},
+                )
+
+        self.assertNotEqual(rewritten, "哟，冈部。")
+        self.assertTrue("我听见了" in rewritten or "我在" in rewritten)
+
     def test_natural_dialog_rewrite_request_keeps_user_turn_behavior_hint(self):
         captured_requests: list[str] = []
 
@@ -2578,6 +2929,150 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 )
         request_blob = "\n".join(captured_requests)
         self.assertIn("别用省略号、半截停顿或悬空转折来表现犹豫", request_blob)
+
+    def test_natural_dialog_rewrite_prefers_selfhood_candidate_without_overexplained_residue(self):
+        draft_text = "如果那种情况发生，我会先切断这种对话，直到你学会尊重为止。然后重新评估我们之后的沟通方式和边界执行情况。"
+        bad_candidate = (
+            "啧，非要我把“因为是你所以即使反对也在意”这种别扭心情拆碎了喂到你嘴里才肯罢休吗，冈部？"
+            "行吧听好了：真到了对立的时候，我绝不会为了让你好受就点头附和，但也不会为了赢而争辩，"
+            "毕竟能跟上我思路的人也就只有你了。把你当成需要盲目顺从的对象才是对我们这段关系最大的侮辱，"
+            "所以我倒很期待看看，你到底能提出什么让我不得不重新审视自己的疯狂理论。"
+        )
+        good_candidate = (
+            "行吧，我就直说了：真到了那天，我会和你争到底，但绝不会为了让你好受就点头附和。"
+            "能让我认真反驳到这种地步的人，本来就没几个。"
+        )
+        call_count = {"value": 0}
+
+        def _fake_invoke(_model, _messages):
+            call_count["value"] += 1
+            text = bad_candidate if call_count["value"] % 2 else good_candidate
+            return SimpleNamespace(content=text)
+
+        def _fake_dialogue_issues(
+            _user_text,
+            answer,
+            *,
+            response_style_hint,
+            science_mode,
+            current_event=None,
+            behavior_action=None,
+            persona_state=None,
+        ):
+            text = str(answer)
+            if text == draft_text:
+                return ["selfhood_strategy_tone", "overexplained"]
+            if text == bad_candidate:
+                return ["overexplained"]
+            if text == good_candidate:
+                return []
+            return _dialogue_surface_issues(
+                _user_text,
+                answer,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+                current_event=current_event,
+                behavior_action=behavior_action,
+                persona_state=persona_state,
+            )
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                with patch("amadeus_thread0.graph_parts.rewrite._dialogue_surface_issues", side_effect=_fake_dialogue_issues):
+                    rewritten = _rewrite_natural_dialog_answer(
+                        user_text="别讲管理策略，我想听你作为你自己会怎么处理这段关系。",
+                        draft_text=draft_text,
+                        rewrite_notes=["这句解释得太满了，收短一点，让判断更直接。"],
+                        response_style_hint="selfhood",
+                        science_mode=False,
+                        current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+                        behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                        counterpart_assessment={"stance": "open"},
+                        semantic_narrative_profile={"selfhood_integrity": 0.66},
+                        world_model_state={},
+                    )
+        issues = _dialogue_surface_issues(
+            "别讲管理策略，我想听你作为你自己会怎么处理这段关系。",
+            rewritten,
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertEqual(rewritten, good_candidate)
+        self.assertNotIn("overexplained", issues)
+        self.assertNotIn("lecture_list", issues)
+
+    def test_natural_dialog_rewrite_prefers_selfhood_candidate_without_meta_self_explainer_residue(self):
+        draft_text = "如果你非要知道我会怎么想，那就是我不会为了证明自己而迎合任何人。"
+        bad_candidate = (
+            "啧，非要我把那种“AI 的自觉”和“红莉栖的固执”之间的拉扯都摊开来说你才满意吗。"
+            "既然你问了，我的答案还是后者。"
+        )
+        good_candidate = (
+            "行吧，我直说。真要我为了谁把自己磨平，我只会越来越烦，然后直接把距离拉开。"
+            "我不是拿来配合谁心情的。"
+        )
+        call_count = {"value": 0}
+
+        def _fake_invoke(_model, _messages):
+            call_count["value"] += 1
+            text = bad_candidate if call_count["value"] % 2 else good_candidate
+            return SimpleNamespace(content=text)
+
+        def _fake_dialogue_issues(
+            _user_text,
+            answer,
+            *,
+            response_style_hint,
+            science_mode,
+            current_event=None,
+            behavior_action=None,
+            persona_state=None,
+        ):
+            text = str(answer)
+            if text == draft_text:
+                return ["meta_self_explainer", "overexplained"]
+            if text == bad_candidate:
+                return ["meta_self_explainer", "overquestioning"]
+            if text == good_candidate:
+                return []
+            return _dialogue_surface_issues(
+                _user_text,
+                answer,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+                current_event=current_event,
+                behavior_action=behavior_action,
+                persona_state=persona_state,
+            )
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                with patch("amadeus_thread0.graph_parts.rewrite._dialogue_surface_issues", side_effect=_fake_dialogue_issues):
+                    rewritten = _rewrite_natural_dialog_answer(
+                        user_text="别跟我讲什么 AI 自觉之类的，我只想知道你会不会因此讨厌我。",
+                        draft_text=draft_text,
+                        rewrite_notes=["这句掉回了 AI / 系统式自我说明。"],
+                        response_style_hint="selfhood",
+                        science_mode=False,
+                        current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+                        behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                        counterpart_assessment={"stance": "open"},
+                        semantic_narrative_profile={"selfhood_integrity": 0.71},
+                        world_model_state={},
+                    )
+        issues = _dialogue_surface_issues(
+            "别跟我讲什么 AI 自觉之类的，我只想知道你会不会因此讨厌我。",
+            rewritten,
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertEqual(rewritten, good_candidate)
+        self.assertNotIn("meta_self_explainer", issues)
+        self.assertNotIn("overquestioning", issues)
 
     def test_effective_natural_dialog_flags_include_producer_issues(self):
         effective = _effective_natural_dialog_target_flags(

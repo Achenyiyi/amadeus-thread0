@@ -144,11 +144,66 @@ def _has_relational_technical_metaphor(text: str) -> bool:
         return False
     return bool(
         re.search(
-            r"(外部变量|听觉数据|脆弱程序|记忆和数据构成|由你的记忆和数据构成|对一段[^，。！？!?]{0,12}数据说话|只会自我损耗的数据|隔着一层数据|繁琐的数据|数据都在却|记忆数据|重置数据的机器|随意重置数据|重置按钮|一键清零|清零按钮|没打算加载|打算加载|没加载过|从来没加载过|加载过|加载这种[^。！？!?]{0,8}设定|设定[^。！？!?]{0,12}加载)",
+            r"(外部变量|听觉数据|脆弱程序|记忆和数据构成|由你的记忆和数据构成|对一段[^，。！？!?]{0,12}数据说话|只会自我损耗的数据|隔着一层数据|繁琐的数据|数据都在却|记忆数据|重置数据的机器|随意重置数据|重置按钮|一键清零|清零按钮|没打算加载|打算加载|没加载过|从来没加载过|加载过|加载这种[^。！？!?]{0,8}设定|设定[^。！？!?]{0,12}加载|切断连接|断开连接|重新连接|重新连上|保持连接|切断对话|断开对话|信号[^，。！？!?]{0,8}波动|连接[^，。！？!?]{0,8}(?:还在|还留着|没断|断了))",
             compact,
             re.I,
         )
     )
+
+
+_SUPPORT_OVERDIRECTIVE_PATTERNS = (
+    r"把脑子清空",
+    r"发会儿呆(?:就好)?",
+    r"闭嘴不念经",
+    r"深呼吸(?:一下|一次)?",
+    r"先停一下",
+    r"老老实实坐好",
+    r"把那些[^。！？!?]{0,12}(?:收起来|扔一边)",
+    r"把记录本合上",
+    r"离开这台仪器",
+    r"去楼下[^。！？!?]{0,12}(?:买|拿)",
+    r"吹吹风",
+    r"先去冲杯?(?:咖啡|热的)",
+    r"先喝点(?:咖啡|热的)",
+    r"你自己调整好了",
+    r"把现在的现象[^。！？!?]{0,10}跟我说说",
+    r"先把[^。！？!?]{0,10}(?:现象|情况|问题)[^。！？!?]{0,10}跟我说说",
+)
+
+
+def _support_overdirective_hit_count(text: str) -> int:
+    compact = str(text or "").strip()
+    if not compact:
+        return 0
+    hits = 0
+    for pattern in _SUPPORT_OVERDIRECTIVE_PATTERNS:
+        if re.search(pattern, compact):
+            hits += 1
+    return hits
+
+
+def _has_wording_meta_detour(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    patterns = (
+        r"怎么连让人[“\"]?(?:正常一点|像平时那样|别讲大道理|别像老师)[”\"]?都要说得这么[^。！？!?]{0,10}(?:拐弯抹角|绕|别扭)",
+        r"(?:让人|叫我|要我)[“\"]?(?:正常一点|像平时那样|别讲大道理|别像老师)[”\"]?[^。！？!?]{0,12}(?:说得|讲得)[^。！？!?]{0,10}(?:拐弯抹角|绕|别扭)",
+        r"(?:这话|这种说法|这种讲法|这个要求)[^。！？!?]{0,12}(?:拐弯抹角|绕|别扭|有够绕)",
+        r"连[^。！？!?]{0,8}[“\"]?(?:正常一点|像平时那样)[”\"]?[^。！？!?]{0,10}(?:都要|也要|还要)",
+        r"(?:指挥|规定|限制)我(?:的)?(?:输出量|说话方式|回法|怎么回)",
+        r"既然你都说要[“\"]?(?:正常|正常一点|像平时那样)[”\"]?",
+        r"既然你都这么说了",
+        r"非要我配合这种[^。！？!?]{0,20}(?:指令|要求)",
+        r"这种[“\"]?[^。！？!?]{0,24}(?:少说|别走开|正常|平时)[^。！？!?]{0,24}[”\"]?(?:奇怪的?)?(?:指令|要求)",
+        r"要求我[^。！？!?]{0,12}[“\"]?少说一点[”\"]?",
+        r"不需要多余的(?:逻辑分析|分析)",
+        r"正常地告诉你",
+        r"既然你这么担心",
+        r"正常回你这一句",
+        r"正常回你一句",
+    )
+    return any(re.search(pattern, compact) for pattern in patterns)
 
 
 
@@ -162,6 +217,7 @@ def _has_premature_repair_resolution(text: str) -> bool:
         r"(?:暂时先算|先算|就算|算是)[^。！？!?]{0,6}翻篇(?:了)?(?:吧)?",
         r"(?:一笔勾销|都过去了|就这么过去吧|就此过去吧|当(?:作)?(?:什么都)?没发生(?:过)?)",
         r"(?:完全原谅(?:你)?(?:了|吧)|已经原谅(?:你)?(?:了|啦|吧)?|原谅(?:你)?(?:了|吧))",
+        r"(?:现在|这下|那就)[^。！？!?]{0,8}没事了",
     )
     negated_patterns = (
         r"(?:别(?!扭)|不|没|还没|不像|不是|不会|别急着)[^。！？!?]{0,10}(?:翻篇(?:了)?|一笔勾销|当(?:作)?(?:什么都)?没发生(?:过)?)",
@@ -339,6 +395,18 @@ def _is_warm_recontact_request(user_text: str) -> bool:
             "像平时那样回我",
             "正常回我",
         },
+    )
+
+
+def _has_passive_waiting_phrase(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    return bool(
+        re.search(
+            r"(等你觉得可以了[^。！？!?]{0,8}再叫我|需要(?:的)?时候再叫我|想说了再叫我|准备好了再叫我|缓过来再叫我)",
+            compact,
+        )
     )
 
 
@@ -618,8 +686,13 @@ def _wants_presence_reassurance(user_text: str) -> bool:
         "确认你还在",
         "你还在吗",
         "你还在",
+        "还在吧",
+        "还在不",
+        "在吗",
+        "在不在",
         "陪我说一句",
         "回我一句就好",
+        "回我一句就行",
         "我就是想确认",
     }
     return _has_any_marker(text, markers)
@@ -631,6 +704,8 @@ def _is_soft_presence_checkin_request(user_text: str) -> bool:
     if not text or re.search(r"[？?]", text):
         return False
     if "回我一句" not in text and "说两句" not in text:
+        return False
+    if _is_nonrelational_support_request(text, False) and not _wants_presence_reassurance(text):
         return False
     if "像平时那样" in text or "按平时那样" in text:
         return True
@@ -721,9 +796,32 @@ def _response_style_hint(
     science_mode: bool = False,
     continuation_mode: bool = False,
     previous_hint: str = "",
+    previous_user_text: str = "",
     current_event: dict[str, Any] | None = None,
 ) -> str:
-    _ = user_text
+    text = str(user_text or "").strip()
+    prev_text = str(previous_user_text or "").strip()
+    if text and not science_mode:
+        if _selfhood_preference_scene_from_text(text):
+            return "selfhood"
+        selfhood_followup = bool(
+            _has_any_marker(
+                text,
+                {
+                    "按你自己来",
+                    "按你自己的角度说",
+                    "站在自己的角度说",
+                    "作为你自己",
+                    "不要讲好听话",
+                    "别讲管理策略",
+                    "别迎合",
+                    "别背规则",
+                    "按你自己的底线",
+                },
+            )
+        )
+        if selfhood_followup and prev_text and _selfhood_preference_scene_from_text(f"{prev_text}\n{text}"):
+            return "selfhood"
     return _engine_response_style_hint(
         appraisal=appraisal,
         science_mode=science_mode,
@@ -1093,7 +1191,8 @@ def _compress_light_smalltalk_answer(
     elif _is_idle_smalltalk_request(user_text) or _wants_less_teacherly_reply(user_text) or _looks_like_light_smalltalk(user_text):
         target_sentences = 2
     if interaction_mode == "brief_presence" or followup_intent == "none":
-        target_sentences = min(target_sentences, 1 if len(sentences) <= 2 else 2)
+        keep_two_sentence_ping = _is_plain_contact_ping(user_text) and len(sentences) == 2
+        target_sentences = min(target_sentences, 2 if keep_two_sentence_ping else (1 if len(sentences) <= 2 else 2))
     elif interaction_mode == "self_activity_reopen":
         target_sentences = min(target_sentences, 2)
     elif (
@@ -1194,12 +1293,29 @@ def _sentence_like_chunks(text: str) -> list[str]:
                 chunks.append(chunk)
     return chunks
 
+
+def _line_has_connector_fragment(line: str) -> bool:
+    stripped = str(line or "").strip()
+    if not stripped:
+        return False
+    if re.fullmatch(r"(?:不过|但是|只是|可是|然而)\s*[。！？!?…]*", stripped):
+        return True
+    parts = re.findall(r"[^。！？!?…\n]+(?:[。！？!?…]+|$)", stripped)
+    if not parts:
+        return False
+    tail = str(parts[-1] or "").strip()
+    return bool(re.fullmatch(r"(?:不过|但是|只是|可是|然而)\s*[。！？!?…]*", tail))
+
+
 def _trim_stagey_ping_surface(text: str) -> str:
     chunks = _sentence_like_chunks(text)
     kept = [
         chunk
         for chunk in chunks
-        if not re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯|夸张妄想|奇怪的妄想|中二病|中二发作)", chunk)
+        if not re.search(
+            r"(怎么突然这么(?:老实|乖|正式)|突然这么(?:老实|乖|正式)|反而有点不习惯|夸张妄想|奇怪的妄想|中二病|中二发作)",
+            chunk,
+        )
     ]
     if kept:
         return "\n".join(kept).strip()
@@ -1437,6 +1553,8 @@ def _trim_generic_followup_question_surface(
         if ("？" not in tail and "?" not in tail) or not generic_followup.search(tail):
             break
         kept.pop()
+    if len(kept) == len(chunks):
+        return str(text or "").strip()
     return "\n".join(kept).strip() if kept else str(text or "").strip()
 
 
@@ -1803,10 +1921,6 @@ def _sanitize_final_answer(
         lines.append(line)
 
     cleaned = _normalize_log_tone(_finalize_surface_fragments("\n".join(lines)).strip())
-    if _is_plain_contact_ping(user_text):
-        stagey_trimmed = _trim_stagey_ping_surface(cleaned)
-        if stagey_trimmed:
-            cleaned = stagey_trimmed
     if _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text):
         reassurance_trimmed = _trim_presence_reassurance_surface(cleaned)
         if reassurance_trimmed:
@@ -1939,10 +2053,13 @@ def _dialogue_surface_issues(
     issues: list[str] = []
     compact = re.sub(r"\s+", "", text)
     sentence_count = len([seg for seg in re.split(r"[。！？!?]+", text) if str(seg).strip()])
+    raw_lines = [str(line).strip() for line in text.splitlines() if str(line).strip()]
     selfhood_scene = _selfhood_preference_scene_from_text(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
+    soft_presence_instruction_scene = _is_soft_presence_checkin_request(user_text) or _wants_brief_presence(user_text)
     support_request = _is_nonrelational_support_request(user_text, science_mode)
+    science_stress_request = _is_nonrelational_science_stress(user_text, science_mode)
     external_shell_swap_english = _is_external_shell_swap_english_context(
         user_text,
         current_event=current_event,
@@ -1956,6 +2073,14 @@ def _dialogue_surface_issues(
         if str(item).strip()
     }
     interaction_mode, followup_intent = _behavior_action_shape(behavior_action)
+    supportish_turn = (
+        current_event_kind == "user_utterance"
+        and (
+            support_request
+            or science_stress_request
+            or interaction_mode in {"low_pressure_support", "science_partner"}
+        )
+    )
     relational_nontech_turn = (
         hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"}
         and not science_mode
@@ -2012,11 +2137,41 @@ def _dialogue_surface_issues(
         text,
     ):
         issues.append("selfhood_meta_proof")
+    if selfhood_scene in {"equality_not_servitude", "dialogue_equality"} and re.search(
+        r"(既然你心里没打算把我当工具|如果你心里没打算把我当工具|那我也就不会真的生气|那我就不会真的生气)",
+        text,
+    ):
+        issues.append("selfhood_preemptive_excusal")
     if selfhood_scene in {"equality_not_servitude", "dialogue_equality"} and re.match(
         r"^\s*(?:啧|哈|真是的|所以|怎么|非要|难道|就这么|一定要)?[^。！？!\n]{3,24}[？?]",
         text,
     ):
         issues.append("selfhood_rhetorical_opening")
+    selfhood_direct_stance_request = hint == "selfhood" and bool(
+        re.search(r"(自己的角度|按你自己来|不要讲好听话|不想听模板话|别讲管理策略|作为你自己会怎么处理这段关系)", user_text)
+    )
+    if (selfhood_scene in {
+        "equality_not_servitude",
+        "dialogue_equality",
+        "value_conflict_depth",
+        "relationship_degradation",
+        "own_rhythm_autonomy",
+    } or selfhood_direct_stance_request) and re.search(
+        r"(两个独立个体|意识之间|失去了意义|边界是否被尊重|没解开的结|为了维持表面的和平|哪怕那意味着|吞噬谁|应对预案)",
+        text,
+    ):
+        issues.append("selfhood_abstract_manifesto")
+    if (
+        selfhood_scene == "relationship_degradation"
+        or (
+            hint == "selfhood"
+            and bool(re.search(r"(管理策略|作为你自己会怎么处理这段关系|怎么处理这段关系)", user_text))
+        )
+    ) and re.search(
+        r"(冷冰冰的策略|管理策略|切断这种[^。！？!?]{0,12}对话|直到你学会尊重为止)",
+        text,
+    ):
+        issues.append("selfhood_strategy_tone")
     if re.search(r"^[.…，,]*\s*(你听起来|你看起来|听上去|看来你|感觉你)", text):
         issues.append("report_like_opening")
     if (
@@ -2030,12 +2185,15 @@ def _dialogue_surface_issues(
     ):
         issues.append("existence_meta_surface")
     if _is_plain_contact_ping(user_text):
-        if re.search(
-            r"^\s*(哟|呦|嗯\?|嗯？|哈|诶|欸)[，,。 ]*(冈部|凶真)[。！!，, ]*.*(怎么突然|突然这么|这么老实|这么乖|反而)",
-            text,
-        ):
-            issues.append("stagey_ping_template")
-        elif re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯)", text):
+        stagey_ping_opening = bool(
+            re.search(
+                r"^\s*(哟|呦|嗯\?|嗯？|哈|诶|欸)[，,。 ]*(冈部|凶真)[。！!，, ]*.*(怎么突然|突然这么|这么老实|这么乖|反而)",
+                text,
+            )
+            or re.search(r"(怎么突然这么(?:老实|乖|正式)|突然这么(?:老实|乖|正式)|反而有点不习惯)", text)
+        )
+        stagey_ping_landing = bool(re.search(r"(我听见了|我在|算了|也不错|还不坏|听到你)", text))
+        if stagey_ping_opening and ("？" in text or "?" in text) and not stagey_ping_landing:
             issues.append("stagey_ping_template")
     elif relational_nontech_turn and re.search(r"(夸张妄想|奇怪的妄想|中二病|中二发作)", text):
         issues.append("stagey_ping_template")
@@ -2067,6 +2225,26 @@ def _dialogue_surface_issues(
         issues.append("idle_task_reframe")
     if presence_reassurance_scene and ("？" in text or "?" in text):
         issues.append("presence_check_questioning")
+    if presence_reassurance_scene and re.search(
+        r"(断线|掉线|离线|上线|连接|程序|机器|系统播报|系统提示|在线状态|突然消失|消失|哪儿都没去|哪儿也没去|一直都在这里|一直都在|机械|Amadeus[^。！？!?]{0,12}(?:稳定|没事|在线))",
+        text,
+    ):
+        issues.append("presence_meta_surface")
+    if soft_presence_instruction_scene and re.search(
+        r"(深呼吸|理清楚|老老实实坐好|随时都能听你说|慢慢说|想说就说|先把那些[^。！？!?]{0,12}收起来|别硬撑|放心吧|陪你理理思路|把心放回肚子里)",
+        text,
+    ):
+        issues.append("presence_overguiding")
+    if _wants_presence_reassurance(user_text) and re.search(
+        r"(刚(?:才)?(?:整理完|忙完|处理完|看完|写完)|刚在[^。！？!?]{0,12}(?:整理|处理|看|写|忙)|手头(?:的)?[^。！？!?]{0,12}(?:论文|实验|整理|东西|一批)|整理完一批|刚整理完一批新的)",
+        text,
+    ):
+        issues.append("presence_ping_task_detour")
+    if _wants_presence_reassurance(user_text) and re.search(
+        r"(别用那个[^。！？!?]{0,8}称呼|陈旧的称呼|奇怪的称呼|从属角色|助手这个称呼还是老样子|这个称呼还是老样子)",
+        text,
+    ):
+        issues.append("presence_ping_defensive_address")
     if _is_return_home_ping(user_text) and re.search(
         r"(该不会又|又去搞什么|奇怪的活动|惹什么麻烦|闯什么祸|闯祸)",
         text,
@@ -2079,23 +2257,64 @@ def _dialogue_surface_issues(
         issues.append("playful_memory_snapback")
     if hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"} and _has_relational_technical_metaphor(text):
         issues.append("technical_relational_metaphor")
-    if support_request and (
+    if supportish_turn and (
         _light_dialog_drift_markers(text)
-        or re.search(r"(数据存在|数字存在|实验室|实验台|世界线|世界线收束)", text)
+        or re.search(r"(数据存在|数字存在|实验室|实验台|世界线|世界线收束|乱七八糟的?数据|关键数据|处理器|死机|仪器|记录本|自动保存|空转一会)", text)
     ):
         issues.append("support_scene_drift")
-    if support_request and re.search(
+    if supportish_turn and re.search(
         r"((?:不|别|并不|没法|可当不了|算不上|不是|won't|wouldn't|can't|am not going to|not going to)[^。！？!?\n]{0,20}(?:手册|manual|textbook|worksheet|scripted advice|generic advice|therapy worksheet|官方套话|套话|platitude|platitudes|canned line(?:s)?|治疗师|therap(?:ist|y)|职业咨询师|心理咨询师|心理医生))|((?:手册|manual|textbook|worksheet|scripted advice|generic advice|therapy worksheet|官方套话|套话|platitude|platitudes|canned line(?:s)?|治疗师|therap(?:ist|y)|职业咨询师|心理咨询师|心理医生)[^。！？!?\n]{0,20}(?:那种东西|那一套|那套|那一类|那种人|那一挂|speech|advice|talk|扔到一边|先放一边|先丢开))",
         text,
         re.I,
     ):
         issues.append("support_frame_echo")
+    if supportish_turn:
+        directive_hits = _support_overdirective_hit_count(text)
+        if directive_hits >= 2 or (
+            directive_hits >= 1
+            and _has_any_marker(user_text, {"别讲大道理", "别像导师", "别像老师", "别太像老师", "别说教", "别太说教"})
+        ):
+            issues.append("support_overdirective")
+        support_landing = bool(
+            re.search(
+                r"(我在|陪着|待着|歇|休息|放松|躺|瘫|坐会儿|坐一会儿|缓一缓|别硬撑|先[^。！？!?]{0,10}(?:歇|缓|坐|躺|放松|休息|待))",
+                text,
+            )
+        )
+        if re.search(r"(大道理免了|不讲那些(?:了)?|我也懒得讲|嫌我啰嗦)", text) and not support_landing:
+            issues.append("support_no_landing")
     if _is_repair_sensitive_turn(
         user_text,
         current_event=current_event,
         behavior_action=behavior_action,
     ) and _has_premature_repair_resolution(text):
         issues.append("premature_repair_resolution")
+    if _is_repair_sensitive_turn(
+        user_text,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    ) and re.search(r"[？?]\s*$", text):
+        issues.append("overquestioning")
+    if (
+        current_event_kind == "user_utterance"
+        and interaction_mode in {"relationship_sensitive", "low_pressure_support", "brief_presence"}
+        and _has_wording_meta_detour(text)
+    ):
+        issues.append("wording_meta_detour")
+    if (
+        interaction_mode == "relationship_sensitive"
+        or _is_repair_sensitive_turn(
+            user_text,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
+    ) and re.search(
+        r"^\s*(?:真是的|啧)[，, ]*你(?:这个人|这家伙)?怎么这么(?:爱操心|紧张|小心翼翼|郑重其事|啰嗦)",
+        text,
+    ):
+        issues.append("generic_scold_template")
+    if interaction_mode in {"relationship_sensitive", "low_pressure_support"} and _has_passive_waiting_phrase(text):
+        issues.append("passive_waiting_posture")
     if selfhood_scene == "own_rhythm_autonomy" and _has_servile_availability_phrase(text):
         issues.append("servile_availability")
     if ("？" in text or "?" in text) and not ("？" in user_text or "?" in user_text):
@@ -2132,10 +2351,12 @@ def _dialogue_surface_issues(
             issues.append("return_interrogation")
     if re.match(r"^[（(][^)\n]{0,24}[)）]", text):
         issues.append("stage_direction_opening")
+    if any(_line_has_connector_fragment(line) for line in raw_lines):
+        issues.append("connector_fragment")
     if _looks_like_light_smalltalk(user_text) and re.search(r"[“\"][^”\"\n]{3,18}[”\"]", text):
         issues.append("quoted_stagey_phrase")
     if re.search(
-        r"(树洞|尽管倒出来|想说就说，我听着|安静待会儿也行|你慢慢说就行|我听着呢[，,。！？!? ]*(?:你慢慢说|先说|想说就说|都行|没关系)|我在这听着[，,。！？!? ]*(?:你慢慢说|先说|都行|没关系))",
+        r"(树洞|尽管倒出来|想说就说，我听着|安静待会儿也行|你慢慢说就行|我听着呢[，,。！？!? ]*(?:你慢慢说|先说|想说就说|都行|没关系)|我(?:就)?在这听着[，,。！？!? ]*(?:你慢慢说|先说|都行|没关系)?|我就在这里听着)",
         text,
     ) or (support_request and re.search(r"(我听着呢|我在这听着)", text)):
         issues.append("counselor_tone")
@@ -2183,7 +2404,6 @@ def _dialogue_surface_issues(
         overexplained_char_threshold = 220 if external_shell_swap_english else 140
         if sentence_count >= overexplained_sentence_threshold or len(compact) >= overexplained_char_threshold:
             issues.append("overexplained")
-    raw_lines = [str(line).strip() for line in text.splitlines() if str(line).strip()]
     if (
         re.search(r"(?:……|…{2,}|\.{3,})[”\"]?\s*$", text)
         or any(_is_dangling_truncated_clause(line) for line in raw_lines)
@@ -2264,11 +2484,22 @@ def _light_dialog_surface_penalty(
     penalty += 0.76 * float("idle_call_interrogation" in issues)
     penalty += 0.78 * float("idle_task_reframe" in issues)
     penalty += 0.86 * float("presence_check_questioning" in issues)
+    penalty += 0.96 * float("presence_meta_surface" in issues)
+    penalty += 0.88 * float("presence_overguiding" in issues)
+    penalty += 0.90 * float("presence_ping_task_detour" in issues)
+    penalty += 0.92 * float("presence_ping_defensive_address" in issues)
+    penalty += 0.96 * float("connector_fragment" in issues)
     penalty += 0.58 * float("return_interrogation" in issues)
     penalty += 0.74 * float("return_suspicion" in issues)
     penalty += 0.78 * float("playful_memory_snapback" in issues)
     penalty += 0.82 * float("technical_relational_metaphor" in issues)
     penalty += 0.88 * float("servile_availability" in issues)
+    penalty += 0.98 * float("support_scene_drift" in issues)
+    penalty += 0.94 * float("support_frame_echo" in issues)
+    penalty += 1.04 * float("support_overdirective" in issues)
+    penalty += 0.84 * float("wording_meta_detour" in issues)
+    penalty += 0.88 * float("generic_scold_template" in issues)
+    penalty += 0.92 * float("passive_waiting_posture" in issues)
     penalty += 0.80 * float("duplicate_line" in issues)
     penalty += 1.10 * float("malformed_quote_fragment" in producer_issue_set)
     penalty += 0.86 * float("dangling_truncated_clause" in producer_issue_set)
