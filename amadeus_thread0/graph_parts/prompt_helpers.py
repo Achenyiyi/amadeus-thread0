@@ -4,7 +4,7 @@ from typing import Any
 
 from .behavior_agenda import _normalize_behavior_agenda
 from .common import _clamp01
-from .relational import _focus_text
+from .relational_runtime import _focus_text
 
 
 def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[str]:

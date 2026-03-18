@@ -71,7 +71,7 @@ from amadeus_thread0.graph_parts.persona_runtime import (  # noqa: E402
     _tsundere_next,
 )
 from amadeus_thread0.graph_parts.postprocess import _response_style_hint  # noqa: E402
-from amadeus_thread0.graph_parts.relational import _worldline_focus  # noqa: E402
+from amadeus_thread0.graph_parts.relational_runtime import _worldline_focus  # noqa: E402
 from amadeus_thread0.graph_parts.runtime_services import (  # noqa: E402
     _invoke_model_with_retries,
     _model,
@@ -433,6 +433,10 @@ def _run_graph(
     turn_appraisal: dict[str, Any] = {}
     current_event: dict[str, Any] = {}
     recent_events: list[dict[str, Any]] = []
+    interaction_carryover: dict[str, Any] = {}
+    world_model_state: dict[str, Any] = {}
+    semantic_narrative_profile: dict[str, Any] = {}
+    agenda_lifecycle_residue: dict[str, Any] = {}
     science_mode = False
     canon_guard: dict[str, Any] = {}
     canon_risk_score = 0.0
@@ -470,6 +474,14 @@ def _run_graph(
                 current_event = values.get("current_event") or {}
             if isinstance(values.get("recent_events"), list):
                 recent_events = [item for item in values.get("recent_events") if isinstance(item, dict)]
+            if isinstance(values.get("interaction_carryover"), dict):
+                interaction_carryover = values.get("interaction_carryover") or {}
+            if isinstance(values.get("world_model_state"), dict):
+                world_model_state = values.get("world_model_state") or {}
+            if isinstance(values.get("semantic_narrative_profile"), dict):
+                semantic_narrative_profile = values.get("semantic_narrative_profile") or {}
+            if isinstance(values.get("agenda_lifecycle_residue"), dict):
+                agenda_lifecycle_residue = values.get("agenda_lifecycle_residue") or {}
             science_mode = bool(values.get("science_mode", False))
             if isinstance(values.get("canon_guard"), dict):
                 canon_guard = values.get("canon_guard") or {}
@@ -522,6 +534,10 @@ def _run_graph(
         "turn_appraisal": turn_appraisal,
         "current_event": current_event,
         "recent_events": recent_events,
+        "interaction_carryover": interaction_carryover,
+        "world_model_state": world_model_state,
+        "semantic_narrative_profile": semantic_narrative_profile,
+        "agenda_lifecycle_residue": agenda_lifecycle_residue,
         "science_mode": science_mode,
         "canon_guard": canon_guard,
         "canon_risk_score": canon_risk_score,

@@ -68,14 +68,32 @@ amadeus_thread0/
   final utterance cleanup, surface diagnosis, and lightweight text normalization.
 - `messages.py`
   message restoration, rolling window selection, and thread compaction helpers.
+- `graph_builder.py`
+  LangGraph assembly and runtime cache lifecycle.
+- `tool_nodes.py`
+  tool gate, tool execution, tool-limit handling, and post-model routing.
+- `implicit_idle.py`
+  idle-time event override construction and idle-seeded state-update entry.
+- `prepare_turn_context.py`
+  the front half of `prepare_turn`: retrieval, event normalization, appraisal input assembly, and carryover seeding.
+- `prepare_turn_runtime.py`
+  the back half of `prepare_turn`: persona/runtime state evolution, memory-triggered refresh, and behavior synthesis.
+- `model_call_prepare.py`
+  model-call preparation, generation-profile selection, and tool-call setup.
+- `response_finalize.py`
+  final text shaping after generation, including rewrite/postprocess handoff.
+- `relational_carryover.py`
+  interaction carryover and agenda residue propagation.
+- `relational_runtime.py`
+  relationship snapshots, counterpart summaries, and worldline focus aggregation.
 - `relational.py`
-  relationship runtime snapshots, interaction carryover, and worldline focus aggregation.
+  temporary compatibility re-export over the split relational modules; do not add new logic here.
 - `retrieval.py`
   retrieval triggering, memory ranking helpers, and working-context assembly.
 - `tooling.py`
   explicit tool-call parsing, memory-write inference, and graph-adjacent tool routing helpers.
 - `nodes.py`
-  graph nodes, graph assembly, runtime graph helpers.
+  graph-node implementations and light orchestration glue only.
 
 ## Compatibility Layer
 
@@ -136,12 +154,16 @@ Already migrated out of the monolithic `graph.py`:
 - state types
 - graph assembly
 - tool nodes
-- `prepare_turn`
-- `call_model`
+- idle override entry helpers
+- `prepare_turn` front-half context assembly
+- `prepare_turn` back-half runtime synthesis
+- `call_model` preparation and finalization
 - prompt construction
 - prompt helper fragments
 - message restoration and context window helpers
 - relationship/worldline helper cluster
+  this is now split into `relational_carryover.py` and `relational_runtime.py`
+  `relational.py` remains only as a transition shim
 - retrieval and ranking helpers
 - tool routing and memory-write inference helpers
 - rewrite logic

@@ -19,7 +19,7 @@ from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
 from .postprocess import APOLOGY_KEYWORDS, TENSION_KEYWORDS, _has_any_marker, _selfhood_preference_scene_from_text
 from .prompt_helpers import _compact_focus_lines, _compact_interaction_carryover_hint
-from .relational import _compact_relationship_summary, _focus_payload
+from .relational_runtime import _compact_relationship_summary, _focus_payload
 from .rewrite import _invoke_model_with_retries, _model
 from .semantic_narrative import _semantic_narrative_appraisal_hint
 

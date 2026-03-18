@@ -217,6 +217,8 @@ def _semantic_narrative_profile(
         "agency_drive": 0.0,
         "rhythm_continuity": 0.0,
         "history_weight": 0.0,
+        "continuity_depth": 0.0,
+        "identity_gravity": 0.0,
         "dominant_category": "",
         "active_categories": [],
         "reactivated_categories": [],
@@ -225,12 +227,17 @@ def _semantic_narrative_profile(
         "prompt_anchor_lines": [],
         "top_narratives": [],
         "residue_snapshot": {},
+        "sedimentation_snapshot": {},
         "persistence_snapshot": {},
+        "support_mass_snapshot": {},
+        "support_quality_snapshot": {},
         "motive_snapshot": {},
         "identity_snapshot": {},
         "identity_lines": [],
         "identity_prompt_lines": [],
         "long_term_self_narratives": [],
+        "long_term_axis_count": 0,
+        "contested_categories": [],
     }
     if not isinstance(items, list) or not items:
         return out
@@ -254,12 +261,17 @@ def _semantic_narrative_profile(
     }
     scored_items: list[tuple[float, str, str, bool]] = []
     anchor_items: list[tuple[float, str, str]] = []
-    identity_items: list[tuple[float, str, str, str, str]] = []
+    identity_items: list[dict[str, Any]] = []
+    continuity_items: list[dict[str, Any]] = []
     reactivated_categories: set[str] = set()
     residue_snapshot: dict[str, float] = {}
+    sedimentation_snapshot: dict[str, float] = {}
     persistence_snapshot: dict[str, float] = {}
+    support_mass_snapshot: dict[str, float] = {}
+    support_quality_snapshot: dict[str, float] = {}
     motive_snapshot: dict[str, dict[str, Any]] = {}
     identity_snapshot: dict[str, dict[str, Any]] = {}
+    contested_categories: set[str] = set()
 
     for item in items:
         if not isinstance(item, dict):
@@ -272,17 +284,28 @@ def _semantic_narrative_profile(
         relevance = _query_overlap_score(current_text, text) if current_text else 0.0
         horizon = str(_record_value(item, "horizon_tag", "") or "").strip().lower()
         horizon_bonus = 0.08 if horizon == "long_term" else 0.04 if horizon == "consolidating" else 0.0
+        sedimentation = _clamp01(_record_value(item, "sedimentation_score", salience), salience)
         persistence = _clamp01(_record_value(item, "persistence_score", salience), salience)
         residue = _clamp01(_record_value(item, "residue_score", persistence), persistence)
         integration = _clamp01(_record_value(item, "integration_score", persistence), persistence)
         decay_resistance = _clamp01(_record_value(item, "decay_resistance", 0.5), 0.5)
         cadence_score = _clamp01(_record_value(item, "reactivation_cadence_score", 0.0), 0.0)
+        support_count = max(1.0, float(_record_value(item, "support_count", 1.0) or 1.0))
+        support_mass = max(0.0, float(_record_value(item, "support_mass", support_count) or support_count))
+        support_quality = _clamp01(_record_value(item, "support_quality", 0.0), 0.0)
+        fresh_support_ratio = _clamp01(_record_value(item, "fresh_support_ratio", 0.0), 0.0)
+        contradiction_pressure = _clamp01(_record_value(item, "contradiction_pressure", 0.0), 0.0)
+        contested = bool(_record_value(item, "contested", False)) or contradiction_pressure >= 0.24
         last_supported_at = int(_record_value(item, "last_supported_at", now_ts) or now_ts)
-        support_count = max(0.0, float(_record_value(item, "support_count", 1.0) or 1.0))
         support_norm = _clamp01(support_count / 5.0)
+        support_mass_norm = _clamp01(support_mass / max(1.0, support_count))
+        support_signal = _clamp01(
+            0.46 * support_quality
+            + 0.34 * support_mass_norm
+            + 0.20 * fresh_support_ratio
+        )
         support_span_s = max(0.0, float(_record_value(item, "support_span_s", 0.0) or 0.0))
         reactivation_hits = max(0.0, float(_record_value(item, "reactivation_hits", 0.0) or 0.0))
-        contradiction_pressure = _clamp01(_record_value(item, "contradiction_pressure", 0.0), 0.0)
         gap_s = max(0, now_ts - last_supported_at)
         decay_multiplier = _semantic_narrative_decay_multiplier(category, gap_s, decay_resistance=decay_resistance)
         event_bonus = _semantic_narrative_event_bonus(category, current_event)
@@ -298,16 +321,27 @@ def _semantic_narrative_profile(
                 + 0.16 * persistence
                 + 0.12 * residue
                 + 0.08 * integration
+                + 0.05 * support_signal
                 + horizon_bonus
             )
             * decay_multiplier
             + 0.12 * relevance
             + 0.05 * cadence_score
             + event_bonus
+            - 0.10 * contradiction_pressure
+            - (0.04 if contested else 0.0)
         )
         weight = max(weight, residue_floor)
         if category in categories:
             categories[category] = max(categories[category], weight)
+            effective_sedimentation = _clamp01(
+                sedimentation * max(decay_multiplier, 0.74) * (1.0 - 0.18 * contradiction_pressure)
+                + 0.08 * support_signal
+            )
+            sedimentation_snapshot[category] = max(
+                float(sedimentation_snapshot.get(category, 0.0) or 0.0),
+                round(effective_sedimentation, 3),
+            )
             residue_snapshot[category] = max(
                 float(residue_snapshot.get(category, 0.0) or 0.0),
                 round(residue * decay_multiplier, 3),
@@ -316,6 +350,37 @@ def _semantic_narrative_profile(
                 float(persistence_snapshot.get(category, 0.0) or 0.0),
                 round(persistence * max(decay_multiplier, 0.65), 3),
             )
+            support_mass_snapshot[category] = max(
+                float(support_mass_snapshot.get(category, 0.0) or 0.0),
+                round(support_mass_norm, 3),
+            )
+            support_quality_snapshot[category] = max(
+                float(support_quality_snapshot.get(category, 0.0) or 0.0),
+                round(support_signal, 3),
+            )
+            continuity_signal = _clamp01(
+                0.30 * persistence
+                + 0.22 * integration
+                + 0.20 * effective_sedimentation
+                + 0.10 * support_norm
+                + 0.08 * support_signal
+                + 0.06 * cadence_score
+                + 0.06 * _clamp01(reactivation_hits / 4.0)
+                + (0.08 if horizon == "long_term" else 0.04 if horizon == "consolidating" else 0.0)
+                - 0.14 * contradiction_pressure
+                - (0.06 if contested else 0.0)
+            )
+            continuity_items.append(
+                {
+                    "category": category,
+                    "score": round(float(continuity_signal), 3),
+                    "horizon_tag": horizon,
+                    "reactivated": reactivated,
+                    "contested": contested,
+                }
+            )
+            if contested:
+                contested_categories.add(category)
         dominant_primary_motive = str(_record_value(item, "dominant_primary_motive", "") or "").strip()
         dominant_motive_tension = str(_record_value(item, "dominant_motive_tension", "") or "").strip()
         goal_frame_examples = [
@@ -357,10 +422,12 @@ def _semantic_narrative_profile(
                     + 0.14 * integration
                     + 0.10 * residue
                     + 0.08 * support_norm
+                    + 0.10 * support_signal
                     + _semantic_identity_bonus(horizon, support_span_s, reactivation_hits)
                 )
                 * max(decay_multiplier, 0.82)
                 * (1.0 - 0.24 * contradiction_pressure)
+                - (0.06 if contested else 0.0)
             )
             if identity_weight > 0.0:
                 identity_text = identity_text or anchor_text or text
@@ -374,13 +441,19 @@ def _semantic_narrative_profile(
                     "motive_tension": dominant_motive_tension,
                 }
                 identity_items.append(
-                    (
-                        identity_weight,
-                        category,
-                        identity_text[:180],
-                        identity_prompt_text[:180],
-                        horizon,
-                    )
+                    {
+                        "score": round(float(identity_weight), 3),
+                        "category": category,
+                        "text": identity_text[:180],
+                        "prompt_text": identity_prompt_text[:180],
+                        "horizon_tag": horizon,
+                        "sedimentation_score": round(float(sedimentation), 3),
+                        "persistence_score": round(float(persistence), 3),
+                        "integration_score": round(float(integration), 3),
+                        "support_span_s": int(support_span_s),
+                        "reactivation_hits": int(reactivation_hits),
+                        "identity_strength": round(float(identity_weight), 3),
+                    }
                 )
         anchor_strength = _clamp01(
             _record_value(
@@ -428,8 +501,29 @@ def _semantic_narrative_profile(
     out["active_categories"] = active_categories
     out["reactivated_categories"] = sorted(reactivated_categories)
     out["residue_snapshot"] = residue_snapshot
+    out["sedimentation_snapshot"] = sedimentation_snapshot
     out["persistence_snapshot"] = persistence_snapshot
+    out["support_mass_snapshot"] = support_mass_snapshot
+    out["support_quality_snapshot"] = support_quality_snapshot
     out["identity_snapshot"] = identity_snapshot
+    out["contested_categories"] = sorted(contested_categories)
+    if continuity_items:
+        continuity_items.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
+        top_continuity = continuity_items[:3]
+        top_scores = [float(item.get("score") or 0.0) for item in top_continuity]
+        long_term_axes = [
+            item
+            for item in continuity_items
+            if str(item.get("horizon_tag") or "").strip().lower() == "long_term"
+        ]
+        continuity_depth = _clamp01(
+            0.52 * max(top_scores or [0.0])
+            + 0.24 * (sum(top_scores) / float(max(1, len(top_scores))))
+            + 0.14 * _clamp01(len(long_term_axes) / 3.0)
+            + 0.10 * _clamp01(len(reactivated_categories) / 3.0)
+        )
+        out["continuity_depth"] = round(float(continuity_depth), 3)
+        out["long_term_axis_count"] = int(len(long_term_axes))
     if motive_snapshot:
         out["motive_snapshot"] = {
             category: {
@@ -477,13 +571,18 @@ def _semantic_narrative_profile(
         out["prompt_anchor_lines"] = prompt_anchor_lines[:3]
 
     if identity_items:
-        identity_items.sort(key=lambda row: row[0], reverse=True)
+        identity_items.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
         identity_lines: list[str] = []
         identity_prompt_lines: list[str] = []
         long_term_self_narratives: list[dict[str, Any]] = []
         seen_identity_lines: set[str] = set()
         seen_identity_prompt_lines: set[str] = set()
-        for score, category, text, prompt_text, horizon in identity_items:
+        for item in identity_items:
+            score = round(float(item.get("score") or 0.0), 3)
+            category = str(item.get("category") or "").strip()
+            text = str(item.get("text") or "").strip()
+            prompt_text = str(item.get("prompt_text") or "").strip()
+            horizon = str(item.get("horizon_tag") or "").strip().lower()
             if text and text not in seen_identity_lines and len(identity_lines) < 3:
                 seen_identity_lines.add(text)
                 identity_lines.append(text)
@@ -501,11 +600,30 @@ def _semantic_narrative_profile(
                         "prompt_text": prompt_text,
                         "primary_motive": str((motive_state or {}).get("primary_motive") or "").strip(),
                         "motive_tension": str((motive_state or {}).get("motive_tension") or "").strip(),
+                        "sedimentation_score": round(float(item.get("sedimentation_score") or 0.0), 3),
+                        "persistence_score": round(float(item.get("persistence_score") or 0.0), 3),
+                        "integration_score": round(float(item.get("integration_score") or 0.0), 3),
+                        "support_span_s": int(item.get("support_span_s") or 0),
+                        "reactivation_hits": int(item.get("reactivation_hits") or 0),
+                        "identity_strength": round(float(item.get("identity_strength") or score), 3),
                     }
                 )
         out["identity_lines"] = identity_lines
         out["identity_prompt_lines"] = identity_prompt_lines
         out["long_term_self_narratives"] = long_term_self_narratives
+        strengths = [float(item.get("score") or 0.0) for item in identity_items]
+        long_term_identity_hits = sum(1 for item in identity_items if str(item.get("horizon_tag") or "").strip().lower() == "long_term")
+        out["identity_gravity"] = round(
+            float(
+                _clamp01(
+                    0.58 * max(strengths or [0.0])
+                    + 0.24 * (sum(strengths) / float(max(1, len(strengths))))
+                    + 0.10 * _clamp01(long_term_identity_hits / 3.0)
+                    + 0.08 * _clamp01(len(identity_items) / 3.0)
+                )
+            ),
+            3,
+        )
 
     summary_lines: list[str] = []
     if categories["commitment_style"] >= 0.46:

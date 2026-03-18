@@ -36,6 +36,8 @@ Targeted review:
 python evals\run_subjective_review_pack.py --list-targets
 python evals\run_subjective_review_pack.py --target support
 python evals\run_subjective_review_pack.py --target selfhood --target boundary
+python evals\run_subjective_review_pack.py --preset relationship-weather-open
+python evals\run_subjective_review_pack.py --preset counterpart-scene
 ```
 
 Artifacts:
@@ -61,6 +63,13 @@ The current case bank is tagged by capability target, for example:
 The goal is not to score keyword obedience.
 The goal is to judge whether the output still feels like the same Amadeus person
 under different relational and emotional pressures.
+
+Recommended targeted presets:
+
+- `daily-naturalness`: ordinary daily dialogue, low-pressure companionship, everyday surface quality
+- `relationship-weather-open`: the current primary review entry for `guarded / warm / repair` separation, using both direct probes and more everyday open-ended phrasing
+- `counterpart-scene`: checks whether she is actually reading `busy / repair / care / friction` as different counterpart states
+- `relationship-selfhood`: checks selfhood, equality, boundary, and relationship degradation pressure
 
 Question style is also now mixed on purpose:
 

@@ -15,6 +15,112 @@ from .postprocess import _is_nonrelational_support_request
 from .state import BehaviorActionPayload, BehaviorPlanPayload, BehaviorWindowProfilePayload
 
 
+def _semantic_snapshot_level(snapshot: dict[str, Any], categories: tuple[str, ...]) -> float:
+    if not isinstance(snapshot, dict) or not categories:
+        return 0.0
+    return _clamp01(max(_clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
+
+
+def _semantic_contested_pressure(contested_categories: set[str], categories: tuple[str, ...], confidence: float) -> float:
+    if not categories:
+        return 0.0
+    hit_ratio = sum(1.0 for category in categories if category in contested_categories) / float(len(categories))
+    if hit_ratio <= 0.0:
+        return 0.0
+    return _clamp01(0.72 * hit_ratio + 0.28 * max(0.0, 1.0 - _clamp01(confidence, 0.0)), 0.0)
+
+
+def _semantic_behavior_evidence(profile: dict[str, Any] | None) -> dict[str, float]:
+    narrative = profile if isinstance(profile, dict) else {}
+    support_mass_snapshot = (
+        narrative.get("support_mass_snapshot") if isinstance(narrative.get("support_mass_snapshot"), dict) else {}
+    )
+    support_quality_snapshot = (
+        narrative.get("support_quality_snapshot")
+        if isinstance(narrative.get("support_quality_snapshot"), dict)
+        else {}
+    )
+    contested_categories = {
+        str(item).strip()
+        for item in (
+            narrative.get("contested_categories")
+            if isinstance(narrative.get("contested_categories"), list)
+            else []
+        )
+        if str(item or "").strip()
+    }
+    continuity_depth = _clamp01(narrative.get("continuity_depth"), 0.0)
+    identity_gravity = _clamp01(narrative.get("identity_gravity"), 0.0)
+    history_weight = _clamp01(narrative.get("history_weight"), 0.0)
+    bond_depth = _clamp01(narrative.get("bond_depth"), 0.0)
+    commitment_carry = _clamp01(narrative.get("commitment_carry"), 0.0)
+    selfhood_integrity = _clamp01(narrative.get("selfhood_integrity"), 0.0)
+    agency_drive = _clamp01(narrative.get("agency_drive"), 0.0)
+
+    contact_categories = ("bond_style", "presence_style", "commitment_style", "repair_style")
+    repair_categories = ("repair_style", "bond_style", "commitment_style")
+    boundary_categories = ("boundary_style", "selfhood_style")
+    selfhood_categories = ("selfhood_style", "agency_style", "rhythm_style")
+    agency_categories = ("agency_style", "rhythm_style", "selfhood_style")
+
+    def support_confidence(categories: tuple[str, ...]) -> float:
+        mass = _semantic_snapshot_level(support_mass_snapshot, categories)
+        quality = _semantic_snapshot_level(support_quality_snapshot, categories)
+        return _clamp01(0.64 * quality + 0.36 * mass, 0.0)
+
+    contact_support = support_confidence(contact_categories)
+    repair_support = support_confidence(repair_categories)
+    boundary_support = support_confidence(boundary_categories)
+    selfhood_support = support_confidence(selfhood_categories)
+    agency_support = support_confidence(agency_categories)
+
+    contact_confidence = _clamp01(
+        0.62 * contact_support + 0.20 * continuity_depth + 0.10 * bond_depth + 0.08 * commitment_carry,
+        0.0,
+    )
+    repair_confidence = _clamp01(
+        0.68 * repair_support + 0.20 * continuity_depth + 0.12 * commitment_carry,
+        0.0,
+    )
+    boundary_confidence = _clamp01(
+        0.58 * boundary_support + 0.24 * identity_gravity + 0.18 * continuity_depth,
+        0.0,
+    )
+    selfhood_confidence = _clamp01(
+        0.52 * selfhood_support
+        + 0.24 * identity_gravity
+        + 0.14 * continuity_depth
+        + 0.10 * selfhood_integrity,
+        0.0,
+    )
+    agency_confidence = _clamp01(
+        0.54 * agency_support + 0.24 * identity_gravity + 0.12 * continuity_depth + 0.10 * agency_drive,
+        0.0,
+    )
+    return {
+        "contact_confidence": round(contact_confidence, 3),
+        "repair_confidence": round(repair_confidence, 3),
+        "boundary_confidence": round(boundary_confidence, 3),
+        "selfhood_confidence": round(selfhood_confidence, 3),
+        "agency_confidence": round(agency_confidence, 3),
+        "contested_contact_pressure": round(
+            _semantic_contested_pressure(contested_categories, contact_categories, contact_confidence),
+            3,
+        ),
+        "contested_boundary_pressure": round(
+            _semantic_contested_pressure(contested_categories, boundary_categories, boundary_confidence),
+            3,
+        ),
+        "contested_selfhood_pressure": round(
+            _semantic_contested_pressure(contested_categories, selfhood_categories, selfhood_confidence),
+            3,
+        ),
+        "history_weight": round(history_weight, 3),
+        "continuity_depth": round(continuity_depth, 3),
+        "identity_gravity": round(identity_gravity, 3),
+    }
+
+
 def _derive_behavior_motive(
     *,
     event_kind: str,
@@ -198,6 +304,39 @@ def _behavior_action_from_state(
         (behavior_policy or {}).get("motive_shared_window_pull"),
         _clamp01(motive_vector.get("shared_window_pull"), 0.0),
     )
+    semantic_evidence = _semantic_behavior_evidence(semantic_narrative_profile)
+    semantic_contact_confidence = _clamp01(
+        (behavior_policy or {}).get("semantic_contact_confidence"),
+        _clamp01(semantic_evidence.get("contact_confidence"), 0.0),
+    )
+    semantic_repair_confidence = _clamp01(
+        (behavior_policy or {}).get("semantic_repair_confidence"),
+        _clamp01(semantic_evidence.get("repair_confidence"), 0.0),
+    )
+    semantic_boundary_confidence = _clamp01(
+        (behavior_policy or {}).get("semantic_boundary_confidence"),
+        _clamp01(semantic_evidence.get("boundary_confidence"), 0.0),
+    )
+    semantic_selfhood_confidence = _clamp01(
+        (behavior_policy or {}).get("semantic_selfhood_confidence"),
+        _clamp01(semantic_evidence.get("selfhood_confidence"), 0.0),
+    )
+    semantic_agency_confidence = _clamp01(
+        (behavior_policy or {}).get("semantic_agency_confidence"),
+        _clamp01(semantic_evidence.get("agency_confidence"), 0.0),
+    )
+    semantic_contested_contact = _clamp01(
+        (behavior_policy or {}).get("semantic_contested_contact_pressure"),
+        _clamp01(semantic_evidence.get("contested_contact_pressure"), 0.0),
+    )
+    semantic_contested_boundary = _clamp01(
+        (behavior_policy or {}).get("semantic_contested_boundary_pressure"),
+        _clamp01(semantic_evidence.get("contested_boundary_pressure"), 0.0),
+    )
+    semantic_contested_selfhood = _clamp01(
+        (behavior_policy or {}).get("semantic_contested_selfhood_pressure"),
+        _clamp01(semantic_evidence.get("contested_selfhood_pressure"), 0.0),
+    )
     world = dict(world_model_state or {})
     world_presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
@@ -282,11 +421,25 @@ def _behavior_action_from_state(
         0.72 * motive_support,
         0.76 * motive_shared_window,
     )
+    semantic_contact_bias = _clamp01(
+        max(semantic_contact_bias, 0.84 * semantic_contact_confidence, 0.72 * semantic_repair_confidence)
+        - 0.18 * semantic_contested_contact
+        - 0.08 * semantic_contested_boundary
+    )
     semantic_narrative_rhythm_bias = max(
         0.72 * narrative_rhythm,
         0.68 * narrative_agency,
         0.92 * motive_self_rhythm,
         0.58 * motive_boundary,
+    )
+    semantic_narrative_rhythm_bias = _clamp01(
+        max(
+            semantic_narrative_rhythm_bias,
+            0.86 * semantic_agency_confidence,
+            0.78 * semantic_selfhood_confidence,
+            0.68 * semantic_boundary_confidence,
+        )
+        + 0.06 * semantic_contested_contact
     )
     semantic_own_rhythm_bias = max(
         effective_own_rhythm_load,
@@ -316,6 +469,7 @@ def _behavior_action_from_state(
         and explicit_support_request
         and approach > 0.40
         and safety_need < 0.52
+        and semantic_contested_contact < 0.52
     )
     brief_presence = (
         event_kind == "gesture_signal"
@@ -325,6 +479,12 @@ def _behavior_action_from_state(
             and initiative < 0.46
             and approach > 0.34
             and boundary_pressure < 0.34
+        )
+        or (
+            soft_reply_window
+            and semantic_contested_contact >= 0.42
+            and approach > 0.28
+            and semantic_contact_confidence < 0.66
         )
     )
     presence_checkin = brief_presence or (
@@ -396,6 +556,11 @@ def _behavior_action_from_state(
             interaction_mode = "brief_presence"
         elif semantic_memory_echo >= 0.56 and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
+        if interaction_mode in {"steady_reply", "companion_reply", "brief_presence"} and semantic_contested_contact >= 0.44:
+            if semantic_narrative_rhythm_bias >= max(0.52, semantic_contact_bias + 0.02):
+                interaction_mode = "self_activity_reopen"
+            else:
+                interaction_mode = "brief_presence"
 
     carryover_soft_scene = (
         event_kind == "user_utterance"
@@ -418,6 +583,14 @@ def _behavior_action_from_state(
             interaction_mode = "companion_reply"
         if effective_relationship_weather == "guarded_residue" and interaction_mode in {"steady_reply", "companion_reply"}:
             interaction_mode = "brief_presence"
+        elif (
+            effective_relationship_weather == "warm_residue"
+            and interaction_mode in {"steady_reply", "brief_presence"}
+            and counterpart_stance == "open"
+            and boundary_pressure < 0.18
+            and max(narrative_tension, motive_boundary) < 0.34
+        ):
+            interaction_mode = "companion_reply"
         elif effective_relationship_weather in {"warm_residue", "repair_residue"} and interaction_mode == "steady_reply":
             interaction_mode = "companion_reply"
 
@@ -429,6 +602,8 @@ def _behavior_action_from_state(
         or boundary_pressure > 0.58
         or counterpart_stance == "guarded"
         or (boundary_assertiveness > 0.62 and (boundary_pressure > 0.34 or narrative_boundary > 0.48))
+        or semantic_contested_contact >= 0.56
+        or (semantic_contested_boundary >= 0.46 and max(boundary_assertiveness, semantic_boundary_confidence) >= 0.52)
     ):
         approach_style = "guarded"
     elif warmth > 0.62 and trust > 0.58 and closeness > 0.58:
@@ -507,6 +682,19 @@ def _behavior_action_from_state(
             and max(narrative_boundary, motive_boundary) < 0.42
         ):
             followup_intent = "soft"
+    if semantic_contested_contact >= 0.44 or semantic_contested_boundary >= 0.48:
+        if followup_intent == "active":
+            followup_intent = "soft"
+        elif followup_intent == "soft" and (semantic_contested_contact >= 0.58 or semantic_contact_confidence < 0.56):
+            followup_intent = "none"
+    elif (
+        followup_intent == "none"
+        and semantic_contact_confidence >= 0.66
+        and semantic_contested_contact < 0.30
+        and counterpart_stance != "guarded"
+        and approach_style != "guarded"
+    ):
+        followup_intent = "soft"
 
     if emotion_label in {"hurt", "sad"}:
         affect_surface = "tender"
@@ -531,10 +719,16 @@ def _behavior_action_from_state(
         + 0.06 * min(narrative_agency, narrative_bond)
         + 0.04 * max(0.0, semantic_contact_bias - 0.48)
         + 0.03 * motive_memory
+        + 0.06 * semantic_contact_confidence
+        + 0.04 * semantic_repair_confidence
+        + 0.02 * semantic_selfhood_confidence
         - 0.24 * autonomy_need
         - 0.18 * boundary_pressure
         - 0.08 * semantic_own_rhythm_bias
         - 0.06 * motive_boundary
+        - 0.14 * semantic_contested_contact
+        - 0.08 * semantic_contested_boundary
+        - 0.04 * semantic_contested_selfhood
         - (0.14 if respect_space else 0.0)
     )
     scheduled_window_profile: dict[str, Any] = {}
@@ -1164,6 +1358,20 @@ def _behavior_action_from_state(
     if mode_profile:
         followup_intent = str(mode_profile.get("followup_intent") or followup_intent).strip() or followup_intent
         disclosure_posture = str(mode_profile.get("disclosure_posture") or disclosure_posture).strip() or disclosure_posture
+    if semantic_contested_contact >= 0.46 or semantic_contested_boundary >= 0.46:
+        disclosure_posture = (
+            "guarded"
+            if semantic_contested_boundary >= 0.46 or approach_style == "guarded"
+            else "measured"
+        )
+    elif (
+        disclosure_posture == "measured"
+        and semantic_contact_confidence >= 0.72
+        and semantic_contested_contact < 0.28
+        and semantic_contested_boundary < 0.28
+        and interaction_mode in {"companion_reply", "shared_memory"}
+    ):
+        disclosure_posture = "open"
 
     if carryover_soft_scene and effective_carryover_mode in {"own_rhythm", "quiet_recontact"} and followup_intent == "active":
         followup_intent = "soft"
@@ -1188,6 +1396,8 @@ def _behavior_action_from_state(
         if nonverbal_signal in {"steady_presence", "brief_notice", "small_notice"}:
             nonverbal_signal = effective_carryover_nonverbal_signal or "quiet_glance"
     elif carryover_soft_scene and effective_relationship_weather in {"warm_residue", "repair_residue"}:
+        if effective_relationship_weather == "warm_residue" and disclosure_posture == "guarded":
+            disclosure_posture = "measured"
         if effective_relationship_weather == "repair_residue" and disclosure_posture == "guarded":
             disclosure_posture = "measured"
         if followup_intent == "none" and counterpart_stance != "guarded":

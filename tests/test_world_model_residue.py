@@ -852,6 +852,161 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(long_term[0].get("category") or ""), "selfhood_style")
         self.assertEqual(str(long_term[0].get("primary_motive") or ""), "protect_boundary")
 
+    def test_semantic_narrative_profile_surfaces_continuity_depth_and_identity_gravity(self):
+        profile = _semantic_narrative_profile(
+            [
+                {
+                    "category": "selfhood_style",
+                    "text": "她会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+                    "stability": 0.82,
+                    "support_count": 5,
+                    "sedimentation_score": 0.80,
+                    "persistence_score": 0.86,
+                    "residue_score": 0.78,
+                    "integration_score": 0.82,
+                    "support_span_s": 10 * 24 * 3600,
+                    "reactivation_hits": 3,
+                    "reactivation_cadence_score": 0.66,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "identity_ready": True,
+                    "identity_strength": 0.89,
+                    "identity_text": "她会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+                    "identity_prompt_text": "你会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+                },
+                {
+                    "category": "rhythm_style",
+                    "text": "她会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                    "stability": 0.78,
+                    "support_count": 4,
+                    "sedimentation_score": 0.76,
+                    "persistence_score": 0.82,
+                    "residue_score": 0.70,
+                    "integration_score": 0.74,
+                    "support_span_s": 8 * 24 * 3600,
+                    "reactivation_hits": 2,
+                    "reactivation_cadence_score": 0.62,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "identity_ready": True,
+                    "identity_strength": 0.78,
+                    "identity_text": "她会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                    "identity_prompt_text": "你会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                },
+            ],
+            user_text="按你的意思说吧。你现在更想按自己的节奏来，还是更想先接住我？",
+            current_event={
+                "kind": "user_utterance",
+                "response_style_hint": "relationship",
+                "created_at": 2_000,
+            },
+        )
+        self.assertGreater(float(profile.get("continuity_depth", 0.0) or 0.0), 0.60)
+        self.assertGreater(float(profile.get("identity_gravity", 0.0) or 0.0), 0.65)
+        sedimentation = profile.get("sedimentation_snapshot") if isinstance(profile.get("sedimentation_snapshot"), dict) else {}
+        self.assertGreater(float(sedimentation.get("selfhood_style", 0.0) or 0.0), 0.50)
+        self.assertGreaterEqual(int(profile.get("long_term_axis_count") or 0), 2)
+        long_term = profile.get("long_term_self_narratives") if isinstance(profile.get("long_term_self_narratives"), list) else []
+        self.assertIn("sedimentation_score", long_term[0])
+        self.assertIn("support_span_s", long_term[0])
+        self.assertIn("identity_strength", long_term[0])
+
+    def test_semantic_narrative_profile_uses_support_quality_to_bias_continuity_and_identity(self):
+        base_item = {
+            "category": "selfhood_style",
+            "text": "她会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+            "stability": 0.80,
+            "support_count": 4,
+            "sedimentation_score": 0.76,
+            "persistence_score": 0.82,
+            "residue_score": 0.74,
+            "integration_score": 0.78,
+            "support_span_s": 8 * 24 * 3600,
+            "reactivation_hits": 2,
+            "reactivation_cadence_score": 0.62,
+            "last_supported_at": 1_900,
+            "horizon_tag": "long_term",
+            "identity_ready": True,
+            "identity_strength": 0.80,
+            "identity_text": "她会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+            "identity_prompt_text": "你会把自己放在和对方平等互动的位置上，不会为了迎合气氛退回成工具。",
+        }
+        strong_profile = _semantic_narrative_profile(
+            [
+                {
+                    **base_item,
+                    "support_mass": 3.8,
+                    "support_quality": 0.88,
+                    "fresh_support_ratio": 0.72,
+                }
+            ],
+            user_text="按你的意思说，不用为了照顾气氛把自己缩回去。",
+            current_event={
+                "kind": "user_utterance",
+                "response_style_hint": "selfhood",
+                "created_at": 2_000,
+            },
+        )
+        weak_profile = _semantic_narrative_profile(
+            [
+                {
+                    **base_item,
+                    "support_mass": 1.1,
+                    "support_quality": 0.12,
+                    "fresh_support_ratio": 0.08,
+                }
+            ],
+            user_text="按你的意思说，不用为了照顾气氛把自己缩回去。",
+            current_event={
+                "kind": "user_utterance",
+                "response_style_hint": "selfhood",
+                "created_at": 2_000,
+            },
+        )
+        strong_quality = strong_profile.get("support_quality_snapshot") if isinstance(strong_profile.get("support_quality_snapshot"), dict) else {}
+        weak_quality = weak_profile.get("support_quality_snapshot") if isinstance(weak_profile.get("support_quality_snapshot"), dict) else {}
+        self.assertGreater(float(strong_quality.get("selfhood_style", 0.0) or 0.0), float(weak_quality.get("selfhood_style", 0.0) or 0.0))
+        self.assertGreater(float(strong_profile.get("continuity_depth", 0.0) or 0.0), float(weak_profile.get("continuity_depth", 0.0) or 0.0))
+        self.assertGreater(float(strong_profile.get("identity_gravity", 0.0) or 0.0), float(weak_profile.get("identity_gravity", 0.0) or 0.0))
+
+    def test_semantic_narrative_profile_surfaces_contested_categories_from_counterpressure(self):
+        profile = _semantic_narrative_profile(
+            [
+                {
+                    "category": "bond_style",
+                    "text": "她已经把和对方并肩同行当成默认关系。",
+                    "stability": 0.84,
+                    "support_count": 4,
+                    "support_mass": 1.3,
+                    "support_quality": 0.22,
+                    "fresh_support_ratio": 0.10,
+                    "sedimentation_score": 0.80,
+                    "persistence_score": 0.84,
+                    "residue_score": 0.74,
+                    "integration_score": 0.76,
+                    "support_span_s": 8 * 24 * 3600,
+                    "reactivation_hits": 2,
+                    "reactivation_cadence_score": 0.60,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "contradiction_pressure": 0.46,
+                    "contested": True,
+                }
+            ],
+            user_text="可我现在还是有点介意刚才那下。",
+            current_event={
+                "kind": "user_utterance",
+                "response_style_hint": "relationship",
+                "created_at": 2_000,
+            },
+        )
+        contested = profile.get("contested_categories") if isinstance(profile.get("contested_categories"), list) else []
+        self.assertIn("bond_style", contested)
+        support_mass = profile.get("support_mass_snapshot") if isinstance(profile.get("support_mass_snapshot"), dict) else {}
+        support_quality = profile.get("support_quality_snapshot") if isinstance(profile.get("support_quality_snapshot"), dict) else {}
+        self.assertGreater(float(support_mass.get("bond_style", 0.0) or 0.0), 0.0)
+        self.assertGreater(float(support_quality.get("bond_style", 0.0) or 0.0), 0.0)
+
     def test_semantic_narrative_profile_prefers_identity_axis_for_dominant_category(self):
         profile = _semantic_narrative_profile(
             [
@@ -1140,6 +1295,82 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertGreater(
             float(infused.get("memory_gravity", 0.0) or 0.0),
             float(baseline.get("memory_gravity", 0.0) or 0.0),
+        )
+
+    def test_continuity_depth_and_identity_gravity_bias_world_model_targets(self):
+        base_profile = {
+            "presence_carry": 0.42,
+            "ambient_attunement": 0.28,
+            "rhythm_continuity": 0.48,
+            "agency_drive": 0.50,
+            "selfhood_integrity": 0.44,
+            "history_weight": 0.46,
+            "residue_snapshot": {
+                "presence_style": 0.22,
+                "rhythm_style": 0.24,
+                "selfhood_style": 0.20,
+            },
+            "persistence_snapshot": {
+                "presence_style": 0.38,
+                "rhythm_style": 0.40,
+                "selfhood_style": 0.42,
+                "agency_style": 0.38,
+            },
+        }
+        infused_profile = {
+            **base_profile,
+            "continuity_depth": 0.78,
+            "identity_gravity": 0.84,
+        }
+        appraisal = {
+            "used": True,
+            "salience": {
+                "relationship": 0.18,
+                "companionship": 0.20,
+                "memory": 0.14,
+                "selfhood": 0.16,
+                "task": 0.08,
+            },
+            "signals": {},
+        }
+        relationship = {"affinity_score": 0.60, "trust_score": 0.62}
+        baseline = build_world_model_state(
+            prev_state=None,
+            relationship=relationship,
+            semantic_narrative_profile=base_profile,
+            appraisal=appraisal,
+            current_event={"kind": "user_utterance", "tags": []},
+            science_mode=False,
+            now_ts=2_000,
+        )
+        infused = build_world_model_state(
+            prev_state=None,
+            relationship=relationship,
+            semantic_narrative_profile=infused_profile,
+            appraisal=appraisal,
+            current_event={"kind": "user_utterance", "tags": []},
+            science_mode=False,
+            now_ts=2_000,
+        )
+        self.assertGreater(
+            float(infused.get("memory_gravity", 0.0) or 0.0),
+            float(baseline.get("memory_gravity", 0.0) or 0.0),
+        )
+        self.assertGreater(
+            float(infused.get("selfhood_load", 0.0) or 0.0),
+            float(baseline.get("selfhood_load", 0.0) or 0.0),
+        )
+        self.assertGreater(
+            float(infused.get("agency_load", 0.0) or 0.0),
+            float(baseline.get("agency_load", 0.0) or 0.0),
+        )
+        self.assertGreater(
+            float(infused.get("boundary_load", 0.0) or 0.0),
+            float(baseline.get("boundary_load", 0.0) or 0.0),
+        )
+        self.assertGreater(
+            float(infused.get("self_activity_momentum", 0.0) or 0.0),
+            float(baseline.get("self_activity_momentum", 0.0) or 0.0),
         )
 
     def test_semantic_evidence_refresh_pipeline_builds_narrative_profile(self):
@@ -1784,6 +2015,59 @@ class WorldModelResidueTests(unittest.TestCase):
             behavior_action={"interaction_mode": "companion_reply"},
         )
         self.assertIn("自己的节奏", hint)
+
+    def test_subjective_runtime_hint_surfaces_semantic_evidence_for_guarded_contact_and_stable_selfhood(self):
+        hint = _subjective_runtime_state_hint(
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.48, "closeness": 0.46, "hurt": 0.04},
+            allostasis_state={"safety_need": 0.22, "autonomy_need": 0.28},
+            counterpart_assessment={
+                "boundary_pressure": 0.18,
+                "reciprocity": 0.54,
+                "respect_level": 0.58,
+                "stance": "open",
+            },
+            semantic_narrative_profile={
+                "continuity_depth": 0.66,
+                "bond_depth": 0.52,
+                "commitment_carry": 0.48,
+                "identity_gravity": 0.78,
+                "selfhood_integrity": 0.80,
+                "agency_drive": 0.72,
+                "support_mass_snapshot": {
+                    "bond_style": 0.78,
+                    "presence_style": 0.76,
+                    "commitment_style": 0.72,
+                    "repair_style": 0.68,
+                    "selfhood_style": 0.82,
+                    "agency_style": 0.80,
+                    "rhythm_style": 0.74,
+                },
+                "support_quality_snapshot": {
+                    "bond_style": 0.82,
+                    "presence_style": 0.80,
+                    "commitment_style": 0.78,
+                    "repair_style": 0.72,
+                    "selfhood_style": 0.86,
+                    "agency_style": 0.84,
+                    "rhythm_style": 0.76,
+                },
+                "contested_categories": ["bond_style", "presence_style", "commitment_style"],
+            },
+            behavior_policy={
+                "approach_vs_withdraw": 0.50,
+                "warmth": 0.52,
+                "self_directedness": 0.66,
+            },
+            world_model_state={
+                "presence_residue": 0.18,
+                "ambient_resonance": 0.10,
+                "self_activity_momentum": 0.18,
+            },
+            behavior_action={"interaction_mode": "relationship_sensitive"},
+        )
+        self.assertIn("靠近有关的那部分依据还没完全站稳", hint)
+        self.assertIn("自己的判断和节奏有足够支撑", hint)
 
     def test_continuity_axes_do_not_reset_across_plain_followup_turns(self):
         semantic_profile = _semantic_narrative_profile(
@@ -2481,6 +2765,305 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertGreater(float(infused.get("equality_guard") or 0.0), float(base.get("equality_guard") or 0.0))
         self.assertGreater(float(infused.get("history_weight") or 0.0), 0.0)
 
+    def test_behavior_policy_uses_contested_contact_and_selfhood_support_snapshots(self):
+        common_kwargs = {
+            "response_style_hint": "natural",
+            "emotion_state": {"label": "neutral"},
+            "bond_state": {
+                "trust": 0.64,
+                "closeness": 0.63,
+                "hurt": 0.04,
+                "irritation": 0.02,
+                "engagement_drive": 0.58,
+            },
+            "allostasis_state": {
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+                "cognitive_budget": 0.74,
+            },
+            "counterpart_assessment": {
+                "boundary_pressure": 0.08,
+                "stance": "open",
+            },
+            "world_model_state": {
+                "presence_residue": 0.20,
+                "ambient_resonance": 0.14,
+                "self_activity_momentum": 0.18,
+                "bond_depth": 0.28,
+                "companionship_pull": 0.46,
+                "task_pull": 0.14,
+                "boundary_load": 0.10,
+                "agency_load": 0.22,
+                "selfhood_load": 0.20,
+                "memory_gravity": 0.24,
+                "tension_load": 0.08,
+            },
+            "latent_state": {
+                "agency_pressure": 0.30,
+                "expression_freedom": 0.68,
+                "self_coherence": 0.76,
+            },
+            "tsundere_intensity": 0.44,
+            "science_mode": False,
+        }
+        stable = build_behavior_policy(
+            **common_kwargs,
+            semantic_narrative_profile={
+                "bond_depth": 0.66,
+                "presence_carry": 0.60,
+                "commitment_carry": 0.58,
+                "repair_residue": 0.38,
+                "boundary_residue": 0.28,
+                "selfhood_integrity": 0.44,
+                "agency_drive": 0.46,
+                "history_weight": 0.72,
+                "continuity_depth": 0.74,
+                "identity_gravity": 0.54,
+                "support_quality_snapshot": {
+                    "bond_style": 0.84,
+                    "presence_style": 0.78,
+                    "commitment_style": 0.76,
+                    "repair_style": 0.72,
+                    "boundary_style": 0.36,
+                    "selfhood_style": 0.42,
+                    "agency_style": 0.40,
+                },
+                "support_mass_snapshot": {
+                    "bond_style": 0.82,
+                    "presence_style": 0.78,
+                    "commitment_style": 0.74,
+                    "repair_style": 0.70,
+                    "boundary_style": 0.34,
+                    "selfhood_style": 0.40,
+                    "agency_style": 0.38,
+                },
+                "contested_categories": [],
+            },
+        )
+        contested = build_behavior_policy(
+            **common_kwargs,
+            semantic_narrative_profile={
+                "bond_depth": 0.66,
+                "presence_carry": 0.58,
+                "commitment_carry": 0.56,
+                "repair_residue": 0.40,
+                "boundary_residue": 0.42,
+                "selfhood_integrity": 0.64,
+                "agency_drive": 0.72,
+                "history_weight": 0.72,
+                "continuity_depth": 0.74,
+                "identity_gravity": 0.76,
+                "support_quality_snapshot": {
+                    "bond_style": 0.38,
+                    "presence_style": 0.46,
+                    "commitment_style": 0.44,
+                    "repair_style": 0.34,
+                    "boundary_style": 0.74,
+                    "selfhood_style": 0.82,
+                    "agency_style": 0.84,
+                    "rhythm_style": 0.78,
+                },
+                "support_mass_snapshot": {
+                    "bond_style": 0.42,
+                    "presence_style": 0.48,
+                    "commitment_style": 0.44,
+                    "repair_style": 0.36,
+                    "boundary_style": 0.72,
+                    "selfhood_style": 0.80,
+                    "agency_style": 0.82,
+                    "rhythm_style": 0.76,
+                },
+                "contested_categories": ["bond_style", "repair_style"],
+            },
+        )
+        self.assertGreater(
+            float(contested.get("semantic_contested_contact_pressure") or 0.0),
+            float(stable.get("semantic_contested_contact_pressure") or 0.0),
+        )
+        self.assertLess(
+            float(contested.get("approach_vs_withdraw") or 0.0),
+            float(stable.get("approach_vs_withdraw") or 0.0),
+        )
+        self.assertLess(
+            float(contested.get("disclosure") or 0.0),
+            float(stable.get("disclosure") or 0.0),
+        )
+        self.assertGreater(
+            float(contested.get("self_directedness") or 0.0),
+            float(stable.get("self_directedness") or 0.0),
+        )
+        self.assertGreater(
+            float(contested.get("boundary_assertiveness") or 0.0),
+            float(stable.get("boundary_assertiveness") or 0.0),
+        )
+
+    def test_behavior_action_uses_contested_contact_pressure_to_reduce_followup_and_openness(self):
+        common_kwargs = {
+            "current_event": {
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "今晚挺安静的，你现在想说什么就说什么。",
+                "effective_text": "今晚挺安静的，你现在想说什么就说什么。",
+                "tags": ["companion"],
+            },
+            "response_style_hint": "companion",
+            "user_text": "今晚挺安静的，你现在想说什么就说什么。",
+            "science_mode": False,
+            "emotion_state": {"label": "neutral"},
+            "bond_state": {
+                "trust": 0.72,
+                "closeness": 0.70,
+                "hurt": 0.03,
+                "irritation": 0.02,
+                "engagement_drive": 0.64,
+            },
+            "allostasis_state": {
+                "safety_need": 0.16,
+                "autonomy_need": 0.20,
+                "cognitive_budget": 0.76,
+            },
+            "counterpart_assessment": {
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.70,
+                "respect_level": 0.72,
+                "reciprocity": 0.70,
+                "stance": "open",
+                "scene": "care_bid",
+            },
+            "world_model_state": {
+                "presence_residue": 0.22,
+                "ambient_resonance": 0.14,
+                "self_activity_momentum": 0.18,
+                "companionship_pull": 0.50,
+                "task_pull": 0.12,
+            },
+            "interaction_carryover": {},
+        }
+        stable_profile = {
+            "bond_depth": 0.68,
+            "presence_carry": 0.62,
+            "commitment_carry": 0.60,
+            "repair_residue": 0.40,
+            "boundary_residue": 0.24,
+            "selfhood_integrity": 0.46,
+            "agency_drive": 0.48,
+            "history_weight": 0.74,
+            "continuity_depth": 0.76,
+            "identity_gravity": 0.58,
+            "support_quality_snapshot": {
+                "bond_style": 0.86,
+                "presence_style": 0.80,
+                "commitment_style": 0.78,
+                "repair_style": 0.72,
+                "selfhood_style": 0.42,
+                "agency_style": 0.40,
+            },
+            "support_mass_snapshot": {
+                "bond_style": 0.84,
+                "presence_style": 0.80,
+                "commitment_style": 0.76,
+                "repair_style": 0.70,
+                "selfhood_style": 0.40,
+                "agency_style": 0.38,
+            },
+            "contested_categories": [],
+        }
+        contested_profile = {
+            "bond_depth": 0.68,
+            "presence_carry": 0.60,
+            "commitment_carry": 0.58,
+            "repair_residue": 0.42,
+            "boundary_residue": 0.44,
+            "selfhood_integrity": 0.66,
+            "agency_drive": 0.72,
+            "history_weight": 0.74,
+            "continuity_depth": 0.76,
+            "identity_gravity": 0.80,
+            "support_quality_snapshot": {
+                "bond_style": 0.36,
+                "presence_style": 0.44,
+                "commitment_style": 0.42,
+                "repair_style": 0.34,
+                "boundary_style": 0.76,
+                "selfhood_style": 0.84,
+                "agency_style": 0.82,
+                "rhythm_style": 0.78,
+            },
+            "support_mass_snapshot": {
+                "bond_style": 0.40,
+                "presence_style": 0.46,
+                "commitment_style": 0.44,
+                "repair_style": 0.36,
+                "boundary_style": 0.74,
+                "selfhood_style": 0.82,
+                "agency_style": 0.80,
+                "rhythm_style": 0.78,
+            },
+            "contested_categories": ["bond_style", "repair_style"],
+        }
+        stable_policy = build_behavior_policy(
+            response_style_hint="companion",
+            emotion_state=common_kwargs["emotion_state"],
+            bond_state=common_kwargs["bond_state"],
+            allostasis_state=common_kwargs["allostasis_state"],
+            counterpart_assessment=common_kwargs["counterpart_assessment"],
+            world_model_state={
+                **common_kwargs["world_model_state"],
+                "bond_depth": 0.30,
+                "boundary_load": 0.10,
+                "agency_load": 0.20,
+                "selfhood_load": 0.18,
+                "memory_gravity": 0.24,
+                "tension_load": 0.06,
+            },
+            latent_state={
+                "agency_pressure": 0.28,
+                "expression_freedom": 0.70,
+                "self_coherence": 0.76,
+            },
+            semantic_narrative_profile=stable_profile,
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        contested_policy = build_behavior_policy(
+            response_style_hint="companion",
+            emotion_state=common_kwargs["emotion_state"],
+            bond_state=common_kwargs["bond_state"],
+            allostasis_state=common_kwargs["allostasis_state"],
+            counterpart_assessment=common_kwargs["counterpart_assessment"],
+            world_model_state={
+                **common_kwargs["world_model_state"],
+                "bond_depth": 0.30,
+                "boundary_load": 0.10,
+                "agency_load": 0.20,
+                "selfhood_load": 0.18,
+                "memory_gravity": 0.24,
+                "tension_load": 0.06,
+            },
+            latent_state={
+                "agency_pressure": 0.28,
+                "expression_freedom": 0.70,
+                "self_coherence": 0.76,
+            },
+            semantic_narrative_profile=contested_profile,
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        stable_action = _behavior_action_from_state(
+            semantic_narrative_profile=stable_profile,
+            behavior_policy=stable_policy,
+            **common_kwargs,
+        )
+        contested_action = _behavior_action_from_state(
+            semantic_narrative_profile=contested_profile,
+            behavior_policy=contested_policy,
+            **common_kwargs,
+        )
+        self.assertIn(str(stable_action.get("followup_intent") or ""), {"soft", "active"})
+        self.assertNotEqual(str(contested_action.get("followup_intent") or ""), "active")
+        self.assertIn(str(contested_action.get("disclosure_posture") or ""), {"measured", "guarded"})
+        self.assertNotEqual(str(contested_action.get("disclosure_posture") or ""), "open")
+
     def test_scene_observation_micro_opening_can_speak_when_open(self):
         action = _behavior_action_from_state(
             current_event={
@@ -3123,6 +3706,50 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(carryover.get("relationship_weather") or ""), "repair_residue")
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.16)
 
+    def test_recent_interaction_carryover_keeps_repair_weather_even_if_prior_disclosure_is_guarded(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "刚才那下我是在认真道歉，不是在走流程。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "approach_style": "steady",
+                "affect_surface": "warm",
+                "followup_intent": "soft",
+                "disclosure_posture": "guarded",
+                "attention_target": "relationship_boundary",
+                "nonverbal_signal": "measured_pause",
+                "initiative_level": 0.52,
+                "engagement_level": 0.72,
+                "action_target": "protect_relationship_boundary",
+                "primary_motive": "protect_boundary",
+                "motive_tension": "boundary_vs_closeness",
+                "goal_frame": "先守住边界和自我位置，再决定要不要继续靠近。",
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "repair_attempt",
+                "boundary_pressure": 0.05,
+                "reliability_read": 0.78,
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "刚才那下我是在认真道歉，不是在走流程。",
+                    "created_at": 100,
+                }
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            },
+            response_style_hint="relationship",
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "brief_presence")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "repair_residue")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.16)
+
     def test_recent_interaction_carryover_does_not_infer_repair_weather_from_nonrepair_relationship_turn(self):
         carryover = _recent_interaction_carryover(
             prior_current_event={
@@ -3275,6 +3902,473 @@ class WorldModelResidueTests(unittest.TestCase):
             prior_behavior_action={},
         )
         self.assertEqual(carryover, {})
+
+    def test_recent_interaction_carryover_backfills_long_horizon_own_rhythm_without_recent_non_user_event(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才是不是又去忙自己的事了？",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才是不是又去忙自己的事了？",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我刚刚也去收拾了一下桌子。",
+                    "created_at": 120,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "忙完了又想来找你说话。",
+            },
+            response_style_hint="natural",
+            world_model_state={
+                "self_activity_momentum": 0.74,
+                "agency_load": 0.58,
+                "presence_residue": 0.20,
+                "memory_gravity": 0.36,
+            },
+            semantic_narrative_profile={
+                "continuity_depth": 0.72,
+                "identity_gravity": 0.66,
+                "rhythm_continuity": 0.84,
+                "agency_drive": 0.76,
+                "history_weight": 0.48,
+                "presence_carry": 0.24,
+                "persistence_snapshot": {
+                    "rhythm_style": 0.82,
+                    "agency_style": 0.70,
+                },
+                "sedimentation_snapshot": {
+                    "rhythm_style": 0.78,
+                    "agency_style": 0.68,
+                },
+                "long_term_axis_count": 3,
+            },
+        )
+        self.assertEqual(str(carryover.get("source_event_kind") or ""), "long_horizon:semantic_continuity")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "own_rhythm")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "hold_own_rhythm")
+        self.assertEqual(str(carryover.get("attention_target") or ""), "self_then_counterpart")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.35)
+
+    def test_seeded_interaction_carryover_from_state_backfills_long_horizon_signal_without_explicit_seed(self):
+        carryover = _seeded_interaction_carryover_from_state(
+            state={},
+            prior_current_event={},
+            prior_behavior_action={},
+            seed_world_model_state={
+                "self_activity_momentum": 0.70,
+                "agency_load": 0.56,
+                "presence_residue": 0.18,
+                "memory_gravity": 0.34,
+            },
+            semantic_narrative_profile={
+                "continuity_depth": 0.68,
+                "identity_gravity": 0.62,
+                "rhythm_continuity": 0.80,
+                "agency_drive": 0.72,
+                "history_weight": 0.46,
+                "presence_carry": 0.20,
+                "persistence_snapshot": {
+                    "rhythm_style": 0.78,
+                    "agency_style": 0.66,
+                },
+                "sedimentation_snapshot": {
+                    "rhythm_style": 0.74,
+                    "agency_style": 0.64,
+                },
+                "long_term_axis_count": 2,
+            },
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.10,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "text": "我又回来找你了。",
+            },
+            response_style_hint="natural",
+        )
+        self.assertEqual(str(carryover.get("source_event_kind") or ""), "long_horizon:semantic_continuity")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "own_rhythm")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "hold_own_rhythm")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.3)
+
+    def test_long_horizon_carryover_pushes_user_turn_into_self_activity_reopen(self):
+        semantic_profile = {
+            "continuity_depth": 0.72,
+            "identity_gravity": 0.66,
+            "rhythm_continuity": 0.84,
+            "agency_drive": 0.76,
+            "history_weight": 0.48,
+            "presence_carry": 0.24,
+            "persistence_snapshot": {
+                "rhythm_style": 0.82,
+                "agency_style": 0.70,
+            },
+            "sedimentation_snapshot": {
+                "rhythm_style": 0.78,
+                "agency_style": 0.68,
+            },
+            "long_term_axis_count": 3,
+        }
+        world_model_state = {
+            "self_activity_momentum": 0.74,
+            "agency_load": 0.58,
+            "presence_residue": 0.20,
+            "memory_gravity": 0.36,
+            "bond_depth": 0.46,
+            "boundary_load": 0.12,
+        }
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才是不是又去忙自己的事了？",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才是不是又去忙自己的事了？",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我刚刚也去收拾了一下桌子。",
+                    "created_at": 120,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "忙完了又想来找你说话。",
+                "tags": [],
+            },
+            response_style_hint="natural",
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_profile,
+        )
+        action = _behavior_action_from_state(
+            current_event={
+                "kind": "user_utterance",
+                "text": "忙完了又想来找你说话。",
+                "tags": [],
+            },
+            response_style_hint="natural",
+            user_text="忙完了又想来找你说话。",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.64,
+                "closeness": 0.60,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.52,
+            },
+            allostasis_state={
+                "safety_need": 0.16,
+                "autonomy_need": 0.24,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.06,
+                "reliability_read": 0.66,
+                "stance": "open",
+            },
+            semantic_narrative_profile=semantic_profile,
+            behavior_policy={
+                "warmth": 0.58,
+                "initiative": 0.52,
+                "reply_length_bias": 0.42,
+                "approach_vs_withdraw": 0.54,
+                "boundary_assertiveness": 0.24,
+                "self_directedness": 0.62,
+                "equality_guard": 0.28,
+            },
+            world_model_state=world_model_state,
+            interaction_carryover=carryover,
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "own_rhythm")
+        self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_reopen")
+        self.assertEqual(str(action.get("action_target") or ""), "offer_small_opening")
+        self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_recent_interaction_carryover_backfills_long_horizon_warm_residue(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "刚才就是忽然想起你了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "刚才就是忽然想起你了。",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "后来我又去倒了杯水。",
+                    "created_at": 110,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "现在又有点想跟你说话。",
+            },
+            response_style_hint="natural",
+            world_model_state={
+                "bond_depth": 0.72,
+                "relationship_maturity": 0.68,
+                "presence_residue": 0.26,
+                "memory_gravity": 0.42,
+                "self_activity_momentum": 0.18,
+                "repair_load": 0.10,
+                "tension_load": 0.08,
+            },
+            semantic_narrative_profile={
+                "bond_depth": 0.82,
+                "presence_carry": 0.56,
+                "history_weight": 0.74,
+                "commitment_carry": 0.48,
+                "continuity_depth": 0.70,
+                "identity_gravity": 0.60,
+                "repair_residue": 0.12,
+                "tension_residue": 0.10,
+                "rhythm_continuity": 0.20,
+                "agency_drive": 0.18,
+                "persistence_snapshot": {
+                    "presence_style": 0.72,
+                    "commitment_style": 0.64,
+                    "bond_style": 0.76,
+                    "rhythm_style": 0.18,
+                },
+                "sedimentation_snapshot": {
+                    "bond_style": 0.74,
+                    "presence_style": 0.68,
+                    "rhythm_style": 0.16,
+                },
+                "long_term_axis_count": 3,
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.72,
+                "respect_level": 0.74,
+            },
+        )
+        self.assertEqual(str(carryover.get("source_event_kind") or ""), "long_horizon:semantic_continuity")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "warm_residue")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "offer_small_opening")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.28)
+
+    def test_recent_interaction_carryover_backfills_long_horizon_repair_residue(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "我不是想把这件事糊弄过去。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "我不是想把这件事糊弄过去。",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "只是刚才没组织好怎么说。",
+                    "created_at": 110,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "我还是想认真把这件事说完。",
+            },
+            response_style_hint="natural",
+            world_model_state={
+                "bond_depth": 0.34,
+                "relationship_maturity": 0.58,
+                "presence_residue": 0.22,
+                "memory_gravity": 0.50,
+                "repair_load": 0.62,
+                "tension_load": 0.16,
+                "self_activity_momentum": 0.12,
+            },
+            semantic_narrative_profile={
+                "bond_depth": 0.36,
+                "presence_carry": 0.30,
+                "history_weight": 0.62,
+                "commitment_carry": 0.66,
+                "continuity_depth": 0.68,
+                "identity_gravity": 0.58,
+                "repair_residue": 0.84,
+                "tension_residue": 0.20,
+                "rhythm_continuity": 0.14,
+                "agency_drive": 0.18,
+                "persistence_snapshot": {
+                    "repair_style": 0.78,
+                    "commitment_style": 0.72,
+                    "presence_style": 0.42,
+                },
+                "sedimentation_snapshot": {
+                    "repair_style": 0.76,
+                    "bond_style": 0.34,
+                },
+                "long_term_axis_count": 2,
+            },
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "repair_attempt",
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.70,
+                "respect_level": 0.66,
+            },
+        )
+        self.assertEqual(str(carryover.get("source_event_kind") or ""), "long_horizon:semantic_continuity")
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "repair_residue")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "brief_presence")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "confirm_presence")
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.28)
+
+    def test_long_horizon_warm_residue_prefers_companion_reply_over_guarded_presence(self):
+        semantic_profile = {
+            "bond_depth": 0.82,
+            "presence_carry": 0.56,
+            "history_weight": 0.74,
+            "commitment_carry": 0.48,
+            "continuity_depth": 0.70,
+            "identity_gravity": 0.60,
+            "repair_residue": 0.12,
+            "tension_residue": 0.10,
+            "rhythm_continuity": 0.20,
+            "agency_drive": 0.18,
+            "persistence_snapshot": {
+                "presence_style": 0.72,
+                "commitment_style": 0.64,
+                "bond_style": 0.76,
+            },
+            "sedimentation_snapshot": {
+                "bond_style": 0.74,
+                "presence_style": 0.68,
+            },
+            "long_term_axis_count": 3,
+        }
+        world_model_state = {
+            "bond_depth": 0.72,
+            "relationship_maturity": 0.68,
+            "presence_residue": 0.26,
+            "memory_gravity": 0.42,
+            "self_activity_momentum": 0.18,
+            "repair_load": 0.10,
+            "tension_load": 0.08,
+            "boundary_load": 0.08,
+        }
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "刚才就是忽然想起你了。",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "刚才就是忽然想起你了。",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "后来我又去倒了杯水。",
+                    "created_at": 110,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "现在又有点想跟你说话。",
+                "tags": [],
+            },
+            response_style_hint="natural",
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_profile,
+            prior_counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.72,
+                "respect_level": 0.74,
+            },
+        )
+        action = _behavior_action_from_state(
+            current_event={
+                "kind": "user_utterance",
+                "text": "现在又有点想跟你说话。",
+                "tags": [],
+            },
+            response_style_hint="natural",
+            user_text="现在又有点想跟你说话。",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.64,
+                "closeness": 0.60,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.52,
+                "repair_confidence": 0.62,
+            },
+            allostasis_state={
+                "safety_need": 0.16,
+                "autonomy_need": 0.24,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.72,
+                "respect_level": 0.74,
+            },
+            semantic_narrative_profile=semantic_profile,
+            behavior_policy={
+                "warmth": 0.58,
+                "initiative": 0.52,
+                "reply_length_bias": 0.42,
+                "approach_vs_withdraw": 0.54,
+                "boundary_assertiveness": 0.24,
+                "self_directedness": 0.52,
+                "equality_guard": 0.28,
+            },
+            world_model_state=world_model_state,
+            interaction_carryover=carryover,
+        )
+        self.assertEqual(str(carryover.get("relationship_weather") or ""), "warm_residue")
+        self.assertEqual(str(action.get("interaction_mode") or ""), "companion_reply")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertNotEqual(str(action.get("disclosure_posture") or ""), "guarded")
+        self.assertIn(str(action.get("followup_intent") or ""), {"soft", "active"})
 
     def test_behavior_action_reads_guarded_relational_weather(self):
         action = _behavior_action_from_state(
@@ -3489,6 +4583,59 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertGreater(own_rhythm_gap, baseline_gap)
 
+    def test_behavior_agenda_long_term_own_rhythm_anchor_lengthens_recheck_gap(self):
+        event = {
+            "kind": "time_idle",
+            "idle_minutes": 24,
+            "tags": ["time_idle"],
+        }
+        assessment = {
+            "stance": "open",
+            "scene": "neutral",
+            "boundary_pressure": 0.1,
+        }
+        baseline_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "quiet_recontact",
+                "carryover_strength": 0.24,
+                "presence_residue": 0.12,
+                "ambient_resonance": 0.08,
+                "self_activity_momentum": 0.18,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        anchored_gap = _behavior_agenda_next_recheck_min(
+            {
+                "kind": "deferred_checkin",
+                "trigger_family": "light_checkin",
+                "scheduled_after_min": 20,
+                "hold_count": 1,
+                "carryover_mode": "quiet_recontact",
+                "carryover_strength": 0.24,
+                "presence_residue": 0.12,
+                "ambient_resonance": 0.08,
+                "self_activity_momentum": 0.18,
+                "continuity_anchor": 0.68,
+                "own_rhythm_anchor": 0.74,
+                "recontact_anchor": 0.22,
+                "boundary_anchor": 0.20,
+                "memory_anchor": 0.18,
+                "semantic_continuity_depth": 0.76,
+                "semantic_identity_gravity": 0.72,
+                "long_term_axis_count": 3,
+            },
+            event,
+            24,
+            counterpart_assessment=assessment,
+        )
+        self.assertGreater(anchored_gap, baseline_gap)
+
     def test_behavior_agenda_releases_stale_quiet_recontact_after_repeated_busy_holds(self):
         event = {
             "kind": "time_idle",
@@ -3563,6 +4710,58 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(event.get("attention_target_hint") or ""), "own_task")
         self.assertEqual(agenda, [])
 
+    def test_promote_due_behavior_agenda_uses_long_term_anchor_to_return_life_window_to_self_activity(self):
+        event, agenda, residue = _promote_due_behavior_agenda_event_with_residue(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 36,
+                "tags": ["time_idle", "user_busy", "respect_space"],
+            },
+            [
+                {
+                    "agenda_id": "agenda-life-anchored",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "scheduled_after_min": 22,
+                    "expires_after_min": 120,
+                    "base_priority": 0.54,
+                    "priority": 0.54,
+                    "trigger_family": "life_window",
+                    "allow_interrupt": True,
+                    "note": "前面那点生活上的小事还挂着。",
+                    "source_event_kind": "scheduled_life_due",
+                    "created_at": 1,
+                    "status": "pending",
+                    "hold_count": 1,
+                    "last_recheck_at_min": 24,
+                    "carryover_mode": "small_opening",
+                    "carryover_strength": 0.24,
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "presence_residue": 0.10,
+                    "ambient_resonance": 0.08,
+                    "self_activity_momentum": 0.18,
+                    "continuity_anchor": 0.70,
+                    "own_rhythm_anchor": 0.76,
+                    "recontact_anchor": 0.24,
+                    "boundary_anchor": 0.18,
+                    "memory_anchor": 0.20,
+                    "semantic_continuity_depth": 0.74,
+                    "semantic_identity_gravity": 0.72,
+                    "long_term_axis_count": 3,
+                }
+            ],
+            counterpart_assessment={
+                "stance": "watchful",
+                "scene": "busy_not_disrespectful",
+                "boundary_pressure": 0.18,
+            },
+        )
+        self.assertEqual(str(event.get("kind") or ""), "self_activity_state")
+        self.assertEqual(agenda, [])
+        self.assertEqual(str(residue.get("kind") or ""), "released_to_self_activity")
+        self.assertGreaterEqual(float(event.get("self_activity_momentum") or 0.0), 0.58)
+
     def test_promote_due_behavior_agenda_drops_stale_recontact_instead_of_looping_forever(self):
         event, agenda = _promote_due_behavior_agenda_event(
             {
@@ -3604,6 +4803,159 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertEqual(str(event.get("kind") or ""), "time_idle")
         self.assertEqual(agenda, [])
+
+    def test_promote_due_behavior_agenda_prefers_self_activity_when_long_term_rhythm_is_high(self):
+        baseline_event, _baseline_agenda, _ = _promote_due_behavior_agenda_event_with_residue(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 24,
+                "tags": ["time_idle"],
+            },
+            [
+                {
+                    "agenda_id": "agenda-self",
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "scheduled_after_min": 20,
+                    "expires_after_min": 120,
+                    "base_priority": 0.48,
+                    "priority": 0.48,
+                    "trigger_family": "self_activity",
+                    "allow_interrupt": True,
+                    "note": "先把自己的事续上。",
+                    "source_event_kind": "time_idle",
+                    "created_at": 1,
+                    "status": "pending",
+                    "hold_count": 0,
+                    "last_recheck_at_min": 0,
+                    "carryover_mode": "own_rhythm",
+                    "carryover_strength": 0.18,
+                    "attention_target": "self_then_counterpart",
+                    "nonverbal_signal": "thought_glance",
+                    "presence_residue": 0.08,
+                    "ambient_resonance": 0.06,
+                    "self_activity_momentum": 0.18,
+                },
+                {
+                    "agenda_id": "agenda-checkin",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "scheduled_after_min": 20,
+                    "expires_after_min": 120,
+                    "base_priority": 0.60,
+                    "priority": 0.60,
+                    "trigger_family": "light_checkin",
+                    "allow_interrupt": True,
+                    "note": "过会儿轻轻确认一下。",
+                    "source_event_kind": "time_idle",
+                    "created_at": 2,
+                    "status": "pending",
+                    "hold_count": 0,
+                    "last_recheck_at_min": 0,
+                    "carryover_mode": "quiet_recontact",
+                    "carryover_strength": 0.24,
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "presence_residue": 0.12,
+                    "ambient_resonance": 0.08,
+                    "self_activity_momentum": 0.18,
+                },
+            ],
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.10,
+            },
+        )
+        anchored_event, _anchored_agenda, _ = _promote_due_behavior_agenda_event_with_residue(
+            {
+                "kind": "time_idle",
+                "idle_minutes": 24,
+                "tags": ["time_idle"],
+            },
+            [
+                {
+                    "agenda_id": "agenda-self",
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "scheduled_after_min": 20,
+                    "expires_after_min": 120,
+                    "base_priority": 0.48,
+                    "priority": 0.48,
+                    "trigger_family": "self_activity",
+                    "allow_interrupt": True,
+                    "note": "先把自己的事续上。",
+                    "source_event_kind": "time_idle",
+                    "created_at": 1,
+                    "status": "pending",
+                    "hold_count": 0,
+                    "last_recheck_at_min": 0,
+                    "carryover_mode": "own_rhythm",
+                    "carryover_strength": 0.18,
+                    "attention_target": "self_then_counterpart",
+                    "nonverbal_signal": "thought_glance",
+                    "presence_residue": 0.08,
+                    "ambient_resonance": 0.06,
+                    "self_activity_momentum": 0.18,
+                },
+                {
+                    "agenda_id": "agenda-checkin",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "scheduled_after_min": 20,
+                    "expires_after_min": 120,
+                    "base_priority": 0.60,
+                    "priority": 0.60,
+                    "trigger_family": "light_checkin",
+                    "allow_interrupt": True,
+                    "note": "过会儿轻轻确认一下。",
+                    "source_event_kind": "time_idle",
+                    "created_at": 2,
+                    "status": "pending",
+                    "hold_count": 0,
+                    "last_recheck_at_min": 0,
+                    "carryover_mode": "quiet_recontact",
+                    "carryover_strength": 0.24,
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "presence_residue": 0.12,
+                    "ambient_resonance": 0.08,
+                    "self_activity_momentum": 0.18,
+                },
+            ],
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.10,
+            },
+            world_model_state={
+                "self_activity_momentum": 0.72,
+                "agency_load": 0.58,
+                "boundary_load": 0.18,
+                "memory_gravity": 0.24,
+            },
+            semantic_narrative_profile={
+                "continuity_depth": 0.70,
+                "identity_gravity": 0.72,
+                "rhythm_continuity": 0.74,
+                "agency_drive": 0.68,
+                "boundary_residue": 0.22,
+                "history_weight": 0.20,
+                "commitment_carry": 0.18,
+                "presence_carry": 0.16,
+                "long_term_axis_count": 3,
+                "persistence_snapshot": {
+                    "rhythm_style": 0.76,
+                    "agency_style": 0.68,
+                },
+                "sedimentation_snapshot": {
+                    "rhythm_style": 0.70,
+                    "agency_style": 0.64,
+                },
+            },
+        )
+        self.assertEqual(str(baseline_event.get("kind") or ""), "scheduled_checkin_due")
+        self.assertEqual(str(anchored_event.get("kind") or ""), "self_activity_state")
 
     def test_behavior_agenda_lifecycle_residue_marks_release_to_self_activity(self):
         event, agenda, residue = _promote_due_behavior_agenda_event_with_residue(

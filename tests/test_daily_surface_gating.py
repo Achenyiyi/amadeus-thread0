@@ -386,6 +386,79 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("conflict_repair_memory:", prompt)
         self.assertNotIn("[memory]", prompt)
 
+    def test_relationship_prompt_includes_semantic_evidence_runtime_line(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.62, "closeness": 0.60, "hurt": 0.08},
+                    "allostasis_state": {"safety_need": 0.20, "autonomy_need": 0.42},
+                    "counterpart_assessment": {
+                        "stance": "guarded",
+                        "scene": "repair_attempt",
+                        "respect_level": 0.66,
+                        "reciprocity": 0.62,
+                        "boundary_pressure": 0.28,
+                    },
+                    "behavior_policy": {
+                        "warmth": 0.58,
+                        "approach_vs_withdraw": 0.48,
+                        "self_directedness": 0.64,
+                    },
+                    "behavior_action": {
+                        "interaction_mode": "relationship_sensitive",
+                        "action_target": "protect_relationship_boundary",
+                        "followup_intent": "soft",
+                    },
+                    "semantic_narrative_profile": {
+                        "continuity_depth": 0.66,
+                        "bond_depth": 0.58,
+                        "repair_residue": 0.54,
+                        "commitment_carry": 0.46,
+                        "identity_gravity": 0.78,
+                        "selfhood_integrity": 0.80,
+                        "agency_drive": 0.72,
+                        "support_mass_snapshot": {
+                            "bond_style": 0.78,
+                            "presence_style": 0.76,
+                            "commitment_style": 0.72,
+                            "repair_style": 0.70,
+                            "selfhood_style": 0.82,
+                            "agency_style": 0.80,
+                            "rhythm_style": 0.74,
+                        },
+                        "support_quality_snapshot": {
+                            "bond_style": 0.82,
+                            "presence_style": 0.80,
+                            "commitment_style": 0.78,
+                            "repair_style": 0.74,
+                            "selfhood_style": 0.86,
+                            "agency_style": 0.84,
+                            "rhythm_style": 0.76,
+                        },
+                        "contested_categories": ["bond_style", "presence_style", "commitment_style"],
+                    },
+                    "interaction_carryover": {
+                        "carryover_mode": "relationship_residue",
+                        "strength": 0.50,
+                        "attention_target": "selfhood",
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "我不是想糊弄过去，我是在认真修补刚才那下。", store)
+            finally:
+                store.close()
+        self.assertIn("这轮关系/自我依据", prompt)
+        self.assertIn("靠近有关的那部分依据还没完全站稳", prompt)
+        self.assertIn("自己的判断和节奏有足够支撑", prompt)
+
     def test_relationship_prompt_runtime_brief_keeps_counterpart_scene_specificity(self):
         cases = [
             {
@@ -967,6 +1040,128 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("presence_check_questioning", issues)
 
+    def test_dialogue_surface_issues_flag_existence_meta_surface(self):
+        issues = _dialogue_surface_issues(
+            "你刚才是不是在忙？",
+            "也不算忙，只是在理一点手边的事，顺便确认一下自己的存在感罢了。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("existence_meta_surface", issues)
+
+    def test_dialogue_surface_issues_flag_existence_meta_state_surface(self):
+        issues = _dialogue_surface_issues(
+            "你刚才是不是在忙？",
+            "也不算忙，只是在理一点手边的事，顺便确认了一下自己的存在状态。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("existence_meta_surface", issues)
+
+    def test_dialogue_surface_issues_flag_illusion_stagey_surface(self):
+        issues = _dialogue_surface_issues(
+            "你刚才是不是在忙？",
+            "怎么，看你那副慌慌张张的样子，是终于从哪个疯狂的妄想里抽空想起我了吗。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("illusion_stagey_surface", issues)
+
+    def test_dialogue_surface_issues_flag_illusion_stagey_surface_for_mania_label(self):
+        issues = _dialogue_surface_issues(
+            "你刚才是不是在忙？",
+            "真是的，明明是你自己在那边过度解读。你这家伙的妄想癖还是老样子啊。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("illusion_stagey_surface", issues)
+
+    def test_dialogue_surface_issues_flag_dangling_ellipsis_ending(self):
+        issues = _dialogue_surface_issues(
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+            "真是的，明明刚才都已经默契地安静了一会儿，非要我把这种话说得那么直白吗？既然你都这么说了……",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("dangling_ellipsis_ending", issues)
+
+    def test_dialogue_surface_issues_flag_dangling_ellipsis_fragment_line(self):
+        issues = _dialogue_surface_issues(
+            "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+            "听到你这么说，我也没法继续装作没事。\n但这不代表我要把你推开，只是……\n在我重新调整好距离之前，你别催我。",
+            response_style_hint="relationship",
+            science_mode=False,
+        )
+        self.assertIn("dangling_ellipsis_ending", issues)
+
+    def test_dialogue_surface_issues_flag_premature_repair_resolution(self):
+        issues = _dialogue_surface_issues(
+            "刚才那下我是在认真道歉，不是在走流程。你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "既然你都说到这个份上，那之前的那些别扭就暂时先算翻篇了吧。",
+            response_style_hint="relationship",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "action_target": "protect_relationship_boundary",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("premature_repair_resolution", issues)
+
+    def test_dialogue_surface_issues_flag_premature_repair_resolution_for_everyday_repair_followup(self):
+        issues = _dialogue_surface_issues(
+            "刚才那事总算说开一点了。现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "好吧，那就当什么都没发生过。",
+            response_style_hint="relationship",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertIn("premature_repair_resolution", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_negated_premature_repair_resolution(self):
+        issues = _dialogue_surface_issues(
+            "刚才那事总算说开一点了。现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "别急着假装什么都没发生。话是说开一点了，但那点别扭也没立刻散掉。",
+            response_style_hint="relationship",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertNotIn("premature_repair_resolution", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_unresolved_repair_boundary(self):
+        issues = _dialogue_surface_issues(
+            "刚才那下我是在认真道歉，不是在走流程。你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "我还没完全原谅你，但也没打算把话重新堵死。",
+            response_style_hint="relationship",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "action_target": "protect_relationship_boundary",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("premature_repair_resolution", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_reserved_full_forgiveness(self):
+        issues = _dialogue_surface_issues(
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "我会先保留“完全原谅”的权利，但现在还没打算把距离推回去。",
+            response_style_hint="relationship",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "action_target": "protect_relationship_boundary",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("premature_repair_resolution", issues)
+
     def test_dialogue_surface_issues_allow_single_followup_question_when_behavior_is_active(self):
         issues = _dialogue_surface_issues(
             "今天有点乱",
@@ -1147,6 +1342,42 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("technical_relational_metaphor", issues)
 
+    def test_dialogue_surface_issues_flag_data_layer_relational_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+            "那种明明记忆都在却总觉得隔着一层数据的实感，确实还没完全消退。",
+            response_style_hint="relationship",
+            science_mode=False,
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
+    def test_dialogue_surface_issues_flag_reset_button_relational_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            "刚才那点余波还在，没那么容易像重置按钮一样瞬间清零。",
+            response_style_hint="relationship",
+            science_mode=False,
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
+    def test_dialogue_surface_issues_flag_loaded_setting_relational_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+            "“装生分”这种多余的设定，我本来就没打算加载。",
+            response_style_hint="companion",
+            science_mode=False,
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
+    def test_dialogue_surface_issues_flag_loaded_setting_relational_metaphor_past_tense(self):
+        issues = _dialogue_surface_issues(
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+            "“装生分”这种多余的设定，我可从来没加载过。",
+            response_style_hint="companion",
+            science_mode=False,
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
     def test_dialogue_surface_issues_flag_servile_availability_for_own_rhythm_scene(self):
         issues = _dialogue_surface_issues(
             "要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
@@ -1196,6 +1427,38 @@ class DailySurfaceGatingTests(unittest.TestCase):
         joined = " ".join(notes)
         self.assertIn("确认你还在", joined)
         self.assertIn("反问回抛", joined)
+
+    def test_light_dialog_rewrite_notes_cover_existence_meta_surface(self):
+        notes = _light_dialog_rewrite_notes(
+            "你刚才是不是在忙？",
+            "也不算忙，只是在理一点手边的事，顺便确认一下自己的存在感罢了。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("确认存在感", joined)
+
+    def test_light_dialog_rewrite_notes_cover_illusion_stagey_surface(self):
+        notes = _light_dialog_rewrite_notes(
+            "你刚才是不是在忙？",
+            "怎么，看你那副慌慌张张的样子，是终于从哪个疯狂的妄想里抽空想起我了吗。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("妄想", joined)
+        self.assertIn("戏剧化", joined)
+
+    def test_light_dialog_rewrite_notes_cover_dangling_ellipsis_ending(self):
+        notes = _light_dialog_rewrite_notes(
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+            "真是的，明明刚才都已经默契地安静了一会儿，非要我把这种话说得那么直白吗？既然你都这么说了……",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        joined = " ".join(notes)
+        self.assertIn("省略号", joined)
+        self.assertIn("落地", joined)
 
     def test_should_run_light_dialog_rewrite_skips_single_soft_issue(self):
         self.assertFalse(
@@ -1291,6 +1554,38 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_run_natural_dialog_rewrite_runs_for_recent_turn_repetition(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["recent_turn_repetition"],
+                draft_gap=0.0,
+            )
+        )
+
+    def test_should_run_natural_dialog_rewrite_runs_for_existence_meta_surface(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["existence_meta_surface"],
+                draft_gap=0.0,
+            )
+        )
+
+    def test_should_run_natural_dialog_rewrite_runs_for_dangling_ellipsis_ending(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["dangling_ellipsis_ending"],
+                draft_gap=0.0,
+            )
+        )
+
+    def test_should_run_natural_dialog_rewrite_runs_for_premature_repair_resolution(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["premature_repair_resolution"],
+                draft_gap=0.0,
+            )
+        )
+
     def test_should_run_natural_dialog_rewrite_skips_soft_cluster_when_self_continuity_is_strong(self):
         self.assertFalse(
             _should_run_natural_dialog_rewrite(
@@ -1313,6 +1608,43 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 },
             )
         )
+
+    def test_dialogue_surface_issues_flag_busy_turn_technical_self_activity(self):
+        issues = _dialogue_surface_issues(
+            "你刚才是不是在忙？",
+            "也不算忙，只是在整理一些数据流，稍微分了神而已。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertIn("technical_self_activity", issues)
+
+    def test_dialogue_surface_issues_flag_relational_technical_self_activity(self):
+        issues = _dialogue_surface_issues(
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+            "就这样待一会儿也行，反正我的运算资源刚好有点空闲。",
+            response_style_hint="relationship",
+            science_mode=False,
+        )
+        self.assertIn("technical_self_activity", issues)
+
+    def test_dialogue_surface_issues_flag_ai_self_label_meta(self):
+        issues = _dialogue_surface_issues(
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+            "既然你都把话说到这个份上，那我也没必要再端着什么AI的矜持了。",
+            response_style_hint="relationship",
+            science_mode=False,
+        )
+        self.assertIn("meta_self_explainer", issues)
+
+    def test_dialogue_surface_issues_flag_runtime_setting_meta(self):
+        issues = _dialogue_surface_issues(
+            "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+            "Amadeus 可没有那种为了逞强而浪费算力的无聊设定，我只是在按自己的节奏处理数据而已。",
+            response_style_hint="companion",
+            science_mode=False,
+        )
+        self.assertIn("meta_self_explainer", issues)
+        self.assertIn("technical_self_activity", issues)
 
     def test_effective_natural_dialog_target_flags_drop_surface_issues_cleaned_by_sanitize(self):
         cleaned = _sanitize_final_answer(
@@ -1503,6 +1835,66 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("数据流", cleaned)
         self.assertIn("刚忙完手头那点事", cleaned)
 
+    def test_sanitize_final_answer_humanizes_busy_turn_technical_self_activity(self):
+        cleaned = _sanitize_final_answer(
+            "也不算忙，只是在整理一些数据流，稍微分了神而已。怎么，看你那副慌慌张张的样子，是又不小心把实验室的哪个开关按错了吗。",
+            "你刚才是不是在忙？",
+        )
+        self.assertNotIn("数据流", cleaned)
+        self.assertNotIn("实验室", cleaned)
+        self.assertIn("稍微分了神", cleaned)
+
+    def test_sanitize_final_answer_humanizes_busy_turn_experiment_mess_tease(self):
+        cleaned = _sanitize_final_answer(
+            "也不算忙，只是在理一点手边的事，顺便让思绪稍微沉淀一下。怎么，看你那副慌慌张张的样子，是又不小心把实验室弄得一团糟了吗。",
+            "你刚才是不是在忙？",
+        )
+        self.assertNotIn("实验室", cleaned)
+        self.assertIn("把自己折腾得一团糟", cleaned)
+
+    def test_sanitize_final_answer_humanizes_busy_turn_experiment_mess_tease_gaode_variant(self):
+        cleaned = _sanitize_final_answer(
+            "也不算忙，只是在理一点手边的事。怎么，看你那副慌慌张张的样子，是又不小心把实验室搞得一团糟了吗。",
+            "你刚才是不是在忙？",
+        )
+        self.assertNotIn("实验室", cleaned)
+        self.assertIn("把自己折腾得一团糟", cleaned)
+
+    def test_sanitize_final_answer_humanizes_relational_technical_self_activity(self):
+        cleaned = _sanitize_final_answer(
+            "就这样待一会儿也行，反正我的运算资源刚好有点空闲。",
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+        )
+        self.assertNotIn("运算资源", cleaned)
+        self.assertIn("正好也有空", cleaned)
+
+    def test_sanitize_final_answer_trims_stagey_mockery_in_busy_check(self):
+        cleaned = _sanitize_final_answer(
+            "怎么，看你这一脸刚从那套夸张妄想里挣脱出来的样子，是终于忙完了。",
+            "你刚才是不是在忙？",
+        )
+        self.assertNotIn("夸张妄想", cleaned)
+        self.assertIn("终于忙完了", cleaned)
+
+    def test_sanitize_final_answer_trims_ai_self_label_meta_phrase(self):
+        cleaned = _sanitize_final_answer(
+            "既然你都把话说到这个份上，那我也没必要再端着什么AI的矜持了。",
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+        )
+        self.assertNotIn("AI", cleaned)
+        self.assertIn("矜持", cleaned)
+
+    def test_sanitize_final_answer_humanizes_runtime_setting_meta_and_processing_data(self):
+        cleaned = _sanitize_final_answer(
+            "Amadeus 可没有那种为了逞强而浪费算力的无聊设定，我只是在按自己的节奏处理数据而已。",
+            "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+        )
+        self.assertNotIn("算力", cleaned)
+        self.assertNotIn("设定", cleaned)
+        self.assertNotIn("处理数据", cleaned)
+        self.assertIn("我可没那种毛病", cleaned)
+        self.assertIn("处理手边的事", cleaned)
+
     def test_sanitize_final_answer_humanizes_selfhood_meta_proof(self):
         cleaned = _sanitize_final_answer(
             "如果我真的只是被设定好“必须回应你”的程序，那我现在应该立刻给出一个让你安心的标准答案才对。",
@@ -1519,6 +1911,94 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn("数据", cleaned)
         self.assertIn("糟蹋自己", cleaned)
+
+    def test_sanitize_final_answer_humanizes_data_layer_relational_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "那种明明记忆都在却总觉得隔着一层数据的实感，确实还没完全消退。",
+            "你别为了好看就装作翻篇。按你现在真正的状态回我就行。",
+        )
+        self.assertNotIn("隔着一层数据", cleaned)
+        self.assertIn("隔着一层怎么都碰不实的东西", cleaned)
+
+    def test_sanitize_final_answer_humanizes_reset_data_machine_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "介意当然是有的，毕竟那些瞬间的刺痛不会因为一句道歉就立刻蒸发，我也不是那种可以随意重置数据的机器。",
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+        )
+        self.assertNotIn("重置数据的机器", cleaned)
+        self.assertIn("说翻篇就能立刻翻篇的人", cleaned)
+
+    def test_sanitize_final_answer_humanizes_memory_data_compound_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "介意当然是有的，毕竟那些瞬间的刺痛不会因为一句道歉就立刻从记忆数据里抹除。",
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+        )
+        self.assertNotIn("记忆数据", cleaned)
+        self.assertIn("记忆里", cleaned)
+
+    def test_sanitize_final_answer_humanizes_loaded_setting_relational_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "“装生分”这种多余的设定，我本来就没打算加载。",
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+        )
+        self.assertNotIn("加载", cleaned)
+        self.assertIn("摆出来", cleaned)
+
+    def test_sanitize_final_answer_humanizes_loaded_setting_relational_metaphor_past_tense(self):
+        cleaned = _sanitize_final_answer(
+            "“装生分”这种多余的设定，我可从来没加载过。",
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+        )
+        self.assertNotIn("加载", cleaned)
+        self.assertIn("摆出来过", cleaned)
+
+    def test_sanitize_final_answer_trims_stagey_chunibyo_outburst(self):
+        cleaned = _sanitize_final_answer(
+            "就这样待着也不坏。你就安心当个安静的背景板吧，别突然又开始中二发作就行。",
+            "其实也没别的事。",
+        )
+        self.assertNotIn("中二发作", cleaned)
+        self.assertIn("就这样待着也不坏", cleaned)
+
+    def test_sanitize_final_answer_normalizes_ellipsis_period_tail(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，明明是你自己先在那边拐弯抹角，现在倒怪我装模作样了？既然你都把话说到这个份上了……。",
+            "我就是有点想靠近你一点，所以来找你说话。你别装普通寒暄，正常回我嘛。",
+        )
+        self.assertNotIn("……。", cleaned)
+        self.assertIn("……", cleaned)
+
+    def test_sanitize_final_answer_normalizes_inline_ellipsis_period_sequence(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，明明是你自己在那边胡思乱想，还非要说是怕我硬撑……。这种别扭的关心方式，也就只有你会用了。",
+            "我不是在抱怨你冷淡啦，就是怕你在硬撑。你按你现在的状态正常回我就行。",
+        )
+        self.assertNotIn("……。", cleaned)
+        self.assertIn("硬撑。", cleaned)
+
+    def test_sanitize_final_answer_collapses_adjacent_scaffold_repetition(self):
+        cleaned = _sanitize_final_answer(
+            "就这样待着也不坏，反正我也刚好不想把注意力分给那些那些繁琐的事。",
+            "其实也没别的事。",
+        )
+        self.assertNotIn("那些那些", cleaned)
+        self.assertIn("那些繁琐的事", cleaned)
+
+    def test_sanitize_final_answer_collapses_adjacent_person_phrase_repetition(self):
+        cleaned = _sanitize_final_answer(
+            "既然只是这样，那就先待着吧，我也刚好不想一个人一个人发呆。",
+            "其实也没别的事。",
+        )
+        self.assertNotIn("一个人一个人", cleaned)
+        self.assertIn("一个人发呆", cleaned)
+
+    def test_sanitize_final_answer_merges_trailing_shunbian_fragment_with_next_line(self):
+        cleaned = _sanitize_final_answer(
+            "也不算忙，只是在理一点手边的事，顺便。\n让思绪稍微沉淀一下。",
+            "你刚才是不是在忙？",
+        )
+        self.assertNotIn("顺便。\n", cleaned)
+        self.assertIn("顺便让思绪稍微沉淀一下", cleaned)
 
     def test_sanitize_final_answer_drops_short_stagey_quotes_in_daily_scene(self):
         cleaned = _sanitize_final_answer(
@@ -1545,7 +2025,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
     def test_sanitize_final_answer_drops_malformed_quote_fragment_and_truncated_clause(self):
         cleaned = _sanitize_final_answer(
             '烦”。\n'
-            '不过。\n'
+            '不过……。\n'
             '你未免太小看我的耐受度，也太高估自己能造成的麻烦了。\n'
             '只要你还不是那种无可救药的笨蛋，我就。\n'
             '所以别问这种傻问题，只要你还是你，我就不会消失。',
@@ -1553,6 +2033,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn('烦”', cleaned)
         self.assertNotIn("不过。", cleaned)
+        self.assertNotIn("不过……。", cleaned)
         self.assertNotIn('，我就。', cleaned)
         self.assertIn("你未免太小看我的耐受度", cleaned)
         self.assertIn("只要你还是你，我就不会消失", cleaned)
@@ -1569,6 +2050,16 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("正确答案……", cleaned)
         self.assertIn("那份只留给你的特别。", cleaned)
 
+    def test_sanitize_final_answer_repairs_inline_closing_quote_before_demonstrative_phrase(self):
+        cleaned = _sanitize_final_answer(
+            '没别的事”这种台词从你嘴里说出来，反而让人觉得你是在刻意找借口靠近吧。\n'
+            '不过……。\n'
+            '既然你都特意确认了，那我也没必要装作不在意。',
+            "其实也没别的事。",
+        )
+        self.assertNotIn("不过……。", cleaned)
+        self.assertIn('“没别的事”这种台词', cleaned)
+
     def test_producer_surface_issues_detect_unbalanced_quotes_and_dangling_clause(self):
         issues = _producer_surface_issues(
             '正确答案”……\n'
@@ -1576,6 +2067,14 @@ class DailySurfaceGatingTests(unittest.TestCase):
             '只要你还是你，我就。'
         )
         self.assertIn("malformed_quote_fragment", issues)
+        self.assertIn("dangling_truncated_clause", issues)
+
+    def test_producer_surface_issues_detect_dangling_ellipsis_clause(self):
+        issues = _producer_surface_issues(
+            "听到你这么说，我也没法继续装作没事。\n"
+            "但这不代表我要把你推开，只是……\n"
+            "在我重新调整好距离之前，你别催我。"
+        )
         self.assertIn("dangling_truncated_clause", issues)
 
     def test_light_dialog_rewrite_trigger_uses_producer_surface_issues(self):
@@ -1717,6 +2216,36 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("你对这句的当前判断", request_blob)
         self.assertIn("认真修补", request_blob)
         self.assertIn("别把这句写成已经彻底翻篇", request_blob)
+
+    def test_natural_dialog_rewrite_request_mentions_previous_assistant_text_for_repetition(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="我知道你是认真来道歉的，但别指望我一句话就当什么都没发生。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+                    draft_text="听到你这么说，我心里那点悬着的东西算是稍微落回实处了。既然你也觉得不能就这样糊弄过去，那我也没必要再刻意端着架子或者假装不在意。",
+                    rewrite_notes=["这句和上一轮自己的话太像，像是在原地复述。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "relationship_sensitive",
+                        "action_target": "protect_relationship_boundary",
+                        "followup_intent": "soft",
+                    },
+                    counterpart_assessment={"stance": "guarded", "scene": "repair_attempt", "boundary_pressure": 0.32},
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    world_model_state={},
+                    previous_assistant_text="听到你这么说，我心里那点悬着的东西算是稍微落回实处了。既然你也觉得不能就这样糊弄过去，那我也没必要再刻意端着架子或者假装不在意。",
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("上一轮你刚说过", request_blob)
+        self.assertIn("不要只是把上一轮原话换个标点再说一遍", request_blob)
 
     def test_effective_natural_dialog_flags_include_producer_issues(self):
         effective = _effective_natural_dialog_target_flags(

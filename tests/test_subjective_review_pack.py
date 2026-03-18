@@ -18,6 +18,7 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertIn("event-window-naturalness", _available_presets())
         self.assertIn("relationship-selfhood", _available_presets())
         self.assertIn("relationship-weather", _available_presets())
+        self.assertIn("relationship-weather-open", _available_presets())
         self.assertIn("counterpart-scene", _available_presets())
 
     def test_daily_naturalness_preset_selects_ordinary_cases(self):
@@ -75,6 +76,28 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertEqual(mix["guarded_residue"], 1)
         self.assertEqual(mix["warm_residue"], 1)
         self.assertEqual(mix["repair_residue"], 1)
+
+    def test_relationship_weather_open_preset_selects_direct_and_everyday_weather_cases(self):
+        selected = _select_cases(None, None, preset="relationship-weather-open")
+        names = {str(item.get("name") or "").strip() for item in selected}
+        self.assertEqual(
+            names,
+            {
+                "guarded_recontact_okabe",
+                "warm_recontact_user",
+                "repair_residue_okabe",
+                "guarded_everyday_user",
+                "warm_everyday_okabe",
+                "repair_everyday_user",
+            },
+        )
+
+    def test_relationship_weather_open_mix_balances_each_weather_twice(self):
+        selected = _select_cases(None, None, preset="relationship-weather-open")
+        mix = _relationship_weather_mix(selected)
+        self.assertEqual(mix["guarded_residue"], 2)
+        self.assertEqual(mix["warm_residue"], 2)
+        self.assertEqual(mix["repair_residue"], 2)
 
     def test_counterpart_scene_preset_selects_scene_probe_cases(self):
         selected = _select_cases(None, None, preset="counterpart-scene")

@@ -3,6 +3,8 @@ from __future__ import annotations
 from ..graph_parts.nodes import (
     _node_call_model,
     _node_prepare_turn,
+)
+from ..graph_parts.tool_nodes import (
     _node_tool_execute,
     _node_tool_gate,
     _node_tool_limit,

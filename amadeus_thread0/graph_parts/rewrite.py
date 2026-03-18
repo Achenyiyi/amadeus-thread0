@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 import re
 from typing import Any
 
@@ -23,6 +24,7 @@ from .postprocess import (
     _is_playful_memory_request,
     _is_presence_reassurance_check,
     _is_soft_presence_checkin_request,
+    _line_is_near_duplicate,
     _light_dialog_drift_markers,
     _producer_surface_issues,
     _sanitize_final_answer,
@@ -78,7 +80,10 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "dangling_truncated_clause": "这句尾巴没收完整，判断停在半截。",
     "technical_self_activity": "这句把自己的当前状态写成了技术系统语言。",
     "technical_relational_metaphor": "这句在用数据、变量之类的技术隐喻说关系。",
+    "premature_repair_resolution": "这句把刚修补回来的余波收得太快，像已经翻篇或彻底原谅了。",
     "servile_availability": "这句把关系写成了无条件待命，自己的节奏和选择感掉了。",
+    "existence_meta_surface": "这句把普通接话写成了确认自身存在感，像在给自己加戏。",
+    "illusion_stagey_surface": "这句突然把对方塞进妄想、幻想一类的戏剧化框里。",
     "overquestioning": "这句让反问占得太满，判断没有真正落地。",
     "closing_interrogation": "这句明明是收口，却又把话题顶回了问号上。",
     "idle_call_interrogation": "这句把轻轻叫你一下写成了被盘问的感觉。",
@@ -87,6 +92,8 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "event_interrogative_push": "事件触发后的开口被写成了反问顶人。",
     "event_pushy_directive": "事件触发后的开口被写成了催促或命令。",
     "event_window_task_reframe": "这句把顺手想起对方的窗口写成了任务、流程或待处理事项。",
+    "recent_turn_repetition": "这句和上一轮自己的话太像，像是在原地复述。",
+    "dangling_ellipsis_ending": "这句最后停在省略号上，像话没收住。",
 }
 
 
@@ -161,10 +168,16 @@ def _light_dialog_rewrite_notes(
         notes.append("这版在用数据、变量一类的技术隐喻说关系，还是太像模型脑内语言。")
     if "servile_availability" in issues:
         notes.append("这版把关系写成了无条件待命，自己的选择、节奏和会不会靠近的主观性掉了。")
+    if "existence_meta_surface" in issues:
+        notes.append("这版把普通回头接话写成了确认存在感，像在给自己加戏。")
+    if "illusion_stagey_surface" in issues:
+        notes.append("这版突然把对方塞进妄想或幻想的戏剧化框里，像在复用夸张旧梗。")
     if "malformed_quote_fragment" in producer_issue_set:
         notes.append("这版自己生成了残缺引号或半截短语，句子没真正说完整。")
     if "dangling_truncated_clause" in producer_issue_set:
         notes.append("这版有半截收不住的句尾，判断停在了半空。")
+    if "dangling_ellipsis_ending" in issues:
+        notes.append("这版最后停在省略号上，像话只说到一半，没有真正落地。")
     if "quoted_stagey_phrase" in issues:
         notes.append("这版在轻场景里硬塞了带引号的舞台词，容易显得像在表演角色。")
     if "stagey_ping_template" in issues:
@@ -230,6 +243,9 @@ def _should_run_light_dialog_rewrite(
         "playful_memory_snapback",
         "technical_relational_metaphor",
         "servile_availability",
+        "existence_meta_surface",
+        "illusion_stagey_surface",
+        "dangling_ellipsis_ending",
         "duplicate_line",
     }
     if issues & hard_issue_keys:
@@ -292,12 +308,17 @@ def _should_run_natural_dialog_rewrite(
         "quoted_stagey_phrase",
         "technical_self_activity",
         "technical_relational_metaphor",
+        "premature_repair_resolution",
         "servile_availability",
+        "existence_meta_surface",
+        "illusion_stagey_surface",
         "closing_interrogation",
         "presence_check_questioning",
         "event_interrogative_push",
         "event_pushy_directive",
         "event_window_task_reframe",
+        "recent_turn_repetition",
+        "dangling_ellipsis_ending",
     }
     medium_issue_keys = {
         "overquestioning",
@@ -410,6 +431,7 @@ def _rewrite_light_dialog_answer(
     semantic_narrative_profile: dict[str, Any] | None = None,
     counterpart_assessment: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
+    previous_assistant_text: str = "",
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     focus = str(focus_text or "").strip()
@@ -478,6 +500,12 @@ def _rewrite_light_dialog_answer(
             request_parts.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}\n")
         if "stagey_ping_template" in issue_keys:
             request_parts.append("别再用点名加反问的固定招呼开场，像熟人重新接上线那样自然一点。\n")
+        if "existence_meta_surface" in issue_keys:
+            request_parts.append("不要把这一下写成确认自己的存在感或刻意给自己加戏。\n")
+        if "illusion_stagey_surface" in issue_keys:
+            request_parts.append("不要突然把对方塞进妄想、幻想或中二旧梗的框里。\n")
+        if "dangling_ellipsis_ending" in issue_keys:
+            request_parts.append("最后判断要真正落地，不要停在省略号上。\n")
         if extra_guidance:
             request_parts.append(f"{extra_guidance.strip()}\n")
         if note_block:
@@ -514,6 +542,8 @@ def _rewrite_light_dialog_answer(
         score -= 0.82 * float("technical_self_activity" in issues)
         score -= 0.88 * float("technical_relational_metaphor" in issues)
         score -= 0.92 * float("servile_availability" in issues)
+        score -= 0.86 * float("existence_meta_surface" in issues)
+        score -= 0.84 * float("illusion_stagey_surface" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
         score -= 0.76 * float("stock_support_template" in issues)
         score -= 0.68 * float("care_cover_story" in issues)
@@ -530,6 +560,7 @@ def _rewrite_light_dialog_answer(
         score -= 0.62 * float("return_interrogation" in issues)
         score -= 0.82 * float("return_suspicion" in issues)
         score -= 0.90 * float("playful_memory_snapback" in issues)
+        score -= 0.74 * float("dangling_ellipsis_ending" in issues)
         if re.search(r"[“”\"]", candidate):
             score -= 0.42
         if re.search(r"[？?]\s*$", candidate):
@@ -598,11 +629,15 @@ def _rewrite_light_dialog_answer(
         ("stagey_ping_template", "开场用了固定招呼模板，像在复用同一种起手。"),
         ("technical_self_activity", "把自己当前状态写成了缓存、数据流、线程或系统状态。"),
         ("technical_relational_metaphor", "关系被写成了数据、变量之类的技术隐喻。"),
+        ("premature_repair_resolution", "修补后的余波被收得太快，像已经翻篇或彻底原谅了。"),
         ("servile_availability", "关系被写成了无条件待命，自己的节奏和选择感掉了。"),
+        ("existence_meta_surface", "普通接话被写成了确认自己的存在感，像在给自己加戏。"),
+        ("illusion_stagey_surface", "这里突然把对方塞进妄想或幻想的戏剧化框里。"),
         ("stock_support_template", "这里滑回了现成照料桥段，眼前这一下的在场感不够。"),
         ("care_cover_story", "关心后面又补了一层撇清尾巴，像标准傲娇遮掩。"),
         ("quoted_stagey_phrase", "这里用了带引号的舞台词或现成角色梗，表演感偏重。"),
         ("overquestioning", "反问占得太满，判断、吐槽或在场感没有真正落下来。"),
+        ("dangling_ellipsis_ending", "最后停在省略号上，像话没收住。"),
         ("closing_interrogation", "这句明明是收尾，却又把话题顶回了反问。"),
         ("loaded_goodnight", "临睡前的收尾被写得太满，还塞了多余说明。"),
         ("idle_call_interrogation", "轻轻叫你一下被写成了被盘问的感觉。"),
@@ -681,6 +716,25 @@ def _rewrite_light_dialog_answer(
         non_terminal_question = [item for item in candidate_pool if not re.search(r"[？?]\s*$", item[1])]
         if non_terminal_question:
             candidate_pool = non_terminal_question
+    if {"existence_meta_surface", "illusion_stagey_surface", "dangling_ellipsis_ending"} & set(issue_keys):
+        surface_filtered = [
+            item
+            for item in candidate_pool
+            if not (
+                {"existence_meta_surface", "illusion_stagey_surface", "dangling_ellipsis_ending"}
+                & set(
+                    _dialogue_surface_issues(
+                        user_text,
+                        item[1],
+                        response_style_hint="natural",
+                        science_mode=False,
+                        behavior_action=behavior_action,
+                    )
+                )
+            )
+        ]
+        if surface_filtered:
+            candidate_pool = surface_filtered
     candidate_pool.sort(key=lambda item: item[0], reverse=True)
     return candidate_pool[0][1]
 
@@ -698,6 +752,7 @@ def _rewrite_natural_dialog_answer(
     semantic_narrative_profile: dict[str, Any] | None = None,
     counterpart_assessment: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
+    previous_assistant_text: str = "",
 ) -> str:
     notes = [str(item).strip() for item in (rewrite_notes or []) if str(item or "").strip()]
     if not draft_text or not notes:
@@ -733,6 +788,27 @@ def _rewrite_natural_dialog_answer(
         semantic_narrative_profile=semantic_narrative_profile,
         world_model_state=world_model_state,
     )
+    previous_assistant_text = str(previous_assistant_text or "").strip()
+    issue_keys = set(
+        _dialogue_surface_issues(
+            user_text,
+            draft_text,
+            response_style_hint=response_style_hint,
+            science_mode=science_mode,
+            current_event=current_event,
+            behavior_action=behavior_action,
+        )
+    )
+    scene = str((counterpart_assessment or {}).get("scene") or "").strip().lower()
+    scene_surface_guidance = ""
+    if scene == "care_bid":
+        scene_surface_guidance = "这是一次认真靠近，不要退回 AI 助手、系统身份或角色说明。"
+    elif scene == "repair_attempt":
+        scene_surface_guidance = "这是在认真修补，既要接住补救意图，也不要把话写成已经翻篇、彻底原谅，或把半句悬在省略号上。"
+    elif scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
+        scene_surface_guidance = "这句可以保留防备和余波，但不要用重置、清零、按钮一类技术比喻，也不要把半句悬在省略号上。"
+    elif scene == "busy_not_disrespectful":
+        scene_surface_guidance = "这是忙里回头，不要额外加戏，也不要把普通状态写成夸张隐喻。"
 
     def _rewrite_once(system_prompt: str, request_text: str, *, max_tokens: int) -> str:
         raw = _invoke_model_with_retries(
@@ -782,9 +858,13 @@ def _rewrite_natural_dialog_answer(
         score -= 0.70 * float("defensive_meta" in issues)
         score -= 0.70 * float("counselor_tone" in issues)
         score -= 0.88 * float("technical_relational_metaphor" in issues)
+        score -= 1.00 * float("premature_repair_resolution" in issues)
         score -= 0.94 * float("servile_availability" in issues)
+        score -= 0.92 * float("existence_meta_surface" in issues)
+        score -= 0.88 * float("illusion_stagey_surface" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
         score -= 0.72 * float("overquestioning" in issues)
+        score -= 0.78 * float("dangling_ellipsis_ending" in issues)
         score -= 0.88 * float("closing_interrogation" in issues)
         score -= 0.94 * float("idle_call_interrogation" in issues)
         score -= 1.02 * float("presence_check_questioning" in issues)
@@ -803,6 +883,13 @@ def _rewrite_natural_dialog_answer(
             score -= 0.22 * float(sentence_count - 3)
         if _norm_text(candidate) == _norm_text(draft_text):
             score -= 0.12
+        if previous_assistant_text:
+            if _line_is_near_duplicate(previous_assistant_text, candidate):
+                score -= 1.12
+            else:
+                sim = SequenceMatcher(None, _norm_text(previous_assistant_text), _norm_text(candidate)).ratio()
+                if sim >= 0.84:
+                    score -= 0.68
         score += _rewrite_behavior_consistency_adjustment(
             candidate,
             behavior_action=behavior_action,
@@ -813,12 +900,15 @@ def _rewrite_natural_dialog_answer(
     request = (
         f"用户刚才说：{user_text}\n"
         f"当前草稿：{draft_text}\n"
+        f"{'上一轮你刚说过：' + previous_assistant_text + chr(10) if previous_assistant_text else ''}"
         "把这句收回到更自然的人与人对话尺度，保留同一轮情绪和立场，不新增设定。\n"
         f"{'关系余波：' + relationship_weather_guidance + chr(10) if relationship_weather_guidance else ''}"
         f"{'你对这句的当前判断：' + counterpart_scene_guidance + chr(10) if counterpart_scene_guidance else ''}"
+        f"{'这类场景的表面收束：' + scene_surface_guidance + chr(10) if scene_surface_guidance else ''}"
         f"{'当前更自然的主动倾向：' + motive_state_hint + chr(10) if motive_state_hint else ''}"
         f"{'这轮互动自然倾向：' + user_turn_behavior_pref_lines[0] + chr(10) if user_turn_behavior_pref_lines and not event_reply_rewrite else ''}"
         f"修正点：\n{note_block}\n"
+        f"{'不要只是把上一轮原话换个标点再说一遍。' + chr(10) if previous_assistant_text else ''}"
         "只输出修正后的最终话语。"
     )
     editor_prompt = (
@@ -865,6 +955,15 @@ def _rewrite_natural_dialog_answer(
             candidate = _rewrite_once(editor_prompt, life_request, max_tokens=140)
             if candidate:
                 candidates.append((_candidate_local_score(candidate), candidate))
+    if "premature_repair_resolution" in issue_keys:
+        repair_request = (
+            request
+            + "\n额外要求：这是刚修补回一点的状态。不要直接写成翻篇、当没发生或已经原谅。"
+            + "保留那点余波和分寸，让边界落在陈述里，不要再用反问把人顶回去。"
+        )
+        candidate = _rewrite_once(editor_prompt, repair_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:
         return ""
     candidate_pool = list(candidates)
@@ -886,6 +985,9 @@ def _rewrite_natural_dialog_answer(
                 "event_pushy_directive",
                 "event_window_task_reframe",
                 "technical_self_activity",
+                "existence_meta_surface",
+                "illusion_stagey_surface",
+                "dangling_ellipsis_ending",
             }:
                 continue
             filtered.append(item)
@@ -918,5 +1020,59 @@ def _rewrite_natural_dialog_answer(
         no_question_filtered = [item for item in candidate_pool if "？" not in item[1] and "?" not in item[1]]
         if no_question_filtered:
             candidate_pool = no_question_filtered
+    if previous_assistant_text:
+        non_repeating = [item for item in candidate_pool if not _line_is_near_duplicate(previous_assistant_text, item[1])]
+        if non_repeating:
+            candidate_pool = non_repeating
+    if {"premature_repair_resolution", "dangling_ellipsis_ending", "overquestioning"} & set(issue_keys):
+        repair_surface_filtered = []
+        for item in candidate_pool:
+            issues = set(
+                _dialogue_surface_issues(
+                    user_text,
+                    item[1],
+                    response_style_hint=response_style_hint,
+                    science_mode=science_mode,
+                    current_event=current_event,
+                    behavior_action=behavior_action,
+                )
+            )
+            if issues & {"premature_repair_resolution", "dangling_ellipsis_ending", "overquestioning"}:
+                continue
+            repair_surface_filtered.append(item)
+        if repair_surface_filtered:
+            candidate_pool = repair_surface_filtered
+    if scene in {
+        "busy_not_disrespectful",
+        "care_bid",
+        "repair_attempt",
+        "friction",
+        "relationship_degradation",
+        "boundary_non_compliance",
+    }:
+        scene_filtered = []
+        for item in candidate_pool:
+            issues = set(
+                _dialogue_surface_issues(
+                    user_text,
+                    item[1],
+                    response_style_hint=response_style_hint,
+                    science_mode=science_mode,
+                    current_event=current_event,
+                    behavior_action=behavior_action,
+                )
+            )
+            if issues & {
+                "meta_self_explainer",
+                "technical_relational_metaphor",
+                "premature_repair_resolution",
+                "existence_meta_surface",
+                "illusion_stagey_surface",
+                "dangling_ellipsis_ending",
+            }:
+                continue
+            scene_filtered.append(item)
+        if scene_filtered:
+            candidate_pool = scene_filtered
     candidate_pool.sort(key=lambda item: item[0], reverse=True)
     return candidate_pool[0][1]
