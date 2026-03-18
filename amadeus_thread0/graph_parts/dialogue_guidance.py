@@ -79,6 +79,152 @@ def _semantic_motive_state_hint(
     return " ".join(parts[: 1 if light_touch else 2])
 
 
+def _semantic_snapshot_level(snapshot: dict[str, Any], categories: tuple[str, ...]) -> float:
+    if not isinstance(snapshot, dict) or not categories:
+        return 0.0
+    return _clamp01(max(_clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
+
+
+def _semantic_contested_pressure(contested_categories: set[str], categories: tuple[str, ...], confidence: float) -> float:
+    if not categories:
+        return 0.0
+    hit_ratio = sum(1.0 for category in categories if category in contested_categories) / float(len(categories))
+    if hit_ratio <= 0.0:
+        return 0.0
+    return _clamp01(0.72 * hit_ratio + 0.28 * max(0.0, 1.0 - _clamp01(confidence, 0.0)), 0.0)
+
+
+def _semantic_behavior_evidence(
+    semantic_narrative_profile: dict[str, Any] | None,
+    behavior_policy: dict[str, Any] | None = None,
+) -> dict[str, float]:
+    narrative = dict(semantic_narrative_profile or {})
+    policy = dict(behavior_policy or {})
+    support_mass_snapshot = (
+        narrative.get("support_mass_snapshot") if isinstance(narrative.get("support_mass_snapshot"), dict) else {}
+    )
+    support_quality_snapshot = (
+        narrative.get("support_quality_snapshot")
+        if isinstance(narrative.get("support_quality_snapshot"), dict)
+        else {}
+    )
+    contested_categories = {
+        str(item).strip()
+        for item in (
+            narrative.get("contested_categories")
+            if isinstance(narrative.get("contested_categories"), list)
+            else []
+        )
+        if str(item or "").strip()
+    }
+    continuity_depth = _clamp01(narrative.get("continuity_depth"), 0.0)
+    identity_gravity = _clamp01(narrative.get("identity_gravity"), 0.0)
+    bond_depth = _clamp01(narrative.get("bond_depth"), 0.0)
+    commitment_carry = _clamp01(narrative.get("commitment_carry"), 0.0)
+    selfhood_integrity = _clamp01(narrative.get("selfhood_integrity"), 0.0)
+    agency_drive = _clamp01(narrative.get("agency_drive"), 0.0)
+
+    contact_categories = ("bond_style", "presence_style", "commitment_style", "repair_style")
+    repair_categories = ("repair_style", "bond_style", "commitment_style")
+    boundary_categories = ("boundary_style", "selfhood_style")
+    selfhood_categories = ("selfhood_style", "agency_style", "rhythm_style")
+    agency_categories = ("agency_style", "rhythm_style", "selfhood_style")
+
+    def support_confidence(categories: tuple[str, ...]) -> float:
+        mass = _semantic_snapshot_level(support_mass_snapshot, categories)
+        quality = _semantic_snapshot_level(support_quality_snapshot, categories)
+        return _clamp01(0.64 * quality + 0.36 * mass, 0.0)
+
+    contact_confidence = _clamp01(
+        0.62 * support_confidence(contact_categories)
+        + 0.20 * continuity_depth
+        + 0.10 * bond_depth
+        + 0.08 * commitment_carry,
+        0.0,
+    )
+    repair_confidence = _clamp01(
+        0.68 * support_confidence(repair_categories) + 0.20 * continuity_depth + 0.12 * commitment_carry,
+        0.0,
+    )
+    boundary_confidence = _clamp01(
+        0.58 * support_confidence(boundary_categories) + 0.24 * identity_gravity + 0.18 * continuity_depth,
+        0.0,
+    )
+    selfhood_confidence = _clamp01(
+        0.52 * support_confidence(selfhood_categories)
+        + 0.24 * identity_gravity
+        + 0.14 * continuity_depth
+        + 0.10 * selfhood_integrity,
+        0.0,
+    )
+    agency_confidence = _clamp01(
+        0.54 * support_confidence(agency_categories)
+        + 0.24 * identity_gravity
+        + 0.12 * continuity_depth
+        + 0.10 * agency_drive,
+        0.0,
+    )
+
+    return {
+        "contact_confidence": _clamp01(policy.get("semantic_contact_confidence"), contact_confidence),
+        "repair_confidence": _clamp01(policy.get("semantic_repair_confidence"), repair_confidence),
+        "boundary_confidence": _clamp01(policy.get("semantic_boundary_confidence"), boundary_confidence),
+        "selfhood_confidence": _clamp01(policy.get("semantic_selfhood_confidence"), selfhood_confidence),
+        "agency_confidence": _clamp01(policy.get("semantic_agency_confidence"), agency_confidence),
+        "contested_contact_pressure": _clamp01(
+            policy.get("semantic_contested_contact_pressure"),
+            _semantic_contested_pressure(contested_categories, contact_categories, contact_confidence),
+        ),
+        "contested_boundary_pressure": _clamp01(
+            policy.get("semantic_contested_boundary_pressure"),
+            _semantic_contested_pressure(contested_categories, boundary_categories, boundary_confidence),
+        ),
+        "contested_selfhood_pressure": _clamp01(
+            policy.get("semantic_contested_selfhood_pressure"),
+            _semantic_contested_pressure(contested_categories, selfhood_categories, selfhood_confidence),
+        ),
+    }
+
+
+def _semantic_evidence_runtime_lines(
+    *,
+    semantic_narrative_profile: dict[str, Any] | None,
+    behavior_policy: dict[str, Any] | None = None,
+    light_touch: bool = False,
+) -> list[str]:
+    evidence = _semantic_behavior_evidence(semantic_narrative_profile, behavior_policy)
+    contact_confidence = _clamp01(evidence.get("contact_confidence"), 0.0)
+    repair_confidence = _clamp01(evidence.get("repair_confidence"), 0.0)
+    boundary_confidence = _clamp01(evidence.get("boundary_confidence"), 0.0)
+    selfhood_confidence = _clamp01(evidence.get("selfhood_confidence"), 0.0)
+    agency_confidence = _clamp01(evidence.get("agency_confidence"), 0.0)
+    contested_contact = _clamp01(evidence.get("contested_contact_pressure"), 0.0)
+    contested_boundary = _clamp01(evidence.get("contested_boundary_pressure"), 0.0)
+    contested_selfhood = _clamp01(evidence.get("contested_selfhood_pressure"), 0.0)
+    parts: list[str] = []
+
+    if contested_contact >= 0.44:
+        parts.append("和靠近有关的那部分依据还没完全站稳，所以就算想接住对方，靠近幅度也会先收一点。")
+    elif contact_confidence >= 0.68 and repair_confidence >= 0.56:
+        parts.append("关于熟悉感和修补的依据都还稳，这句更像顺着关系往下接，不用刻意证明亲近。")
+    elif contact_confidence >= 0.62:
+        parts.append("熟悉感背后的依据是稳的，所以这句可以像延续，不必像试探。")
+
+    if boundary_confidence >= 0.62 and contested_boundary >= 0.44:
+        parts.append("边界这边的依据也在发力，所以不会为了把气氛说圆，就把那点不舒服直接抹平。")
+    elif max(selfhood_confidence, agency_confidence) >= 0.68:
+        parts.append("自己的判断和节奏有足够支撑，所以就算在意对方，也不会把自己说空。")
+    elif contested_selfhood >= 0.46 and max(selfhood_confidence, agency_confidence) >= 0.54:
+        parts.append("就算心里有拉扯，自我这边也不会轻易退场。")
+
+    deduped: list[str] = []
+    for item in parts:
+        text = str(item or "").strip()
+        if text and text not in deduped:
+            deduped.append(text)
+    return deduped[:1] if light_touch else deduped[:2]
+
+
 def _plain_contact_ping_needs_relational_guard(
     *,
     bond_state: dict[str, Any] | None,
@@ -168,6 +314,11 @@ def _subjective_runtime_state_hint(
     narrative_rhythm = _clamp01(narrative.get("rhythm_continuity"), 0.0)
     motive_vector = semantic_motive_vector(narrative)
     motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
+    semantic_evidence_lines = _semantic_evidence_runtime_lines(
+        semantic_narrative_profile=semantic_narrative_profile,
+        behavior_policy=behavior_policy,
+        light_touch=light_touch,
+    )
     motive_hint = _semantic_motive_state_hint(semantic_narrative_profile, light_touch=light_touch)
     parts: list[str] = []
 
@@ -208,8 +359,15 @@ def _subjective_runtime_state_hint(
     elif ambient_resonance > 0.56:
         parts.append("周围那点小余波还留在感知里，会自然带进这一句。")
 
-    if motive_hint:
+    if semantic_evidence_lines:
         insert_at = 1 if parts else 0
+        for offset, line in enumerate(semantic_evidence_lines):
+            text = str(line or "").strip()
+            if text and text not in parts:
+                parts.insert(insert_at + offset, text)
+
+    if motive_hint:
+        insert_at = min(len(parts), 2) if parts else 0
         parts.insert(insert_at, motive_hint)
 
     if narrative_tension > 0.48 or narrative_repair > 0.48:
@@ -533,11 +691,13 @@ def _user_turn_behavior_preference_lines(
     behavior_action: dict[str, Any] | None,
     counterpart_assessment: dict[str, Any] | None = None,
     semantic_narrative_profile: dict[str, Any] | None = None,
+    behavior_policy: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
 ) -> list[str]:
     action = dict(behavior_action or {})
     assessment = dict(counterpart_assessment or {})
     narrative = dict(semantic_narrative_profile or {})
+    policy = dict(behavior_policy or {})
     world = dict(world_model_state or {})
     interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
     action_target = str(action.get("action_target") or "").strip().lower()
@@ -549,6 +709,12 @@ def _user_turn_behavior_preference_lines(
     narrative_history = _clamp01(narrative.get("history_weight"), 0.0)
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
     presence_residue = _clamp01(world.get("presence_residue"), 0.0)
+    semantic_evidence_lines = _semantic_evidence_runtime_lines(
+        semantic_narrative_profile=narrative,
+        behavior_policy=policy,
+        light_touch=True,
+    )
+    semantic_evidence_line = str(semantic_evidence_lines[0] or "").strip() if semantic_evidence_lines else ""
     primary_lines: list[str] = []
     nuance_lines: list[str] = []
     followup_lines: list[str] = []
@@ -581,6 +747,12 @@ def _user_turn_behavior_preference_lines(
             primary_lines.append("这轮更像顺着还没散掉的在场感自然接一句，不必重新起势。")
         else:
             primary_lines.append("这轮更像把当下接住，顺着熟悉感自然回一句，不用刻意制造大起伏。")
+
+    if semantic_evidence_line:
+        if primary_lines and (interaction_mode == "relationship_sensitive" or action_target == "protect_relationship_boundary"):
+            primary_lines[0] = primary_lines[0].rstrip("。") + "，" + semantic_evidence_line
+        elif len(primary_lines) + len(followup_lines) + len(nuance_lines) <= 1:
+            nuance_lines.append(f"这轮关系/自我依据也更接近这样：{semantic_evidence_line}")
 
     if followup_intent == "none":
         followup_lines.append("说到当下就可以先停住，不必为了维持热络再补追问。")

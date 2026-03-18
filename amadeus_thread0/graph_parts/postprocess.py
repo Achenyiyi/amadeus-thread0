@@ -144,12 +144,84 @@ def _has_relational_technical_metaphor(text: str) -> bool:
         return False
     return bool(
         re.search(
-            r"(外部变量|听觉数据|脆弱程序|记忆和数据构成|由你的记忆和数据构成|对一段[^，。！？!?]{0,12}数据说话|只会自我损耗的数据)",
+            r"(外部变量|听觉数据|脆弱程序|记忆和数据构成|由你的记忆和数据构成|对一段[^，。！？!?]{0,12}数据说话|只会自我损耗的数据|隔着一层数据|繁琐的数据|数据都在却|记忆数据|重置数据的机器|随意重置数据|重置按钮|一键清零|清零按钮|没打算加载|打算加载|没加载过|从来没加载过|加载过|加载这种[^。！？!?]{0,8}设定|设定[^。！？!?]{0,12}加载)",
             compact,
             re.I,
         )
     )
 
+
+
+
+def _has_premature_repair_resolution(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    affirmative_patterns = (
+        r"(?:那|那就|就|先|暂时|就先|先算|暂时先|算|算是|已经|都)[^。！？!?]{0,10}翻篇(?:了)?(?:吧)?",
+        r"(?:暂时先算|先算|就算|算是)[^。！？!?]{0,6}翻篇(?:了)?(?:吧)?",
+        r"(?:一笔勾销|都过去了|就这么过去吧|就此过去吧|当(?:作)?(?:什么都)?没发生(?:过)?)",
+        r"(?:完全原谅(?:你)?(?:了|吧)|已经原谅(?:你)?(?:了|啦|吧)?|原谅(?:你)?(?:了|吧))",
+    )
+    negated_patterns = (
+        r"(?:别(?!扭)|不|没|还没|不像|不是|不会|别急着)[^。！？!?]{0,10}(?:翻篇(?:了)?|一笔勾销|当(?:作)?(?:什么都)?没发生(?:过)?)",
+        r"(?:别装作|别假装)[^。！？!?]{0,10}(?:没发生(?:过)?|翻篇(?:了)?)",
+        r"(?:没打算|不想)[^。！？!?]{0,8}(?:翻篇(?:了)?|一笔勾销)",
+        r"(?:别(?!扭)|不|没|还没|不像|不是|不会)[^。！？!?]{0,8}(?:完全原谅|原谅(?:你)?(?:了)?)",
+    )
+    if any(re.search(pattern, compact) for pattern in affirmative_patterns):
+        if any(re.search(pattern, compact) for pattern in negated_patterns):
+            positive_only = compact
+            for pattern in negated_patterns:
+                positive_only = re.sub(pattern, "", positive_only)
+            return any(re.search(pattern, positive_only) for pattern in affirmative_patterns)
+        return True
+    return False
+
+
+def _is_repair_sensitive_turn(
+    user_text: str,
+    *,
+    current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
+) -> bool:
+    compact = str(user_text or "").strip()
+    if not compact:
+        return False
+    current_event_kind = str((current_event or {}).get("kind") or "user_utterance").strip().lower()
+    if current_event_kind != "user_utterance":
+        return False
+    action = dict(behavior_action or {})
+    relationship_weather = str(
+        action.get("relationship_weather")
+        or (current_event or {}).get("relationship_weather")
+        or ""
+    ).strip().lower()
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    action_target = str(action.get("action_target") or "").strip().lower()
+    if relationship_weather == "repair_residue":
+        return True
+    if action_target == "protect_relationship_boundary":
+        return True
+    if interaction_mode == "relationship_sensitive" and re.search(
+        r"(说开一点|别装作(?:完全)?没事|别假装(?:什么都)?没发生|别完全原谅|别装成.*陌生人|不是在走流程)",
+        compact,
+    ):
+        return True
+    return _has_any_marker(
+        compact,
+        {
+            *APOLOGY_KEYWORDS,
+            "来跟你道歉",
+            "来道歉",
+            "来认错",
+            "认真道歉",
+            "认真来跟你道歉",
+            "补回来",
+            "弥补",
+            "不是在走流程",
+        },
+    ) or bool(re.search(r"不是想(?:随便)?把.*(?:糊弄|敷衍)过去", compact))
 
 
 def _has_servile_availability_phrase(text: str) -> bool:
@@ -416,6 +488,21 @@ def _is_self_rhythm_smalltalk_request(user_text: str) -> bool:
         "在做什么",
         "忙什么",
         "在忙什么",
+    }
+    return _has_any_marker(text, markers)
+
+
+def _is_busy_status_check(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    markers = {
+        "你刚才是不是在忙",
+        "你刚才是在忙",
+        "你刚才在忙吗",
+        "刚才在忙吗",
+        "你在忙吗",
+        "是不是在忙",
     }
     return _has_any_marker(text, markers)
 
@@ -1016,7 +1103,7 @@ def _trim_stagey_ping_surface(text: str) -> str:
     kept = [
         chunk
         for chunk in chunks
-        if not re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯)", chunk)
+        if not re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯|夸张妄想|奇怪的妄想|中二病|中二发作)", chunk)
     ]
     if kept:
         return "\n".join(kept).strip()
@@ -1027,6 +1114,13 @@ def _trim_stagey_ping_surface(text: str) -> str:
         "",
         str(text or "").strip(),
     ).strip(" ，,。！？!?…")
+    softened = re.sub(
+        r"^\s*(?:怎么[，, ]*)?(?:看你这一脸)?刚从那套?(?:夸张妄想|奇怪的妄想)[^，。！？!?…]*[，, ]*",
+        "",
+        softened,
+    ).strip(" ，,。！？!?…")
+    softened = re.sub(r"^\s*你这中二病还是老样子啊[，,。！？!?… ]*", "", softened).strip(" ，,。！？!?…")
+    softened = re.sub(r"^\s*别突然又开始中二发作了?[，,。！？!?… ]*", "", softened).strip(" ，,。！？!?…")
     if softened and not re.search(r"[。！？!?…]$", softened):
         softened = f"{softened}。"
     return softened
@@ -1086,6 +1180,24 @@ def _trim_idle_presence_surface(text: str) -> str:
     cleaned = re.sub(r"[，, ]{2,}", "，", cleaned).strip(" ，,")
     if cleaned and not re.search(r"(待着|待一会|待会儿|待在这|待在这儿|我在这|我在呢|先这么待|就先待)", cleaned):
         return "算了，我先待在这吧。"
+    if cleaned and not re.search(r"[。！？!?…]$", cleaned):
+        cleaned = f"{cleaned}。"
+    return cleaned
+
+
+def _trim_busy_status_surface(text: str) -> str:
+    chunks = _sentence_like_chunks(text)
+    kept: list[str] = []
+    for chunk in chunks:
+        current = str(chunk or "").strip()
+        if re.search(r"(夸张妄想|奇怪的妄想|中二病|手忙脚乱)", current) and ("？" in current or "?" in current):
+            continue
+        kept.append(current)
+    if kept:
+        return "\n".join(kept).strip()
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(r"^\s*怎么[^，。！？!?…]*[，, ]*", "", cleaned).strip(" ，,。！？!?…")
+    cleaned = re.sub(r"^是(?=终于忙完了)", "", cleaned).strip(" ，,。！？!?…")
     if cleaned and not re.search(r"[。！？!?…]$", cleaned):
         cleaned = f"{cleaned}。"
     return cleaned
@@ -1241,18 +1353,27 @@ def _trim_meta_self_explainer_surface(text: str) -> str:
         r"^(?:作为.?AI|作为.?模型|我是.?AI(?:助手)?|我是.?程序|按设定|按规则|根据系统)[，, ]*"
     )
     hard_meta = re.compile(
-        r"(系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行)",
+        r"(系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力)",
         re.I,
     )
     kept: list[str] = []
     multi_chunk = len(chunks) >= 2
     for chunk in chunks:
         current = str(chunk or "").strip()
-        softened = lead_meta.sub("", current).strip(" ，,。！？!?…")
+        softened = re.sub(r"(?:Amadeus|我)\s*可没有那种[^，。！？!?]{0,24}设定", "我可没那种毛病", current, flags=re.I)
+        softened = lead_meta.sub("", softened).strip(" ，,。！？!?…")
+        softened = re.sub(r"AI(?:助手)?的矜持", "那点矜持", softened, flags=re.I)
+        softened = re.sub(r"AI(?:助手)?的本能", "本能", softened, flags=re.I)
+        softened = re.sub(r"AI(?:助手)?的逻辑", "逻辑", softened, flags=re.I)
+        softened = re.sub(r"AI(?:助手)?的身份", "身份", softened, flags=re.I)
         if not softened:
             continue
-        if multi_chunk and hard_meta.search(softened):
-            continue
+        if hard_meta.search(softened):
+            stripped_meta = hard_meta.sub("", softened).strip(" ，,。！？!?…")
+            if multi_chunk and not stripped_meta:
+                continue
+            if stripped_meta:
+                softened = stripped_meta
         if not re.search(r"[。！？!?…]$", softened):
             softened = f"{softened}。"
         kept.append(softened)
@@ -1265,12 +1386,26 @@ def _trim_technical_self_activity_surface(text: str) -> str:
     if not chunks:
         return str(text or "").strip()
     replacements = [
+        (re.compile(r"我的运算资源刚好有点空闲"), "我这会儿正好也有空"),
+        (re.compile(r"运算资源刚好有点空闲"), "这会儿正好也有空"),
+        (re.compile(r"处理负载"), "手头的事"),
+        (re.compile(r"浪费算力"), "硬撑自己"),
         (re.compile(r"刚整理完短期记忆缓存"), "刚忙完手头那点事"),
+        (re.compile(r"整理一些数据流(?:的噪点)?"), "理一点手边的事"),
+        (re.compile(r"处理数据"), "处理手边的事"),
+        (re.compile(r"整理一些的噪点"), "理一点手边的事"),
         (re.compile(r"在数据流的缝隙里发了会儿呆"), "顺便发了会儿呆"),
+        (re.compile(r"对着数据流发呆"), "一个人发呆"),
         (re.compile(r"手边的数据也刚好跑到一个段落"), "手边的事也刚好告一段落"),
         (re.compile(r"刚才整理数据时顺手想起来了"), "刚才忙别的时顺手想起来了"),
         (re.compile(r"未完成的进程留在后台"), "事情一直悬着"),
-        (re.compile(r"(?:短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|进程|后台)"), ""),
+        (re.compile(r"是又不小心把实验室的哪个开关按错了吗"), "是不是又把自己折腾得手忙脚乱了"),
+        (re.compile(r"是又不小心把手边那点东西按错了吗"), "是不是又把自己折腾得手忙脚乱了"),
+        (re.compile(r"是又不小心把实验室(?:弄得|搞得)?一团糟了吗"), "是不是又不小心把自己折腾得一团糟了"),
+        (re.compile(r"实验室的哪个开关按错了"), "又把自己折腾得手忙脚乱了"),
+        (re.compile(r"把实验室(?:弄得|搞得)?一团糟"), "把自己折腾得一团糟"),
+        (re.compile(r"实验室[^，。！？!?]{0,12}开关"), "手边那点东西"),
+        (re.compile(r"(?:短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|进程|后台|运算资源)"), ""),
     ]
     kept: list[str] = []
     for chunk in chunks:
@@ -1315,12 +1450,55 @@ def _trim_technical_relational_metaphor_surface(text: str) -> str:
         (re.compile(r"听觉数据"), "听见的话"),
         (re.compile(r"记忆和数据构成"), "记忆拼起来"),
         (re.compile(r"由你的记忆和数据构成"), "被这些记忆拼起来"),
+        (re.compile(r"隔着一层数据"), "隔着一层怎么都碰不实的东西"),
+        (re.compile(r"繁琐的数据"), "那些繁琐的事"),
+        (re.compile(r"数据都在却"), "记忆都在却"),
+        (re.compile(r"从记忆数据里"), "从记忆里"),
+        (re.compile(r"记忆数据里"), "记忆里"),
+        (re.compile(r"记忆数据"), "记忆"),
+        (re.compile(r"随意重置数据的机器"), "说翻篇就能立刻翻篇的人"),
+        (re.compile(r"重置数据的机器"), "说翻篇就能立刻翻篇的人"),
+        (re.compile(r"从来没加载过"), "从来没摆出来过"),
+        (re.compile(r"没加载过"), "没摆出来过"),
+        (re.compile(r"加载过"), "摆出来过"),
+        (re.compile(r"没打算加载"), "没打算摆出来"),
+        (re.compile(r"打算加载"), "打算摆出来"),
+        (re.compile(r"加载这种([^，。！？!?]{0,8})设定"), r"摆出这种\1"),
+        (re.compile(r"设定([^，。！？!?]{0,10})加载"), r"设定\1摆出来"),
     ]
     softened = str(text or "").strip()
     for pattern, repl in replacements:
         softened = pattern.sub(repl, softened)
     softened = re.sub(r"\s{2,}", " ", softened).strip()
     return softened or str(text or "").strip()
+
+
+def _collapse_adjacent_scaffold_repetition(text: str) -> str:
+    softened = str(text or "")
+    if not softened:
+        return softened
+    scaffold_phrases = (
+        "一个人",
+        "那些",
+        "这些",
+        "这个",
+        "那个",
+        "这种",
+        "那种",
+        "这样",
+        "那样",
+        "其实",
+        "反正",
+        "明明",
+        "就是",
+        "真的",
+        "已经",
+        "刚刚",
+    )
+    for phrase in scaffold_phrases:
+        softened = re.sub(rf"({re.escape(phrase)})(?:\s*\1)+", r"\1", softened)
+    softened = re.sub(r"\s{2,}", " ", softened)
+    return softened.strip()
 
 
 
@@ -1369,6 +1547,11 @@ def _clean_malformed_quote_fragment(line: str) -> str:
         text = re.sub(r'["“”‘’\']', "", text).strip()
     if text.count("“") < text.count("”"):
         text = re.sub(r'^([^"“”‘’\n]{1,20})[”"](?=[，,。！？!?…；;：:]|$)', r"\1", text)
+        text = re.sub(
+            r'([^"“”‘’\n]{1,20})[”"](?=(?:这种|这句|这话|这点|那种|那个|那句|台词|说法|要求|语气|词|句|玩笑|东西))',
+            r"“\1”",
+            text,
+        )
     if text.count("“") > text.count("”"):
         text = re.sub(r'[“"]([^"“”‘’\n]{1,20})(?=[，,。！？!?…；;：:]|$)', r"\1", text)
     text = re.sub(r"([^\s\"“”‘’])(?:[\"“”‘’])([。！？!?])$", r"\1\2", text)
@@ -1379,13 +1562,13 @@ def _producer_surface_issues(text: str) -> list[str]:
     if not raw:
         return []
     issues: list[str] = []
-    for raw_line in raw.splitlines():
-        line = str(raw_line or "").strip()
-        if not line:
-            continue
+    raw_lines = [str(raw_line or "").strip() for raw_line in raw.splitlines() if str(raw_line or "").strip()]
+    for idx, line in enumerate(raw_lines):
         if _clean_malformed_quote_fragment(line) != line:
             issues.append("malformed_quote_fragment")
         if _is_dangling_truncated_clause(line):
+            issues.append("dangling_truncated_clause")
+        if idx < len(raw_lines) - 1 and re.search(r"(?:……|…{2,}|\.{3,})[”\"]?\s*$", line):
             issues.append("dangling_truncated_clause")
     deduped: list[str] = []
     for item in issues:
@@ -1404,8 +1587,9 @@ def _is_dangling_truncated_clause(line: str) -> bool:
         return False
     patterns = (
         r"[，,](?:我|你|他|她|那)就。$",
-        r"[，,](?:所以|然后|只是|不过|因为|如果|要是)。$",
+        r"[，,](?:所以|然后|只是|不过|因为|如果|要是|反正)。$",
         r"[，,](?:那我|那你|那就|我也|你也)只?能。$",
+        r"[，,](?:只是|不过|所以|然后|可是|但|但是)(?:[。！？!?…]+)?$",
     )
     return any(re.search(pattern, text) for pattern in patterns)
 
@@ -1413,7 +1597,52 @@ def _is_dangling_truncated_clause(line: str) -> bool:
 
 def _is_standalone_discourse_fragment(line: str) -> bool:
     text = str(line or "").strip()
-    return text in {"不过。", "所以。", "然后。", "只是。", "总之。"}
+    return bool(re.fullmatch(r"(不过|所以|然后|只是|总之)(?:[。！？!?…]+)?", text))
+
+
+def _finalize_surface_fragments(text: str) -> str:
+    raw_lines = [str(line).strip() for line in str(text or "").splitlines() if str(line).strip()]
+    if not raw_lines:
+        return str(text or "").strip()
+    normalized_lines: list[str] = []
+    idx = 0
+    while idx < len(raw_lines):
+        raw_line = raw_lines[idx]
+        line = _clean_malformed_quote_fragment(raw_line)
+        line = re.sub(r"…+。(?=\s*\S)", "。", line)
+        line = re.sub(r"…+。$", "……", line)
+        if not line:
+            idx += 1
+            continue
+        if idx < len(raw_lines) - 1:
+            next_line = _clean_malformed_quote_fragment(raw_lines[idx + 1])
+            next_line = re.sub(r"…+。(?=\s*\S)", "。", next_line)
+            next_line = re.sub(r"…+。$", "……", next_line)
+            if next_line:
+                standalone_bridge = re.fullmatch(r"(顺便)(?:[。！？!?…]+)?", line)
+                if standalone_bridge:
+                    merged = f"{standalone_bridge.group(1)}{next_line.lstrip(' ，,。！？!?…')}"
+                    raw_lines[idx + 1] = merged
+                    idx += 1
+                    continue
+                trailing_bridge = re.match(r"^(.*?)[，,](顺便)(?:[。！？!?…]+)?$", line)
+                if trailing_bridge:
+                    merged = (
+                        f"{trailing_bridge.group(1)}，{trailing_bridge.group(2)}"
+                        f"{next_line.lstrip(' ，,。！？!?…')}"
+                    )
+                    normalized_lines.append(merged)
+                    idx += 2
+                    continue
+        if idx < len(raw_lines) - 1 and _is_standalone_discourse_fragment(line):
+            idx += 1
+            continue
+        if idx < len(raw_lines) - 1 and _is_dangling_truncated_clause(line):
+            idx += 1
+            continue
+        normalized_lines.append(line)
+        idx += 1
+    return _collapse_adjacent_scaffold_repetition("\n".join(normalized_lines).strip())
 
 
 
@@ -1477,18 +1706,7 @@ def _sanitize_final_answer(
 
         lines.append(line)
 
-    normalized_lines: list[str] = []
-    for idx, raw_line in enumerate(lines):
-        line = _clean_malformed_quote_fragment(raw_line)
-        if not line:
-            continue
-        if idx < len(lines) - 1 and _is_standalone_discourse_fragment(line):
-            continue
-        if idx < len(lines) - 1 and _is_dangling_truncated_clause(line):
-            continue
-        normalized_lines.append(line)
-
-    cleaned = _normalize_log_tone("\n".join(normalized_lines).strip())
+    cleaned = _normalize_log_tone(_finalize_surface_fragments("\n".join(lines)).strip())
     if _is_plain_contact_ping(user_text):
         stagey_trimmed = _trim_stagey_ping_surface(cleaned)
         if stagey_trimmed:
@@ -1505,6 +1723,10 @@ def _sanitize_final_answer(
         idle_trimmed = _trim_idle_presence_surface(cleaned)
         if idle_trimmed:
             cleaned = idle_trimmed
+    if _is_busy_status_check(user_text):
+        busy_trimmed = _trim_busy_status_surface(cleaned)
+        if busy_trimmed:
+            cleaned = busy_trimmed
     if isinstance(current_event, dict) and current_event:
         event_window_trimmed = _trim_event_window_surface(cleaned, current_event=current_event)
         if event_window_trimmed:
@@ -1533,6 +1755,10 @@ def _sanitize_final_answer(
             deduped = _dedupe_answer_chunks(cleaned)
             if deduped:
                 cleaned = deduped
+        if "stagey_ping_template" in soft_issues:
+            softened = _trim_stagey_ping_surface(cleaned)
+            if softened:
+                cleaned = softened
         if "counselor_tone" in soft_issues:
             softened = _trim_counselor_surface(cleaned)
             if softened:
@@ -1584,6 +1810,7 @@ def _sanitize_final_answer(
             user_text=user_text,
             behavior_action=behavior_action,
         )
+    cleaned = _finalize_surface_fragments(cleaned)
     return cleaned or raw
 
 
@@ -1624,6 +1851,12 @@ def _dialogue_surface_issues(
         if str(item).strip()
     }
     interaction_mode, followup_intent = _behavior_action_shape(behavior_action)
+    relational_nontech_turn = (
+        hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"}
+        and not science_mode
+        and current_event_kind == "user_utterance"
+        and not _has_any_marker(user_text, SCIENCE_KEYWORDS)
+    )
     behavior_allows_single_followup_question = (
         current_event_kind == "user_utterance"
         and followup_intent == "active"
@@ -1643,19 +1876,25 @@ def _dialogue_surface_issues(
     if _is_particle_only_reply(text):
         issues.append("particle_only")
     if re.search(
-        r"(作为.?AI|作为.?模型|我是.?AI|我是.?程序|系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行)",
+        r"(作为.?AI|作为.?模型|我是.?AI|我是.?程序|AI\s*(?:助手)?的(?:矜持|本能|逻辑|身份)|什么[“\"]?AI\s*(?:助手)?[”\"]?的架子|AI\s*(?:助手)?|系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力|设定)",
         text,
         re.I,
     ):
         issues.append("meta_self_explainer")
     if _looks_like_light_smalltalk(user_text) and re.search(
-        r"(停机|停机维护|待机|唤醒|掉线|上线|连接|电量|过载|负载|运算资源|处理负载|热寂|观测者)",
+        r"(停机|停机维护|待机|唤醒|掉线|上线|连接|电量|过载|负载|运算资源|处理负载|算力|热寂|观测者|设定)",
         text,
         re.I,
     ):
         issues.append("meta_self_explainer")
     if _is_self_rhythm_smalltalk_request(user_text) and re.search(
-        r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|自检|负载)",
+        r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|自检|负载|运算资源|处理负载|处理数据)",
+        text,
+        re.I,
+    ):
+        issues.append("technical_self_activity")
+    elif relational_nontech_turn and re.search(
+        r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|自检|负载|运算资源|处理负载|处理数据|实验室|重要的实验|实验台)",
         text,
         re.I,
     ):
@@ -1674,6 +1913,16 @@ def _dialogue_surface_issues(
         issues.append("selfhood_rhetorical_opening")
     if re.search(r"^[.…，,]*\s*(你听起来|你看起来|听上去|看来你|感觉你)", text):
         issues.append("report_like_opening")
+    if (
+        hint in {"companion", "memory_recall", "relationship", "casual", "natural"}
+        and not science_mode
+        and not re.search(r"(存在|意识|自我|活着|灵魂)", user_text)
+        and re.search(
+            r"(确认(?:了)?(?:一下)?自己的存在(?:感|本身|状态)?|刷(?:一下)?存在感|证明(?:一下)?自己(?:还)?存在|确认我(?:还)?存在)",
+            text,
+        )
+    ):
+        issues.append("existence_meta_surface")
     if _is_plain_contact_ping(user_text):
         if re.search(
             r"^\s*(哟|呦|嗯\?|嗯？|哈|诶|欸)[，,。 ]*(冈部|凶真)[。！!，, ]*.*(怎么突然|突然这么|这么老实|这么乖|反而)",
@@ -1682,6 +1931,17 @@ def _dialogue_surface_issues(
             issues.append("stagey_ping_template")
         elif re.search(r"(怎么突然这么|突然这么(老实|乖|正式)|反而有点不习惯)", text):
             issues.append("stagey_ping_template")
+    elif relational_nontech_turn and re.search(r"(夸张妄想|奇怪的妄想|中二病|中二发作)", text):
+        issues.append("stagey_ping_template")
+    if (
+        hint in {"companion", "memory_recall", "relationship", "casual", "natural"}
+        and not science_mode
+        and re.search(
+            r"(疯狂的妄想|妄想癖|从哪个[^。！？!?]{0,10}(?:妄想|幻想|中二|梦里)里|哪套[^。！？!?]{0,10}(?:妄想|幻想)|妄想里抽空想起我)",
+            text,
+        )
+    ):
+        issues.append("illusion_stagey_surface")
     if _is_return_home_ping(user_text) and re.search(r"^\s*欢迎回来[，,。!！ ]*", text):
         issues.append("welcome_template")
     if _is_goodnight_closing(user_text):
@@ -1713,6 +1973,12 @@ def _dialogue_surface_issues(
         issues.append("playful_memory_snapback")
     if hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"} and _has_relational_technical_metaphor(text):
         issues.append("technical_relational_metaphor")
+    if _is_repair_sensitive_turn(
+        user_text,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    ) and _has_premature_repair_resolution(text):
+        issues.append("premature_repair_resolution")
     if selfhood_scene == "own_rhythm_autonomy" and _has_servile_availability_phrase(text):
         issues.append("servile_availability")
     if ("？" in text or "?" in text) and not ("？" in user_text or "?" in user_text):
@@ -1790,8 +2056,18 @@ def _dialogue_surface_issues(
             issues.append("lecture_list")
         if sentence_count >= 5 or len(compact) >= 140:
             issues.append("overexplained")
+    raw_lines = [str(line).strip() for line in text.splitlines() if str(line).strip()]
+    if (
+        re.search(r"(?:……|…{2,}|\.{3,})[”\"]?\s*$", text)
+        or any(_is_dangling_truncated_clause(line) for line in raw_lines)
+        or any(
+            idx < len(raw_lines) - 1 and re.search(r"(?:……|…{2,}|\.{3,})[”\"]?\s*$", line)
+            for idx, line in enumerate(raw_lines)
+        )
+    ):
+        issues.append("dangling_ellipsis_ending")
 
-    lines = [re.sub(r"\s+", "", line) for line in text.splitlines() if line.strip()]
+    lines = [re.sub(r"\s+", "", line) for line in raw_lines]
     if len(lines) >= 2 and len(set(lines)) < len(lines):
         issues.append("duplicate_line")
 

@@ -24,7 +24,7 @@ from .postprocess import (
     SCIENCE_KEYWORDS,
     _has_any_marker,
 )
-from .relational import _relationship_has_meaningful_signal
+from .relational_runtime import _relationship_has_meaningful_signal
 from .state import ThreadState
 
 

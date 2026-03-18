@@ -7,6 +7,16 @@ from .state import AgendaLifecycleResiduePayload, BehaviorAgendaEntryPayload, Ev
 from .turn_events import _now_ts
 
 QUEUEABLE_BEHAVIOR_PLAN_KINDS = {"deferred_checkin", "self_activity_continue"}
+_AGENDA_LONG_HORIZON_FLOAT_KEYS = (
+    "continuity_anchor",
+    "own_rhythm_anchor",
+    "recontact_anchor",
+    "boundary_anchor",
+    "memory_anchor",
+    "semantic_continuity_depth",
+    "semantic_identity_gravity",
+)
+_AGENDA_LONG_HORIZON_INT_KEYS = ("long_term_axis_count",)
 
 
 def _clamp01(value: Any, default: float = 0.0) -> float:
@@ -15,6 +25,136 @@ def _clamp01(value: Any, default: float = 0.0) -> float:
     except Exception:
         v = float(default)
     return max(0.0, min(1.0, v))
+
+
+def _snapshot_value(raw: Any, key: str, default: float = 0.0) -> float:
+    if not isinstance(raw, dict):
+        return _clamp01(default, default)
+    return _clamp01(raw.get(key), default)
+
+
+def _agenda_long_horizon_snapshot(
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+) -> dict[str, float | int]:
+    world = world_model_state if isinstance(world_model_state, dict) else {}
+    semantic = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
+    persistence = semantic.get("persistence_snapshot") if isinstance(semantic.get("persistence_snapshot"), dict) else {}
+    sedimentation = semantic.get("sedimentation_snapshot") if isinstance(semantic.get("sedimentation_snapshot"), dict) else {}
+
+    continuity_depth = _snapshot_value(semantic, "continuity_depth")
+    identity_gravity = _snapshot_value(semantic, "identity_gravity")
+    long_term_axis_count = max(0, int(semantic.get("long_term_axis_count") or 0)) if isinstance(semantic, dict) else 0
+    axis_norm = _clamp01(long_term_axis_count / 4.0)
+    history_weight = _snapshot_value(semantic, "history_weight")
+    commitment_carry = _snapshot_value(semantic, "commitment_carry")
+    presence_carry = _snapshot_value(semantic, "presence_carry")
+    boundary_residue = _snapshot_value(semantic, "boundary_residue")
+    agency_drive = _snapshot_value(semantic, "agency_drive")
+    rhythm_continuity = _snapshot_value(semantic, "rhythm_continuity")
+    selfhood_integrity = _snapshot_value(semantic, "selfhood_integrity")
+    world_self_activity = _snapshot_value(world, "self_activity_momentum")
+    world_agency = _snapshot_value(world, "agency_load")
+    world_boundary = _snapshot_value(world, "boundary_load")
+    world_memory = _snapshot_value(world, "memory_gravity")
+
+    rhythm_persistence = _snapshot_value(persistence, "rhythm_style")
+    agency_persistence = _snapshot_value(persistence, "agency_style")
+    boundary_persistence = _snapshot_value(persistence, "boundary_style")
+    presence_persistence = _snapshot_value(persistence, "presence_style")
+    commitment_persistence = _snapshot_value(persistence, "commitment_style")
+    bond_sedimentation = _snapshot_value(sedimentation, "bond_style")
+    rhythm_sedimentation = _snapshot_value(sedimentation, "rhythm_style")
+    agency_sedimentation = _snapshot_value(sedimentation, "agency_style")
+    boundary_sedimentation = _snapshot_value(sedimentation, "boundary_style")
+
+    own_rhythm_anchor = _clamp01(
+        0.26 * max(rhythm_continuity, rhythm_persistence, 0.92 * rhythm_sedimentation)
+        + 0.18 * max(agency_drive, agency_persistence, 0.92 * agency_sedimentation)
+        + 0.18 * world_self_activity
+        + 0.12 * world_agency
+        + 0.10 * continuity_depth
+        + 0.08 * identity_gravity
+        + 0.08 * axis_norm
+    )
+    recontact_anchor = _clamp01(
+        0.24 * presence_carry
+        + 0.20 * history_weight
+        + 0.14 * commitment_carry
+        + 0.14 * world_memory
+        + 0.12 * max(presence_persistence, bond_sedimentation)
+        + 0.08 * continuity_depth
+        + 0.08 * axis_norm
+    )
+    continuity_anchor = _clamp01(
+        0.32 * continuity_depth
+        + 0.22 * identity_gravity
+        + 0.16 * max(rhythm_continuity, agency_drive)
+        + 0.14 * max(history_weight, world_memory)
+        + 0.08 * axis_norm
+        + 0.08 * max(rhythm_persistence, agency_persistence)
+    )
+    boundary_anchor = _clamp01(
+        0.30 * max(boundary_residue, boundary_persistence, 0.92 * boundary_sedimentation)
+        + 0.20 * world_boundary
+        + 0.18 * identity_gravity
+        + 0.12 * selfhood_integrity
+        + 0.10 * continuity_depth
+        + 0.10 * axis_norm
+    )
+    memory_anchor = _clamp01(
+        0.28 * max(history_weight, world_memory)
+        + 0.22 * commitment_carry
+        + 0.16 * presence_carry
+        + 0.14 * max(commitment_persistence, bond_sedimentation)
+        + 0.12 * continuity_depth
+        + 0.08 * axis_norm
+    )
+    return {
+        "continuity_anchor": round(continuity_anchor, 3),
+        "own_rhythm_anchor": round(own_rhythm_anchor, 3),
+        "recontact_anchor": round(recontact_anchor, 3),
+        "boundary_anchor": round(boundary_anchor, 3),
+        "memory_anchor": round(memory_anchor, 3),
+        "semantic_continuity_depth": round(continuity_depth, 3),
+        "semantic_identity_gravity": round(identity_gravity, 3),
+        "long_term_axis_count": int(long_term_axis_count),
+    }
+
+
+def _agenda_long_horizon_bias(
+    entry: dict[str, Any],
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+) -> dict[str, float | int]:
+    current = _agenda_long_horizon_snapshot(
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    merged: dict[str, float | int] = dict(current)
+    for key in _AGENDA_LONG_HORIZON_FLOAT_KEYS:
+        merged[key] = round(max(_clamp01(entry.get(key), 0.0), float(current.get(key) or 0.0)), 3)
+    merged["long_term_axis_count"] = max(
+        max(0, int(entry.get("long_term_axis_count") or 0)),
+        int(current.get("long_term_axis_count") or 0),
+    )
+    return merged
+
+
+def _merge_long_horizon_entry_fields(*entries: dict[str, Any] | None) -> dict[str, float | int]:
+    merged: dict[str, float | int] = {}
+    for key in _AGENDA_LONG_HORIZON_FLOAT_KEYS:
+        merged[key] = round(
+            max([_clamp01(entry.get(key), 0.0) for entry in entries if isinstance(entry, dict)] or [0.0]),
+            3,
+        )
+    merged["long_term_axis_count"] = max(
+        [max(0, int(entry.get("long_term_axis_count") or 0)) for entry in entries if isinstance(entry, dict)]
+        or [0]
+    )
+    return merged
 
 def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: Any) -> EventPayload:
     if not isinstance(event, dict) or not event:
@@ -380,6 +520,14 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             "presence_residue": round(_clamp01(entry.get("presence_residue"), 0.0), 3),
             "ambient_resonance": round(_clamp01(entry.get("ambient_resonance"), 0.0), 3),
             "self_activity_momentum": round(_clamp01(entry.get("self_activity_momentum"), 0.0), 3),
+            "continuity_anchor": round(_clamp01(entry.get("continuity_anchor"), 0.0), 3),
+            "own_rhythm_anchor": round(_clamp01(entry.get("own_rhythm_anchor"), 0.0), 3),
+            "recontact_anchor": round(_clamp01(entry.get("recontact_anchor"), 0.0), 3),
+            "boundary_anchor": round(_clamp01(entry.get("boundary_anchor"), 0.0), 3),
+            "memory_anchor": round(_clamp01(entry.get("memory_anchor"), 0.0), 3),
+            "semantic_continuity_depth": round(_clamp01(entry.get("semantic_continuity_depth"), 0.0), 3),
+            "semantic_identity_gravity": round(_clamp01(entry.get("semantic_identity_gravity"), 0.0), 3),
+            "long_term_axis_count": max(0, int(entry.get("long_term_axis_count") or 0)),
         }
         items.append(normalized)
     items.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
@@ -500,6 +648,8 @@ def _behavior_agenda_context_priority(
     current_event: dict[str, Any],
     entry: dict[str, Any],
     counterpart_assessment: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> float:
     base_priority = float(entry.get("base_priority") or entry.get("priority") or 0.0)
     kind = str(entry.get("kind") or "").strip()
@@ -516,6 +666,16 @@ def _behavior_agenda_context_priority(
     presence_residue = _clamp01(entry.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(entry.get("ambient_resonance"), 0.0)
     self_activity_momentum = _clamp01(entry.get("self_activity_momentum"), 0.0)
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = _clamp01(long_horizon.get("recontact_anchor"), 0.0)
+    boundary_anchor = _clamp01(long_horizon.get("boundary_anchor"), 0.0)
+    memory_anchor = _clamp01(long_horizon.get("memory_anchor"), 0.0)
     delta = 0.0
 
     if event_kind == "time_idle":
@@ -550,6 +710,26 @@ def _behavior_agenda_context_priority(
         elif kind == "deferred_checkin" and target == "counterpart":
             delta -= 0.04
 
+    if event_kind in {"time_idle", "self_activity_state", "scheduled_life_due"}:
+        if kind == "self_activity_continue":
+            delta += 0.08 * own_rhythm_anchor + 0.04 * continuity_anchor
+            if event_kind in {"time_idle", "self_activity_state"}:
+                delta += 0.04 * own_rhythm_anchor + 0.03 * continuity_anchor
+            if boundary_anchor >= 0.48 and event_kind == "time_idle":
+                delta += 0.02 * boundary_anchor
+        elif kind == "deferred_checkin":
+            if trigger_family in {"observe", "light_checkin"}:
+                delta -= 0.06 * own_rhythm_anchor + 0.04 * continuity_anchor
+                delta += 0.02 * recontact_anchor
+            elif trigger_family == "life_window":
+                delta -= 0.05 * own_rhythm_anchor + 0.02 * continuity_anchor
+                delta += 0.03 * recontact_anchor + 0.02 * memory_anchor
+            elif trigger_family in {"shared_activity", "shared_activity_window", "deadline_window"}:
+                delta -= 0.02 * own_rhythm_anchor
+                delta += 0.05 * memory_anchor + 0.02 * recontact_anchor
+            if boundary_anchor >= 0.56 and trigger_family in {"observe", "light_checkin", "shared_activity", "shared_activity_window"}:
+                delta -= 0.04 * boundary_anchor
+
     delta += _behavior_agenda_counterpart_delta(entry, counterpart_assessment)
     delta += _behavior_agenda_history_delta(entry, current_event)
     return round(max(0.05, min(0.95, base_priority + delta)), 3)
@@ -559,6 +739,8 @@ def _reprioritize_behavior_agenda(
     agenda: list[BehaviorAgendaEntryPayload],
     current_event: dict[str, Any],
     counterpart_assessment: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> list[BehaviorAgendaEntryPayload]:
     updated: list[BehaviorAgendaEntryPayload] = []
     for entry in _normalize_behavior_agenda(agenda):
@@ -569,6 +751,8 @@ def _reprioritize_behavior_agenda(
                     current_event,
                     entry,
                     counterpart_assessment=counterpart_assessment,
+                    world_model_state=world_model_state,
+                    semantic_narrative_profile=semantic_narrative_profile,
                 ),
             }
         )
@@ -588,7 +772,13 @@ def _behavior_agenda_expiry_from_plan(current_event: dict[str, Any], plan: dict[
     return max(0, due_after + 45 if due_after > 0 else 0)
 
 
-def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[str, Any]) -> BehaviorAgendaEntryPayload | None:
+def _behavior_agenda_entry_from_plan(
+    current_event: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+) -> BehaviorAgendaEntryPayload | None:
     if not isinstance(current_event, dict) or not isinstance(plan, dict):
         return None
     kind = str(plan.get("kind") or "").strip()
@@ -621,6 +811,10 @@ def _behavior_agenda_entry_from_plan(current_event: dict[str, Any], plan: dict[s
         "presence_residue": round(_clamp01(plan.get("presence_residue"), 0.0), 3),
         "ambient_resonance": round(_clamp01(plan.get("ambient_resonance"), 0.0), 3),
         "self_activity_momentum": round(_clamp01(plan.get("self_activity_momentum"), 0.0), 3),
+        **_agenda_long_horizon_snapshot(
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_narrative_profile,
+        ),
     }
 
 
@@ -637,11 +831,24 @@ def _merge_behavior_agenda(
     current_event: dict[str, Any],
     behavior_plan: dict[str, Any],
     counterpart_assessment: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> list[BehaviorAgendaEntryPayload]:
     agenda = _normalize_behavior_agenda(prior_agenda)
-    new_entry = _behavior_agenda_entry_from_plan(current_event, behavior_plan)
+    new_entry = _behavior_agenda_entry_from_plan(
+        current_event,
+        behavior_plan,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
     if not new_entry:
-        return _reprioritize_behavior_agenda(agenda, current_event, counterpart_assessment=counterpart_assessment)
+        return _reprioritize_behavior_agenda(
+            agenda,
+            current_event,
+            counterpart_assessment=counterpart_assessment,
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_narrative_profile,
+        )
 
     signature = _behavior_agenda_signature(new_entry)
     for idx, existing in enumerate(agenda):
@@ -650,6 +857,7 @@ def _merge_behavior_agenda(
         agenda[idx] = {
             **existing,
             **new_entry,
+            **_merge_long_horizon_entry_fields(existing, new_entry),
             "agenda_id": str(existing.get("agenda_id") or new_entry.get("agenda_id") or uuid.uuid4().hex[:12]),
             "created_at": int(existing.get("created_at") or new_entry.get("created_at") or _now_ts()),
             "base_priority": float(existing.get("base_priority") or new_entry.get("base_priority") or new_entry.get("priority") or 0.0),
@@ -660,7 +868,13 @@ def _merge_behavior_agenda(
         break
     else:
         agenda.append(new_entry)
-    return _reprioritize_behavior_agenda(agenda, current_event, counterpart_assessment=counterpart_assessment)
+    return _reprioritize_behavior_agenda(
+        agenda,
+        current_event,
+        counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
 
 
 def _behavior_agenda_is_expired(entry: dict[str, Any], idle_minutes: int) -> bool:
@@ -684,6 +898,9 @@ def _behavior_agenda_should_hold(
     current_event: dict[str, Any],
     idle_minutes: int,
     counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> bool:
     if str(current_event.get("kind") or "").strip() != "time_idle":
         return False
@@ -699,10 +916,23 @@ def _behavior_agenda_should_hold(
     stance = str(assessment.get("stance") or "").strip().lower()
     scene = str(assessment.get("scene") or "").strip().lower()
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
 
     if "user_busy" in event_tags or "cognitive_load" in event_tags:
         return trigger_family in {"observe", "light_checkin", "life_window", "deadline_window"}
     if "respect_space" in event_tags:
+        if (
+            trigger_family in {"life_window", "deadline_window"}
+            and own_rhythm_anchor >= 0.56
+            and continuity_anchor >= 0.50
+        ):
+            return True
         return trigger_family in {"observe", "light_checkin"}
     if (
         stance == "guarded"
@@ -723,6 +953,8 @@ def _behavior_agenda_should_release(
     idle_minutes: int,
     counterpart_assessment: dict[str, Any] | None = None,
     *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     next_hold_count: int | None = None,
 ) -> bool:
     if str(current_event.get("kind") or "").strip() != "time_idle":
@@ -745,6 +977,15 @@ def _behavior_agenda_should_release(
     stance = str(assessment.get("stance") or "").strip().lower()
     scene = str(assessment.get("scene") or "").strip().lower()
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
+    boundary_anchor = _clamp01(long_horizon.get("boundary_anchor"), 0.0)
+    respect_scene = bool({"user_busy", "cognitive_load", "respect_space"} & event_tags)
 
     if (
         hold_count >= 2
@@ -757,6 +998,28 @@ def _behavior_agenda_should_release(
         hold_count >= 2
         and scene in {"boundary_non_compliance", "relationship_degradation"}
         and trigger_family in {"light_checkin", "shared_activity", "shared_activity_window"}
+    ):
+        return True
+    if (
+        hold_count >= 2
+        and respect_scene
+        and trigger_family == "life_window"
+        and own_rhythm_anchor >= 0.56
+        and continuity_anchor >= 0.50
+    ):
+        return True
+    if (
+        hold_count >= 3
+        and respect_scene
+        and trigger_family in {"observe", "light_checkin"}
+        and own_rhythm_anchor >= 0.54
+    ):
+        return True
+    if (
+        hold_count >= 2
+        and boundary_anchor >= 0.60
+        and scene in {"boundary_non_compliance", "relationship_degradation"}
+        and trigger_family in {"observe", "light_checkin", "shared_activity", "shared_activity_window"}
     ):
         return True
     if (
@@ -777,6 +1040,8 @@ def _behavior_agenda_release_strategy(
     idle_minutes: int,
     counterpart_assessment: dict[str, Any] | None = None,
     *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     next_hold_count: int | None = None,
 ) -> str:
     if not _behavior_agenda_should_release(
@@ -784,6 +1049,8 @@ def _behavior_agenda_release_strategy(
         current_event,
         idle_minutes,
         counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
         next_hold_count=next_hold_count,
     ):
         return ""
@@ -801,19 +1068,48 @@ def _behavior_agenda_release_strategy(
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
     scene = str(assessment.get("scene") or "").strip().lower()
     respect_scene = bool({"user_busy", "cognitive_load", "respect_space"} & event_tags)
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
+    memory_anchor = _clamp01(long_horizon.get("memory_anchor"), 0.0)
 
     if (
         trigger_family == "life_window"
-        and hold_count >= 3
+        and hold_count >= 2
         and respect_scene
         and scene not in {"boundary_non_compliance", "relationship_degradation"}
         and (
             carryover_mode in {"own_rhythm", "life_window", "small_opening"}
             or self_activity_momentum >= 0.54
             or carryover_strength >= 0.44
+            or own_rhythm_anchor >= 0.56
+        )
+        and (
+            max(continuity_anchor, own_rhythm_anchor) >= 0.50
+            or self_activity_momentum >= 0.54
+            or carryover_mode in {"own_rhythm", "life_window"}
         )
     ):
         return "return_to_self_activity"
+    if (
+        trigger_family in {"observe", "light_checkin"}
+        and hold_count >= 3
+        and respect_scene
+        and own_rhythm_anchor >= 0.54
+        and continuity_anchor >= 0.48
+    ):
+        return "drop"
+    if (
+        trigger_family in {"shared_activity", "shared_activity_window"}
+        and hold_count >= 2
+        and scene in {"boundary_non_compliance", "relationship_degradation"}
+        and memory_anchor <= 0.44
+    ):
+        return "drop"
     return "drop"
 
 
@@ -829,7 +1125,14 @@ def _released_life_window_to_self_activity_event(
     carryover_strength = _clamp01(entry.get("carryover_strength"), 0.0)
     presence_residue = _clamp01(entry.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(entry.get("ambient_resonance"), 0.0)
-    self_activity_momentum = max(0.58, _clamp01(entry.get("self_activity_momentum"), 0.0))
+    own_rhythm_anchor = _clamp01(entry.get("own_rhythm_anchor"), 0.0)
+    continuity_anchor = _clamp01(entry.get("continuity_anchor"), 0.0)
+    self_activity_momentum = max(
+        0.58,
+        _clamp01(entry.get("self_activity_momentum"), 0.0),
+        0.84 * own_rhythm_anchor,
+        0.68 * continuity_anchor,
+    )
     merged_tags = list(
         dict.fromkeys(
             [
@@ -881,6 +1184,9 @@ def _behavior_agenda_next_recheck_min(
     current_event: dict[str, Any],
     idle_minutes: int,
     counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> int:
     trigger_family = str(entry.get("trigger_family") or "").strip()
     carryover_mode = str(entry.get("carryover_mode") or "").strip().lower()
@@ -906,6 +1212,26 @@ def _behavior_agenda_next_recheck_min(
     stance = str(assessment.get("stance") or "").strip().lower()
     boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1)
     hold_count = max(0, int(entry.get("hold_count") or 0))
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = _clamp01(long_horizon.get("recontact_anchor"), 0.0)
+    boundary_anchor = _clamp01(long_horizon.get("boundary_anchor"), 0.0)
+    memory_anchor = _clamp01(long_horizon.get("memory_anchor"), 0.0)
+    recontact_echo = max(
+        recontact_echo,
+        0.74 * recontact_anchor,
+        0.24 * memory_anchor if trigger_family in {"life_window", "shared_activity", "shared_activity_window", "deadline_window"} else 0.0,
+    )
+    own_rhythm_load = max(
+        own_rhythm_load,
+        0.86 * own_rhythm_anchor,
+        0.54 * continuity_anchor,
+    )
 
     gap = 8
     if "user_busy" in event_tags or "cognitive_load" in event_tags:
@@ -924,6 +1250,12 @@ def _behavior_agenda_next_recheck_min(
         gap += 1 + int(round(5 * max(0.0, own_rhythm_load - 0.34)))
         if trigger_family in {"light_checkin", "observe"} and own_rhythm_load >= 0.56:
             gap += 1
+    if continuity_anchor >= 0.54 and trigger_family in {"observe", "light_checkin", "life_window"}:
+        gap += 1 + int(round(4 * max(0.0, continuity_anchor - 0.54)))
+    if memory_anchor >= 0.46 and trigger_family in {"shared_activity", "shared_activity_window", "deadline_window"}:
+        gap -= 1 + int(round(3 * max(0.0, memory_anchor - 0.46)))
+    if boundary_anchor >= 0.56 and trigger_family in {"light_checkin", "shared_activity", "shared_activity_window"}:
+        gap += 1 + int(round(3 * max(0.0, boundary_anchor - 0.56)))
     if hold_count > 0:
         gap += min(24, 4 * hold_count)
         if trigger_family in {"shared_activity", "shared_activity_window"} and hold_count >= 2:
@@ -937,6 +1269,9 @@ def _reschedule_held_behavior_agenda(
     current_event: dict[str, Any],
     idle_minutes: int,
     counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> BehaviorAgendaEntryPayload:
     hold_count = max(0, int(entry.get("hold_count") or 0)) + 1
     next_due = _behavior_agenda_next_recheck_min(
@@ -947,6 +1282,8 @@ def _reschedule_held_behavior_agenda(
         current_event,
         idle_minutes,
         counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
     )
     base_priority = float(entry.get("base_priority") or entry.get("priority") or 0.0)
     priority = max(0.05, min(0.95, base_priority - min(0.12, 0.02 * hold_count)))
@@ -1012,6 +1349,8 @@ def _agenda_lifecycle_residue(
     counterpart_assessment: dict[str, Any] | None = None,
     hold_count: int | None = None,
     promoted_event: dict[str, Any] | None = None,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> AgendaLifecycleResiduePayload:
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
     event_tags = [
@@ -1031,8 +1370,19 @@ def _agenda_lifecycle_residue(
     stance = str(assessment.get("stance") or "").strip().lower()
     scene = str(assessment.get("scene") or "").strip().lower()
     effective_hold_count = max(0, int(hold_count if hold_count is not None else entry.get("hold_count") or 0))
+    long_horizon = _agenda_long_horizon_bias(
+        entry,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = _clamp01(long_horizon.get("recontact_anchor"), 0.0)
     residue_mode = carryover_mode
     residue_strength = carryover_strength
+    recontact_echo = max(recontact_echo, 0.72 * recontact_anchor)
+    own_rhythm_bias = max(own_rhythm_bias, own_rhythm_anchor, 0.72 * continuity_anchor)
+    self_activity_momentum = max(self_activity_momentum, 0.84 * own_rhythm_anchor)
 
     if kind in {"released_to_self_activity", "dropped", "expired"}:
         residue_mode = "own_rhythm"
@@ -1120,6 +1470,9 @@ def _promote_due_behavior_agenda_event_with_residue(
     event: EventPayload,
     prior_behavior_agenda: Any,
     counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload], AgendaLifecycleResiduePayload]:
     agenda = _normalize_behavior_agenda(prior_behavior_agenda)
     if not isinstance(event, dict) or not event or str(event.get("kind") or "").strip() != "time_idle":
@@ -1131,7 +1484,13 @@ def _promote_due_behavior_agenda_event_with_residue(
 
     expired_entries = [entry for entry in agenda if _behavior_agenda_is_expired(entry, idle_minutes)]
     active_agenda = [entry for entry in agenda if not _behavior_agenda_is_expired(entry, idle_minutes)]
-    active_agenda = _reprioritize_behavior_agenda(active_agenda, event, counterpart_assessment=counterpart_assessment)
+    active_agenda = _reprioritize_behavior_agenda(
+        active_agenda,
+        event,
+        counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
     due_entries = [entry for entry in active_agenda if _behavior_agenda_is_due(entry, idle_minutes)]
     if not due_entries:
         residue: AgendaLifecycleResiduePayload = {}
@@ -1143,6 +1502,8 @@ def _promote_due_behavior_agenda_event_with_residue(
                 entry=primary_expired,
                 counterpart_assessment=counterpart_assessment,
                 hold_count=max(0, int(primary_expired.get("hold_count") or 0)),
+                world_model_state=world_model_state,
+                semantic_narrative_profile=semantic_narrative_profile,
             )
         return event, _normalize_behavior_agenda(active_agenda), residue
 
@@ -1157,12 +1518,16 @@ def _promote_due_behavior_agenda_event_with_residue(
             event,
             idle_minutes,
             counterpart_assessment=counterpart_assessment,
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_narrative_profile,
         ):
             release_strategy = _behavior_agenda_release_strategy(
                 entry,
                 event,
                 idle_minutes,
                 counterpart_assessment=counterpart_assessment,
+                world_model_state=world_model_state,
+                semantic_narrative_profile=semantic_narrative_profile,
                 next_hold_count=next_hold_count,
             )
             if release_strategy:
@@ -1198,6 +1563,8 @@ def _promote_due_behavior_agenda_event_with_residue(
                         counterpart_assessment=counterpart_assessment,
                         hold_count=held_counts.get(str(entry.get("agenda_id") or ""), max(0, int(entry.get("hold_count") or 0))),
                         promoted_event=promoted_release,
+                        world_model_state=world_model_state,
+                        semantic_narrative_profile=semantic_narrative_profile,
                     )
                     break
             if not residue and released_entries:
@@ -1208,6 +1575,8 @@ def _promote_due_behavior_agenda_event_with_residue(
                     entry=primary_released,
                     counterpart_assessment=counterpart_assessment,
                     hold_count=held_counts.get(str(primary_released.get("agenda_id") or ""), max(0, int(primary_released.get("hold_count") or 0))),
+                    world_model_state=world_model_state,
+                    semantic_narrative_profile=semantic_narrative_profile,
                 )
         elif held_ids:
             held_entries = [
@@ -1221,6 +1590,8 @@ def _promote_due_behavior_agenda_event_with_residue(
                     entry=primary_held,
                     counterpart_assessment=counterpart_assessment,
                     hold_count=held_counts.get(str(primary_held.get("agenda_id") or ""), max(0, int(primary_held.get("hold_count") or 0))),
+                    world_model_state=world_model_state,
+                    semantic_narrative_profile=semantic_narrative_profile,
                 )
         rescheduled: list[BehaviorAgendaEntryPayload] = []
         for entry in active_agenda:
@@ -1233,6 +1604,8 @@ def _promote_due_behavior_agenda_event_with_residue(
                         event,
                         idle_minutes,
                         counterpart_assessment=counterpart_assessment,
+                        world_model_state=world_model_state,
+                        semantic_narrative_profile=semantic_narrative_profile,
                     )
                 )
             else:
@@ -1255,6 +1628,8 @@ def _promote_due_behavior_agenda_event_with_residue(
             counterpart_assessment=counterpart_assessment,
             hold_count=max(0, int(selected.get("hold_count") or 0)),
             promoted_event=promoted,
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_narrative_profile,
         ),
     )
 
@@ -1263,11 +1638,16 @@ def _promote_due_behavior_agenda_event(
     event: EventPayload,
     prior_behavior_agenda: Any,
     counterpart_assessment: dict[str, Any] | None = None,
+    *,
+    world_model_state: dict[str, Any] | None = None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
 ) -> tuple[EventPayload, list[BehaviorAgendaEntryPayload]]:
     promoted, agenda, _ = _promote_due_behavior_agenda_event_with_residue(
         event,
         prior_behavior_agenda,
         counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
     )
     return promoted, agenda
 

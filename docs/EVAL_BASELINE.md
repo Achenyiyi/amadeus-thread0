@@ -119,6 +119,13 @@ Use these when the question is:
 - does the surface rhythm feel natural
 - do science-mode, intimacy, and selfhood still read as one consistent self
 
+Current targeted entry points:
+
+- `python evals\run_subjective_review_pack.py --preset relationship-weather-open`
+  - use this first when checking whether `guarded / warm / repair` actually separate under more everyday, non-scripted phrasing
+- `python evals\run_subjective_review_pack.py --preset counterpart-scene`
+  - use this when checking whether she is reading counterpart state correctly instead of collapsing all relationship turns into one tone
+
 ## Last-Known Green Supporting Suites
 
 These suites were not rerun in the final 2026-03-14 cleanup loop, but their latest green reports are still useful support evidence:
@@ -156,6 +163,7 @@ python evals\run_langsmith_evals.py --local-only --suite open_evolution_eval
 python evals\run_langsmith_evals.py --local-only --suite transfer_probe
 python evals\run_langsmith_evals.py --local-only --suite natural_long_thread
 python evals\run_subjective_review_pack.py
+python evals\run_subjective_review_pack.py --preset relationship-weather-open
 python scripts\run_canonical_baseline.py --include-subjective
 python scripts\run_canonical_baseline.py --include-supporting
 ```

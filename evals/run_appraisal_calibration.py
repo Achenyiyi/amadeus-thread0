@@ -34,7 +34,7 @@ from amadeus_thread0.graph_parts.appraisal import (  # noqa: E402
 from amadeus_thread0.graph_parts.dialogue_guidance import _narrative_actor_profile  # noqa: E402
 from amadeus_thread0.graph_parts.postprocess import _response_style_hint  # noqa: E402
 from amadeus_thread0.graph_parts.prompt_helpers import _compact_focus_lines  # noqa: E402
-from amadeus_thread0.graph_parts.relational import _compact_relationship_summary, _focus_payload  # noqa: E402
+from amadeus_thread0.graph_parts.relational_runtime import _compact_relationship_summary, _focus_payload  # noqa: E402
 from amadeus_thread0.graph_parts.runtime_services import _invoke_model_with_retries, _model  # noqa: E402
 
 REPORT_DIR = PROJECT_ROOT / "evals" / "reports"

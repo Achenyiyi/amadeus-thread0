@@ -10,7 +10,7 @@ from .postprocess import (
     _wants_brief_presence,
     _wants_presence_reassurance,
 )
-from .relational import _counterpart_assessment_summary
+from .relational_runtime import _counterpart_assessment_summary
 from .turn_events import _now_ts
 
 CARE_KEYWORDS = {"谢谢", "辛苦", "关心", "陪我", "晚安", "早安"}

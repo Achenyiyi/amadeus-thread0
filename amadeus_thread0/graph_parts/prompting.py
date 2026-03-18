@@ -15,7 +15,7 @@ from .prompt_helpers import (
     _compact_rule_lines,
     _recent_background_scene_hint,
 )
-from .relational import (
+from .relational_runtime import (
     _compact_counterpart_assessment_hint,
     _compact_relationship_summary,
     _focus_payload,
@@ -32,6 +32,7 @@ from .dialogue_guidance import (
     _narrative_actor_profile,
     _plain_contact_ping_needs_relational_guard,
     _scene_persona_axioms,
+    _semantic_evidence_runtime_lines,
     _semantic_motive_state_hint,
     _selfhood_preference_lines,
     _subjective_runtime_state_hint,
@@ -284,6 +285,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         light_free_dialog = False
         plain_contact_ping = False
         plain_contact_guard = False
+    semantic_evidence_lines = _semantic_evidence_runtime_lines(
+        semantic_narrative_profile=semantic_narrative_profile,
+        behavior_policy=behavior_policy,
+        light_touch=light_free_dialog,
+    )
     daily_surface_pref_lines = (
         _daily_surface_preference_lines(prompt_user_text, science_mode=science_mode) if light_free_dialog else []
     )
@@ -297,6 +303,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             behavior_action=behavior_action,
             counterpart_assessment=counterpart_assessment,
             semantic_narrative_profile=semantic_narrative_profile,
+            behavior_policy=behavior_policy,
             world_model_state=world_model_state,
         )
         if current_event_kind == "user_utterance" and not science_mode
@@ -336,10 +343,12 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 context_lines.append(f"- 这段时间沉下来的熟悉感：{semantic_narrative_hint}")
             if motive_state_hint and not plain_contact_ping:
                 context_lines.append(f"- 当前主动倾向：{motive_state_hint}")
-            if daily_surface_pref_lines and not plain_contact_ping:
-                alignment_lines.append(f"轻场景自然落点：{daily_surface_pref_lines[0]}")
             if user_turn_behavior_pref_lines and not plain_contact_ping:
                 alignment_lines.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+            if semantic_evidence_lines and not plain_contact_ping:
+                alignment_lines.append(f"这轮关系/自我依据：{semantic_evidence_lines[0]}")
+            if daily_surface_pref_lines and not plain_contact_ping:
+                alignment_lines.append(f"轻场景自然落点：{daily_surface_pref_lines[0]}")
             if selfhood_pref_lines and not plain_contact_ping:
                 alignment_lines.append(f"关系/自我侧写：{selfhood_pref_lines[0]}")
             if pending_user_goal and not plain_contact_ping:
@@ -367,6 +376,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 context_lines.append(f"- 当前主动倾向：{motive_state_hint}")
             if user_turn_behavior_pref_lines:
                 alignment_lines.append(f"这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+            if semantic_evidence_lines:
+                alignment_lines.append(f"这轮关系/自我依据：{semantic_evidence_lines[0]}")
             if selfhood_pref_lines:
                 alignment_lines.append(f"关系/自我侧写：{selfhood_pref_lines[0]}")
             if event_behavior_pref_lines:
@@ -513,6 +524,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             runtime_brief_lines.append(f"- 最近沉下来的关系余波：{semantic_narrative_hint}")
         if user_turn_behavior_pref_lines:
             runtime_brief_lines.append(f"- 这轮互动自然倾向：{user_turn_behavior_pref_lines[0]}")
+        if semantic_evidence_lines:
+            runtime_brief_lines.append(f"- 这轮关系/自我依据：{semantic_evidence_lines[0]}")
         if selfhood_pref_lines:
             runtime_brief_lines.append(f"- 关系/自我侧写：{selfhood_pref_lines[0]}")
         if event_behavior_pref_lines:

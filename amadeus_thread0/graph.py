@@ -76,6 +76,12 @@ _LEGACY_EXPORT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        ".graph_parts.implicit_idle",
+        (
+            "build_implicit_idle_event_override",
+        ),
+    ),
+    (
         ".graph_parts.common",
         (
             "_clamp01",
@@ -163,11 +169,38 @@ _LEGACY_EXPORT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
+        ".graph_parts.model_call_prepare",
+        (
+            "_prepare_model_call",
+        ),
+    ),
+    (
         ".graph_parts.nodes",
         (
-            "_available_tools_for_state",
             "_node_call_model",
             "_node_prepare_turn",
+        ),
+    ),
+    (
+        ".graph_parts.prepare_turn_context",
+        (
+            "_prepare_turn_context",
+        ),
+    ),
+    (
+        ".graph_parts.prepare_turn_runtime",
+        (
+            "_prepare_turn_runtime",
+        ),
+    ),
+    (
+        ".graph_parts.tool_nodes",
+        (
+            "_available_tools_for_state",
+            "_node_tool_execute",
+            "_node_tool_gate",
+            "_node_tool_limit",
+            "_route_after_model",
         ),
     ),
     (
@@ -212,13 +245,39 @@ _LEGACY_EXPORT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        ".graph_parts.relational",
+        ".graph_parts.relational_carryover",
         (
-            "_prefer_refreshed_relationship_state",
+            "_agenda_lifecycle_carryover",
+            "_apply_agenda_lifecycle_residue_to_runtime_state",
+            "_history_source_behavior_hint",
+            "_long_horizon_interaction_carryover",
+            "_prefer_relational_carryover",
+            "_prior_user_exchange_carryover",
             "_recent_interaction_carryover",
-            "_relationship_runtime_snapshot",
+            "_recent_non_user_event_with_gap",
             "_seeded_interaction_carryover_from_state",
+        ),
+    ),
+    (
+        ".graph_parts.relational_runtime",
+        (
+            "_compact_counterpart_assessment_hint",
+            "_compact_relationship_summary",
+            "_counterpart_assessment_summary",
+            "_focus_payload",
+            "_focus_text",
+            "_prefer_refreshed_relationship_state",
+            "_prefer_relationship_state",
+            "_relationship_has_meaningful_signal",
+            "_relationship_runtime_snapshot",
+            "_relationship_signal_strength",
             "_worldline_focus",
+        ),
+    ),
+    (
+        ".graph_parts.response_finalize",
+        (
+            "_finalize_text_response",
         ),
     ),
     (

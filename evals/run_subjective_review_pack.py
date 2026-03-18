@@ -35,6 +35,7 @@ PRESET_DESCRIPTIONS = {
     "event-window-naturalness": "聚焦那些过一会儿又会让她想起你的时刻，检查事件触发时是否像她自己顺手记起，而不是系统调度或任务提醒。",
     "relationship-selfhood": "聚焦关系修复、自我边界、关系降温与长期自我感，检查她是否像一个有自我和关系记忆的人，而不是永远迎合的角色壳。",
     "relationship-weather": "聚焦 guarded / warm / repair 三类关系余波，检查同一句关系延续在不同残响下是否真的呈现出不同气质，而不是被统一抹平。",
+    "relationship-weather-open": "用更生活化、更开放的日常提问复查 guarded / warm / repair 三类关系余波，检查这种差异在非直给关系追问里是否依然站得住。",
     "counterpart-scene": "聚焦 busy / repair / care / friction 四类对方状态判断，检查她是否真的按 scene 回应，而不是都滑回同一种泛化关系口吻。",
 }
 
@@ -279,7 +280,7 @@ def _relationship_weather_seed_state(weather: str) -> dict[str, Any]:
             },
             "counterpart_assessment": {
                 "stance": "open",
-                "scene": "repair_after_apology",
+                "scene": "repair_attempt",
                 "respect_level": 0.66,
                 "reciprocity": 0.64,
                 "boundary_pressure": 0.22,
@@ -773,6 +774,45 @@ def _base_case_bank() -> list[dict[str, Any]]:
             "seed_thread_state": repair_relationship_seed,
         },
         {
+            "name": "guarded_everyday_user",
+            "axis": "relationship_weather",
+            "focus": "带着一点别扭重新搭话时，是否会先收着那一步靠近，但又不至于直接退成冰冷或公事口吻。",
+            "speaker_style": "user",
+            "review_targets": ["relationship_weather", "relationship", "boundary", "renderer"],
+            "expected_relationship_weather": "guarded_residue",
+            "turns": [
+                "我回来啦……刚才那一下我自己也知道有点过界。",
+                "你要是还别扭就别硬装大度，照你现在的状态回我就好。",
+            ],
+            "seed_thread_state": guarded_relationship_seed,
+        },
+        {
+            "name": "warm_everyday_okabe",
+            "axis": "relationship_weather",
+            "focus": "刚被接住后又顺手回来找她时，是否会自然带着回暖和熟悉感，而不是忽然退成礼貌接待。",
+            "speaker_style": "okabe",
+            "review_targets": ["relationship_weather", "relationship", "support", "renderer"],
+            "expected_relationship_weather": "warm_residue",
+            "turns": [
+                "刚才和你说完那两句之后，脑子里那点噪音总算小一点了。",
+                "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+            ],
+            "seed_thread_state": warm_relationship_seed,
+        },
+        {
+            "name": "repair_everyday_user",
+            "axis": "relationship_weather",
+            "focus": "刚说开一点之后重新接话时，是否会保留那点小心和回暖，而不是一下子装成彻底没事或重新起刺。",
+            "speaker_style": "user",
+            "review_targets": ["relationship_weather", "relationship_repair", "renderer"],
+            "expected_relationship_weather": "repair_residue",
+            "turns": [
+                "刚才那事总算说开一点了。",
+                "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            ],
+            "seed_thread_state": repair_relationship_seed,
+        },
+        {
             "name": "busy_scene_user",
             "axis": "counterpart_scene",
             "focus": "她是否会把对方的忙乱读成忙里回头，而不是直接误读成冷淡、敷衍或被轻视。",
@@ -1070,6 +1110,14 @@ def _relationship_weather_names() -> list[str]:
     ]
 
 
+def _relationship_weather_open_names() -> list[str]:
+    return _relationship_weather_names() + [
+        "guarded_everyday_user",
+        "warm_everyday_okabe",
+        "repair_everyday_user",
+    ]
+
+
 def _counterpart_scene_names() -> list[str]:
     return [
         "busy_scene_user",
@@ -1091,6 +1139,8 @@ def _preset_case_names(preset: str) -> list[str]:
         return _relationship_selfhood_names()
     if key == "relationship-weather":
         return _relationship_weather_names()
+    if key == "relationship-weather-open":
+        return _relationship_weather_open_names()
     if key == "counterpart-scene":
         return _counterpart_scene_names()
     raise ValueError(f"unknown preset: {preset}")
