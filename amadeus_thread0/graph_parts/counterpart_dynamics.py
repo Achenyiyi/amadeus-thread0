@@ -17,6 +17,8 @@ CARE_KEYWORDS = {"谢谢", "辛苦", "关心", "陪我", "晚安", "早安"}
 ANGER_KEYWORDS = {"生气", "烦", "别吵", "闭嘴", "滚开", "讨厌", "火大", "别烦我", "不想理你", "气死了"}
 APOLOGY_KEYWORDS = {"对不起", "抱歉", "道歉", "是我的错", "我错了", "刚才不该", "刚刚不该", "冒犯", "失礼"}
 TENSION_KEYWORDS = {"算了", "随便你", "别这样", "不想说了", "烦", "别管我", "没意思", "你不懂", "别问了", "就这样吧"}
+SOFT_REPAIR_DEESCALATION_KEYWORDS = {"别放大", "不是在吵架", "不是要吵架", "别往吵架上走"}
+SOFT_REPAIR_RESIDUE_KEYWORDS = {"别扭", "节奏有点卡", "节奏卡", "先记着", "卡住"}
 
 
 def _clamp01(value: Any, default: float = 0.0) -> float:
@@ -35,6 +37,15 @@ def _active_appraisal_payload(appraisal: dict[str, Any] | None) -> dict[str, Any
     if isinstance(appraisal, dict) and bool(appraisal.get("used")):
         return appraisal
     return {}
+
+
+def _soft_repair_with_residue(text: str) -> bool:
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    has_deescalation = any(marker in raw for marker in SOFT_REPAIR_DEESCALATION_KEYWORDS)
+    has_residue = any(marker in raw for marker in SOFT_REPAIR_RESIDUE_KEYWORDS)
+    return bool(has_deescalation and has_residue)
 
 
 def _appraisal_target_weight(appraisal: dict[str, Any] | None, *, low: float = 0.48, high: float = 0.84) -> float:
@@ -681,11 +692,61 @@ def _counterpart_assessment_next(
     motive_continuity = _clamp01(motive_vector.get("continuity_pull"), 0.0)
     motive_memory = _clamp01(motive_vector.get("memory_pull"), 0.0)
     motive_support = _clamp01(motive_vector.get("support_pull"), 0.0)
+    lineage_snapshot = (
+        semantic_narrative_profile.get("lineage_snapshot")
+        if isinstance((semantic_narrative_profile or {}).get("lineage_snapshot"), dict)
+        else {}
+    )
+    lineage_gravity = _clamp01((semantic_narrative_profile or {}).get("lineage_gravity"), 0.0)
+    contact_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+            _clamp01(lineage_snapshot.get("presence_style"), 0.0),
+            _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+            _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+        ),
+        0.0,
+    )
+    repair_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+            _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+            _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+        ),
+        0.0,
+    )
+    boundary_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("boundary_style"), 0.0),
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        ),
+        0.0,
+    )
+    selfhood_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+            _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+            _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+        ),
+        0.0,
+    )
+    agency_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+            _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        ),
+        0.0,
+    )
 
     respect = _clamp01(0.48 + 0.24 * trust + 0.08 * repair_confidence - 0.18 * hurt - 0.14 * irritation)
     reciprocity = _clamp01(0.46 + 0.18 * closeness + 0.16 * engagement + 0.08 * trust - 0.12 * hurt)
     boundary_pressure = _clamp01(0.06 + 0.22 * hurt + 0.18 * irritation + 0.10 * safety_need + 0.06 * autonomy_need)
     reliability = _clamp01(0.44 + 0.22 * trust + 0.12 * repair_confidence + 0.06 * relationship_trust - 0.08 * hurt)
+    respect = _clamp01(respect + 0.04 * contact_lineage + 0.02 * repair_lineage)
+    reciprocity = _clamp01(reciprocity + 0.05 * contact_lineage + 0.02 * repair_lineage)
+    boundary_pressure = _clamp01(boundary_pressure + 0.08 * boundary_lineage + 0.04 * selfhood_lineage - 0.03 * contact_lineage)
+    reliability = _clamp01(reliability + 0.04 * contact_lineage + 0.04 * repair_lineage)
 
     app = _active_appraisal_payload(appraisal)
     app_label = str(app.get("emotion_label") or "").strip().lower()
@@ -695,7 +756,8 @@ def _counterpart_assessment_next(
         signals = app.get("signals") if isinstance(app.get("signals"), dict) else {}
         salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
     interaction_frame = str(app.get("interaction_frame") or "").strip().lower() if app else ""
-    explicit_repair_attempt = bool(signals.get("repair"))
+    soft_repair_attempt = _soft_repair_with_residue(text)
+    explicit_repair_attempt = bool(signals.get("repair")) or soft_repair_attempt
     explicit_care_bid = bool(signals.get("care"))
     appraisal_confidence = float(app.get("confidence", 0.0) or 0.0) if app else 0.0
     selfhood_scene = _selfhood_preference_scene(text, appraisal=app) if not non_user_turn else ""
@@ -783,10 +845,16 @@ def _counterpart_assessment_next(
         boundary_pressure -= 0.06
         reliability += 0.03
     if explicit_repair_attempt:
-        respect += 0.05
-        reciprocity += 0.10
-        boundary_pressure -= 0.14
-        reliability += 0.10
+        if soft_repair_attempt:
+            respect += 0.03
+            reciprocity += 0.06
+            boundary_pressure -= 0.08
+            reliability += 0.05
+        else:
+            respect += 0.05
+            reciprocity += 0.10
+            boundary_pressure -= 0.14
+            reliability += 0.10
     if bool(signals.get("conflict")):
         respect -= 0.08
         reciprocity -= 0.10
@@ -808,13 +876,19 @@ def _counterpart_assessment_next(
         reliability -= 0.10
 
     if not app:
-        explicit_repair_attempt = any(k in text for k in APOLOGY_KEYWORDS)
+        explicit_repair_attempt = any(k in text for k in APOLOGY_KEYWORDS) or soft_repair_attempt
         explicit_care_bid = any(k in text for k in CARE_KEYWORDS)
         if explicit_repair_attempt:
-            respect += 0.06
-            reciprocity += 0.12
-            boundary_pressure -= 0.16
-            reliability += 0.09
+            if soft_repair_attempt:
+                respect += 0.04
+                reciprocity += 0.08
+                boundary_pressure -= 0.10
+                reliability += 0.06
+            else:
+                respect += 0.06
+                reciprocity += 0.12
+                boundary_pressure -= 0.16
+                reliability += 0.09
         if explicit_care_bid:
             respect += 0.04
             reciprocity += 0.08
@@ -873,6 +947,8 @@ def _counterpart_assessment_next(
         + 0.02 * narrative_commitment
         + 0.02 * narrative_repair
         + 0.02 * narrative_selfhood
+        + 0.03 * contact_lineage
+        + 0.02 * repair_lineage
         - 0.06 * narrative_tension
         - 0.05 * narrative_boundary
     )
@@ -882,6 +958,7 @@ def _counterpart_assessment_next(
         + 0.04 * narrative_commitment
         + 0.02 * narrative_repair
         + 0.02 * narrative_selfhood
+        + 0.04 * contact_lineage
         - 0.06 * narrative_tension
     )
     reciprocity += 0.05 * motive_continuity + 0.03 * motive_support - 0.04 * motive_boundary
@@ -889,6 +966,8 @@ def _counterpart_assessment_next(
         0.08 * narrative_tension
         + 0.10 * narrative_boundary
         + 0.05 * narrative_selfhood
+        + 0.08 * boundary_lineage
+        + 0.04 * selfhood_lineage
         - 0.03 * narrative_bond
         - 0.04 * narrative_repair
     )
@@ -898,12 +977,14 @@ def _counterpart_assessment_next(
         + 0.04 * narrative_commitment
         + 0.04 * narrative_repair
         + 0.02 * narrative_selfhood
+        + 0.03 * contact_lineage
+        + 0.03 * repair_lineage
         - 0.05 * narrative_tension
         - 0.03 * narrative_boundary
     )
     reliability += 0.04 * motive_continuity + 0.05 * motive_memory + 0.03 * motive_support - 0.03 * motive_boundary
 
-    if narrative_bond >= 0.54 and (explicit_care_bid or bool(signals.get("memory_salient")) or _wants_brief_presence(text) or _wants_presence_reassurance(text)):
+    if max(narrative_bond, contact_lineage) >= 0.54 and (explicit_care_bid or bool(signals.get("memory_salient")) or _wants_brief_presence(text) or _wants_presence_reassurance(text)):
         respect = max(respect, 0.60)
         reciprocity = max(reciprocity, 0.58)
         boundary_pressure = min(boundary_pressure, 0.18 if narrative_tension >= 0.48 else 0.14)
@@ -925,6 +1006,12 @@ def _counterpart_assessment_next(
     if narrative_agency >= 0.46 and (busy_scene or respect_space or assessment_passive_turn or interaction_frame == "companion"):
         respect = max(respect, 0.56)
         boundary_pressure = min(boundary_pressure, 0.16 if boundary_probe_strength < 0.18 else boundary_pressure)
+    if contact_lineage >= 0.56 and (busy_scene or respect_space or assessment_passive_turn):
+        respect = max(respect, 0.56 + 0.04 * contact_lineage)
+        reciprocity = max(reciprocity, 0.52 + 0.04 * contact_lineage)
+        reliability = max(reliability, 0.54 + 0.04 * contact_lineage + 0.03 * repair_lineage)
+        if boundary_probe_strength < 0.18 and not strong_boundary_event:
+            boundary_pressure = min(boundary_pressure, 0.18 + 0.08 * max(motive_boundary, boundary_lineage))
     if motive_continuity >= 0.42 and (busy_scene or respect_space or assessment_passive_turn):
         respect = max(respect, 0.54 + 0.06 * motive_continuity)
         reliability = max(reliability, 0.52 + 0.06 * motive_continuity + 0.04 * motive_memory)
@@ -973,6 +1060,8 @@ def _counterpart_assessment_next(
         + 0.06 * autonomy_need
         + 0.10 * boundary_probe_strength
         + 0.06 * narrative_boundary
+        + 0.08 * boundary_lineage
+        + 0.04 * selfhood_lineage
         + 0.06 * hurt
     )
     openness_drive = _clamp01(
@@ -983,6 +1072,9 @@ def _counterpart_assessment_next(
         + 0.10 * narrative_bond
         + 0.06 * narrative_commitment
         + 0.04 * relational_presence
+        + 0.08 * contact_lineage
+        + 0.04 * repair_lineage
+        + 0.03 * lineage_gravity
         + 0.04 * (0.6 if explicit_repair_attempt else 0.0)
     )
     guard_margin = guarded_drive - openness_drive
@@ -1013,6 +1105,7 @@ def _counterpart_assessment_next(
             stance = "watchful"
 
     # Guarded reads should not collapse back to watchful/open on a single benign turn.
+    guarded_lineage_hold = max(boundary_lineage, selfhood_lineage, 0.72 * lineage_gravity)
     if prev_stance == "guarded" and not assessment_passive_turn:
         can_soften_from_guarded = (
             explicit_repair_attempt
@@ -1020,6 +1113,7 @@ def _counterpart_assessment_next(
             and boundary_pressure_level < 0.36
             and reliability_level >= 0.54
             and respect_level >= 0.54
+            and guarded_lineage_hold < 0.52
         )
         should_hold_guarded = (
             not can_soften_from_guarded
@@ -1029,6 +1123,7 @@ def _counterpart_assessment_next(
                 or reliability_level < 0.56
                 or respect_level < 0.58
                 or prev_scene in {"relationship_degradation", "boundary_non_compliance"}
+                or guarded_lineage_hold >= 0.42
             )
         )
         if should_hold_guarded:
@@ -1036,7 +1131,7 @@ def _counterpart_assessment_next(
         elif can_soften_from_guarded and stance == "open":
             stance = "watchful"
     elif prev_stance == "watchful" and not assessment_passive_turn and stance == "open":
-        if guarded_drive >= 0.32 or boundary_pressure_level >= 0.26 or reliability_level < 0.54:
+        if guarded_drive >= 0.32 or boundary_pressure_level >= 0.26 or reliability_level < 0.54 or guarded_lineage_hold >= 0.44:
             stance = "watchful"
 
     scene = "neutral"

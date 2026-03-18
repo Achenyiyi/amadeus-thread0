@@ -53,6 +53,8 @@ _NATURAL_REWRITE_ISSUE_KEYS = {
     "servile_availability",
     "existence_meta_surface",
     "illusion_stagey_surface",
+    "support_scene_drift",
+    "support_frame_echo",
     "overquestioning",
     "dangling_ellipsis_ending",
     "closing_interrogation",
@@ -271,8 +273,20 @@ def _finalize_text_response(
         if not light_dialog_final_pref_score:
             light_dialog_final_pref_score = light_dialog_draft_pref_score
 
+    natural_rewrite_escape_hatch = bool(
+        {
+            "meta_self_explainer",
+            "technical_self_activity",
+            "technical_relational_metaphor",
+            "support_scene_drift",
+            "support_frame_echo",
+            "existence_meta_surface",
+            "illusion_stagey_surface",
+        }
+        & set(list(draft_dialogue_issues) + list(draft_gap_flags))
+    )
     if (
-        not light_free_dialog
+        (not light_free_dialog or natural_rewrite_escape_hatch)
         and not continuation_mode
         and not bool(_needs_structured_answer(user_text, draft_text))
         and response_style_hint in {"relationship", "companion", "casual", "natural", "selfhood", "structured"}

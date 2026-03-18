@@ -111,6 +111,7 @@ def evolve_turn_state(
         current_event=current_event,
         appraisal=appraisal,
         world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
         latent_state=latent_state,
         emotion_state=emotion_state,
         bond_state=bond_state,

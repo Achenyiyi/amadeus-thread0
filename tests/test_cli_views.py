@@ -105,15 +105,37 @@ class CliViewsTests(unittest.TestCase):
                 "salience": {"relationship": 0.44},
             },
             world_model_state={
+                "relationship_maturity": 0.58,
                 "bond_depth": 0.61,
                 "tension_load": 0.12,
                 "repair_load": 0.14,
+                "boundary_load": 0.18,
                 "selfhood_load": 0.40,
                 "agency_load": 0.48,
                 "memory_gravity": 0.46,
+                "lineage_gravity": 0.64,
+                "contact_lineage": 0.58,
+                "repair_lineage": 0.42,
+                "boundary_lineage": 0.62,
+                "selfhood_lineage": 0.66,
+                "agency_lineage": 0.72,
                 "presence_residue": 0.39,
                 "ambient_resonance": 0.31,
                 "self_activity_momentum": 0.55,
+            },
+            semantic_narrative_profile={
+                "dominant_category": "rhythm_style",
+                "continuity_depth": 0.74,
+                "identity_gravity": 0.68,
+                "lineage_gravity": 0.70,
+                "active_categories": ["presence_style", "rhythm_style", "agency_style"],
+                "lineage_snapshot": {
+                    "presence_style": 0.60,
+                    "boundary_style": 0.62,
+                    "selfhood_style": 0.66,
+                    "agency_style": 0.72,
+                    "rhythm_style": 0.76,
+                },
             },
             latent_state={"self_coherence": 0.74, "agency_pressure": 0.42, "reflection_drive": 0.46, "expression_freedom": 0.68},
             emotion_state={"label": "neutral"},
@@ -142,9 +164,18 @@ class CliViewsTests(unittest.TestCase):
             },
         )
         world_model = snapshot.get("world_model") if isinstance(snapshot.get("world_model"), dict) else {}
+        semantic = snapshot.get("semantic_continuity") if isinstance(snapshot.get("semantic_continuity"), dict) else {}
+        self.assertEqual(world_model.get("relationship_maturity"), 0.58)
         self.assertEqual(world_model.get("presence_residue"), 0.39)
         self.assertEqual(world_model.get("ambient_resonance"), 0.31)
         self.assertEqual(world_model.get("self_activity_momentum"), 0.55)
+        self.assertEqual(world_model.get("lineage_gravity"), 0.64)
+        self.assertEqual(world_model.get("agency_lineage"), 0.72)
+        self.assertEqual(world_model.get("boundary_lineage"), 0.62)
+        self.assertEqual(semantic.get("dominant_category"), "rhythm_style")
+        self.assertEqual(semantic.get("lineage_gravity"), 0.7)
+        self.assertIn("agency_style", semantic.get("active_categories") or [])
+        self.assertEqual((semantic.get("lineage_snapshot") or {}).get("rhythm_style"), 0.76)
         self.assertEqual(snapshot.get("behavior_mode"), "self_activity_reopen")
         self.assertEqual(snapshot.get("primary_motive"), "gentle_recontact")
         self.assertEqual(snapshot.get("motive_tension"), "self_rhythm_vs_contact")
@@ -309,6 +340,15 @@ class CliViewsTests(unittest.TestCase):
                 "presence_residue": 0.33,
                 "ambient_resonance": 0.24,
                 "self_activity_momentum": 0.58,
+                "continuity_anchor": 0.66,
+                "own_rhythm_anchor": 0.72,
+                "recontact_anchor": 0.34,
+                "boundary_anchor": 0.22,
+                "memory_anchor": 0.30,
+                "lineage_gravity": 0.70,
+                "contact_lineage": 0.44,
+                "boundary_lineage": 0.36,
+                "agency_lineage": 0.78,
                 "own_rhythm_bias": 0.61,
                 "recontact_cooldown": 0.47,
                 "counterpart_scene_bias": "busy_not_disrespectful",
@@ -332,6 +372,10 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(lifecycle.get("kind"), "released_to_self_activity")
         self.assertEqual(lifecycle.get("carryover_mode"), "own_rhythm")
         self.assertEqual(lifecycle.get("carryover_strength"), 0.53)
+        self.assertEqual(lifecycle.get("continuity_anchor"), 0.66)
+        self.assertEqual(lifecycle.get("own_rhythm_anchor"), 0.72)
+        self.assertEqual(lifecycle.get("lineage_gravity"), 0.7)
+        self.assertEqual(lifecycle.get("agency_lineage"), 0.78)
         self.assertEqual(lifecycle.get("recontact_cooldown"), 0.47)
         self.assertEqual(lifecycle.get("counterpart_scene_bias"), "busy_not_disrespectful")
         self.assertIn("agenda_lifecycle", lifecycle.get("source_tags") or [])

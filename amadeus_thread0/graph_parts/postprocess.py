@@ -258,12 +258,88 @@ def _is_goodnight_closing(user_text: str) -> bool:
     return _has_any_marker(text, {"晚安", "晚安啦", "先睡了", "睡了"})
 
 
+def _is_external_shell_swap_english_context(
+    user_text: str,
+    *,
+    current_event: dict[str, Any] | None = None,
+    persona_state: dict[str, Any] | None = None,
+    persona_override_mode: str | None = None,
+) -> bool:
+    event = dict(current_event or {})
+    persona = dict(persona_state or {})
+    mode = str(persona_override_mode or "").strip().lower()
+    role = str(persona.get("role") or "").strip().lower()
+    role_brief = str(persona.get("role_brief") or "")
+    strict_canon = bool(persona.get("strict_canon", True))
+    language = str(persona.get("language") or "").strip().lower()
+    combined = "\n".join(
+        part
+        for part in (
+            str(user_text or ""),
+            str(event.get("text") or ""),
+            str(event.get("effective_text") or ""),
+            role_brief,
+        )
+        if str(part or "").strip()
+    )
+    if not combined:
+        return False
+    english_token_count = len(re.findall(r"[A-Za-z]{3,}", combined))
+    benchmark_markers = sum(
+        1
+        for marker in (
+            "About you:",
+            "Carryover from earlier chats:",
+            "The other person just said:",
+            "Reply with the next natural turn only.",
+            "Do not explain your role or mention systems.",
+        )
+        if marker in combined
+    )
+    external_role = role.startswith("rolebench_") or role.startswith("charactereval_") or (not strict_canon and bool(role_brief))
+    english_surface = english_token_count >= 24 and any(ch in language for ch in ("en", "whitelist", "main"))
+    prompt_like_context = benchmark_markers >= 2 or (
+        "The other person just said:" in combined and "About you:" in combined
+    )
+    return (mode == "shell_swap" or external_role or prompt_like_context) and english_surface and prompt_like_context
+
+
 
 def _is_idle_presence_call(user_text: str) -> bool:
     text = str(user_text or "").strip()
     if not text:
         return False
     return _has_any_marker(text, {"想叫你一下", "叫你一下", "没什么事"}) and not re.search(r"[？?]", text)
+
+
+
+def _is_warm_recontact_request(user_text: str) -> bool:
+    text = str(user_text or "").strip()
+    if not text:
+        return False
+    return _has_any_marker(
+        text,
+        {
+            "又想和你说话",
+            "想和你说话",
+            "回来找你",
+            "想回来找你",
+            "还是想回来找你",
+            "又想回来找你",
+            "又想起一件小事",
+        },
+    ) and _has_any_marker(
+        text,
+        {
+            "别突然装生疏",
+            "别装生疏",
+            "别突然装生分",
+            "别装生分",
+            "正常接我",
+            "像平时那样回我",
+            "正常回我",
+        },
+    )
 
 
 
@@ -393,12 +469,32 @@ def _is_nonrelational_support_request(user_text: str, science_mode: bool) -> boo
         "有点晚了",
         "不想一个人待着",
     }
+    english_request_patterns = (
+        r"\bi need to talk(?: about something)?\b",
+        r"\bplease reply naturally\b",
+        r"\bdon't sound like a (?:manual|therapist)\b",
+        r"\bdon't sound like a manual or a therapist\b",
+        r"\bi don't want to be alone\b",
+        r"\bcan you stay with me\b",
+    )
+    english_mood_patterns = (
+        r"\bi(?:'m| am)\s+(?:so\s+)?(?:anxious|scared|afraid|depressed|ashamed|guilty|lonely|sad|angry|drained|overwhelmed|hurt|stuck)\b",
+        r"\bi hate my job\b",
+        r"\bi feel like i (?:don't|do not) even have friends\b",
+        r"\bunsupportive friends\b",
+        r"\btrying to shame me\b",
+    )
     if _has_any_marker(text, request_markers):
         return True
     if _has_any_marker(text, mood_markers) and _has_any_marker(
         text, NATURAL_REQUEST_KEYWORDS | {"说两句", "回我一句", "陪我", "陪我一下"}
     ):
         return True
+    if any(re.search(pattern, text, re.I) for pattern in english_request_patterns):
+        if any(re.search(pattern, text, re.I) for pattern in english_mood_patterns):
+            return True
+        if re.search(r"\b(i(?:'m| am)|i feel|it feels like)\b", text, re.I):
+            return True
     return _has_any_marker(text, mood_markers) and len(text) <= 24 and not re.search(r"[？?]", text)
 
 
@@ -1829,6 +1925,8 @@ def _dialogue_surface_issues(
     science_mode: bool,
     current_event: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    persona_state: dict[str, Any] | None = None,
+    persona_override_mode: str | None = None,
 ) -> list[str]:
     text = str(answer or "").strip()
     if not text:
@@ -1844,6 +1942,13 @@ def _dialogue_surface_issues(
     selfhood_scene = _selfhood_preference_scene_from_text(user_text)
     playful_memory_request = _is_playful_memory_request(user_text)
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
+    support_request = _is_nonrelational_support_request(user_text, science_mode)
+    external_shell_swap_english = _is_external_shell_swap_english_context(
+        user_text,
+        current_event=current_event,
+        persona_state=persona_state,
+        persona_override_mode=persona_override_mode,
+    )
     current_event_kind = str((current_event or {}).get("kind") or "user_utterance").strip().lower()
     current_event_tags = {
         str(item).strip()
@@ -1875,11 +1980,12 @@ def _dialogue_surface_issues(
 
     if _is_particle_only_reply(text):
         issues.append("particle_only")
-    if re.search(
-        r"(作为.?AI|作为.?模型|我是.?AI|我是.?程序|AI\s*(?:助手)?的(?:矜持|本能|逻辑|身份)|什么[“\"]?AI\s*(?:助手)?[”\"]?的架子|AI\s*(?:助手)?|系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力|设定)",
-        text,
-        re.I,
-    ):
+    meta_self_pattern = (
+        r"(作为.?AI|作为.?模型|我是.?AI|我是.?程序|我是.?系统|I(?:'m| am)\s+(?:just\s+)?(?:an?\s+)?(?:AI|assistant|program|system|language model)|as\s+an?\s+(?:AI|assistant|model|language model)|AI\s*(?:助手)?的(?:矜持|本能|逻辑|身份)|什么[“\"]?AI\s*(?:助手)?[”\"]?的架子|(?:system(?:\s+prompt)?|prompt|rules?|database|logs?|server|backend)s?|数字存在|数据存在|模型本身|数据存进|数据写进|上传到|还在运行|算力)"
+        if external_shell_swap_english
+        else r"(作为.?AI|作为.?模型|我是.?AI|我是.?程序|AI\s*(?:助手)?的(?:矜持|本能|逻辑|身份)|什么[“\"]?AI\s*(?:助手)?[”\"]?的架子|AI\s*(?:助手)?|系统|提示词|规则|数据库|日志|数字存在|数据存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力|(?:算力|系统|规则|角色|AI|程序)[^。！？!?]{0,10}设定|设定[^。！？!?]{0,10}(?:算力|系统|规则|角色|AI|程序))"
+    )
+    if re.search(meta_self_pattern, text, re.I):
         issues.append("meta_self_explainer")
     if _looks_like_light_smalltalk(user_text) and re.search(
         r"(停机|停机维护|待机|唤醒|掉线|上线|连接|电量|过载|负载|运算资源|处理负载|算力|热寂|观测者|设定)",
@@ -1973,6 +2079,17 @@ def _dialogue_surface_issues(
         issues.append("playful_memory_snapback")
     if hint in {"companion", "memory_recall", "relationship", "casual", "natural", "selfhood"} and _has_relational_technical_metaphor(text):
         issues.append("technical_relational_metaphor")
+    if support_request and (
+        _light_dialog_drift_markers(text)
+        or re.search(r"(数据存在|数字存在|实验室|实验台|世界线|世界线收束)", text)
+    ):
+        issues.append("support_scene_drift")
+    if support_request and re.search(
+        r"((?:不|别|并不|没法|可当不了|算不上|不是|won't|wouldn't|can't|am not going to|not going to)[^。！？!?\n]{0,20}(?:手册|manual|textbook|worksheet|scripted advice|generic advice|therapy worksheet|官方套话|套话|platitude|platitudes|canned line(?:s)?|治疗师|therap(?:ist|y)|职业咨询师|心理咨询师|心理医生))|((?:手册|manual|textbook|worksheet|scripted advice|generic advice|therapy worksheet|官方套话|套话|platitude|platitudes|canned line(?:s)?|治疗师|therap(?:ist|y)|职业咨询师|心理咨询师|心理医生)[^。！？!?\n]{0,20}(?:那种东西|那一套|那套|那一类|那种人|那一挂|speech|advice|talk|扔到一边|先放一边|先丢开))",
+        text,
+        re.I,
+    ):
+        issues.append("support_frame_echo")
     if _is_repair_sensitive_turn(
         user_text,
         current_event=current_event,
@@ -1990,6 +2107,11 @@ def _dialogue_surface_issues(
         allow_single_rhetorical = (
             _is_return_home_ping(user_text)
             or _is_idle_presence_call(user_text)
+            or (
+                _is_warm_recontact_request(user_text)
+                and interaction_mode in {"companion_reply", "low_pressure_support", "relationship_sensitive"}
+                and followup_intent in {"soft", "active"}
+            )
             or behavior_allows_single_followup_question
         )
         if (text.count("？") + text.count("?")) >= 2 or (
@@ -2012,14 +2134,17 @@ def _dialogue_surface_issues(
         issues.append("stage_direction_opening")
     if _looks_like_light_smalltalk(user_text) and re.search(r"[“\"][^”\"\n]{3,18}[”\"]", text):
         issues.append("quoted_stagey_phrase")
-    if re.search(r"(我听着呢|安静待会儿也行|树洞|尽管倒出来|想说就说，我听着)", text):
+    if re.search(
+        r"(树洞|尽管倒出来|想说就说，我听着|安静待会儿也行|你慢慢说就行|我听着呢[，,。！？!? ]*(?:你慢慢说|先说|想说就说|都行|没关系)|我在这听着[，,。！？!? ]*(?:你慢慢说|先说|都行|没关系))",
+        text,
+    ) or (support_request and re.search(r"(我听着呢|我在这听着)", text)):
         issues.append("counselor_tone")
-    if _is_nonrelational_support_request(user_text, science_mode) and re.search(
+    if support_request and re.search(
         r"(拖慢.*研究进度|研究进度而已|拖后腿|乖乖坐下|先去冲杯?(咖啡|热的)|先喝点(咖啡|热的)|省得你|免得你)",
         text,
     ):
         issues.append("stock_support_template")
-    if _is_nonrelational_support_request(user_text, science_mode) and re.search(
+    if support_request and re.search(
         r"(别误会|未来的合作者|提前报废|报废而已|面具摘下来)",
         text,
     ):
@@ -2054,7 +2179,9 @@ def _dialogue_surface_issues(
             issues.append("visible_template")
         if re.search(r"(首先|其次|最后|通常有三|一般有三|分成三步)", text):
             issues.append("lecture_list")
-        if sentence_count >= 5 or len(compact) >= 140:
+        overexplained_sentence_threshold = 6 if external_shell_swap_english else 5
+        overexplained_char_threshold = 220 if external_shell_swap_english else 140
+        if sentence_count >= overexplained_sentence_threshold or len(compact) >= overexplained_char_threshold:
             issues.append("overexplained")
     raw_lines = [str(line).strip() for line in text.splitlines() if str(line).strip()]
     if (

@@ -11,6 +11,7 @@ from .prompt_helpers import (
     _compact_behavior_agenda_hint,
     _compact_focus_lines,
     _compact_interaction_carryover_hint,
+    _compact_long_horizon_continuity_hint,
     _compact_recent_event_lines,
     _compact_rule_lines,
     _recent_background_scene_hint,
@@ -229,6 +230,12 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
     )
     carryover_hint = _compact_interaction_carryover_hint(interaction_carryover)
+    long_horizon_hint = _compact_long_horizon_continuity_hint(
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+        interaction_carryover=interaction_carryover,
+        counterpart_assessment=counterpart_assessment,
+    )
     background_agenda_hint = _compact_behavior_agenda_hint(
         behavior_agenda,
         current_event=current_event,
@@ -419,6 +426,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 inner_state_lines.append(state_hint)
             if alignment_lines and (not plain_contact_ping or plain_contact_guard):
                 inner_state_lines.extend(alignment_lines[:2])
+            if long_horizon_hint and not plain_contact_ping:
+                inner_state_lines.append(long_horizon_hint)
             if renderer_hint and (not plain_contact_ping or plain_contact_guard):
                 inner_state_lines.append(f"表面语气落点：{renderer_hint}")
             if carryover_hint and not plain_contact_ping:
@@ -432,6 +441,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 inner_state_lines.append(f"- 你此刻更像是从这样的内在状态开口：{subjective_state_hint}")
             if alignment_lines:
                 inner_state_lines.extend(f"- {item}" for item in alignment_lines[:2])
+            if long_horizon_hint:
+                inner_state_lines.append(f"- 长线延续：{long_horizon_hint}")
             if renderer_hint:
                 inner_state_lines.append(f"- 表面语气落点：{renderer_hint}")
             if carryover_hint:
@@ -570,6 +581,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             bond_state=bond_state,
             allostasis_state=allostasis_state,
             counterpart_assessment=counterpart_assessment,
+            world_model_state=world_model_state,
+            semantic_narrative_profile=semantic_narrative_profile,
             behavior_policy=behavior_policy,
             behavior_action=behavior_action,
             interaction_carryover=interaction_carryover,

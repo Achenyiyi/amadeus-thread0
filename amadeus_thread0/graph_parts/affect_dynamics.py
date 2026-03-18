@@ -383,6 +383,44 @@ def _behavior_policy_from_state(
     narrative_selfhood = _clamp01((semantic_narrative_profile or {}).get("selfhood_integrity"), 0.0)
     narrative_agency = _clamp01((semantic_narrative_profile or {}).get("agency_drive"), 0.0)
     narrative_history = _clamp01((semantic_narrative_profile or {}).get("history_weight"), 0.0)
+    lineage_snapshot = (
+        (semantic_narrative_profile or {}).get("lineage_snapshot")
+        if isinstance((semantic_narrative_profile or {}).get("lineage_snapshot"), dict)
+        else {}
+    )
+    lineage_gravity = _clamp01((semantic_narrative_profile or {}).get("lineage_gravity"), 0.0)
+    contact_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+            _clamp01(lineage_snapshot.get("presence_style"), 0.0),
+            _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+            _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+        ),
+        0.0,
+    )
+    boundary_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("boundary_style"), 0.0),
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        ),
+        0.0,
+    )
+    selfhood_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+            _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+            _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+        ),
+        0.0,
+    )
+    agency_lineage = _clamp01(
+        max(
+            _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+            _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+            _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        ),
+        0.0,
+    )
     soft_reply_window = response_style_hint in {"companion", "casual", "natural"}
     nonrelational_support_request = False
     brief_presence = False
@@ -427,6 +465,16 @@ def _behavior_policy_from_state(
         + 0.03 * narrative_agency
     )
     tease_bias = _clamp01(tease_bias + 0.03 * narrative_bond - 0.07 * narrative_tension - 0.04 * narrative_repair)
+    boundary_assertiveness = _clamp01(0.22 + 0.44 * narrative_boundary + 0.24 * narrative_selfhood + 0.18 * boundary_pressure)
+    self_directedness = _clamp01(0.16 + 0.46 * narrative_agency + 0.20 * autonomy_need + 0.10 * narrative_selfhood)
+    equality_guard = _clamp01(0.16 + 0.42 * narrative_selfhood + 0.16 * boundary_pressure)
+    warmth = _clamp01(warmth + 0.04 * contact_lineage - 0.02 * boundary_lineage)
+    initiative = _clamp01(initiative + 0.03 * contact_lineage + 0.04 * agency_lineage - 0.03 * boundary_lineage)
+    disclosure = _clamp01(disclosure + 0.04 * contact_lineage + 0.02 * selfhood_lineage - 0.04 * boundary_lineage)
+    approach = _clamp01(approach + 0.05 * contact_lineage + 0.03 * agency_lineage - 0.05 * boundary_lineage)
+    boundary_assertiveness = _clamp01(boundary_assertiveness + 0.12 * boundary_lineage + 0.08 * selfhood_lineage)
+    self_directedness = _clamp01(self_directedness + 0.14 * agency_lineage + 0.10 * selfhood_lineage + 0.04 * lineage_gravity)
+    equality_guard = _clamp01(equality_guard + 0.10 * selfhood_lineage + 0.08 * boundary_lineage)
     explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
     nonrelational_support_request = (
         soft_reply_window
@@ -444,10 +492,6 @@ def _behavior_policy_from_state(
     )
     presence_checkin = brief_presence and closeness > 0.50 and hurt < 0.16
     hold_presence = brief_presence and hurt > 0.10 and trust > 0.52 and counterpart_stance != "guarded"
-
-    boundary_assertiveness = _clamp01(0.22 + 0.44 * narrative_boundary + 0.24 * narrative_selfhood + 0.18 * boundary_pressure)
-    self_directedness = _clamp01(0.16 + 0.46 * narrative_agency + 0.20 * autonomy_need + 0.10 * narrative_selfhood)
-    equality_guard = _clamp01(0.16 + 0.42 * narrative_selfhood + 0.16 * boundary_pressure)
 
     if counterpart_stance == "guarded":
         warmth = _clamp01(warmth - 0.06)
@@ -520,4 +564,9 @@ def _behavior_policy_from_state(
         "self_directedness": round(self_directedness, 3),
         "equality_guard": round(equality_guard, 3),
         "history_weight": round(narrative_history, 3),
+        "lineage_gravity": round(lineage_gravity, 3),
+        "contact_lineage": round(contact_lineage, 3),
+        "boundary_lineage": round(boundary_lineage, 3),
+        "selfhood_lineage": round(selfhood_lineage, 3),
+        "agency_lineage": round(agency_lineage, 3),
     }

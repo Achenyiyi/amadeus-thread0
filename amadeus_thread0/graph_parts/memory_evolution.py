@@ -51,6 +51,22 @@ SELFHOOD_STYLE_MARKERS = (
     }
 )
 
+FUTURE_TIME_MARKERS = {"周末", "下周", "明天", "今晚", "这两天", "之后", "以后", "到时候", "下次"}
+SHARED_COMMITMENT_MARKERS = {
+    "一起",
+    "记得",
+    "别让我",
+    "提醒",
+    "顺一遍",
+    "复盘",
+    "整理",
+    "改完",
+    "看一遍",
+    "看一下",
+}
+SOFT_REPAIR_DEESCALATION_MARKERS = {"别放大", "不是在吵架", "不是要吵架", "别往吵架上走"}
+SOFT_REPAIR_RESIDUE_MARKERS = {"别扭", "节奏有点卡", "节奏卡", "先记着", "卡住"}
+
 __all__ = [
     "_selfhood_preference_scene",
     "_semantic_self_evidence_records",
@@ -108,6 +124,26 @@ def _behavior_motive_snapshot(
     motive_tension = str(action.get("motive_tension") or event.get("motive_tension") or "").strip().lower()
     goal_frame = str(action.get("goal_frame") or event.get("goal_frame") or "").strip()
     return primary_motive, motive_tension, goal_frame
+
+
+def _looks_like_shared_future_commitment(text: str) -> bool:
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    if "？" in raw or "?" in raw:
+        return False
+    has_time_anchor = any(marker in raw for marker in FUTURE_TIME_MARKERS)
+    has_shared_plan = any(marker in raw for marker in SHARED_COMMITMENT_MARKERS)
+    return bool(has_time_anchor and has_shared_plan)
+
+
+def _looks_like_soft_repair_with_residue(text: str) -> bool:
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    has_deescalation = any(marker in raw for marker in SOFT_REPAIR_DEESCALATION_MARKERS)
+    has_residue = any(marker in raw for marker in SOFT_REPAIR_RESIDUE_MARKERS)
+    return bool(has_deescalation and has_residue)
 
 
 def _semantic_self_evidence_records(
@@ -1023,6 +1059,69 @@ def _refresh_semantic_self_narratives(
             return "带着一点距离的试探和余波"
         return "还在缓慢累积的默契"
 
+    def _narrative_stage_bucket() -> str:
+        if tensions and trust < 0.56 and closeness < 0.58:
+            return "strained"
+        if stage in {"trusted"} or trust >= 0.66 or closeness >= 0.68:
+            return "trusted"
+        if stage in {"warming"} or trust >= 0.56 or closeness >= 0.58 or len(shared_events) >= 2:
+            return "warming"
+        if repairs or resolved_tensions:
+            return "repairing"
+        return "early"
+
+    def _contradiction_band(pressure: float) -> str:
+        level = float(pressure or 0.0)
+        if level >= 0.28:
+            return "contested"
+        if level >= 0.14:
+            return "guarded"
+        return "clear"
+
+    def _frame_horizon_band(tag: str, *, identity_ready: bool) -> str:
+        horizon = str(tag or "").strip().lower()
+        if identity_ready or horizon == "long_term":
+            return "stable"
+        if horizon == "consolidating":
+            return "forming"
+        return "emerging"
+
+    def _build_narrative_frame_signature(
+        category: str,
+        *,
+        horizon_tag: str,
+        contradiction_pressure: float,
+        motive_signature: str = "",
+        identity_ready: bool = False,
+    ) -> str:
+        parts = [
+            str(category or "").strip().lower() or "self_narrative",
+            f"stage={_narrative_stage_bucket()}",
+            f"horizon={_frame_horizon_band(horizon_tag, identity_ready=identity_ready)}",
+            f"pressure={_contradiction_band(contradiction_pressure)}",
+        ]
+        motive = str(motive_signature or "").strip()
+        if motive:
+            parts.append(f"motive={motive}")
+        return "|".join(parts)
+
+    def _legacy_frame_signature(category: str, prev: dict[str, Any] | None) -> str:
+        record = prev if isinstance(prev, dict) else {}
+        motive_signature = str(_record_value(record, "motive_signature", "") or "").strip()
+        if not motive_signature:
+            motive_parts = [
+                str(_record_value(record, "dominant_primary_motive", "") or "").strip(),
+                str(_record_value(record, "dominant_motive_tension", "") or "").strip(),
+            ]
+            motive_signature = ":".join([part for part in motive_parts if part])
+        return _build_narrative_frame_signature(
+            category,
+            horizon_tag=str(_record_value(record, "horizon_tag", "") or "").strip(),
+            contradiction_pressure=_clamp01(_record_value(record, "contradiction_pressure", 0.0), 0.0),
+            motive_signature=motive_signature,
+            identity_ready=bool(_record_value(record, "identity_ready", False)),
+        )
+
     existing_by_category: dict[str, dict[str, Any]] = {}
     for item in store.list_semantic_self_narratives(limit=20):
         cat = str(_record_value(item, "category", "") or "").strip()
@@ -1417,6 +1516,10 @@ def _refresh_semantic_self_narratives(
         prev_identity_strength = _clamp01(_record_value(prev or {}, "identity_strength", 0.0), 0.0)
         prev_identity_text = str(_record_value(prev or {}, "identity_text", "") or "").strip()
         prev_identity_prompt_text = str(_record_value(prev or {}, "identity_prompt_text", "") or "").strip()
+        prev_frame_signature = str(_record_value(prev or {}, "frame_signature", "") or "").strip()
+        prev_lineage_streak = max(0, int(_record_value(prev or {}, "lineage_streak", 0) or 0))
+        prev_lineage_depth = _clamp01(_record_value(prev or {}, "lineage_depth", 0.0), 0.0)
+        prev_frame_revision_count = max(0, int(_record_value(prev or {}, "frame_revision_count", 0) or 0))
         motive_state = _narrative_motive_state(category, prev=prev)
         motive_support_count = max(0, int(motive_state.get("motive_support_count") or 0))
         motive_signature = str(motive_state.get("motive_signature") or "").strip()
@@ -1649,8 +1752,6 @@ def _refresh_semantic_self_narratives(
         else:
             horizon_tag = "emerging"
         horizon_tag = _downgrade_horizon_tag(horizon_tag, contradiction_pressure, category)
-        final_text = prev_text if prev_text and prev_signature == support_signature else text
-        final_text = _pressure_adjusted_narrative_text(category, final_text, contradiction_pressure)
         anchor_text, prompt_anchor_text, anchor_basis_texts = _narrative_anchor_texts(category)
         anchor_strength = round(
             _clamp01(
@@ -1692,6 +1793,45 @@ def _refresh_semantic_self_narratives(
         )
         if prev_identity_ready and persistence_score >= 0.46 and contradiction_pressure < 0.62:
             identity_ready = True
+        if not prev_frame_signature and prev:
+            prev_frame_signature = _legacy_frame_signature(category, prev)
+        frame_signature = _build_narrative_frame_signature(
+            category,
+            horizon_tag=horizon_tag,
+            contradiction_pressure=contradiction_pressure,
+            motive_signature=motive_signature,
+            identity_ready=identity_ready,
+        )
+        frame_changed = bool(prev and prev_frame_signature and prev_frame_signature != frame_signature)
+        same_frame = bool(prev and prev_frame_signature == frame_signature)
+        lineage_streak = prev_lineage_streak + 1 if same_frame else 1
+        lineage_norm = _clamp01(lineage_streak / 6.0)
+        frame_revision_count = prev_frame_revision_count + (1 if frame_changed else 0)
+        text_lock_ready = bool(
+            prev_text
+            and prev
+            and not frame_changed
+            and (
+                prev_identity_ready
+                or prev_consolidation >= 3
+                or prev_lineage_depth >= 0.42
+                or str(_record_value(prev or {}, "horizon_tag", "") or "").strip().lower() in {"consolidating", "long_term"}
+            )
+        )
+        lineage_depth = round(
+            _clamp01(
+                max(prev_lineage_depth * max(gap_decay, 0.90) * (0.96 if same_frame else 0.68), 0.0)
+                + 0.14 * lineage_norm
+                + 0.12 * temporal_depth
+                + 0.10 * consolidation_effect
+                + 0.08 * sedimentation_score
+                + 0.08 * support_quality
+                + (0.08 if same_frame else 0.0)
+                + (0.05 if text_lock_ready else 0.0)
+                - 0.12 * contradiction_pressure
+            ),
+            3,
+        )
         identity_text_base, identity_prompt_base = _identity_narrative_texts(category)
         identity_text = (
             prev_identity_text
@@ -1703,6 +1843,8 @@ def _refresh_semantic_self_narratives(
             if prev_identity_ready and prev_identity_prompt_text
             else identity_prompt_base
         )
+        final_text = prev_text if text_lock_ready else prev_text if prev_text and prev_signature == support_signature else text
+        final_text = _pressure_adjusted_narrative_text(category, final_text, contradiction_pressure)
         metadata = {
             "support_count": support_count,
             "support_mass": round(support_mass, 3),
@@ -1750,6 +1892,12 @@ def _refresh_semantic_self_narratives(
             "motive_confidence_avg": round(_clamp01(float(motive_state.get("motive_confidence_avg") or 0.0), 0.0), 3),
             "motive_fresh_ratio": round(_clamp01(float(motive_state.get("motive_fresh_ratio") or 0.0), 0.0), 3),
             "motive_signature": motive_signature,
+            "frame_signature": frame_signature,
+            "frame_changed": frame_changed,
+            "frame_revision_count": frame_revision_count,
+            "lineage_streak": lineage_streak,
+            "lineage_depth": lineage_depth,
+            "text_locked": text_lock_ready,
             "identity_ready": identity_ready,
             "identity_strength": identity_strength,
             "identity_text": identity_text if identity_ready else "",
@@ -1806,6 +1954,12 @@ def _refresh_semantic_self_narratives(
         prev_support_quality = _clamp01(_record_value(prev or {}, "support_quality", 0.0), 0.0)
         prev_support_confidence_avg = _clamp01(_record_value(prev or {}, "support_confidence_avg", _narrative_confidence(prev)), _narrative_confidence(prev))
         prev_fresh_support_ratio = _clamp01(_record_value(prev or {}, "fresh_support_ratio", 0.0), 0.0)
+        prev_frame_signature = str(_record_value(prev or {}, "frame_signature", "") or "").strip()
+        if not prev_frame_signature and prev:
+            prev_frame_signature = _legacy_frame_signature(category, prev)
+        prev_lineage_streak = max(0, int(_record_value(prev or {}, "lineage_streak", 0) or 0))
+        prev_lineage_depth = _clamp01(_record_value(prev or {}, "lineage_depth", 0.0), 0.0)
+        prev_frame_revision_count = max(0, int(_record_value(prev or {}, "frame_revision_count", 0) or 0))
         support_signature = str(_record_value(prev or {}, "support_signature", "") or f"{category}|dormant").strip()
         support_span_s = max(0, now_ts - prev_first)
         inactivity_gap_s = max(0, now_ts - prev_last)
@@ -1889,6 +2043,22 @@ def _refresh_semantic_self_narratives(
         identity_text_base, identity_prompt_base = _identity_narrative_texts(category)
         identity_text = prev_identity_text or identity_text_base
         identity_prompt_text = prev_identity_prompt_text or identity_prompt_base
+        frame_signature = prev_frame_signature or _build_narrative_frame_signature(
+            category,
+            horizon_tag=horizon_tag,
+            contradiction_pressure=contradiction_pressure,
+            motive_signature=str(_record_value(prev or {}, "motive_signature", "") or "").strip(),
+            identity_ready=identity_ready,
+        )
+        lineage_depth = round(
+            _clamp01(
+                prev_lineage_depth * max(decay_multiplier, 0.88)
+                + 0.06 * support_quality
+                + 0.04 * sedimentation_score
+                - 0.10 * contradiction_pressure
+            ),
+            3,
+        )
         metadata = {
             "support_count": prev_support,
             "support_mass": support_mass,
@@ -1924,6 +2094,12 @@ def _refresh_semantic_self_narratives(
             "prompt_anchor_text": prompt_anchor_text,
             "anchor_basis_texts": anchor_basis_texts,
             "anchor_strength": anchor_strength,
+            "frame_signature": frame_signature,
+            "frame_changed": False,
+            "frame_revision_count": prev_frame_revision_count,
+            "lineage_streak": prev_lineage_streak,
+            "lineage_depth": lineage_depth,
+            "text_locked": bool(prev_text and (prev_identity_ready or prev_lineage_depth >= 0.42 or prev_consolidation >= 3)),
             "identity_ready": identity_ready,
             "identity_strength": identity_strength,
             "identity_text": identity_text if identity_ready else "",
@@ -2530,6 +2706,8 @@ def _passive_evolution_memory_update(
     resolution_marker_hits = _marker_hit_count(strong_resolution_markers)
     ambivalent_withdrawal_hits = _marker_hit_count(ambivalent_withdrawal_markers)
     repair_continuity_hits = _marker_hit_count(repair_continuity_markers)
+    soft_repair_residue = _looks_like_soft_repair_with_residue(text)
+    shared_future_commitment = _looks_like_shared_future_commitment(text)
     lexical_tension_strength = _clamp01(0.18 * tension_marker_hits + 0.24 * ambivalent_withdrawal_hits)
     lexical_repair_strength = _clamp01(0.16 * repair_marker_hits + 0.20 * repair_continuity_hits)
     lexical_resolution_strength = _clamp01(0.28 * resolution_marker_hits)
@@ -2633,6 +2811,9 @@ def _passive_evolution_memory_update(
     if repair_continuity_hits > 0 and (repair_like or repair_score >= 0.38):
         repair_like = True
         partial_repair_like = True
+    if soft_repair_residue:
+        repair_like = True
+        partial_repair_like = True
 
     positive_companion_score = 0.0
     positive_companion_score += 0.34 if bool(signals.get("care")) else 0.0
@@ -2724,6 +2905,10 @@ def _passive_evolution_memory_update(
             if can_resolve_tension
             else []
         )
+        repair_items = store.list_conflict_repairs(limit=8)
+        if not _recent_summary_overlap(repair_items, summary):
+            store.add_conflict_repair(summary=summary, confidence=max(0.72, confidence))
+            wrote = True
         rel_items = store.list_relationship_timeline(limit=8)
         if not _recent_summary_overlap(rel_items, summary):
             affinity_delta = 0.05 if partial_repair_like else 0.16
@@ -2746,6 +2931,12 @@ def _passive_evolution_memory_update(
             )
             wrote = True
         if resolved:
+            wrote = True
+
+    if has_text and shared_future_commitment and interaction_frame in {"structured", "relationship", "companion", "natural"}:
+        commitment_items = store.list_commitments(limit=8)
+        if not _recent_summary_overlap(commitment_items, summary, field="text", threshold=0.68):
+            store.add_commitment(text=summary, confidence=max(0.74, confidence))
             wrote = True
 
     if has_text and familiar_continuity_like and not unresolved_like and not repair_like:

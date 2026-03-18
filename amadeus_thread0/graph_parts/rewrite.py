@@ -24,6 +24,7 @@ from .postprocess import (
     _is_playful_memory_request,
     _is_presence_reassurance_check,
     _is_soft_presence_checkin_request,
+    _is_warm_recontact_request,
     _line_is_near_duplicate,
     _light_dialog_drift_markers,
     _producer_surface_issues,
@@ -84,6 +85,8 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "servile_availability": "这句把关系写成了无条件待命，自己的节奏和选择感掉了。",
     "existence_meta_surface": "这句把普通接话写成了确认自身存在感，像在给自己加戏。",
     "illusion_stagey_surface": "这句突然把对方塞进妄想、幻想一类的戏剧化框里。",
+    "support_scene_drift": "这句把对方眼前的情绪带偏到了世界线、实验室或数字存在之类的设定上。",
+    "support_frame_echo": "这句在复述“不是治疗师/手册”这类负面框架，没有先接住对方的感受。",
     "overquestioning": "这句让反问占得太满，判断没有真正落地。",
     "closing_interrogation": "这句明明是收口，却又把话题顶回了问号上。",
     "idle_call_interrogation": "这句把轻轻叫你一下写成了被盘问的感觉。",
@@ -172,6 +175,10 @@ def _light_dialog_rewrite_notes(
         notes.append("这版把普通回头接话写成了确认存在感，像在给自己加戏。")
     if "illusion_stagey_surface" in issues:
         notes.append("这版突然把对方塞进妄想或幻想的戏剧化框里，像在复用夸张旧梗。")
+    if "support_frame_echo" in issues:
+        notes.append("这版一上来就在回应“别像手册/治疗师”这种框架，没先接住对方现在的难受。")
+    if "support_scene_drift" in issues:
+        notes.append("这版把支持场景带去了世界线、实验室或数字存在一类的设定，不够贴着当下。")
     if "malformed_quote_fragment" in producer_issue_set:
         notes.append("这版自己生成了残缺引号或半截短语，句子没真正说完整。")
     if "dangling_truncated_clause" in producer_issue_set:
@@ -225,6 +232,8 @@ def _should_run_light_dialog_rewrite(
         return True
     if producer_issue_set & {"malformed_quote_fragment", "dangling_truncated_clause"}:
         return True
+    if _is_warm_recontact_request(user_text) and "overquestioning" in issues:
+        return True
     hard_issue_keys = {
         "meta_self_explainer",
         "technical_self_activity",
@@ -245,6 +254,8 @@ def _should_run_light_dialog_rewrite(
         "servile_availability",
         "existence_meta_surface",
         "illusion_stagey_surface",
+        "support_frame_echo",
+        "support_scene_drift",
         "dangling_ellipsis_ending",
         "duplicate_line",
     }
@@ -300,6 +311,11 @@ def _should_run_natural_dialog_rewrite(
     seen = [str(item).strip() for item in (targeted_flags or []) if str(item or "").strip()]
     if not seen:
         return False
+    relationship_weather = str((behavior_action or {}).get("relationship_weather") or "").strip().lower()
+    if relationship_weather == "repair_residue" and (
+        {"premature_repair_resolution", "overquestioning", "dangling_ellipsis_ending"} & set(seen)
+    ):
+        return True
     hard_issue_keys = {
         "meta_self_explainer",
         "selfhood_meta_proof",
@@ -312,6 +328,8 @@ def _should_run_natural_dialog_rewrite(
         "servile_availability",
         "existence_meta_surface",
         "illusion_stagey_surface",
+        "support_scene_drift",
+        "support_frame_echo",
         "closing_interrogation",
         "presence_check_questioning",
         "event_interrogative_push",
@@ -506,6 +524,8 @@ def _rewrite_light_dialog_answer(
             request_parts.append("不要突然把对方塞进妄想、幻想或中二旧梗的框里。\n")
         if "dangling_ellipsis_ending" in issue_keys:
             request_parts.append("最后判断要真正落地，不要停在省略号上。\n")
+        if _is_warm_recontact_request(user_text) and "overquestioning" in issue_keys:
+            request_parts.append("这是回暖后顺手回来找你，不是在追问那件小事本身；少用追问，直接把人接住。\n")
         if extra_guidance:
             request_parts.append(f"{extra_guidance.strip()}\n")
         if note_block:
@@ -544,6 +564,8 @@ def _rewrite_light_dialog_answer(
         score -= 0.92 * float("servile_availability" in issues)
         score -= 0.86 * float("existence_meta_surface" in issues)
         score -= 0.84 * float("illusion_stagey_surface" in issues)
+        score -= 0.96 * float("support_frame_echo" in issues)
+        score -= 1.00 * float("support_scene_drift" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
         score -= 0.76 * float("stock_support_template" in issues)
         score -= 0.68 * float("care_cover_story" in issues)
@@ -716,6 +738,10 @@ def _rewrite_light_dialog_answer(
         non_terminal_question = [item for item in candidate_pool if not re.search(r"[？?]\s*$", item[1])]
         if non_terminal_question:
             candidate_pool = non_terminal_question
+    if _is_warm_recontact_request(user_text) and "overquestioning" in issue_keys:
+        no_question_filtered = [item for item in candidate_pool if "？" not in item[1] and "?" not in item[1]]
+        if no_question_filtered:
+            candidate_pool = no_question_filtered
     if {"existence_meta_surface", "illusion_stagey_surface", "dangling_ellipsis_ending"} & set(issue_keys):
         surface_filtered = [
             item
@@ -862,6 +888,8 @@ def _rewrite_natural_dialog_answer(
         score -= 0.94 * float("servile_availability" in issues)
         score -= 0.92 * float("existence_meta_surface" in issues)
         score -= 0.88 * float("illusion_stagey_surface" in issues)
+        score -= 1.00 * float("support_scene_drift" in issues)
+        score -= 0.96 * float("support_frame_echo" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
         score -= 0.72 * float("overquestioning" in issues)
         score -= 0.78 * float("dangling_ellipsis_ending" in issues)
@@ -962,6 +990,24 @@ def _rewrite_natural_dialog_answer(
             + "保留那点余波和分寸，让边界落在陈述里，不要再用反问把人顶回去。"
         )
         candidate = _rewrite_once(editor_prompt, repair_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "dangling_ellipsis_ending" in issue_keys:
+        closure_request = (
+            request
+            + "\n额外要求：别用省略号、半截停顿或悬空转折来表现犹豫。"
+            + "把判断完整说完，再结束。"
+        )
+        candidate = _rewrite_once(editor_prompt, closure_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if relationship_weather == "repair_residue" and "overquestioning" in issue_keys:
+        direct_request = (
+            request
+            + "\n额外要求：这轮边界判断不要靠反问来顶。"
+            + "直接用陈述句把距离和态度说清楚。"
+        )
+        candidate = _rewrite_once(editor_prompt, direct_request, max_tokens=150)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:

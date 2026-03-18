@@ -7,6 +7,10 @@ from .common import _clamp01
 from .relational_runtime import _focus_text
 
 
+def _source_tag_floor(source_tags: set[str], *names: str, floor: float = 0.52) -> float:
+    return floor if any(str(name).strip().lower() in source_tags for name in names) else 0.0
+
+
 def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[str]:
     lines: list[str] = []
     if not isinstance(recent_events, list):
@@ -137,6 +141,116 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
         parts.append("所以你会先轻轻确认他的在场")
 
     return "，".join(parts[:3]) + "。"
+
+
+def _compact_long_horizon_continuity_hint(
+    *,
+    world_model_state: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
+    counterpart_assessment: dict[str, Any] | None = None,
+) -> str:
+    world = dict(world_model_state or {})
+    semantic = dict(semantic_narrative_profile or {})
+    carryover = dict(interaction_carryover or {})
+    assessment = dict(counterpart_assessment or {})
+    source_tags = {
+        str(item).strip().lower()
+        for item in (carryover.get("source_tags") if isinstance(carryover.get("source_tags"), list) else [])
+        if str(item).strip()
+    }
+
+    axis_count = max(
+        0,
+        int(world.get("long_term_axis_count") or 0),
+        int(semantic.get("long_term_axis_count") or 0),
+    )
+    continuity_depth = max(
+        _clamp01(world.get("semantic_continuity_depth"), 0.0),
+        _clamp01(semantic.get("continuity_depth"), 0.0),
+        _source_tag_floor(source_tags, "continuity_anchor", floor=0.5),
+    )
+    identity_gravity = max(
+        _clamp01(world.get("semantic_identity_gravity"), 0.0),
+        _clamp01(semantic.get("identity_gravity"), 0.0),
+    )
+    lineage_gravity = max(
+        _clamp01(world.get("lineage_gravity"), 0.0),
+        _clamp01(semantic.get("lineage_gravity"), 0.0),
+    )
+    continuity_score = max(
+        continuity_depth,
+        identity_gravity,
+        lineage_gravity,
+        _clamp01(axis_count / 4.0),
+    )
+
+    own_score = max(
+        _clamp01(world.get("own_rhythm_anchor"), 0.0),
+        _clamp01(world.get("agency_lineage"), 0.0),
+        _clamp01(semantic.get("rhythm_continuity"), 0.0),
+        _clamp01(semantic.get("agency_drive"), 0.0),
+        _source_tag_floor(source_tags, "own_rhythm_anchor", "agency_lineage"),
+    )
+    contact_score = max(
+        _clamp01(world.get("recontact_anchor"), 0.0),
+        _clamp01(world.get("memory_anchor"), 0.0),
+        _clamp01(world.get("contact_lineage"), 0.0),
+        _clamp01(world.get("repair_lineage"), 0.0),
+        _clamp01(semantic.get("presence_carry"), 0.0),
+        _clamp01(semantic.get("repair_residue"), 0.0),
+        _clamp01(semantic.get("commitment_carry"), 0.0),
+        _source_tag_floor(
+            source_tags,
+            "recontact_anchor",
+            "memory_anchor",
+            "contact_lineage",
+            "repair_lineage",
+        ),
+    )
+    stance = str(assessment.get("stance") or "").strip().lower()
+    boundary_score = max(
+        _clamp01(world.get("boundary_anchor"), 0.0),
+        _clamp01(world.get("boundary_lineage"), 0.0),
+        _clamp01(world.get("selfhood_lineage"), 0.0),
+        _clamp01(semantic.get("boundary_residue"), 0.0),
+        _clamp01(semantic.get("selfhood_integrity"), 0.0),
+        0.84 * _clamp01(assessment.get("boundary_pressure"), 0.0),
+        0.56 if stance in {"guarded", "watchful"} else 0.0,
+        _source_tag_floor(source_tags, "boundary_anchor", "boundary_lineage", "selfhood_lineage"),
+    )
+
+    if max(continuity_score, own_score, contact_score, boundary_score) < 0.42:
+        return ""
+
+    parts: list[str] = []
+    if continuity_score >= 0.5:
+        if axis_count >= 2 or lineage_gravity >= 0.54 or continuity_depth >= 0.54 or identity_gravity >= 0.54:
+            parts.append("这轮不是凭空冒出来的一句，前面慢慢沉下来的判断和关系惯性都会一起带进来")
+
+    if boundary_score >= 0.48 and boundary_score >= max(own_score, contact_score) + 0.05:
+        if contact_score >= 0.44:
+            parts.append("会接住对方，但边界上的判断还在，所以不会因为表面缓和就一下子全放松")
+        else:
+            parts.append("边界上的判断还在往下延续，所以不会因为眼前这句就一下子把分寸全放开")
+    elif own_score >= 0.46 and own_score >= max(boundary_score, contact_score) + 0.05:
+        parts.append("自己的节奏和主动性还在往下延续，更像从原来的轨道里回头，而不是被一下子拽过去")
+    elif contact_score >= 0.46:
+        if boundary_score >= 0.44:
+            parts.append("靠近和分寸会一起在场，你会顺着前面的脉络往下接，但不会一下子把话说满")
+        else:
+            parts.append("靠近、修补或记挂的脉络还在，所以这句会顺着前面的线往下接")
+    elif continuity_score >= 0.54:
+        parts.append("这段关系和自我判断已经有连续脉络，不会每轮都按成全新的起点")
+
+    ordered: list[str] = []
+    for item in parts:
+        text = str(item or "").strip().rstrip("。")
+        if text and text not in ordered:
+            ordered.append(text)
+    if not ordered:
+        return ""
+    return "；".join(ordered[:2]) + "。"
 
 def _relationship_weather_phrase(relationship_weather: Any, *, strength: float = 0.0) -> str:
     weather = str(relationship_weather or "").strip().lower()
