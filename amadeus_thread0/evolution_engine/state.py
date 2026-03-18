@@ -325,16 +325,25 @@ def transition_counterpart_assessment(
     presence_residue = clamp01(world.get("presence_residue"), 0.0)
     self_activity_momentum = clamp01(world.get("self_activity_momentum"), 0.0)
     memory_gravity = clamp01(world.get("memory_gravity"), 0.0)
+    lineage_gravity = clamp01(world.get("lineage_gravity"), 0.0)
+    contact_lineage = clamp01(world.get("contact_lineage"), 0.0)
+    repair_lineage = clamp01(world.get("repair_lineage"), 0.0)
+    boundary_lineage = clamp01(world.get("boundary_lineage"), 0.0)
+    selfhood_lineage = clamp01(world.get("selfhood_lineage"), 0.0)
+    agency_lineage = clamp01(world.get("agency_lineage"), 0.0)
     boundary_load = clamp01(world.get("boundary_load"), 0.0)
-    effective_presence_residue = max(presence_residue, quiet_recontact_load, 0.72 * window_load)
-    effective_self_activity_momentum = max(self_activity_momentum, carryover_own_rhythm)
+    effective_presence_residue = max(presence_residue, quiet_recontact_load, 0.72 * window_load, 0.58 * contact_lineage)
+    effective_self_activity_momentum = max(self_activity_momentum, carryover_own_rhythm, 0.54 * agency_lineage)
     continuity_read = clamp01(
         max(
             effective_presence_residue,
             0.72 * memory_gravity,
             0.64 * relationship_maturity,
+            0.68 * contact_lineage,
+            0.58 * lineage_gravity,
             0.82 * carryover_strength if carryover_weather in {"warm_residue", "repair_residue"} else 0.0,
             0.58 * carryover_strength if carryover_mode in {"own_rhythm", "small_opening"} else 0.0,
+            0.52 * repair_lineage if carryover_weather == "repair_residue" else 0.0,
         ),
         0.0,
     )
@@ -343,14 +352,16 @@ def transition_counterpart_assessment(
             continuity_read,
             0.64 * effective_self_activity_momentum,
             0.68 * window_load,
+            0.56 * agency_lineage,
+            0.52 * contact_lineage,
         ),
         0.0,
     )
     user_busy_not_disrespectful = bool(
         event_kind == "user_utterance"
-        and effective_self_activity_momentum >= 0.44
-        and continuity_scene_pressure >= 0.38
-        and boundary_load < 0.30
+        and effective_self_activity_momentum >= (0.40 if agency_lineage >= 0.62 and contact_lineage >= 0.62 else 0.44)
+        and continuity_scene_pressure >= (0.34 if contact_lineage >= 0.56 else 0.38)
+        and boundary_load < (0.34 if contact_lineage >= 0.62 and boundary_lineage < 0.28 else 0.30)
         and carryover_weather != "guarded_residue"
         and not bool(signals.get("conflict"))
         and not bool(signals.get("withdrawal"))
@@ -377,11 +388,16 @@ def transition_counterpart_assessment(
         repair_gain *= 0.76
     if hurt > 0.08 or irritation > 0.06 or clamp01(world.get("boundary_load"), 0.0) >= 0.24:
         repair_gain *= 0.82
+    repair_gain *= max(0.42, 1.0 - 0.18 * boundary_lineage - 0.10 * selfhood_lineage)
 
     respect = clamp01(0.48 + 0.22 * trust + 0.10 * relationship_trust + 0.06 * repair_confidence - 0.16 * hurt - 0.14 * irritation)
     reciprocity = clamp01(0.46 + 0.20 * closeness + 0.14 * engagement + 0.06 * trust - 0.12 * hurt)
     boundary_pressure = clamp01(0.06 + 0.20 * hurt + 0.18 * irritation + 0.12 * safety_need + 0.08 * autonomy_need + 0.14 * clamp01(world.get("boundary_load"), 0.0))
     reliability = clamp01(0.44 + 0.22 * trust + 0.12 * repair_confidence + 0.06 * relationship_trust - 0.08 * hurt)
+    respect = clamp01(respect + 0.04 * contact_lineage + 0.02 * repair_lineage)
+    reciprocity = clamp01(reciprocity + 0.05 * contact_lineage + 0.02 * repair_lineage)
+    boundary_pressure = clamp01(boundary_pressure + 0.08 * boundary_lineage + 0.04 * selfhood_lineage - 0.03 * contact_lineage)
+    reliability = clamp01(reliability + 0.04 * contact_lineage + 0.05 * repair_lineage)
 
     if bool(signals.get("care")):
         respect = clamp01(respect + 0.05)
@@ -404,23 +420,23 @@ def transition_counterpart_assessment(
     if event_kind in {"time_idle", "self_activity_state"}:
         boundary_pressure = clamp01(boundary_pressure - 0.02)
     if effective_presence_residue >= 0.42 and event_kind == "user_utterance":
-        respect = clamp01(respect + 0.03)
-        reciprocity = clamp01(reciprocity + 0.04)
-        boundary_pressure = clamp01(boundary_pressure - 0.03)
+        respect = clamp01(respect + 0.03 + 0.02 * contact_lineage)
+        reciprocity = clamp01(reciprocity + 0.04 + 0.02 * contact_lineage)
+        boundary_pressure = clamp01(boundary_pressure - 0.03 - 0.02 * contact_lineage)
     if effective_self_activity_momentum >= 0.46 and event_kind == "user_utterance":
         if user_busy_not_disrespectful:
-            respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read))
-            reciprocity = clamp01(max(reciprocity, 0.50 + 0.04 * continuity_read))
+            respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read + 0.04 * contact_lineage))
+            reciprocity = clamp01(max(reciprocity, 0.50 + 0.04 * continuity_read + 0.03 * contact_lineage))
             boundary_pressure = clamp01(boundary_pressure - 0.03)
-            reliability = clamp01(max(reliability, 0.54 + 0.04 * continuity_read))
+            reliability = clamp01(max(reliability, 0.54 + 0.04 * continuity_read + 0.04 * contact_lineage))
         else:
             boundary_pressure = clamp01(boundary_pressure + 0.02 + 0.02 * max(0.0, effective_self_activity_momentum - 0.46))
-            reliability = clamp01(reliability + 0.01)
+            reliability = clamp01(reliability + 0.01 + 0.02 * agency_lineage)
     if soft_recontact_turn:
-        respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read))
-        reciprocity = clamp01(max(reciprocity, 0.52 + 0.04 * continuity_read))
+        respect = clamp01(max(respect, 0.54 + 0.04 * continuity_read + 0.03 * contact_lineage))
+        reciprocity = clamp01(max(reciprocity, 0.52 + 0.04 * continuity_read + 0.03 * contact_lineage))
         boundary_pressure = clamp01(boundary_pressure - 0.02)
-        reliability = clamp01(max(reliability, 0.54 + 0.05 * continuity_read))
+        reliability = clamp01(max(reliability, 0.54 + 0.05 * continuity_read + 0.03 * repair_lineage))
     if continuity_window_turn:
         reciprocity = clamp01(max(reciprocity, 0.50 + 0.03 * window_load))
         reliability = clamp01(max(reliability, 0.54 + 0.04 * window_load))
@@ -464,26 +480,35 @@ def transition_counterpart_assessment(
     if carryover_weather == "guarded_residue" and event_kind == "user_utterance":
         if stance == "open":
             stance = "watchful"
-        boundary_level = max(boundary_level, 0.18 if prev_stance == "open" else 0.24 if prev_stance == "watchful" else 0.30)
+        boundary_floor = 0.18 if prev_stance == "open" else 0.24 if prev_stance == "watchful" else 0.30
+        boundary_floor += 0.04 * max(boundary_lineage, selfhood_lineage)
+        boundary_level = max(boundary_level, boundary_floor)
         reliability_level = min(reliability_level, 0.66 if prev_stance == "open" else 0.62)
 
     guarded_hold_event = event_kind in {"user_utterance", "gesture_signal", "ambient_shift", "scene_observation"}
+    guarded_lineage_hold = max(boundary_lineage, selfhood_lineage, 0.72 * lineage_gravity)
     # A previously guarded relational read should not reopen on a single benign contact or perception cue.
     if prev_stance == "guarded" and guarded_hold_event and not bool(signals.get("repair")):
         if prev_scene in {"relationship_degradation", "boundary_non_compliance"}:
             stance = "guarded"
             boundary_level = max(boundary_level, 0.34)
             reliability_level = min(reliability_level, 0.56)
+        elif guarded_lineage_hold >= 0.44:
+            stance = "guarded"
+            boundary_level = max(boundary_level, 0.28 + 0.06 * guarded_lineage_hold)
         elif stance == "open":
             stance = "watchful"
     elif prev_stance in {"guarded", "watchful"} and guarded_hold_event and bool(signals.get("repair")):
         # A single repair bid can soften the read, but should not instantly erase guarded/watchful residue.
         if prev_stance == "guarded":
-            if stance == "open":
+            if guarded_lineage_hold >= 0.48:
+                stance = "guarded"
+                boundary_level = max(boundary_level, 0.26 + 0.06 * guarded_lineage_hold)
+            elif stance == "open":
                 stance = "watchful"
             boundary_level = max(boundary_level, 0.24)
             reliability_level = min(reliability_level, 0.64)
-        elif stance == "open":
+        elif stance == "open" or guarded_lineage_hold >= 0.46:
             stance = "watchful"
             boundary_level = max(boundary_level, 0.18)
     if prev_scene == "friction" and guarded_hold_event and not bool(signals.get("repair")) and prev_stance in {"watchful", "guarded"}:
@@ -491,6 +516,9 @@ def transition_counterpart_assessment(
             stance = "watchful"
         boundary_level = max(boundary_level, 0.18 if prev_stance == "watchful" else 0.24)
         reliability_level = min(reliability_level, 0.64 if prev_stance == "watchful" else 0.60)
+    if prev_stance == "watchful" and guarded_hold_event and guarded_lineage_hold >= 0.46 and stance == "open":
+        stance = "watchful"
+        boundary_level = max(boundary_level, 0.18 + 0.04 * guarded_lineage_hold)
 
     scene = "neutral"
     if bool(signals.get("repair")):
@@ -532,7 +560,7 @@ def transition_counterpart_assessment(
         and not bool(signals.get("withdrawal"))
         and scene in {"neutral", "care_bid"}
         and stance == "open"
-        and boundary_level <= 0.22
+        and boundary_level <= (0.24 if contact_lineage >= 0.58 else 0.22)
         and reliability_level >= 0.58
     ):
         scene = "busy_not_disrespectful"

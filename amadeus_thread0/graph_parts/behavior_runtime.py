@@ -1539,6 +1539,17 @@ def _behavior_action_from_state(
     elif primary_motive == "co_solve_problem" and task_focus == "light":
         task_focus = "balanced"
 
+    # Final action semantics win over dialogue-mode softening. A self-held break
+    # window that only opens a tiny door should not silently drift back into a
+    # follow-up push just because contact confidence is high.
+    if (
+        event_kind == "self_activity_state"
+        and interaction_mode == "self_activity_reopen"
+        and action_target == "offer_small_opening"
+        and initiative_shape == "micro_opening"
+    ):
+        followup_intent = "none"
+
     # Final action semantics win over dialogue-mode softening. If the resolved action
     # is to stay silent and observe, do not leak a residual follow-up intention.
     if action_target in {"wait_and_recheck", "hold_own_rhythm"} or (

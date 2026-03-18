@@ -73,6 +73,12 @@ def _semantic_snapshot_level(snapshot: dict[str, Any], categories: tuple[str, ..
     return clamp01(max(clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
 
 
+def _semantic_lineage_level(snapshot: dict[str, Any], categories: tuple[str, ...]) -> float:
+    if not isinstance(snapshot, dict) or not categories:
+        return 0.0
+    return clamp01(max(clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
+
+
 def _semantic_contested_pressure(contested_categories: set[str], categories: tuple[str, ...], confidence: float) -> float:
     if not categories:
         return 0.0
@@ -90,6 +96,7 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
     support_quality_snapshot = (
         profile.get("support_quality_snapshot") if isinstance(profile.get("support_quality_snapshot"), dict) else {}
     )
+    lineage_snapshot = profile.get("lineage_snapshot") if isinstance(profile.get("lineage_snapshot"), dict) else {}
     contested_categories = {
         str(item).strip()
         for item in (
@@ -99,6 +106,7 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
     }
     continuity_depth = clamp01(profile.get("continuity_depth"), 0.0)
     identity_gravity = clamp01(profile.get("identity_gravity"), 0.0)
+    lineage_gravity = clamp01(profile.get("lineage_gravity"), 0.0)
     history_weight = clamp01(profile.get("history_weight"), 0.0)
     bond_depth = clamp01(profile.get("bond_depth"), 0.0)
     commitment_carry = clamp01(profile.get("commitment_carry"), 0.0)
@@ -121,6 +129,11 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
     boundary_support = support_confidence(boundary_categories)
     selfhood_support = support_confidence(selfhood_categories)
     agency_support = support_confidence(agency_categories)
+    contact_lineage = _semantic_lineage_level(lineage_snapshot, contact_categories)
+    repair_lineage = _semantic_lineage_level(lineage_snapshot, repair_categories)
+    boundary_lineage = _semantic_lineage_level(lineage_snapshot, boundary_categories)
+    selfhood_lineage = _semantic_lineage_level(lineage_snapshot, selfhood_categories)
+    agency_lineage = _semantic_lineage_level(lineage_snapshot, agency_categories)
 
     contact_confidence = clamp01(
         0.62 * contact_support
@@ -129,14 +142,17 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.08 * commitment_carry,
         0.0,
     )
+    contact_confidence = clamp01(contact_confidence + 0.12 * contact_lineage + 0.06 * lineage_gravity, 0.0)
     repair_confidence = clamp01(
         0.68 * repair_support + 0.20 * continuity_depth + 0.12 * commitment_carry,
         0.0,
     )
+    repair_confidence = clamp01(repair_confidence + 0.10 * repair_lineage + 0.04 * lineage_gravity, 0.0)
     boundary_confidence = clamp01(
         0.58 * boundary_support + 0.24 * identity_gravity + 0.18 * continuity_depth,
         0.0,
     )
+    boundary_confidence = clamp01(boundary_confidence + 0.12 * boundary_lineage + 0.06 * lineage_gravity, 0.0)
     selfhood_confidence = clamp01(
         0.52 * selfhood_support
         + 0.24 * identity_gravity
@@ -144,6 +160,7 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.10 * selfhood_integrity,
         0.0,
     )
+    selfhood_confidence = clamp01(selfhood_confidence + 0.10 * selfhood_lineage + 0.06 * lineage_gravity, 0.0)
     agency_confidence = clamp01(
         0.54 * agency_support
         + 0.24 * identity_gravity
@@ -151,6 +168,7 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.10 * agency_drive,
         0.0,
     )
+    agency_confidence = clamp01(agency_confidence + 0.12 * agency_lineage + 0.06 * lineage_gravity, 0.0)
 
     return {
         "contact_confidence": round(contact_confidence, 3),
@@ -173,6 +191,12 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         "history_weight": round(history_weight, 3),
         "continuity_depth": round(continuity_depth, 3),
         "identity_gravity": round(identity_gravity, 3),
+        "lineage_gravity": round(lineage_gravity, 3),
+        "contact_lineage": round(contact_lineage, 3),
+        "repair_lineage": round(repair_lineage, 3),
+        "boundary_lineage": round(boundary_lineage, 3),
+        "selfhood_lineage": round(selfhood_lineage, 3),
+        "agency_lineage": round(agency_lineage, 3),
     }
 
 
@@ -468,6 +492,12 @@ def build_behavior_policy(
         "semantic_contested_contact_pressure": round(semantic_contested_contact, 3),
         "semantic_contested_boundary_pressure": round(semantic_contested_boundary, 3),
         "semantic_contested_selfhood_pressure": round(semantic_contested_selfhood, 3),
+        "semantic_lineage_gravity": round(clamp01(semantic_evidence.get("lineage_gravity"), 0.0), 3),
+        "semantic_contact_lineage": round(clamp01(semantic_evidence.get("contact_lineage"), 0.0), 3),
+        "semantic_repair_lineage": round(clamp01(semantic_evidence.get("repair_lineage"), 0.0), 3),
+        "semantic_boundary_lineage": round(clamp01(semantic_evidence.get("boundary_lineage"), 0.0), 3),
+        "semantic_selfhood_lineage": round(clamp01(semantic_evidence.get("selfhood_lineage"), 0.0), 3),
+        "semantic_agency_lineage": round(clamp01(semantic_evidence.get("agency_lineage"), 0.0), 3),
     }
 
 

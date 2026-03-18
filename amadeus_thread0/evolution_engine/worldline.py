@@ -23,6 +23,12 @@ def _event_tags(event: dict[str, Any] | None) -> set[str]:
     }
 
 
+def _lineage_level(snapshot: dict[str, Any], *categories: str) -> float:
+    if not isinstance(snapshot, dict) or not categories:
+        return 0.0
+    return clamp01(max(clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
+
+
 def _residue_targets(
     *,
     event_kind: str,
@@ -138,6 +144,7 @@ def build_world_model_state(
     narrative = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
     residue_snapshot = narrative.get("residue_snapshot") if isinstance(narrative.get("residue_snapshot"), dict) else {}
     persistence_snapshot = narrative.get("persistence_snapshot") if isinstance(narrative.get("persistence_snapshot"), dict) else {}
+    lineage_snapshot = narrative.get("lineage_snapshot") if isinstance(narrative.get("lineage_snapshot"), dict) else {}
     reactivated_categories = {
         str(item).strip()
         for item in (narrative.get("reactivated_categories") if isinstance(narrative.get("reactivated_categories"), list) else [])
@@ -171,6 +178,12 @@ def build_world_model_state(
     history_weight = clamp01(narrative.get("history_weight"), 0.0)
     continuity_depth = clamp01(narrative.get("continuity_depth"), 0.0)
     identity_gravity = clamp01(narrative.get("identity_gravity"), 0.0)
+    lineage_gravity = clamp01(narrative.get("lineage_gravity"), 0.0)
+    contact_lineage = _lineage_level(lineage_snapshot, "bond_style", "presence_style", "commitment_style", "repair_style")
+    repair_lineage = _lineage_level(lineage_snapshot, "repair_style", "bond_style", "commitment_style")
+    boundary_lineage = _lineage_level(lineage_snapshot, "boundary_style", "selfhood_style")
+    selfhood_lineage = _lineage_level(lineage_snapshot, "selfhood_style", "agency_style", "rhythm_style")
+    agency_lineage = _lineage_level(lineage_snapshot, "agency_style", "rhythm_style", "selfhood_style")
     motive_vector = semantic_motive_vector(narrative)
     motive_boundary = clamp01(motive_vector.get("boundary_pull"), 0.0)
     motive_self_rhythm = clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
@@ -197,6 +210,8 @@ def build_world_model_state(
         + 0.04 * motive_continuity
         + 0.03 * motive_support
         + 0.02 * motive_shared_window
+        + 0.04 * contact_lineage
+        + 0.02 * lineage_gravity
         - 0.04 * motive_boundary
         + (0.04 if "presence_style" in reactivated_categories else 0.0)
     )
@@ -208,6 +223,7 @@ def build_world_model_state(
         + 0.04 * history_weight
         + 0.05 * motive_memory
         + 0.02 * motive_continuity
+        + 0.03 * lineage_gravity
         + (0.04 if "ambient_style" in reactivated_categories else 0.0)
     )
     self_activity_floor = clamp01(
@@ -218,6 +234,8 @@ def build_world_model_state(
         + 0.05 * agency_drive
         + 0.05 * identity_gravity
         + 0.08 * motive_self_rhythm
+        + 0.05 * agency_lineage
+        + 0.03 * selfhood_lineage
         + 0.02 * motive_boundary
         + (0.04 if "rhythm_style" in reactivated_categories else 0.0)
     )
@@ -230,6 +248,8 @@ def build_world_model_state(
         + 0.06 * motive_continuity
         + 0.04 * motive_support
         + 0.03 * motive_shared_window
+        + 0.05 * contact_lineage
+        + 0.02 * lineage_gravity
         - 0.06 * motive_boundary
     )
     ambient_target = clamp01(
@@ -240,6 +260,7 @@ def build_world_model_state(
         + 0.03 * continuity_depth
         + 0.06 * motive_memory
         + 0.02 * motive_continuity
+        + 0.03 * lineage_gravity
     )
     self_activity_target = clamp01(
         self_activity_target
@@ -250,6 +271,8 @@ def build_world_model_state(
         + 0.04 * agency_drive
         + 0.05 * identity_gravity
         + 0.10 * motive_self_rhythm
+        + 0.06 * agency_lineage
+        + 0.03 * selfhood_lineage
         + 0.04 * motive_boundary
     )
 
@@ -262,6 +285,8 @@ def build_world_model_state(
             + 0.08 * continuity_depth
             + 0.10 * clamp01(narrative.get("commitment_carry"), 0.0)
             + 0.08 * max_persistence
+            + 0.05 * contact_lineage
+            + 0.03 * lineage_gravity
             + 0.05 * motive_continuity
             + 0.03 * motive_memory
         ),
@@ -274,6 +299,7 @@ def build_world_model_state(
             + 0.08 * clamp01(residue_snapshot.get("bond_style"), 0.0)
             + 0.05 * continuity_depth
             + 0.06 * presence_target
+            + 0.05 * contact_lineage
             + 0.03 * motive_continuity
             + 0.03 * motive_support
             + (0.08 if "bond_style" in reactivated_categories else 0.0)
@@ -290,6 +316,7 @@ def build_world_model_state(
             0.14 * clamp01(narrative.get("repair_residue"), 0.0)
             + 0.16 * clamp01(narrative.get("commitment_carry"), 0.0)
             + 0.10 * clamp01(residue_snapshot.get("repair_style"), 0.0)
+            + 0.06 * repair_lineage
             + (0.22 if bool(signals.get("repair")) else 0.0)
             + (0.08 if "repair_style" in reactivated_categories else 0.0)
         ),
@@ -298,6 +325,8 @@ def build_world_model_state(
             + 0.14 * clamp01(narrative.get("selfhood_integrity"), 0.0)
             + 0.10 * clamp01(residue_snapshot.get("boundary_style"), 0.0)
             + 0.10 * identity_gravity
+            + 0.08 * boundary_lineage
+            + 0.04 * selfhood_lineage
             + 0.16 * motive_boundary
             + (0.16 if str(app.get("selfhood_scene") or "") == "boundary_non_compliance" else 0.0)
             + (0.08 if "boundary_style" in reactivated_categories else 0.0)
@@ -309,6 +338,7 @@ def build_world_model_state(
             + 0.12 * identity_gravity
             + 0.04 * continuity_depth
             + 0.06 * self_activity_target
+            + 0.08 * selfhood_lineage
             + 0.08 * motive_boundary
             + (0.10 if str(app.get("interaction_frame") or "") == "selfhood" else 0.0)
             + (0.08 if "selfhood_style" in reactivated_categories else 0.0)
@@ -320,6 +350,7 @@ def build_world_model_state(
             + 0.08 * identity_gravity
             + 0.04 * continuity_depth
             + 0.16 * self_activity_target
+            + 0.08 * agency_lineage
             + 0.14 * motive_self_rhythm
             + 0.05 * motive_shared_window
             + (0.10 if event_kind in {"self_activity_state", "time_idle"} else 0.0)
@@ -332,6 +363,7 @@ def build_world_model_state(
             + 0.10 * max_residue
             + 0.08 * continuity_depth
             + 0.04 * ambient_target
+            + 0.04 * lineage_gravity
             + 0.14 * motive_memory
             + 0.04 * motive_continuity
             + (0.16 if bool(signals.get("memory_salient")) else 0.0)
@@ -350,6 +382,7 @@ def build_world_model_state(
             + 0.05 * continuity_depth
             + 0.12 * presence_target
             + 0.06 * ambient_target
+            + 0.06 * contact_lineage
             + 0.10 * motive_continuity
             + 0.10 * motive_support
             + 0.10 * motive_shared_window
@@ -376,6 +409,12 @@ def build_world_model_state(
         selfhood_load=blend(prev.selfhood_load, target.selfhood_load, weight),
         agency_load=blend(prev.agency_load, target.agency_load, weight),
         memory_gravity=blend(prev.memory_gravity, target.memory_gravity, weight),
+        lineage_gravity=blend(prev.lineage_gravity, lineage_gravity, weight),
+        contact_lineage=blend(prev.contact_lineage, contact_lineage, weight),
+        repair_lineage=blend(prev.repair_lineage, repair_lineage, weight),
+        boundary_lineage=blend(prev.boundary_lineage, boundary_lineage, weight),
+        selfhood_lineage=blend(prev.selfhood_lineage, selfhood_lineage, weight),
+        agency_lineage=blend(prev.agency_lineage, agency_lineage, weight),
         task_pull=blend(prev.task_pull, target.task_pull, weight),
         companionship_pull=blend(prev.companionship_pull, target.companionship_pull, weight),
         presence_residue=blend(presence_base, presence_target, presence_weight),

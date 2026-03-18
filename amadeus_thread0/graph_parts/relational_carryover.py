@@ -158,6 +158,41 @@ def _long_horizon_interaction_carryover(
     identity_gravity = _clamp01(snapshot.get("semantic_identity_gravity"), 0.0)
     axis_count = max(0, int(snapshot.get("long_term_axis_count") or 0))
     axis_norm = _clamp01(float(axis_count) / 4.0)
+    lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
+    lineage_gravity = max(
+        _clamp01(semantic.get("lineage_gravity"), 0.0),
+        _clamp01(world.get("lineage_gravity"), 0.0),
+    )
+    contact_lineage = max(
+        _clamp01(world.get("contact_lineage"), 0.0),
+        _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+        _clamp01(lineage_snapshot.get("presence_style"), 0.0),
+        _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+        _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+    )
+    repair_lineage = max(
+        _clamp01(world.get("repair_lineage"), 0.0),
+        _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+        _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+        _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+    )
+    boundary_lineage = max(
+        _clamp01(world.get("boundary_lineage"), 0.0),
+        _clamp01(lineage_snapshot.get("boundary_style"), 0.0),
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+    )
+    selfhood_lineage = max(
+        _clamp01(world.get("selfhood_lineage"), 0.0),
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+        _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+    )
+    agency_lineage = max(
+        _clamp01(world.get("agency_lineage"), 0.0),
+        _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+        _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+    )
 
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
     bond_depth = _clamp01(world.get("bond_depth"), 0.0)
@@ -187,7 +222,10 @@ def _long_horizon_interaction_carryover(
         + 0.16 * boundary_pressure
         + 0.14 * max(narrative_tension, tension_load)
         + 0.10 * continuity_anchor
+        + 0.10 * boundary_lineage
+        + 0.06 * selfhood_lineage
         + 0.08 * presence_residue
+        + 0.04 * lineage_gravity
         + 0.06 * axis_norm
         + (0.08 if stance in {"guarded", "watchful"} else 0.0)
         + (0.08 if scene in {"friction", "relationship_degradation", "boundary_non_compliance"} else 0.0)
@@ -199,6 +237,8 @@ def _long_horizon_interaction_carryover(
         + 0.14 * memory_anchor
         + 0.10 * continuity_anchor
         + 0.10 * commitment_carry
+        + 0.08 * repair_lineage
+        + 0.04 * contact_lineage
         + 0.06 * relationship_maturity
         + 0.06 * reliability_read
         - 0.12 * max(boundary_anchor, boundary_pressure)
@@ -214,6 +254,8 @@ def _long_horizon_interaction_carryover(
         + 0.08 * continuity_anchor
         + 0.08 * relationship_maturity
         + 0.06 * commitment_carry
+        + 0.10 * contact_lineage
+        + 0.04 * repair_lineage
         + 0.04 * reliability_read
         + 0.04 * respect_level
         - 0.14 * max(boundary_anchor, boundary_pressure)
@@ -233,6 +275,10 @@ def _long_horizon_interaction_carryover(
         repair_load,
         narrative_bond,
         narrative_repair,
+        contact_lineage,
+        agency_lineage,
+        boundary_lineage,
+        lineage_gravity,
     ) < 0.28:
         return {}
 
@@ -324,6 +370,7 @@ def _long_horizon_interaction_carryover(
     elif (
         own_rhythm_anchor >= max(0.52, recontact_anchor + 0.08, boundary_anchor + 0.04)
         or (continuity_anchor >= 0.54 and own_rhythm_anchor >= 0.44 and self_activity_momentum >= 0.52)
+        or (agency_lineage >= 0.56 and continuity_anchor >= 0.46 and boundary_anchor < 0.54)
     ):
         carryover_mode = "own_rhythm"
         source_action_target = "hold_own_rhythm"
@@ -338,6 +385,8 @@ def _long_horizon_interaction_carryover(
             + 0.34 * own_rhythm_anchor
             + 0.12 * continuity_anchor
             + 0.10 * self_activity_momentum
+            + 0.08 * agency_lineage
+            + 0.04 * lineage_gravity
             + 0.08 * identity_gravity
             + 0.06 * axis_norm
         )
@@ -345,6 +394,7 @@ def _long_horizon_interaction_carryover(
         own_rhythm_anchor >= 0.40
         or (continuity_anchor >= 0.48 and recontact_anchor >= 0.30)
         or (self_activity_momentum >= 0.56 and presence_residue >= 0.24)
+        or (agency_lineage >= 0.48 and contact_lineage >= 0.36 and boundary_lineage < 0.52)
     ):
         carryover_mode = "small_opening"
         source_action_target = "offer_small_opening"
@@ -361,9 +411,15 @@ def _long_horizon_interaction_carryover(
             + 0.10 * continuity_anchor
             + 0.08 * self_activity_momentum
             + 0.06 * presence_residue
+            + 0.06 * max(agency_lineage, contact_lineage)
             + 0.05 * axis_norm
         )
-    elif recontact_anchor >= 0.38 or memory_anchor >= 0.42 or (continuity_anchor >= 0.46 and presence_residue >= 0.22):
+    elif (
+        recontact_anchor >= 0.38
+        or memory_anchor >= 0.42
+        or (continuity_anchor >= 0.46 and presence_residue >= 0.22)
+        or (contact_lineage >= 0.46 and boundary_lineage < 0.42)
+    ):
         carryover_mode = "quiet_recontact"
         source_action_target = "wait_and_recheck"
         source_primary_motive = "gentle_recontact"
@@ -378,6 +434,7 @@ def _long_horizon_interaction_carryover(
             + 0.16 * memory_anchor
             + 0.10 * continuity_anchor
             + 0.08 * presence_residue
+            + 0.06 * contact_lineage
             + 0.04 * axis_norm
         )
 
@@ -432,6 +489,12 @@ def _long_horizon_interaction_carryover(
         source_tags.append("boundary_anchor")
     if memory_anchor >= 0.40:
         source_tags.append("memory_anchor")
+    if agency_lineage >= 0.46:
+        source_tags.append("agency_lineage")
+    if contact_lineage >= 0.46:
+        source_tags.append("contact_lineage")
+    if boundary_lineage >= 0.46:
+        source_tags.append("boundary_lineage")
     if ambient_resonance >= 0.32:
         source_tags.append("ambient_echo")
     if axis_count > 0:
@@ -715,6 +778,39 @@ def _apply_agenda_lifecycle_residue_to_runtime_state(
     presence_residue = _clamp01(residue.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(residue.get("ambient_resonance"), 0.0)
     cooldown = _clamp01(residue.get("recontact_cooldown"), 0.0)
+    continuity_anchor = _clamp01(residue.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(residue.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = _clamp01(residue.get("recontact_anchor"), 0.0)
+    boundary_anchor = _clamp01(residue.get("boundary_anchor"), 0.0)
+    memory_anchor = _clamp01(residue.get("memory_anchor"), 0.0)
+    lineage_gravity = _clamp01(residue.get("lineage_gravity"), 0.0)
+    contact_lineage = _clamp01(residue.get("contact_lineage"), 0.0)
+    repair_lineage = _clamp01(residue.get("repair_lineage"), 0.0)
+    boundary_lineage = _clamp01(residue.get("boundary_lineage"), 0.0)
+    selfhood_lineage = _clamp01(residue.get("selfhood_lineage"), 0.0)
+    agency_lineage = _clamp01(residue.get("agency_lineage"), 0.0)
+
+    if kind == "released_to_self_activity":
+        lineage_scale = 0.92
+        contact_scale = 0.74
+        repair_scale = 0.78
+        boundary_scale = 0.86
+        selfhood_scale = 0.90
+        agency_scale = 0.94
+    elif kind == "held":
+        lineage_scale = 0.88
+        contact_scale = 0.84 if str(residue.get("carryover_mode") or "").strip().lower() != "own_rhythm" else 0.72
+        repair_scale = 0.82
+        boundary_scale = 0.88
+        selfhood_scale = 0.84
+        agency_scale = 0.86
+    else:
+        lineage_scale = 0.76
+        contact_scale = 0.68
+        repair_scale = 0.72
+        boundary_scale = 0.80
+        selfhood_scale = 0.78
+        agency_scale = 0.84
 
     world["self_activity_momentum"] = round(max(_clamp01(world.get("self_activity_momentum"), 0.0), own_rhythm_bias), 3)
     world["presence_residue"] = round(
@@ -725,11 +821,68 @@ def _apply_agenda_lifecycle_residue_to_runtime_state(
         3,
     )
     world["ambient_resonance"] = round(max(_clamp01(world.get("ambient_resonance"), 0.0), 0.88 * ambient_resonance), 3)
+    world["memory_gravity"] = round(
+        max(
+            _clamp01(world.get("memory_gravity"), 0.0),
+            0.74 * memory_anchor,
+            0.58 * continuity_anchor,
+        ),
+        3,
+    )
+    world["relationship_maturity"] = round(
+        max(
+            _clamp01(world.get("relationship_maturity"), 0.0),
+            0.64 * continuity_anchor,
+        ),
+        3,
+    )
+    world["lineage_gravity"] = round(
+        max(
+            _clamp01(world.get("lineage_gravity"), 0.0),
+            lineage_scale * max(lineage_gravity, 0.82 * max(contact_lineage, boundary_lineage, agency_lineage, selfhood_lineage, repair_lineage)),
+        ),
+        3,
+    )
+    world["contact_lineage"] = round(
+        max(
+            _clamp01(world.get("contact_lineage"), 0.0),
+            contact_scale * max(contact_lineage, 0.72 * recontact_anchor),
+        ),
+        3,
+    )
+    world["repair_lineage"] = round(
+        max(
+            _clamp01(world.get("repair_lineage"), 0.0),
+            repair_scale * max(repair_lineage, 0.66 * recontact_anchor),
+        ),
+        3,
+    )
+    world["boundary_lineage"] = round(
+        max(
+            _clamp01(world.get("boundary_lineage"), 0.0),
+            boundary_scale * max(boundary_lineage, 0.74 * boundary_anchor),
+        ),
+        3,
+    )
+    world["selfhood_lineage"] = round(
+        max(
+            _clamp01(world.get("selfhood_lineage"), 0.0),
+            selfhood_scale * max(selfhood_lineage, 0.66 * boundary_anchor),
+        ),
+        3,
+    )
+    world["agency_lineage"] = round(
+        max(
+            _clamp01(world.get("agency_lineage"), 0.0),
+            agency_scale * max(agency_lineage, 0.78 * own_rhythm_anchor),
+        ),
+        3,
+    )
     boundary_load = _clamp01(world.get("boundary_load"), 0.0)
     if kind == "released_to_self_activity":
-        boundary_load = max(boundary_load, 0.08 + 0.10 * cooldown)
+        boundary_load = max(boundary_load, 0.08 + 0.10 * cooldown + 0.06 * boundary_anchor)
     else:
-        boundary_load = max(boundary_load, 0.12 + 0.18 * cooldown)
+        boundary_load = max(boundary_load, 0.12 + 0.18 * cooldown + 0.08 * boundary_anchor)
     world["boundary_load"] = round(_clamp01(boundary_load), 3)
 
     if assessment:
@@ -738,10 +891,21 @@ def _apply_agenda_lifecycle_residue_to_runtime_state(
         if scene_bias and stance != "guarded":
             assessment["scene"] = scene_bias
         boundary_pressure = _clamp01(assessment.get("boundary_pressure"), 0.1) + float(residue.get("counterpart_boundary_delta") or 0.0)
+        if boundary_lineage >= 0.44 or selfhood_lineage >= 0.44:
+            boundary_pressure = max(boundary_pressure, 0.14 + 0.12 * max(boundary_lineage, selfhood_lineage))
         assessment["boundary_pressure"] = round(_clamp01(boundary_pressure), 3)
         if scene_bias == "busy_not_disrespectful":
-            assessment["reliability_read"] = round(max(_clamp01(assessment.get("reliability_read"), 0.5), 0.52), 3)
-            assessment["respect_level"] = round(max(_clamp01(assessment.get("respect_level"), 0.5), 0.52), 3)
+            assessment["reliability_read"] = round(
+                max(_clamp01(assessment.get("reliability_read"), 0.5), 0.52 + 0.06 * max(contact_lineage, 0.72 * recontact_anchor)),
+                3,
+            )
+            assessment["respect_level"] = round(
+                max(_clamp01(assessment.get("respect_level"), 0.5), 0.52 + 0.04 * max(contact_lineage, 0.64 * continuity_anchor)),
+                3,
+            )
+        elif boundary_lineage >= 0.48 and stance == "open":
+            assessment["stance"] = "watchful"
+            assessment["reliability_read"] = round(min(_clamp01(assessment.get("reliability_read"), 0.5), 0.66), 3)
 
     return world, assessment
 

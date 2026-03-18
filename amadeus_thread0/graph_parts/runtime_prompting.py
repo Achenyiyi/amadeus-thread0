@@ -5,7 +5,7 @@ from typing import Any
 
 from .behavior_runtime import _compact_behavior_action_hint
 from .generation_profile import _clamp01, _effective_relationship_weather
-from .prompt_helpers import _relationship_weather_phrase
+from .prompt_helpers import _compact_long_horizon_continuity_hint, _relationship_weather_phrase
 
 def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -155,6 +155,8 @@ def _prompt_state_runtime_brief(
     bond_state: dict[str, Any] | None,
     allostasis_state: dict[str, Any] | None,
     counterpart_assessment: dict[str, Any] | None,
+    world_model_state: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None,
     behavior_policy: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None,
     interaction_carryover: dict[str, Any] | None,
@@ -168,6 +170,8 @@ def _prompt_state_runtime_brief(
     action = dict(behavior_action or {})
     carryover = dict(interaction_carryover or {})
     event = dict(current_event or {})
+    world = dict(world_model_state or {})
+    semantic = dict(semantic_narrative_profile or {})
 
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
     emotion_map = {
@@ -247,6 +251,15 @@ def _prompt_state_runtime_brief(
         lines.append("- 对对方还是带着观察，不会一下子把距离全放开。")
     if relationship_weather_phrase:
         lines.append(f"- 关系上的余波：{relationship_weather_phrase}。")
+
+    long_horizon_hint = _compact_long_horizon_continuity_hint(
+        world_model_state=world,
+        semantic_narrative_profile=semantic,
+        interaction_carryover=carryover,
+        counterpart_assessment=assessment,
+    )
+    if long_horizon_hint:
+        lines.append(f"- 长线延续：{long_horizon_hint}")
 
     behavior_hint = _compact_behavior_hint(policy, allostasis)
     if behavior_hint and behavior_hint != "自然发挥即可。":

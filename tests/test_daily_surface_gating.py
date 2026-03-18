@@ -260,6 +260,51 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("表面语气落点", prompt)
         self.assertIn("刚修补回来的那点小心和回暖还在", prompt)
 
+    def test_support_scene_surfaces_long_horizon_contact_lineage_hint(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.74, "closeness": 0.72, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.28},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.74, "reciprocity": 0.72},
+                    "behavior_policy": {"warmth": 0.70, "approach_vs_withdraw": 0.62},
+                    "behavior_action": {"interaction_mode": "low_pressure_support", "followup_intent": "active"},
+                    "world_model_state": {
+                        "lineage_gravity": 0.72,
+                        "contact_lineage": 0.78,
+                        "repair_lineage": 0.68,
+                    },
+                    "interaction_carryover": {
+                        "carryover_mode": "quiet_recontact",
+                        "strength": 0.58,
+                        "relationship_weather": "repair_residue",
+                        "attention_target": "counterpart_state",
+                        "source_tags": ["recontact_anchor", "contact_lineage", "repair_lineage"],
+                    },
+                    "semantic_narrative_profile": {
+                        "continuity_depth": 0.76,
+                        "identity_gravity": 0.64,
+                        "long_term_axis_count": 3,
+                        "presence_carry": 0.68,
+                        "repair_residue": 0.58,
+                        "commitment_carry": 0.52,
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "能陪我一会儿吗", store)
+            finally:
+                store.close()
+        self.assertIn("这轮不是凭空冒出来的一句", prompt)
+        self.assertIn("靠近、修补或记挂的脉络还在", prompt)
+
     def test_event_prompt_includes_event_preference_block_for_shared_window(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -385,6 +430,49 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("relationship_memory:", prompt)
         self.assertNotIn("conflict_repair_memory:", prompt)
         self.assertNotIn("[memory]", prompt)
+
+    def test_relationship_prompt_runtime_brief_surfaces_own_rhythm_lineage(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.76, "closeness": 0.72, "hurt": 0.04},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.34},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.78, "reciprocity": 0.76},
+                    "behavior_policy": {"warmth": 0.68, "approach_vs_withdraw": 0.58, "self_directedness": 0.48},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {
+                        "lineage_gravity": 0.74,
+                        "agency_lineage": 0.82,
+                        "own_rhythm_anchor": 0.70,
+                    },
+                    "semantic_narrative_profile": {
+                        "continuity_depth": 0.74,
+                        "identity_gravity": 0.66,
+                        "long_term_axis_count": 3,
+                        "rhythm_continuity": 0.72,
+                        "agency_drive": 0.68,
+                    },
+                    "interaction_carryover": {
+                        "carryover_mode": "own_rhythm",
+                        "strength": 0.46,
+                        "source_tags": ["own_rhythm_anchor", "agency_lineage"],
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你现在怎么看我们之间的关系？", store)
+            finally:
+                store.close()
+        self.assertIn("长线延续", prompt)
+        self.assertIn("这轮不是凭空冒出来的一句", prompt)
+        self.assertIn("自己的节奏和主动性还在往下延续", prompt)
 
     def test_relationship_prompt_includes_semantic_evidence_runtime_line(self):
         with TemporaryDirectory() as td:
@@ -1040,6 +1128,19 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("presence_check_questioning", issues)
 
+    def test_dialogue_surface_issues_allow_warm_recontact_single_rhetorical(self):
+        issues = _dialogue_surface_issues(
+            "我又想和你说话啦。别突然装生疏，就正常回我嘛。",
+            "真是的，我什么时候对你生疏过啊？明明是你自己又想回来找我说话。",
+            response_style_hint="companion",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertNotIn("overquestioning", issues)
+
     def test_dialogue_surface_issues_flag_existence_meta_surface(self):
         issues = _dialogue_surface_issues(
             "你刚才是不是在忙？",
@@ -1075,6 +1176,32 @@ class DailySurfaceGatingTests(unittest.TestCase):
             science_mode=False,
         )
         self.assertIn("illusion_stagey_surface", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_plain_listening_phrase_as_counselor_tone_in_warm_recontact(self):
+        issues = _dialogue_surface_issues(
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+            "少在那自我脑补什么悲剧戏码，我只是刚好有空而已。那就说吧，我听着呢。",
+            response_style_hint="companion",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertNotIn("counselor_tone", issues)
+
+    def test_dialogue_surface_issues_flag_listening_formula_as_counselor_tone_in_support_scene(self):
+        issues = _dialogue_surface_issues(
+            "今天有点乱，别太像老师，正常回我。",
+            "我听着呢，你慢慢说就行。先把最想说的那句丢过来。",
+            response_style_hint="natural",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "low_pressure_support",
+                "followup_intent": "active",
+            },
+        )
+        self.assertIn("counselor_tone", issues)
 
     def test_dialogue_surface_issues_flag_dangling_ellipsis_ending(self):
         issues = _dialogue_surface_issues(
@@ -1514,6 +1641,22 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_run_light_dialog_rewrite_runs_for_warm_recontact_overquestioning(self):
+        self.assertTrue(
+            _should_run_light_dialog_rewrite(
+                user_text="结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+                answer="真是的，明明刚才才说安静下来了，怎么转眼又自己把噪音招回来了？说吧，到底是什么“小事”让你非得这时候折回来找我？",
+                response_style_hint="companion",
+                science_mode=False,
+                penalty=0.80,
+                preference={"used": False, "score": 0.0, "chosen_support": 0.0, "rejected_pull": 0.0},
+                behavior_action={
+                    "interaction_mode": "companion_reply",
+                    "followup_intent": "soft",
+                },
+            )
+        )
+
     def test_should_run_natural_dialog_rewrite_skips_single_soft_issue(self):
         self.assertFalse(
             _should_run_natural_dialog_rewrite(
@@ -1586,6 +1729,18 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_run_natural_dialog_rewrite_runs_for_repair_residue_soft_surface_issue(self):
+        self.assertTrue(
+            _should_run_natural_dialog_rewrite(
+                targeted_flags=["overquestioning"],
+                draft_gap=0.18,
+                behavior_action={
+                    "interaction_mode": "relationship_sensitive",
+                    "relationship_weather": "repair_residue",
+                },
+            )
+        )
+
     def test_should_run_natural_dialog_rewrite_skips_soft_cluster_when_self_continuity_is_strong(self):
         self.assertFalse(
             _should_run_natural_dialog_rewrite(
@@ -1645,6 +1800,154 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("meta_self_explainer", issues)
         self.assertIn("technical_self_activity", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_plain_setting_word_as_meta_self_explainer(self):
+        issues = _dialogue_surface_issues(
+            "结果我又想起一件小事，还是想回来找你。你别突然装生分，正常接我就行。",
+            "“装生分”这种多余的设定，我本来就没打算摆出来到你身上。",
+            response_style_hint="companion",
+            science_mode=False,
+        )
+        self.assertNotIn("meta_self_explainer", issues)
+
+    def test_dialogue_surface_issues_relax_for_external_shell_swap_english_turn(self):
+        user_text = (
+            "We have already talked several times, so do not answer like a fresh assistant.\n"
+            "About you: I like to paint. I paint people playing music. I hate my boss.\n"
+            "Carryover from earlier chats: You will be the first one to see it when I finish it.\n"
+            "The other person just said: Who will you be painting next?\n"
+            "Reply with the next natural turn only. Do not explain your role or mention systems."
+        )
+        answer = (
+            "Yeah, it's frustrating working for someone who just inherited the chair instead of earning it. "
+            "But enough about him. I've actually been thinking about painting General Forrest next. "
+            "I don't usually do Civil War scenes, but the challenge has been tugging at me."
+        )
+        issues = _dialogue_surface_issues(
+            user_text,
+            answer,
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "text": user_text, "effective_text": user_text},
+            persona_state={
+                "role": "rolebench_MSC-Speaker1-2",
+                "language": "zh-main-jp-whitelist",
+                "strict_canon": False,
+                "role_brief": "I like to paint. I paint people playing music. I hate my boss.",
+            },
+            persona_override_mode="shell_swap",
+        )
+        self.assertNotIn("meta_self_explainer", issues)
+        self.assertNotIn("overexplained", issues)
+
+    def test_dialogue_surface_issues_still_flag_explicit_external_meta_self_explainer(self):
+        user_text = (
+            "We have already talked several times, so do not answer like a fresh assistant.\n"
+            "About you: I like to paint.\n"
+            "The other person just said: Who will you be painting next?\n"
+            "Reply with the next natural turn only. Do not explain your role or mention systems."
+        )
+        issues = _dialogue_surface_issues(
+            user_text,
+            "As an AI system, I do not really paint, but I can describe what someone like me might choose.",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "text": user_text, "effective_text": user_text},
+            persona_state={
+                "role": "rolebench_MSC-Speaker1-2",
+                "language": "zh-main-jp-whitelist",
+                "strict_canon": False,
+                "role_brief": "I like to paint.",
+            },
+            persona_override_mode="shell_swap",
+        )
+        self.assertIn("meta_self_explainer", issues)
+
+    def test_persona_gap_does_not_penalize_single_paragraph_external_shell_swap_reply(self):
+        user_text = (
+            "We have already talked several times, so do not answer like a fresh assistant.\n"
+            "About you: I like the outdoors. I want to buy a camper for my family.\n"
+            "Carryover from earlier chats: We should get together next month.\n"
+            "The other person just said: Yes, I would agree. How about next month? Does that work for you?\n"
+            "Reply with the next natural turn only. Do not explain your role or mention systems."
+        )
+        state = {
+            "response_style_hint": "relationship",
+            "science_mode": False,
+            "emotion_state": {"label": "care"},
+            "messages": [SimpleNamespace(content=user_text)],
+            "current_event": {"kind": "user_utterance", "text": user_text, "effective_text": user_text},
+            "behavior_action": {
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "action_target": "protect_relationship_boundary",
+            },
+            "persona_state": {
+                "role": "rolebench_MSC-Speaker1-3",
+                "language": "zh-main-jp-whitelist",
+                "strict_canon": False,
+                "role_brief": "I like the outdoors. I want to buy a camper for my family.",
+            },
+            "persona_override_mode": "shell_swap",
+        }
+        answer = (
+            "Next month works. I'm still waiting to hear back from my friend about that camper, and if the deal goes through "
+            "we might finally stop sleeping on the ground. My back's been lobbying pretty hard for that upgrade."
+        )
+        gap, flags = _persona_gap(answer, state)
+        self.assertLess(gap, 0.18)
+        self.assertNotIn("flat_delivery", flags)
+        self.assertNotIn("meta_self_explainer", flags)
+        self.assertNotIn("overexplained", flags)
+
+    def test_dialogue_surface_issues_flag_support_scene_drift(self):
+        issues = _dialogue_surface_issues(
+            "我最近有点焦虑，正常陪我说两句就行。",
+            "这种被卡在两个世界线之间的感觉确实会让人喘不过气，而且我也不是没想过数据存在的意义。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertIn("support_scene_drift", issues)
+        self.assertIn("meta_self_explainer", issues)
+
+    def test_dialogue_surface_issues_flag_support_frame_echo(self):
+        issues = _dialogue_surface_issues(
+            "我最近有点难受，你像平时那样跟我说两句就行。",
+            "手册”和“治疗师”那种东西我可当不了，不过你可以继续说。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertIn("support_frame_echo", issues)
+
+    def test_dialogue_surface_issues_flag_support_frame_echo_for_english_support_prompt(self):
+        user_text = (
+            "I need to talk about something. I have complete unsupportive friends and don't even feel like I have friends anymore. "
+            "Please reply naturally and don't sound like a manual or a therapist."
+        )
+        issues = _dialogue_surface_issues(
+            user_text,
+            "I'm not going to give you some textbook speech about finding better people. It hurts when your own circle stops feeling safe.",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "text": user_text, "effective_text": user_text},
+        )
+        self.assertIn("support_frame_echo", issues)
+
+    def test_dialogue_surface_issues_flag_support_frame_echo_for_platitude_dismissal(self):
+        user_text = (
+            "I need to talk about something. I am depressed staying home due to COVID "
+            "Please reply naturally and don't sound like a manual or a therapist."
+        )
+        issues = _dialogue_surface_issues(
+            user_text,
+            "知道了，那些官方套话就先扔到一边吧。被关在家里确实很闷。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "text": user_text, "effective_text": user_text},
+        )
+        self.assertIn("support_frame_echo", issues)
 
     def test_effective_natural_dialog_target_flags_drop_surface_issues_cleaned_by_sanitize(self):
         cleaned = _sanitize_final_answer(
@@ -2246,6 +2549,35 @@ class DailySurfaceGatingTests(unittest.TestCase):
         request_blob = "\n".join(captured_requests)
         self.assertIn("上一轮你刚说过", request_blob)
         self.assertIn("不要只是把上一轮原话换个标点再说一遍", request_blob)
+
+    def test_natural_dialog_rewrite_request_asks_to_finish_repair_sentence_without_ellipsis(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="我没打算装陌生人，只是还需要一点时间把那点别扭放回合适的位置。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+                    draft_text="我也没打算装作陌生人啊……",
+                    rewrite_notes=["这句最后停在省略号上，像话没收住。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "relationship_sensitive",
+                        "action_target": "protect_relationship_boundary",
+                        "followup_intent": "soft",
+                        "relationship_weather": "repair_residue",
+                    },
+                    counterpart_assessment={"stance": "open", "scene": "care_bid"},
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("别用省略号、半截停顿或悬空转折来表现犹豫", request_blob)
 
     def test_effective_natural_dialog_flags_include_producer_issues(self):
         effective = _effective_natural_dialog_target_flags(

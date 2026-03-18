@@ -318,7 +318,11 @@ def _prepare_turn_runtime(
         prior_allostasis_state=seed_allostasis_state,
         prior_counterpart_assessment=seed_counterpart_assessment,
     )
-    behavior_plan = _behavior_plan_from_action(current_event, behavior_action)
+    behavior_plan = _behavior_plan_from_action(
+        current_event,
+        behavior_action,
+        world_model_state=world_model_state,
+    )
     behavior_agenda = _merge_behavior_agenda(
         prior_behavior_agenda,
         current_event,

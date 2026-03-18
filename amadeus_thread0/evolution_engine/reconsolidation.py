@@ -281,6 +281,7 @@ def build_reconsolidation_snapshot(
     current_event: dict[str, Any] | None,
     appraisal: dict[str, Any] | None,
     world_model_state: dict[str, Any] | None,
+    semantic_narrative_profile: dict[str, Any] | None = None,
     latent_state: dict[str, Any] | None,
     emotion_state: dict[str, Any] | None,
     bond_state: dict[str, Any] | None,
@@ -298,10 +299,12 @@ def build_reconsolidation_snapshot(
     )
     app = normalize_appraisal_payload(appraisal)
     world = dict(world_model_state or {})
+    semantic = dict(semantic_narrative_profile or {})
     latent = dict(latent_state or {})
     emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
+    lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
     return {
         "event_kind": str(event.get("kind") or "user_utterance"),
         "interaction_frame": str(app.get("interaction_frame") or ""),
@@ -314,15 +317,48 @@ def build_reconsolidation_snapshot(
         "agenda_lifecycle_consequence": agenda_lifecycle_consequence,
         "salience": dict(salience),
         "world_model": {
+            "relationship_maturity": clamp01(world.get("relationship_maturity"), 0.0),
             "bond_depth": clamp01(world.get("bond_depth"), 0.0),
             "tension_load": clamp01(world.get("tension_load"), 0.0),
             "repair_load": clamp01(world.get("repair_load"), 0.0),
+            "boundary_load": clamp01(world.get("boundary_load"), 0.0),
             "selfhood_load": clamp01(world.get("selfhood_load"), 0.0),
             "agency_load": clamp01(world.get("agency_load"), 0.0),
             "memory_gravity": clamp01(world.get("memory_gravity"), 0.0),
+            "lineage_gravity": clamp01(world.get("lineage_gravity"), 0.0),
+            "contact_lineage": clamp01(world.get("contact_lineage"), 0.0),
+            "repair_lineage": clamp01(world.get("repair_lineage"), 0.0),
+            "boundary_lineage": clamp01(world.get("boundary_lineage"), 0.0),
+            "selfhood_lineage": clamp01(world.get("selfhood_lineage"), 0.0),
+            "agency_lineage": clamp01(world.get("agency_lineage"), 0.0),
             "presence_residue": clamp01(world.get("presence_residue"), 0.0),
             "ambient_resonance": clamp01(world.get("ambient_resonance"), 0.0),
             "self_activity_momentum": clamp01(world.get("self_activity_momentum"), 0.0),
+        },
+        "semantic_continuity": {
+            "dominant_category": str(semantic.get("dominant_category") or ""),
+            "continuity_depth": clamp01(semantic.get("continuity_depth"), 0.0),
+            "identity_gravity": clamp01(semantic.get("identity_gravity"), 0.0),
+            "lineage_gravity": clamp01(semantic.get("lineage_gravity"), 0.0),
+            "active_categories": [
+                str(item).strip()
+                for item in (semantic.get("active_categories") if isinstance(semantic.get("active_categories"), list) else [])
+                if str(item or "").strip()
+            ][:6],
+            "lineage_snapshot": {
+                key: clamp01(lineage_snapshot.get(key), 0.0)
+                for key in (
+                    "bond_style",
+                    "presence_style",
+                    "commitment_style",
+                    "repair_style",
+                    "boundary_style",
+                    "selfhood_style",
+                    "agency_style",
+                    "rhythm_style",
+                )
+                if clamp01(lineage_snapshot.get(key), 0.0) > 0.0
+            },
         },
         "latent": {
             "self_coherence": clamp01(latent.get("self_coherence"), 0.72),

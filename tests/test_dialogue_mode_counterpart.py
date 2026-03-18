@@ -199,6 +199,45 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
         self.assertEqual(str(action.get("followup_intent") or ""), "none")
 
+    def test_soft_repair_with_residue_reads_as_repair_attempt_not_plain_friction(self):
+        assessment = _counterpart_assessment_next(
+            self.open_counterpart,
+            user_text="还有，刚刚那点小别扭先记着，但别放大。我们不是在吵架，只是节奏有点卡。",
+            appraisal={
+                "used": True,
+                "confidence": 0.92,
+                "interaction_frame": "relationship",
+                "emotion_label": "care",
+                "signals": {
+                    "care": True,
+                    "repair": False,
+                    "conflict": False,
+                    "withdrawal": False,
+                    "memory_salient": True,
+                },
+                "salience": {
+                    "relationship": 0.82,
+                    "companionship": 0.60,
+                    "selfhood": 0.08,
+                    "task": 0.08,
+                },
+            },
+            relationship=self.relationship,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "还有，刚刚那点小别扭先记着，但别放大。我们不是在吵架，只是节奏有点卡。",
+                "response_style_hint": "relationship",
+                "tags": ["relationship", "care", "memory_salient"],
+            },
+            science_mode=False,
+        )
+        self.assertEqual(str(assessment.get("scene") or ""), "repair_attempt")
+        self.assertIn(str(assessment.get("stance") or ""), {"open", "watchful"})
+        self.assertLess(float(assessment.get("boundary_pressure") or 1.0), 0.34)
+
     def test_shared_window_profile_gets_continuity_bonus_from_history_and_carryover(self):
         baseline = _counterpart_window_profile(
             family="shared",
@@ -1328,6 +1367,96 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertGreater(float(infused.get("reliability_read") or 0.0), float(plain.get("reliability_read") or 0.0))
         self.assertLess(float(infused.get("boundary_pressure") or 1.0), float(plain.get("boundary_pressure") or 1.0))
 
+    def test_transition_counterpart_assessment_contact_lineage_reads_busy_without_carryover(self):
+        plain = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={"used": False},
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "relationship_maturity": 0.40,
+                "presence_residue": 0.12,
+                "self_activity_momentum": 0.18,
+                "memory_gravity": 0.22,
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "刚忙完，顺手回来和你说一句。",
+                "effective_text": "刚忙完，顺手回来和你说一句。",
+                "tags": ["natural"],
+            },
+        )
+        infused = transition_counterpart_assessment(
+            prev_state={
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "boundary_pressure": 0.14,
+                "reliability_read": 0.58,
+                "stance": "open",
+                "scene": "neutral",
+            },
+            appraisal={"used": False},
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.02,
+                "engagement_drive": 0.60,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.18,
+                "autonomy_need": 0.24,
+            },
+            world_model_state={
+                "relationship_maturity": 0.40,
+                "presence_residue": 0.12,
+                "self_activity_momentum": 0.18,
+                "memory_gravity": 0.22,
+                "boundary_load": 0.10,
+                "tension_load": 0.08,
+                "lineage_gravity": 0.82,
+                "contact_lineage": 0.84,
+                "repair_lineage": 0.72,
+                "agency_lineage": 0.78,
+            },
+            current_event={
+                "kind": "user_utterance",
+                "source": "text",
+                "text": "刚忙完，顺手回来和你说一句。",
+                "effective_text": "刚忙完，顺手回来和你说一句。",
+                "tags": ["natural"],
+            },
+        )
+        self.assertNotEqual(str(plain.get("scene") or ""), "busy_not_disrespectful")
+        self.assertEqual(str(infused.get("scene") or ""), "busy_not_disrespectful")
+        self.assertGreater(float(infused.get("reliability_read") or 0.0), float(plain.get("reliability_read") or 0.0))
+        self.assertLess(float(infused.get("boundary_pressure") or 1.0), float(plain.get("boundary_pressure") or 1.0))
+
     def test_transition_counterpart_assessment_guarded_residue_keeps_watchful_on_benign_turn(self):
         plain = transition_counterpart_assessment(
             prev_state={
@@ -1417,6 +1546,84 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(infused.get("scene") or ""), "friction")
         self.assertGreater(float(infused.get("boundary_pressure") or 0.0), float(plain.get("boundary_pressure") or 0.0))
         self.assertLess(float(infused.get("reliability_read") or 1.0), float(plain.get("reliability_read") or 1.0))
+
+    def test_transition_counterpart_assessment_boundary_lineage_keeps_guarded_after_single_repair(self):
+        plain = transition_counterpart_assessment(
+            prev_state={
+                **self.guarded_counterpart,
+                "scene": "boundary_non_compliance",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.94,
+                "signals": {
+                    "repair": True,
+                    "withdrawal": False,
+                    "care": False,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.12,
+                "irritation": 0.08,
+                "repair_confidence": 0.70,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.34,
+                "autonomy_need": 0.20,
+            },
+            world_model_state={
+                "boundary_load": 0.26,
+                "tension_load": 0.14,
+                "presence_residue": 0.08,
+            },
+            current_event=self.companion_event,
+        )
+        infused = transition_counterpart_assessment(
+            prev_state={
+                **self.guarded_counterpart,
+                "scene": "boundary_non_compliance",
+            },
+            appraisal={
+                "used": True,
+                "confidence": 0.94,
+                "signals": {
+                    "repair": True,
+                    "withdrawal": False,
+                    "care": False,
+                    "conflict": False,
+                    "memory_salient": False,
+                },
+            },
+            relationship=self.relationship,
+            bond_state={
+                **self.bond_state,
+                "hurt": 0.12,
+                "irritation": 0.08,
+                "repair_confidence": 0.70,
+            },
+            allostasis_state={
+                **self.allostasis_state,
+                "safety_need": 0.34,
+                "autonomy_need": 0.20,
+            },
+            world_model_state={
+                "boundary_load": 0.26,
+                "tension_load": 0.14,
+                "presence_residue": 0.08,
+                "lineage_gravity": 0.84,
+                "boundary_lineage": 0.86,
+                "selfhood_lineage": 0.78,
+            },
+            current_event=self.companion_event,
+        )
+        self.assertEqual(str(plain.get("stance") or ""), "watchful")
+        self.assertEqual(str(infused.get("stance") or ""), "guarded")
+        self.assertGreater(float(infused.get("boundary_pressure") or 0.0), float(plain.get("boundary_pressure") or 0.0))
 
     def test_transition_counterpart_assessment_preserves_busy_scene_on_followup_concern(self):
         next_state = transition_counterpart_assessment(

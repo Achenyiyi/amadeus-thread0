@@ -141,6 +141,20 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
+    continuity_anchor: float
+    own_rhythm_anchor: float
+    recontact_anchor: float
+    boundary_anchor: float
+    memory_anchor: float
+    semantic_continuity_depth: float
+    semantic_identity_gravity: float
+    long_term_axis_count: int
+    lineage_gravity: float
+    contact_lineage: float
+    repair_lineage: float
+    boundary_lineage: float
+    selfhood_lineage: float
+    agency_lineage: float
 
 
 class InteractionCarryoverPayload(TypedDict, total=False):
@@ -187,6 +201,12 @@ class AgendaLifecycleResiduePayload(TypedDict, total=False):
     semantic_continuity_depth: float
     semantic_identity_gravity: float
     long_term_axis_count: int
+    lineage_gravity: float
+    contact_lineage: float
+    repair_lineage: float
+    boundary_lineage: float
+    selfhood_lineage: float
+    agency_lineage: float
     own_rhythm_bias: float
     recontact_cooldown: float
     counterpart_scene_bias: str

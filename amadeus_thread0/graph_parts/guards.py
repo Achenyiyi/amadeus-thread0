@@ -11,6 +11,8 @@ from .postprocess import (
     SELFHOOD_VALUE_CONFLICT_KEYWORDS,
     _dialogue_surface_issues,
     _has_any_marker,
+    _is_external_shell_swap_english_context,
+    _is_nonrelational_support_request,
     _norm_for_compare,
     _wants_quick_judgment,
 )
@@ -86,6 +88,15 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
+    persona_state = state.get("persona_state") if isinstance(state.get("persona_state"), dict) else {}
+    persona_override_mode = str(state.get("persona_override_mode") or "").strip()
+    support_request = _is_nonrelational_support_request(user_text, science_mode)
+    external_shell_swap_english = _is_external_shell_swap_english_context(
+        user_text,
+        current_event=current_event,
+        persona_state=persona_state,
+        persona_override_mode=persona_override_mode,
+    )
     label_count = sum(
         1
         for ln in lines
@@ -95,7 +106,7 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
     sentence_count = len([seg for seg in re.split(r"[。！？!?]", t) if seg.strip()])
     compact = re.sub(r"\s+", "", t)
 
-    if len(lines) <= 1 and len(t) >= 96 and style_hint != "structured":
+    if len(lines) <= 1 and len(t) >= 96 and style_hint != "structured" and not external_shell_swap_english and not support_request:
         score += 0.12
         flags.append("flat_delivery")
 
@@ -163,6 +174,8 @@ def _persona_gap(text: str, state: ThreadState) -> tuple[float, list[str]]:
         science_mode=science_mode,
         current_event=current_event,
         behavior_action=behavior_action,
+        persona_state=persona_state,
+        persona_override_mode=persona_override_mode,
     ):
         score += float(surface_issue_weights.get(issue, 0.0))
         flags.append(issue)

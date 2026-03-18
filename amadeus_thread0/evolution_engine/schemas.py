@@ -33,6 +33,12 @@ class WorldModelState:
     selfhood_load: float = 0.0
     agency_load: float = 0.0
     memory_gravity: float = 0.0
+    lineage_gravity: float = 0.0
+    contact_lineage: float = 0.0
+    repair_lineage: float = 0.0
+    boundary_lineage: float = 0.0
+    selfhood_lineage: float = 0.0
+    agency_lineage: float = 0.0
     task_pull: float = 0.0
     companionship_pull: float = 0.0
     presence_residue: float = 0.0
@@ -52,6 +58,12 @@ class WorldModelState:
             selfhood_load=clamp01(data.get("selfhood_load"), 0.0),
             agency_load=clamp01(data.get("agency_load"), 0.0),
             memory_gravity=clamp01(data.get("memory_gravity"), 0.0),
+            lineage_gravity=clamp01(data.get("lineage_gravity"), 0.0),
+            contact_lineage=clamp01(data.get("contact_lineage"), 0.0),
+            repair_lineage=clamp01(data.get("repair_lineage"), 0.0),
+            boundary_lineage=clamp01(data.get("boundary_lineage"), 0.0),
+            selfhood_lineage=clamp01(data.get("selfhood_lineage"), 0.0),
+            agency_lineage=clamp01(data.get("agency_lineage"), 0.0),
             task_pull=clamp01(data.get("task_pull"), 0.0),
             companionship_pull=clamp01(data.get("companionship_pull"), 0.0),
             presence_residue=clamp01(data.get("presence_residue"), 0.0),

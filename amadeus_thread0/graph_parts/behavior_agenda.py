@@ -15,6 +15,12 @@ _AGENDA_LONG_HORIZON_FLOAT_KEYS = (
     "memory_anchor",
     "semantic_continuity_depth",
     "semantic_identity_gravity",
+    "lineage_gravity",
+    "contact_lineage",
+    "repair_lineage",
+    "boundary_lineage",
+    "selfhood_lineage",
+    "agency_lineage",
 )
 _AGENDA_LONG_HORIZON_INT_KEYS = ("long_term_axis_count",)
 
@@ -54,6 +60,41 @@ def _agenda_long_horizon_snapshot(
     agency_drive = _snapshot_value(semantic, "agency_drive")
     rhythm_continuity = _snapshot_value(semantic, "rhythm_continuity")
     selfhood_integrity = _snapshot_value(semantic, "selfhood_integrity")
+    lineage_gravity = max(
+        _snapshot_value(semantic, "lineage_gravity"),
+        _snapshot_value(world, "lineage_gravity"),
+    )
+    lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
+    contact_lineage = max(
+        _snapshot_value(world, "contact_lineage"),
+        _snapshot_value(lineage_snapshot, "bond_style"),
+        _snapshot_value(lineage_snapshot, "presence_style"),
+        _snapshot_value(lineage_snapshot, "commitment_style"),
+        _snapshot_value(lineage_snapshot, "repair_style"),
+    )
+    repair_lineage = max(
+        _snapshot_value(world, "repair_lineage"),
+        _snapshot_value(lineage_snapshot, "repair_style"),
+        _snapshot_value(lineage_snapshot, "commitment_style"),
+        _snapshot_value(lineage_snapshot, "bond_style"),
+    )
+    boundary_lineage = max(
+        _snapshot_value(world, "boundary_lineage"),
+        _snapshot_value(lineage_snapshot, "boundary_style"),
+        _snapshot_value(lineage_snapshot, "selfhood_style"),
+    )
+    selfhood_lineage = max(
+        _snapshot_value(world, "selfhood_lineage"),
+        _snapshot_value(lineage_snapshot, "selfhood_style"),
+        _snapshot_value(lineage_snapshot, "agency_style"),
+        _snapshot_value(lineage_snapshot, "rhythm_style"),
+    )
+    agency_lineage = max(
+        _snapshot_value(world, "agency_lineage"),
+        _snapshot_value(lineage_snapshot, "agency_style"),
+        _snapshot_value(lineage_snapshot, "rhythm_style"),
+        _snapshot_value(lineage_snapshot, "selfhood_style"),
+    )
     world_self_activity = _snapshot_value(world, "self_activity_momentum")
     world_agency = _snapshot_value(world, "agency_load")
     world_boundary = _snapshot_value(world, "boundary_load")
@@ -76,6 +117,9 @@ def _agenda_long_horizon_snapshot(
         + 0.12 * world_agency
         + 0.10 * continuity_depth
         + 0.08 * identity_gravity
+        + 0.10 * agency_lineage
+        + 0.06 * selfhood_lineage
+        + 0.04 * lineage_gravity
         + 0.08 * axis_norm
     )
     recontact_anchor = _clamp01(
@@ -84,6 +128,9 @@ def _agenda_long_horizon_snapshot(
         + 0.14 * commitment_carry
         + 0.14 * world_memory
         + 0.12 * max(presence_persistence, bond_sedimentation)
+        + 0.10 * contact_lineage
+        + 0.04 * repair_lineage
+        + 0.04 * lineage_gravity
         + 0.08 * continuity_depth
         + 0.08 * axis_norm
     )
@@ -92,6 +139,8 @@ def _agenda_long_horizon_snapshot(
         + 0.22 * identity_gravity
         + 0.16 * max(rhythm_continuity, agency_drive)
         + 0.14 * max(history_weight, world_memory)
+        + 0.08 * max(contact_lineage, boundary_lineage, agency_lineage)
+        + 0.06 * lineage_gravity
         + 0.08 * axis_norm
         + 0.08 * max(rhythm_persistence, agency_persistence)
     )
@@ -101,6 +150,9 @@ def _agenda_long_horizon_snapshot(
         + 0.18 * identity_gravity
         + 0.12 * selfhood_integrity
         + 0.10 * continuity_depth
+        + 0.10 * boundary_lineage
+        + 0.06 * selfhood_lineage
+        + 0.04 * lineage_gravity
         + 0.10 * axis_norm
     )
     memory_anchor = _clamp01(
@@ -108,6 +160,9 @@ def _agenda_long_horizon_snapshot(
         + 0.22 * commitment_carry
         + 0.16 * presence_carry
         + 0.14 * max(commitment_persistence, bond_sedimentation)
+        + 0.06 * contact_lineage
+        + 0.04 * repair_lineage
+        + 0.04 * lineage_gravity
         + 0.12 * continuity_depth
         + 0.08 * axis_norm
     )
@@ -119,6 +174,12 @@ def _agenda_long_horizon_snapshot(
         "memory_anchor": round(memory_anchor, 3),
         "semantic_continuity_depth": round(continuity_depth, 3),
         "semantic_identity_gravity": round(identity_gravity, 3),
+        "lineage_gravity": round(lineage_gravity, 3),
+        "contact_lineage": round(contact_lineage, 3),
+        "repair_lineage": round(repair_lineage, 3),
+        "boundary_lineage": round(boundary_lineage, 3),
+        "selfhood_lineage": round(selfhood_lineage, 3),
+        "agency_lineage": round(agency_lineage, 3),
         "long_term_axis_count": int(long_term_axis_count),
     }
 
@@ -193,14 +254,38 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
     presence_residue = _clamp01(prior_behavior_plan.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(prior_behavior_plan.get("ambient_resonance"), 0.0)
     self_activity_momentum = _clamp01(prior_behavior_plan.get("self_activity_momentum"), 0.0)
+    overdue_minutes = max(0, idle_minutes - max(1, due_after))
     promoted = dict(event)
     if plan_kind == "self_activity_continue":
-        reopen_hint = bool(
+        # A due self-rhythm agenda should not keep projecting its original task load forever.
+        # Once it has remained due for a while, the promoted event should reflect a lighter,
+        # reopening-ready state rather than the full hold-time momentum from plan creation.
+        matured_small_opening = bool(
             carryover_mode == "small_opening"
             or (
-                self_activity_momentum < 0.58
+                carryover_mode == "own_rhythm"
+                and str(trigger_family).strip().lower() == "self_activity"
+                and overdue_minutes >= 6
+            )
+        )
+        effective_carryover_mode = "small_opening" if matured_small_opening else (carryover_mode or "own_rhythm")
+        effective_carryover_strength = carryover_strength
+        effective_self_activity_momentum = self_activity_momentum
+        if matured_small_opening and carryover_mode == "own_rhythm":
+            effective_carryover_strength = _clamp01(max(0.42, 0.58 * carryover_strength), 0.0)
+            effective_self_activity_momentum = _clamp01(
+                min(
+                    self_activity_momentum,
+                    0.44 + 0.16 * presence_residue + 0.12 * ambient_resonance,
+                ),
+                0.0,
+            )
+        reopen_hint = bool(
+            effective_carryover_mode == "small_opening"
+            or (
+                effective_self_activity_momentum < 0.58
                 and (
-                    carryover_strength >= 0.56
+                    effective_carryover_strength >= 0.56
                     or presence_residue >= 0.30
                     or ambient_resonance >= 0.32
                 )
@@ -209,7 +294,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
         quiet_reapproach = bool(
             not reopen_hint
             and (
-                carryover_mode in {"quiet_recontact", "brief_presence"}
+                effective_carryover_mode in {"quiet_recontact", "brief_presence"}
                 or presence_residue >= 0.28
                 or ambient_resonance >= 0.30
             )
@@ -225,16 +310,19 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                     "reapproach" if (reopen_hint or quiet_reapproach) else "",
                     "quiet_presence" if presence_residue >= 0.28 else "",
                     "ambient_echo" if ambient_resonance >= 0.32 else "",
-                    "deep_focus" if self_activity_momentum >= 0.58 else "",
-                    "own_task" if self_activity_momentum >= 0.64 and (carryover_mode == "own_rhythm" or carryover_strength >= 0.58) else "",
+                    "deep_focus" if effective_self_activity_momentum >= 0.58 else "",
+                    "own_task"
+                    if effective_self_activity_momentum >= 0.64
+                    and (effective_carryover_mode == "own_rhythm" or effective_carryover_strength >= 0.58)
+                    else "",
                 ]
                 if item
             )
         )
         promoted_text = "你手头那件事暂时告一段落，像是终于空出一点点注意力，又把视线偏回了对方这边。"
-        if self_activity_momentum >= 0.64 and carryover_mode == "own_rhythm":
+        if effective_self_activity_momentum >= 0.64 and effective_carryover_mode == "own_rhythm":
             promoted_text = "你手头那点事还没真正放下，只是隔着自己的节奏，短暂把注意力往对方这边偏了一下。"
-        elif self_activity_momentum >= 0.58:
+        elif effective_self_activity_momentum >= 0.58:
             promoted_text = "你先把自己手头那点事收了个尾，过了一会儿才像是终于愿意把注意力重新抬起来。"
         elif reopen_hint:
             promoted_text = "你没有一下子凑近，只是从自己的节奏里抬起头，顺手留了一个很小的开口。"
@@ -265,15 +353,15 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "derived_from_plan_kind": plan_kind,
                 "trigger_family": trigger_family or "self_activity",
                 "scheduled_after_min": due_after,
-                "carryover_mode": carryover_mode or "own_rhythm",
-                "carryover_strength": round(max(carryover_strength, self_activity_momentum), 3),
+                "carryover_mode": effective_carryover_mode,
+                "carryover_strength": round(max(effective_carryover_strength, effective_self_activity_momentum), 3),
                 "relationship_weather": relationship_weather,
                 "primary_motive": primary_motive,
                 "motive_tension": motive_tension,
                 "goal_frame": goal_frame,
                 "presence_residue": round(presence_residue, 3),
                 "ambient_resonance": round(ambient_resonance, 3),
-                "self_activity_momentum": round(self_activity_momentum, 3),
+                "self_activity_momentum": round(effective_self_activity_momentum, 3),
                 "attention_target_hint": attention_target,
                 "nonverbal_signal_hint": nonverbal_signal,
             }
@@ -1378,6 +1466,14 @@ def _agenda_lifecycle_residue(
     continuity_anchor = _clamp01(long_horizon.get("continuity_anchor"), 0.0)
     own_rhythm_anchor = _clamp01(long_horizon.get("own_rhythm_anchor"), 0.0)
     recontact_anchor = _clamp01(long_horizon.get("recontact_anchor"), 0.0)
+    boundary_anchor = _clamp01(long_horizon.get("boundary_anchor"), 0.0)
+    memory_anchor = _clamp01(long_horizon.get("memory_anchor"), 0.0)
+    lineage_gravity = _clamp01(long_horizon.get("lineage_gravity"), 0.0)
+    contact_lineage = _clamp01(long_horizon.get("contact_lineage"), 0.0)
+    repair_lineage = _clamp01(long_horizon.get("repair_lineage"), 0.0)
+    boundary_lineage = _clamp01(long_horizon.get("boundary_lineage"), 0.0)
+    selfhood_lineage = _clamp01(long_horizon.get("selfhood_lineage"), 0.0)
+    agency_lineage = _clamp01(long_horizon.get("agency_lineage"), 0.0)
     residue_mode = carryover_mode
     residue_strength = carryover_strength
     recontact_echo = max(recontact_echo, 0.72 * recontact_anchor)
@@ -1458,6 +1554,20 @@ def _agenda_lifecycle_residue(
         "presence_residue": round(presence_residue, 3),
         "ambient_resonance": round(ambient_resonance, 3),
         "self_activity_momentum": round(self_activity_momentum, 3),
+        "continuity_anchor": round(continuity_anchor, 3),
+        "own_rhythm_anchor": round(own_rhythm_anchor, 3),
+        "recontact_anchor": round(recontact_anchor, 3),
+        "boundary_anchor": round(boundary_anchor, 3),
+        "memory_anchor": round(memory_anchor, 3),
+        "semantic_continuity_depth": round(_clamp01(long_horizon.get("semantic_continuity_depth"), 0.0), 3),
+        "semantic_identity_gravity": round(_clamp01(long_horizon.get("semantic_identity_gravity"), 0.0), 3),
+        "long_term_axis_count": max(0, int(long_horizon.get("long_term_axis_count") or 0)),
+        "lineage_gravity": round(lineage_gravity, 3),
+        "contact_lineage": round(contact_lineage, 3),
+        "repair_lineage": round(repair_lineage, 3),
+        "boundary_lineage": round(boundary_lineage, 3),
+        "selfhood_lineage": round(selfhood_lineage, 3),
+        "agency_lineage": round(agency_lineage, 3),
         "own_rhythm_bias": round(own_rhythm_bias, 3),
         "recontact_cooldown": round(_clamp01(max(own_rhythm_bias, 0.82 * effective_hold_count / 4.0 - 0.18 * recontact_echo)), 3),
         "counterpart_scene_bias": counterpart_scene_bias,

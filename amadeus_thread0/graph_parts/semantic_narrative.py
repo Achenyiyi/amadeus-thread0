@@ -231,12 +231,14 @@ def _semantic_narrative_profile(
         "persistence_snapshot": {},
         "support_mass_snapshot": {},
         "support_quality_snapshot": {},
+        "lineage_snapshot": {},
         "motive_snapshot": {},
         "identity_snapshot": {},
         "identity_lines": [],
         "identity_prompt_lines": [],
         "long_term_self_narratives": [],
         "long_term_axis_count": 0,
+        "lineage_gravity": 0.0,
         "contested_categories": [],
     }
     if not isinstance(items, list) or not items:
@@ -269,6 +271,7 @@ def _semantic_narrative_profile(
     persistence_snapshot: dict[str, float] = {}
     support_mass_snapshot: dict[str, float] = {}
     support_quality_snapshot: dict[str, float] = {}
+    lineage_snapshot: dict[str, float] = {}
     motive_snapshot: dict[str, dict[str, Any]] = {}
     identity_snapshot: dict[str, dict[str, Any]] = {}
     contested_categories: set[str] = set()
@@ -293,6 +296,7 @@ def _semantic_narrative_profile(
         support_count = max(1.0, float(_record_value(item, "support_count", 1.0) or 1.0))
         support_mass = max(0.0, float(_record_value(item, "support_mass", support_count) or support_count))
         support_quality = _clamp01(_record_value(item, "support_quality", 0.0), 0.0)
+        lineage_depth = _clamp01(_record_value(item, "lineage_depth", 0.0), 0.0)
         fresh_support_ratio = _clamp01(_record_value(item, "fresh_support_ratio", 0.0), 0.0)
         contradiction_pressure = _clamp01(_record_value(item, "contradiction_pressure", 0.0), 0.0)
         contested = bool(_record_value(item, "contested", False)) or contradiction_pressure >= 0.24
@@ -322,6 +326,7 @@ def _semantic_narrative_profile(
                 + 0.12 * residue
                 + 0.08 * integration
                 + 0.05 * support_signal
+                + 0.04 * lineage_depth
                 + horizon_bonus
             )
             * decay_multiplier
@@ -358,10 +363,15 @@ def _semantic_narrative_profile(
                 float(support_quality_snapshot.get(category, 0.0) or 0.0),
                 round(support_signal, 3),
             )
+            lineage_snapshot[category] = max(
+                float(lineage_snapshot.get(category, 0.0) or 0.0),
+                round(lineage_depth * max(decay_multiplier, 0.82), 3),
+            )
             continuity_signal = _clamp01(
                 0.30 * persistence
                 + 0.22 * integration
                 + 0.20 * effective_sedimentation
+                + 0.10 * lineage_depth
                 + 0.10 * support_norm
                 + 0.08 * support_signal
                 + 0.06 * cadence_score
@@ -377,6 +387,7 @@ def _semantic_narrative_profile(
                     "horizon_tag": horizon,
                     "reactivated": reactivated,
                     "contested": contested,
+                    "lineage_depth": round(float(lineage_depth), 3),
                 }
             )
             if contested:
@@ -421,6 +432,7 @@ def _semantic_narrative_profile(
                     0.54 * max(identity_strength, persistence)
                     + 0.14 * integration
                     + 0.10 * residue
+                    + 0.08 * lineage_depth
                     + 0.08 * support_norm
                     + 0.10 * support_signal
                     + _semantic_identity_bonus(horizon, support_span_s, reactivation_hits)
@@ -439,6 +451,7 @@ def _semantic_narrative_profile(
                     "prompt_text": identity_prompt_text[:180],
                     "primary_motive": dominant_primary_motive,
                     "motive_tension": dominant_motive_tension,
+                    "lineage_depth": round(float(lineage_depth), 3),
                 }
                 identity_items.append(
                     {
@@ -453,6 +466,7 @@ def _semantic_narrative_profile(
                         "support_span_s": int(support_span_s),
                         "reactivation_hits": int(reactivation_hits),
                         "identity_strength": round(float(identity_weight), 3),
+                        "lineage_depth": round(float(lineage_depth), 3),
                     }
                 )
         anchor_strength = _clamp01(
@@ -494,6 +508,7 @@ def _semantic_narrative_profile(
             + 0.28 * (sum(nonzero) / float(len(nonzero)))
             + 0.18 * max(residue_snapshot.values() or [0.0])
             + 0.12 * max(persistence_snapshot.values() or [0.0])
+            + 0.10 * max(lineage_snapshot.values() or [0.0])
         )
     out["history_weight"] = round(history_weight, 3)
 
@@ -505,6 +520,7 @@ def _semantic_narrative_profile(
     out["persistence_snapshot"] = persistence_snapshot
     out["support_mass_snapshot"] = support_mass_snapshot
     out["support_quality_snapshot"] = support_quality_snapshot
+    out["lineage_snapshot"] = lineage_snapshot
     out["identity_snapshot"] = identity_snapshot
     out["contested_categories"] = sorted(contested_categories)
     if continuity_items:
@@ -521,6 +537,7 @@ def _semantic_narrative_profile(
             + 0.24 * (sum(top_scores) / float(max(1, len(top_scores))))
             + 0.14 * _clamp01(len(long_term_axes) / 3.0)
             + 0.10 * _clamp01(len(reactivated_categories) / 3.0)
+            + 0.10 * max(lineage_snapshot.values() or [0.0])
         )
         out["continuity_depth"] = round(float(continuity_depth), 3)
         out["long_term_axis_count"] = int(len(long_term_axes))
@@ -606,6 +623,7 @@ def _semantic_narrative_profile(
                         "support_span_s": int(item.get("support_span_s") or 0),
                         "reactivation_hits": int(item.get("reactivation_hits") or 0),
                         "identity_strength": round(float(item.get("identity_strength") or score), 3),
+                        "lineage_depth": round(float(item.get("lineage_depth") or 0.0), 3),
                     }
                 )
         out["identity_lines"] = identity_lines
@@ -624,6 +642,19 @@ def _semantic_narrative_profile(
             ),
             3,
         )
+    if lineage_snapshot:
+        lineage_values = [float(value) for value in lineage_snapshot.values() if float(value) > 0.0]
+        if lineage_values:
+            out["lineage_gravity"] = round(
+                float(
+                    _clamp01(
+                        0.62 * max(lineage_values)
+                        + 0.22 * (sum(lineage_values) / float(max(1, len(lineage_values))))
+                        + 0.16 * _clamp01(len(lineage_values) / 3.0)
+                    )
+                ),
+                3,
+            )
 
     summary_lines: list[str] = []
     if categories["commitment_style"] >= 0.46:
