@@ -1,16 +1,18 @@
 {
-  "generated_at": "2026-03-14 15:35:42",
+  "generated_at": "2026-03-18 18:59:10",
   "output_path": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_corpus.jsonl",
   "source_paths": {
     "manual": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_manual.jsonl",
     "seed": "E:\\桌面\\amadeus-thread0\\evals\\daily_surface_preference_seed.jsonl"
   },
-  "total_rows": 109,
+  "total_rows": 113,
   "counts_by_source": {
-    "manual_curated": 102,
+    "manual_curated": 106,
     "seed": 7
   },
   "counts_by_case": {
+    "quiet_checkin_okabe": 2,
+    "quiet_checkin_user": 2,
     "surface_goodnight_user": 13,
     "surface_hard_day_okabe": 7,
     "surface_hi_user": 6,

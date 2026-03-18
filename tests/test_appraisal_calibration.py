@@ -1,10 +1,21 @@
+import json
 import unittest
+from unittest.mock import patch
 
+from langchain_core.messages import HumanMessage
+
+from amadeus_thread0.config import (
+    LLM_APPRAISAL_INVOKE_MAX_RETRIES,
+    LLM_APPRAISAL_MODEL_MAX_RETRIES,
+    LLM_APPRAISAL_TIMEOUT_S,
+)
 from amadeus_thread0.graph_parts.appraisal import (
     _coerce_appraisal_payload,
+    _invoke_turn_appraisal,
     _postprocess_appraisal_payload,
     _soft_accept_appraisal_payload,
 )
+from amadeus_thread0.graph_parts.runtime_services import _invoke_model_with_retries
 
 
 def _raw_appraisal(
@@ -93,6 +104,103 @@ class AppraisalCalibrationTests(unittest.TestCase):
         )
         self.assertTrue(bool(rescued.get("used")))
         self.assertEqual(str(rescued.get("source") or ""), "llm_soft")
+
+    def test_invoke_turn_appraisal_uses_dedicated_transport_budget(self):
+        fake_llm = object()
+        with (
+            patch("amadeus_thread0.graph_parts.appraisal._appraisal_prefers_direct_transport", return_value=False),
+            patch("amadeus_thread0.graph_parts.appraisal._model", return_value=fake_llm) as model_mock,
+            patch(
+                "amadeus_thread0.graph_parts.appraisal._invoke_model_with_retries",
+                side_effect=RuntimeError("timeout"),
+            ) as invoke_mock,
+        ):
+            out = _invoke_turn_appraisal(
+                msgs=[HumanMessage(content="如果我们以后聊到价值观完全相反的地方，你会顺着我说吗？")],
+                user_text="如果我们以后聊到价值观完全相反的地方，你会顺着我说吗？",
+                response_style_hint="selfhood",
+                science_mode=False,
+                prev_emotion_state={},
+                prev_bond_state={},
+                prev_allostasis_state={},
+                relationship={"stage": "friend"},
+                worldline_focus=[],
+                retrieved={},
+                current_event={"kind": "user_utterance"},
+                semantic_narrative_profile={},
+                interaction_carryover={},
+            )
+
+        self.assertEqual(model_mock.call_args.kwargs["timeout"], float(LLM_APPRAISAL_TIMEOUT_S))
+        self.assertEqual(
+            model_mock.call_args.kwargs["max_retries"],
+            max(0, int(LLM_APPRAISAL_MODEL_MAX_RETRIES)),
+        )
+        self.assertEqual(
+            invoke_mock.call_args.kwargs["max_retries"],
+            max(0, int(LLM_APPRAISAL_INVOKE_MAX_RETRIES)),
+        )
+        self.assertFalse(bool(out.get("used")))
+        self.assertEqual(str(out.get("source") or ""), "rule_fallback")
+
+    def test_invoke_turn_appraisal_can_use_direct_http_transport(self):
+        payload = _raw_appraisal(
+            confidence=0.78,
+            emotion_label="neutral",
+            interaction_frame="selfhood",
+            salience={"selfhood": 0.66, "relationship": 0.28},
+            valence=0.01,
+            arousal=0.22,
+        )
+        with (
+            patch("amadeus_thread0.graph_parts.appraisal._appraisal_prefers_direct_transport", return_value=True),
+            patch(
+                "amadeus_thread0.graph_parts.appraisal._invoke_turn_appraisal_via_http",
+                return_value=json.dumps(payload, ensure_ascii=False),
+            ) as transport_mock,
+            patch("amadeus_thread0.graph_parts.appraisal._model") as model_mock,
+        ):
+            out = _invoke_turn_appraisal(
+                msgs=[HumanMessage(content="按你自己来。")],
+                user_text="按你自己来。",
+                response_style_hint="selfhood",
+                science_mode=False,
+                prev_emotion_state={},
+                prev_bond_state={},
+                prev_allostasis_state={},
+                relationship={"stage": "friend"},
+                worldline_focus=[],
+                retrieved={},
+                current_event={"kind": "user_utterance"},
+                semantic_narrative_profile={},
+                interaction_carryover={},
+            )
+
+        transport_mock.assert_called_once()
+        model_mock.assert_not_called()
+        self.assertTrue(bool(out.get("used")))
+        self.assertEqual(str(out.get("source") or ""), "llm")
+
+    def test_runtime_invoke_override_can_disable_wrapper_retries(self):
+        class ReadTimeout(Exception):
+            pass
+
+        class FakeRunnable:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def invoke(self, _messages):
+                self.calls += 1
+                raise ReadTimeout("slow provider")
+
+        runnable = FakeRunnable()
+        with self.assertRaises(ReadTimeout):
+            _invoke_model_with_retries(
+                runnable,
+                [HumanMessage(content="test")],
+                max_retries=0,
+            )
+        self.assertEqual(runnable.calls, 1)
 
     def test_soft_accepts_user_turn_with_own_rhythm_carryover(self):
         appraisal = _coerce_appraisal_payload(

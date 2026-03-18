@@ -159,6 +159,7 @@ def _prepare_turn_context(
         science_mode=science_mode,
         continuation_mode=continuation_mode,
         previous_hint=str(state.get("response_style_hint") or ""),
+        previous_user_text=previous_user_text,
         current_event=event_override if isinstance(event_override, dict) and event_override else None,
     )
     if event_override:
@@ -324,6 +325,7 @@ def _prepare_turn_context(
         science_mode=science_mode,
         continuation_mode=continuation_mode,
         previous_hint=response_style_hint,
+        previous_user_text=previous_user_text,
         current_event=appraisal_event_context,
     )
     current_event = (
