@@ -56,6 +56,13 @@ def _compact_working_item_fallback_texts(working_items: Any, *, limit: int = 2) 
     return texts
 
 
+def _resolve_behavior_agenda(behavior_agenda: Any, *, behavior_queue: Any = None) -> list[dict[str, Any]]:
+    agenda = _normalize_behavior_agenda(behavior_agenda)
+    if agenda:
+        return agenda
+    return _normalize_behavior_agenda(behavior_queue)
+
+
 def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[str]:
     lines: list[str] = []
     if not isinstance(recent_events, list):

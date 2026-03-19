@@ -6,8 +6,10 @@ from typing import Any, Callable
 from langgraph.types import Command
 
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
+from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state
 from ..memory_store import MemoryStore
 from ..utils.cli_views import build_behavior_queue_cli_summary, build_evolution_cli_summary
+from .final_state import resolve_behavior_payloads, resolve_behavior_queue
 
 
 def _coerce_values(snapshot: Any) -> dict[str, Any]:
@@ -251,6 +253,16 @@ class BackendSession:
 
     def build_evolution_summary(self, *, state_values: dict[str, Any] | None = None) -> dict[str, Any]:
         vals = state_values if isinstance(state_values, dict) else self.get_state_values()
+        behavior_action, behavior_plan = resolve_behavior_payloads(
+            behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+            behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+            current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
+            world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+        )
+        behavior_queue = resolve_behavior_queue(
+            behavior_queue=vals.get("behavior_queue"),
+            behavior_agenda=vals.get("behavior_agenda"),
+        )
         return build_evolution_cli_summary(
             relationship=self.memory_store.get_relationship(),
             semantic_narrative_profile=vals.get("semantic_narrative_profile")
@@ -262,9 +274,9 @@ class BackendSession:
             counterpart_assessment=vals.get("counterpart_assessment")
             if isinstance(vals.get("counterpart_assessment"), dict)
             else {},
-            behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
-            behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
-            behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
+            behavior_action=behavior_action,
+            behavior_plan=behavior_plan,
+            behavior_queue=behavior_queue,
             interaction_carryover=vals.get("interaction_carryover")
             if isinstance(vals.get("interaction_carryover"), dict)
             else {},
@@ -294,7 +306,8 @@ class BackendSession:
     def bond_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
         runtime_relationship = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else {}
-        relationship_state = runtime_relationship or self.memory_store.get_relationship()
+        persisted_relationship = self.memory_store.get_relationship()
+        relationship_state = _prefer_refreshed_relationship_state(runtime_relationship, persisted_relationship)
         return {
             "relationship_state": relationship_state,
             "bond_state": vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
@@ -311,7 +324,16 @@ class BackendSession:
 
     def persona_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
-        queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+        queue_vals = resolve_behavior_queue(
+            behavior_queue=vals.get("behavior_queue"),
+            behavior_agenda=vals.get("behavior_agenda"),
+        )
+        behavior_action, behavior_plan = resolve_behavior_payloads(
+            behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+            behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+            current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
+            world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+        )
         return {
             "evolution_summary": self.build_evolution_summary(state_values=vals),
             "persona_state": vals.get("persona_state") if isinstance(vals.get("persona_state"), dict) else {},
@@ -331,15 +353,15 @@ class BackendSession:
             else {},
             "turn_appraisal": vals.get("turn_appraisal") if isinstance(vals.get("turn_appraisal"), dict) else {},
             "behavior_policy": vals.get("behavior_policy") if isinstance(vals.get("behavior_policy"), dict) else {},
-            "behavior_action": vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
+            "behavior_action": behavior_action,
             "interaction_carryover": vals.get("interaction_carryover")
             if isinstance(vals.get("interaction_carryover"), dict)
             else {},
             "agenda_lifecycle_residue": vals.get("agenda_lifecycle_residue")
             if isinstance(vals.get("agenda_lifecycle_residue"), dict)
             else {},
-            "behavior_plan": vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
-            "behavior_queue": queue_vals if isinstance(queue_vals, list) else [],
+            "behavior_plan": behavior_plan,
+            "behavior_queue": queue_vals,
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue_vals, limit=3),
             "science_mode": bool(vals.get("science_mode", False)),
             "tsundere_intensity": vals.get("tsundere_intensity", 0.5),
@@ -395,8 +417,10 @@ class BackendSession:
 
     def behavior_queue_view(self, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
         vals = self.get_state_values(config=config)
-        queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
-        queue = queue_vals if isinstance(queue_vals, list) else []
+        queue = resolve_behavior_queue(
+            behavior_queue=vals.get("behavior_queue"),
+            behavior_agenda=vals.get("behavior_agenda"),
+        )
         return {
             "behavior_queue": queue,
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue, limit=3),

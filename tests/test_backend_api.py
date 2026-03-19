@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from amadeus_thread0.runtime.backend_api import BackendAPI, BackendApiEnvelope
 
@@ -18,7 +19,16 @@ class FakeBackendSession:
         self.last_extract_args = None
 
     def worldline_view(self):
-        return {"worldline_events": [{"summary": "一起熬夜。"}]}
+        return {
+            "worldline_events": [{"summary": "一起熬夜。"}],
+            "semantic_self_narratives": [
+                {
+                    "id": 12,
+                    "text": "她会把最终行为沉淀回长期自我叙事，而不是继续展示检索阶段的旧副本。",
+                    "category": "agency_style",
+                }
+            ],
+        }
 
     def bond_view(self):
         return {"relationship_state": {"stage": "warming"}}
@@ -46,7 +56,17 @@ class FakeBackendSession:
 
     def build_evolution_summary(self, *, state_values=None):
         self.last_summary_state = state_values
-        return {"relationship": {"stage": "warming"}}
+        values = state_values if isinstance(state_values, dict) else {}
+        recon = values.get("reconsolidation_snapshot") if isinstance(values.get("reconsolidation_snapshot"), dict) else {}
+        consequence = recon.get("behavior_consequence") if isinstance(recon.get("behavior_consequence"), dict) else {}
+        return {
+            "relationship": {"stage": "warming"},
+            "current_turn": {
+                "recon_event_kind": str(recon.get("event_kind") or "").strip(),
+                "recon_interaction_frame": str(recon.get("interaction_frame") or "").strip(),
+                "behavior_consequence_kind": str(consequence.get("kind") or "").strip(),
+            },
+        }
 
     def extract_final_text(self, values, *, streamed_text=""):
         self.last_extract_args = (values, streamed_text)
@@ -118,6 +138,7 @@ class BackendApiTests(unittest.TestCase):
 
             self.assertEqual(api.memory_snapshot().payload["profile"]["name"], "okabe")
             self.assertEqual(api.worldline().payload["worldline_events"][0]["summary"], "一起熬夜。")
+            self.assertIn("最终行为沉淀", api.worldline().payload["semantic_self_narratives"][0]["text"])
             self.assertEqual(api.bond().payload["relationship_state"]["stage"], "warming")
             self.assertEqual(api.sources().payload["claim_links"][0]["source_ids"], [9])
             self.assertEqual(api.persona().payload["persona_state"]["role"], "kurisu_amadeus")
@@ -218,6 +239,11 @@ class BackendApiTests(unittest.TestCase):
                 "emotion_state": {"label": "care"},
                 "behavior_action": {"interaction_mode": "checkin"},
                 "behavior_plan": {"kind": "small_opening"},
+                "reconsolidation_snapshot": {
+                    "event_kind": "user_utterance",
+                    "interaction_frame": "relationship",
+                    "behavior_consequence": {"kind": "leave_small_opening"},
+                },
                 "current_event": {"kind": "idle"},
                 "turn_appraisal": {"scene": "daily_care"},
                 "claim_links": [{"source_ids": [9]}],
@@ -242,15 +268,80 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["emotion_label"], "care")
             self.assertEqual(event_response.payload["behavior_action"]["interaction_mode"], "checkin")
             self.assertEqual(event_response.payload["turn_summary"]["relationship"]["stage"], "warming")
+            self.assertEqual(event_response.payload["reconsolidation_snapshot"]["interaction_frame"], "relationship")
+            self.assertEqual(
+                event_response.payload["turn_summary"]["current_turn"]["behavior_consequence_kind"],
+                "leave_small_opening",
+            )
 
             self.assertEqual(turn_response.kind, "assistant_turn")
             self.assertEqual(turn_response.meta["source"], "cli")
             self.assertEqual(turn_response.payload["final_text"], "final from session")
             self.assertEqual(turn_response.payload["claim_links"][0]["source_ids"], [9])
             self.assertEqual(turn_response.payload["sources"][0]["id"], 9)
+            self.assertEqual(turn_response.payload["reconsolidation_snapshot"]["event_kind"], "user_utterance")
+            self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["recon_event_kind"], "user_utterance")
             self.assertEqual(turn_response.payload["pending_utterance_fragment"], "unfinished thought")
             self.assertEqual(session.last_extract_args, (state_values, "ignored"))
             self.assertIs(session.last_summary_state, state_values)
+
+    def test_turn_and_event_responses_prefer_final_persisted_behavior_plan_over_derived_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "behavior_action": {
+                    "action_target": "offer_small_opening",
+                    "interaction_mode": "self_activity_reopen",
+                    "primary_motive": "gentle_recontact",
+                    "motive_tension": "self_rhythm_vs_contact",
+                    "goal_frame": "这次顺着余温轻轻回头。",
+                    "deferred_action_family": "small_opening",
+                    "timing_window_min": 0,
+                    "relationship_weather": "warm_residue",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "glance_back",
+                    "channel": "speech",
+                },
+                "behavior_plan": {
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "trigger_family": "observe",
+                    "scheduled_after_min": 45,
+                    "legacy_hint": "keep-me",
+                },
+                "current_event": {"kind": "self_activity_state", "event_frame": "idle continuation", "tags": []},
+                "world_model_state": {"presence_residue": 0.42},
+            }
+
+            with patch(
+                "amadeus_thread0.runtime.final_state._behavior_plan_from_action",
+                return_value={
+                    "kind": "small_opening",
+                    "target": "counterpart",
+                    "scheduled_after_min": 0,
+                    "trigger_family": "small_opening",
+                    "primary_motive": "gentle_recontact",
+                },
+            ) as mock_derive:
+                event_response = api.build_event_round_response(
+                    state_values=state_values,
+                    final_text="我在。",
+                )
+                turn_response = api.build_turn_response(
+                    state_values=state_values,
+                    streamed_text="ignored",
+                )
+
+            self.assertEqual(event_response.payload["behavior_plan"]["kind"], "deferred_checkin")
+            self.assertEqual(turn_response.payload["behavior_plan"]["kind"], "deferred_checkin")
+            self.assertEqual(event_response.payload["behavior_plan"]["trigger_family"], "observe")
+            self.assertEqual(turn_response.payload["behavior_plan"]["scheduled_after_min"], 45)
+            self.assertEqual(event_response.payload["behavior_plan"]["legacy_hint"], "keep-me")
+            self.assertEqual(turn_response.payload["behavior_plan"]["legacy_hint"], "keep-me")
+            mock_derive.assert_not_called()
 
 
 if __name__ == "__main__":

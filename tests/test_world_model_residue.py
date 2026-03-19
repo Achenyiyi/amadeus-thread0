@@ -1692,7 +1692,7 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
-    def test_passive_evolution_writes_semantic_evidence_from_behavior_motive(self):
+    def test_passive_evolution_defers_behavior_motive_semantic_evidence_until_final_writeback(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
             try:
@@ -1730,15 +1730,14 @@ class WorldModelResidueTests(unittest.TestCase):
                         "goal_frame": "先维持自己的节奏，不急着把全部注意力交出去。",
                     },
                 )
-                self.assertTrue(wrote)
+                self.assertFalse(wrote)
                 traces = store.list_revision_traces(limit=12)
                 categories = {
                     str(item.get("target_id") or item.get("content", {}).get("target_id") or "")
                     for item in traces
                     if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
                 }
-                self.assertIn("agency_style", categories)
-                self.assertIn("rhythm_style", categories)
+                self.assertEqual(categories, set())
             finally:
                 store.close()
 

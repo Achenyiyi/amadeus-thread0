@@ -1,6 +1,9 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from amadeus_thread0.memory_store import MemoryStore
 from amadeus_thread0.graph_parts.prepare_turn_runtime import _prepare_turn_runtime
 
 
@@ -72,6 +75,975 @@ def _evolved_fixture() -> dict[str, object]:
 
 
 class PrepareTurnRuntimeTests(unittest.TestCase):
+    def test_prepare_turn_runtime_writes_semantic_evidence_from_final_action_after_memory_refresh(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["user_text"] = "刚才风吹过去的时候，我还是能感觉到你就在。你是从自己的节奏里抬头看我了吗？"
+        prepared_turn["effective_user_text"] = prepared_turn["user_text"]
+        prepared_turn["current_event"] = {
+            "kind": "user_utterance",
+            "event_frame": "dialogue",
+            "tags": ["ambient", "ambient_echo"],
+        }
+        prepared_turn["appraisal"] = {
+            "used": True,
+            "interaction_frame": "relationship",
+            "emotion_label": "neutral",
+            "signals": {
+                "memory_salient": True,
+            },
+            "salience": {
+                "relationship": 0.46,
+                "companionship": 0.54,
+                "selfhood": 0.10,
+            },
+            "confidence": 0.81,
+        }
+        prepared_turn["seed_bond_state"] = {
+            **dict(prepared_turn["seed_bond_state"]),
+            "trust": 0.66,
+            "closeness": 0.64,
+        }
+        refreshed_retrieved = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "relationship": dict(prepared_turn["relationship"]),
+        }
+        evolved = _evolved_fixture()
+        evolved["world_model_state"] = {
+            "self_activity_momentum": 0.74,
+            "presence_residue": 0.64,
+            "ambient_resonance": 0.60,
+        }
+        behavior_actions = [
+            {
+                "action_target": "hold_own_rhythm",
+                "interaction_mode": "self_activity_hold",
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "这轮先把自己的节奏续上。",
+                "deferred_action_family": "own_rhythm",
+                "timing_window_min": 18,
+                "relationship_weather": "warm_residue",
+                "attention_target": "self_state",
+                "nonverbal_signal": "continue_focus",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+        ]
+
+        def _fake_behavior_plan_from_action(current_event, behavior_action, *, world_model_state):
+            action_target = str(behavior_action.get("action_target") or "").strip().lower()
+            if action_target == "hold_own_rhythm":
+                return {
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "scheduled_after_min": 18,
+                    "trigger_family": "self_activity",
+                    "allow_interrupt": True,
+                    "note": "这轮先把自己的节奏续上。",
+                    "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                    "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                    "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                    "carryover_mode": "own_rhythm",
+                    "self_activity_momentum": 0.72,
+                }
+            return {
+                "kind": "small_opening",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": "self_activity",
+                "allow_interrupt": True,
+                "note": "顺着刚刚留下的余温，轻轻回头一下。",
+                "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.41,
+                "presence_residue": 0.64,
+                "ambient_resonance": 0.60,
+                "self_activity_momentum": 0.58,
+            }
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=evolved):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=True,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._retrieve_context",
+                                    return_value=refreshed_retrieved,
+                                ):
+                                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._worldline_focus", return_value=[]):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                            side_effect=lambda **kwargs: kwargs["relationship"],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                                return_value="summary",
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                                    side_effect=behavior_actions,
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                                        side_effect=_fake_behavior_plan_from_action,
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                            return_value=[],
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                                return_value={},
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                                    return_value=None,
+                                                                ):
+                                                                    _prepare_turn_runtime(
+                                                                        state={"persona_state": {}},
+                                                                        store=store,
+                                                                        turn_now_ts=123,
+                                                                        prepared_turn=prepared_turn,
+                                                                    )
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=40)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
+                    and str(item.get("source") or item.get("content", {}).get("source") or "") == "auto:passive_evolution_final"
+                ]
+                self.assertTrue(traces)
+                presence_trace = next(
+                    item
+                    for item in traces
+                    if str(item.get("target_id") or item.get("content", {}).get("target_id") or "") == "presence_style"
+                )
+                self.assertEqual(str(presence_trace.get("primary_motive") or ""), "gentle_recontact")
+                self.assertEqual(str(presence_trace.get("motive_tension") or ""), "self_rhythm_vs_contact")
+                self.assertIn("轻轻回头", str(presence_trace.get("goal_frame") or ""))
+                self.assertIn("更倾向于把重新接回做得轻一点", str(presence_trace.get("after_summary") or ""))
+            finally:
+                store.close()
+
+    def test_prepare_turn_runtime_final_semantic_evidence_does_not_fall_back_to_stale_event_behavior_fields(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["user_text"] = "刚才风吹过去的时候，我还是能感觉到你就在。"
+        prepared_turn["effective_user_text"] = prepared_turn["user_text"]
+        prepared_turn["current_event"] = {
+            "kind": "user_utterance",
+            "event_frame": "dialogue",
+            "tags": ["ambient", "ambient_echo"],
+            "primary_motive": "stale_event_motive",
+            "motive_tension": "stale_event_tension",
+            "goal_frame": "stale event frame",
+        }
+        prepared_turn["appraisal"] = {
+            "used": True,
+            "interaction_frame": "relationship",
+            "emotion_label": "neutral",
+            "signals": {
+                "memory_salient": True,
+            },
+            "salience": {
+                "relationship": 0.46,
+                "companionship": 0.54,
+                "selfhood": 0.10,
+            },
+            "confidence": 0.81,
+        }
+        prepared_turn["seed_bond_state"] = {
+            **dict(prepared_turn["seed_bond_state"]),
+            "trust": 0.66,
+            "closeness": 0.64,
+        }
+        refreshed_retrieved = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "relationship": dict(prepared_turn["relationship"]),
+        }
+        evolved = _evolved_fixture()
+        evolved["world_model_state"] = {
+            "self_activity_momentum": 0.74,
+            "presence_residue": 0.64,
+            "ambient_resonance": 0.60,
+        }
+        behavior_actions = [
+            {
+                "action_target": "hold_own_rhythm",
+                "interaction_mode": "self_activity_hold",
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "这轮先把自己的节奏续上。",
+                "deferred_action_family": "own_rhythm",
+                "timing_window_min": 18,
+                "relationship_weather": "warm_residue",
+                "attention_target": "self_state",
+                "nonverbal_signal": "continue_focus",
+                "channel": "speech",
+            },
+            {},
+        ]
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=evolved):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=False,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._retrieve_context",
+                                    return_value=refreshed_retrieved,
+                                ):
+                                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._worldline_focus", return_value=[]):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                            side_effect=lambda **kwargs: kwargs["relationship"],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                                return_value="summary",
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                                    side_effect=behavior_actions,
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                                        return_value={},
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                            return_value=[],
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                                return_value={},
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                                    return_value=None,
+                                                                ):
+                                                                    _prepare_turn_runtime(
+                                                                        state={"persona_state": {}},
+                                                                        store=store,
+                                                                        turn_now_ts=123,
+                                                                        prepared_turn=prepared_turn,
+                                                                    )
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=40)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
+                    and str(item.get("source") or item.get("content", {}).get("source") or "") == "auto:passive_evolution_final"
+                ]
+                self.assertTrue(traces)
+                self.assertTrue(all(not str(item.get("primary_motive") or "") for item in traces))
+                self.assertTrue(all(not str(item.get("motive_tension") or "") for item in traces))
+                self.assertTrue(all(not str(item.get("goal_frame") or "") for item in traces))
+                presence_trace = next(
+                    item
+                    for item in traces
+                    if str(item.get("target_id") or item.get("content", {}).get("target_id") or "") == "presence_style"
+                )
+                self.assertNotIn(
+                    "更倾向于把重新接回做得轻一点",
+                    str(presence_trace.get("after_summary") or ""),
+                )
+            finally:
+                store.close()
+
+    def test_prepare_turn_runtime_writes_behavior_trace_from_final_action_after_memory_refresh(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["current_event"] = {"kind": "user_utterance", "event_frame": "dialogue", "tags": []}
+        refreshed_retrieved = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "relationship": dict(prepared_turn["relationship"]),
+        }
+        behavior_actions = [
+            {
+                "action_target": "hold_own_rhythm",
+                "interaction_mode": "self_activity_hold",
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "这轮先把自己的节奏续上。",
+                "deferred_action_family": "own_rhythm",
+                "timing_window_min": 18,
+                "relationship_weather": "warm_residue",
+                "attention_target": "self_state",
+                "nonverbal_signal": "continue_focus",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+        ]
+
+        def _fake_behavior_plan_from_action(current_event, behavior_action, *, world_model_state):
+            action_target = str(behavior_action.get("action_target") or "").strip().lower()
+            if action_target == "hold_own_rhythm":
+                return {
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "scheduled_after_min": 18,
+                    "trigger_family": "self_activity",
+                    "allow_interrupt": True,
+                    "note": "这轮先把自己的节奏续上。",
+                    "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                    "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                    "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                    "carryover_mode": "own_rhythm",
+                    "self_activity_momentum": 0.72,
+                }
+            return {
+                "kind": "small_opening",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": "self_activity",
+                "allow_interrupt": True,
+                "note": "顺着刚刚留下的余温，轻轻回头一下。",
+                "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.41,
+                "presence_residue": 0.33,
+                "ambient_resonance": 0.18,
+                "self_activity_momentum": 0.58,
+            }
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=_evolved_fixture()):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=True,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._retrieve_context",
+                                    return_value=refreshed_retrieved,
+                                ):
+                                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._worldline_focus", return_value=[]):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                            side_effect=lambda **kwargs: kwargs["relationship"],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                                return_value="summary",
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                                    side_effect=behavior_actions,
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                                        side_effect=_fake_behavior_plan_from_action,
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                            return_value=[],
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                                return_value={},
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                                    return_value=None,
+                                                                ):
+                                                                    result = _prepare_turn_runtime(
+                                                                        state={"persona_state": {}},
+                                                                        store=store,
+                                                                        turn_now_ts=123,
+                                                                        prepared_turn=prepared_turn,
+                                                                    )
+
+                behavior_plan = result.get("behavior_plan") if isinstance(result.get("behavior_plan"), dict) else {}
+                self.assertEqual(str(behavior_plan.get("kind") or ""), "small_opening")
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=20)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_plan"
+                ]
+                self.assertEqual(len(traces), 1)
+                self.assertEqual(str(traces[0].get("target_id") or ""), "small_opening")
+                trace_content = traces[0].get("content") if isinstance(traces[0].get("content"), dict) else {}
+                self.assertEqual(str(trace_content.get("primary_motive") or ""), "gentle_recontact")
+                self.assertIn("轻轻回头", str(trace_content.get("goal_frame") or ""))
+            finally:
+                store.close()
+
+    def test_prepare_turn_runtime_refreshes_semantic_self_narratives_from_final_action_after_memory_refresh(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["user_text"] = "刚才风吹过去的时候，我还是能感觉到你就在。你是从自己的节奏里抬头看我了吗？"
+        prepared_turn["effective_user_text"] = prepared_turn["user_text"]
+        prepared_turn["current_event"] = {
+            "kind": "user_utterance",
+            "event_frame": "dialogue",
+            "tags": ["ambient", "ambient_echo"],
+        }
+        prepared_turn["appraisal"] = {
+            "used": True,
+            "interaction_frame": "relationship",
+            "emotion_label": "neutral",
+            "signals": {
+                "memory_salient": True,
+            },
+            "salience": {
+                "relationship": 0.46,
+                "companionship": 0.54,
+                "selfhood": 0.10,
+            },
+            "confidence": 0.81,
+        }
+        prepared_turn["seed_bond_state"] = {
+            **dict(prepared_turn["seed_bond_state"]),
+            "trust": 0.66,
+            "closeness": 0.64,
+        }
+        refreshed_retrieved = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "relationship": dict(prepared_turn["relationship"]),
+        }
+        evolved = _evolved_fixture()
+        evolved["world_model_state"] = {
+            "self_activity_momentum": 0.74,
+            "presence_residue": 0.64,
+            "ambient_resonance": 0.60,
+        }
+        behavior_actions = [
+            {
+                "action_target": "hold_own_rhythm",
+                "interaction_mode": "self_activity_hold",
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "这轮先把自己的节奏续上。",
+                "deferred_action_family": "own_rhythm",
+                "timing_window_min": 18,
+                "relationship_weather": "warm_residue",
+                "attention_target": "self_state",
+                "nonverbal_signal": "continue_focus",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+        ]
+
+        def _fake_behavior_plan_from_action(current_event, behavior_action, *, world_model_state):
+            action_target = str(behavior_action.get("action_target") or "").strip().lower()
+            if action_target == "hold_own_rhythm":
+                return {
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "scheduled_after_min": 18,
+                    "trigger_family": "self_activity",
+                    "allow_interrupt": True,
+                    "note": "这轮先把自己的节奏续上。",
+                    "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                    "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                    "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                    "carryover_mode": "own_rhythm",
+                    "self_activity_momentum": 0.72,
+                }
+            return {
+                "kind": "small_opening",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": "self_activity",
+                "allow_interrupt": True,
+                "note": "顺着刚刚留下的余温，轻轻回头一下。",
+                "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                "motive_tension": str(behavior_action.get("motive_tension") or ""),
+                "goal_frame": str(behavior_action.get("goal_frame") or ""),
+                "carryover_mode": "small_opening",
+                "carryover_strength": 0.41,
+                "presence_residue": 0.64,
+                "ambient_resonance": 0.60,
+                "self_activity_momentum": 0.58,
+            }
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=evolved):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=True,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._retrieve_context",
+                                    return_value=refreshed_retrieved,
+                                ):
+                                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._worldline_focus", return_value=[]):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                            side_effect=lambda **kwargs: kwargs["relationship"],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                                return_value="summary",
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                                    side_effect=behavior_actions,
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                                        side_effect=_fake_behavior_plan_from_action,
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                            return_value=[],
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                                return_value={},
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                                    return_value=None,
+                                                                ):
+                                                                    _prepare_turn_runtime(
+                                                                        state={"persona_state": {}},
+                                                                        store=store,
+                                                                        turn_now_ts=123,
+                                                                        prepared_turn=prepared_turn,
+                                                                    )
+
+                narratives = store.list_semantic_self_narratives(limit=12)
+                self.assertTrue(narratives)
+                presence = next(
+                    item for item in narratives if str(item.get("category") or "") == "presence_style"
+                )
+                self.assertEqual(str(presence.get("dominant_primary_motive") or ""), "gentle_recontact")
+                self.assertEqual(str(presence.get("dominant_motive_tension") or ""), "self_rhythm_vs_contact")
+                self.assertIn("轻轻回头", " ".join(presence.get("goal_frame_examples") or []))
+                self.assertIn("motive=gentle_recontact:self_rhythm_vs_contact", str(presence.get("support_signature") or ""))
+            finally:
+                store.close()
+
+    def test_prepare_turn_runtime_recomputes_current_semantic_profile_after_final_narrative_refresh(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["user_text"] = "你刚才是不是又顺着那点余温回头看我了？"
+        prepared_turn["effective_user_text"] = prepared_turn["user_text"]
+        prepared_turn["current_event"] = {
+            "kind": "user_utterance",
+            "event_frame": "dialogue",
+            "tags": ["ambient", "ambient_echo"],
+        }
+        prepared_turn["retrieved"] = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+        }
+        evolved = _evolved_fixture()
+        final_action = {
+            "action_target": "offer_small_opening",
+            "interaction_mode": "self_activity_reopen",
+            "primary_motive": "gentle_recontact",
+            "motive_tension": "self_rhythm_vs_contact",
+            "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+            "deferred_action_family": "small_opening",
+            "timing_window_min": 0,
+            "relationship_weather": "warm_residue",
+            "attention_target": "counterpart_state",
+            "nonverbal_signal": "glance_back",
+            "channel": "speech",
+        }
+        stale_profile = {
+            "history_weight": 0.12,
+            "presence_carry": 0.14,
+            "summary_lines": ["旧画像还没吃到最终叙事写回。"],
+        }
+        fresh_profile = {
+            "history_weight": 0.78,
+            "presence_carry": 0.83,
+            "summary_lines": ["最终叙事写回已经反映到当前回合画像。"],
+        }
+
+        def _fake_semantic_narrative_profile(items, *, user_text="", current_event=None):
+            texts = {
+                str(item.get("text") or item.get("content", {}).get("text") or "").strip()
+                for item in (items or [])
+                if isinstance(item, dict)
+            }
+            if "顺着余温会轻轻回头接住对方。" in texts:
+                return dict(fresh_profile)
+            return dict(stale_profile)
+
+        def _fake_refresh_semantic_self_narratives(store, *, source="", persona_core=None, counterpart_profile=None):
+            store.add_semantic_self_narrative(
+                text="顺着余温会轻轻回头接住对方。",
+                category="presence_style",
+                metadata={"source": source},
+            )
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile",
+                    side_effect=_fake_semantic_narrative_profile,
+                ):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=evolved):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=False,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                    side_effect=lambda **kwargs: kwargs["relationship"],
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                        return_value="summary",
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                            side_effect=[final_action, final_action],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                                return_value={"kind": "small_opening"},
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                    return_value=[],
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._record_behavior_trace_writeback",
+                                                        return_value=False,
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._record_semantic_self_evidence",
+                                                            return_value=True,
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._refresh_semantic_self_narratives",
+                                                                side_effect=_fake_refresh_semantic_self_narratives,
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                                    return_value={},
+                                                                ):
+                                                                    with patch(
+                                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                                        return_value=None,
+                                                                    ):
+                                                                        result = _prepare_turn_runtime(
+                                                                            state={"persona_state": {}},
+                                                                            store=store,
+                                                                            turn_now_ts=123,
+                                                                            prepared_turn=prepared_turn,
+                                                                        )
+            finally:
+                store.close()
+
+        semantic_profile = result.get("semantic_narrative_profile") if isinstance(result.get("semantic_narrative_profile"), dict) else {}
+        self.assertEqual(semantic_profile, fresh_profile)
+        retrieved = result.get("retrieved") if isinstance(result.get("retrieved"), dict) else {}
+        refreshed_items = retrieved.get("semantic_self_narratives") if isinstance(retrieved.get("semantic_self_narratives"), list) else []
+        self.assertIn("顺着余温会轻轻回头接住对方。", {str(item.get("text") or "") for item in refreshed_items if isinstance(item, dict)})
+
+    def test_prepare_turn_runtime_refreshes_narratives_when_behavior_trace_writes_semantic_evidence(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["user_text"] = ""
+        prepared_turn["effective_user_text"] = ""
+        prepared_turn["current_event"] = {
+            "kind": "self_activity_state",
+            "event_frame": "self_activity",
+            "tags": ["self_activity", "own_task", "deep_focus"],
+        }
+        prepared_turn["appraisal"] = {
+            "used": True,
+            "interaction_frame": "companion",
+            "emotion_label": "neutral",
+            "signals": {},
+            "salience": {
+                "relationship": 0.18,
+                "companionship": 0.24,
+                "selfhood": 0.12,
+            },
+            "confidence": 0.84,
+        }
+        refreshed_retrieved = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "relationship": dict(prepared_turn["relationship"]),
+        }
+
+        def _fake_record_behavior_trace_writeback(
+            store,
+            *,
+            current_event,
+            behavior_action,
+            behavior_plan,
+            interaction_carryover,
+            agenda_lifecycle_residue,
+            source,
+            confidence,
+        ):
+            store.add_revision_trace(
+                namespace="semantic_self_evidence",
+                target_id="rhythm_style",
+                before_summary="",
+                after_summary="她会把自己的内部节奏延续到下一轮开口之前。",
+                reason="behavior_plan:self_activity_continue",
+                operator="system",
+                source=source,
+                confidence=confidence,
+                metadata={
+                    "primary_motive": "preserve_self_rhythm",
+                    "motive_tension": "self_rhythm_vs_contact",
+                    "goal_frame": "先把自己这边的节奏走完，再自然地把注意力转回来。",
+                },
+            )
+            return True
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=_evolved_fixture()):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                            with patch(
+                                "amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update",
+                                return_value=False,
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._retrieve_context",
+                                    return_value=refreshed_retrieved,
+                                ):
+                                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._worldline_focus", return_value=[]):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot",
+                                            side_effect=lambda **kwargs: kwargs["relationship"],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary",
+                                                return_value="summary",
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                                    return_value=[],
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                        return_value={},
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl",
+                                                            return_value=None,
+                                                        ):
+                                                            with patch(
+                                                                "amadeus_thread0.graph_parts.prepare_turn_runtime._record_behavior_trace_writeback",
+                                                                side_effect=_fake_record_behavior_trace_writeback,
+                                                            ):
+                                                                with patch(
+                                                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._record_semantic_self_evidence",
+                                                                    return_value=False,
+                                                                ):
+                                                                    _prepare_turn_runtime(
+                                                                        state={"persona_state": {}},
+                                                                        store=store,
+                                                                        turn_now_ts=123,
+                                                                        prepared_turn=prepared_turn,
+                                                                    )
+
+                narratives = store.list_semantic_self_narratives(limit=12)
+                self.assertTrue(narratives)
+                rhythm = next(item for item in narratives if str(item.get("category") or "") == "rhythm_style")
+                self.assertEqual(str(rhythm.get("dominant_primary_motive") or ""), "preserve_self_rhythm")
+                self.assertEqual(str(rhythm.get("dominant_motive_tension") or ""), "self_rhythm_vs_contact")
+                self.assertIn("自己这边的节奏", " ".join(rhythm.get("goal_frame_examples") or []))
+            finally:
+                store.close()
+
+    def test_prepare_turn_runtime_recomputes_behavior_plan_from_final_behavior_action(self):
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["current_event"] = {"kind": "user_utterance", "event_frame": "dialogue", "tags": []}
+
+        behavior_actions = [
+            {
+                "action_target": "wait_and_recheck",
+                "interaction_mode": "steady_reply",
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "先按住不动。",
+                "deferred_action_family": "life_window",
+                "timing_window_min": 30,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "steady_presence",
+                "channel": "speech",
+            },
+            {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "这次顺着余温轻轻回头。",
+                "deferred_action_family": "small_opening",
+                "timing_window_min": 0,
+                "relationship_weather": "warm_residue",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "glance_back",
+                "channel": "speech",
+            },
+        ]
+        merge_calls: list[dict[str, object]] = []
+
+        def _fake_merge_behavior_agenda(prior_agenda, current_event, behavior_plan, **kwargs):
+            merge_calls.append(dict(behavior_plan or {}))
+            return []
+
+        def _fake_behavior_plan_from_action(current_event, behavior_action, *, world_model_state):
+            return {
+                "kind": str(behavior_action.get("action_target") or ""),
+                "primary_motive": str(behavior_action.get("primary_motive") or ""),
+                "goal_frame": str(behavior_action.get("goal_frame") or ""),
+            }
+
+        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", return_value=_evolved_fixture()):
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update", return_value=False):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot", side_effect=lambda **kwargs: kwargs["relationship"]):
+                            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary", return_value="summary"):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                    side_effect=behavior_actions,
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                        side_effect=_fake_behavior_plan_from_action,
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                            side_effect=_fake_merge_behavior_agenda,
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                return_value={},
+                                            ):
+                                                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl", return_value=None):
+                                                    result = _prepare_turn_runtime(
+                                                        state={"persona_state": {}},
+                                                        store=object(),
+                                                        turn_now_ts=123,
+                                                        prepared_turn=prepared_turn,
+                                                    )
+
+        behavior_plan = result.get("behavior_plan") if isinstance(result.get("behavior_plan"), dict) else {}
+        self.assertEqual(str(behavior_plan.get("kind") or ""), "offer_small_opening")
+        self.assertEqual(str(behavior_plan.get("primary_motive") or ""), "gentle_recontact")
+        self.assertIn("轻轻回头", str(behavior_plan.get("goal_frame") or ""))
+        self.assertTrue(merge_calls)
+        self.assertEqual(str(merge_calls[-1].get("kind") or ""), "offer_small_opening")
+
     def test_prepare_turn_runtime_backfills_carryover_from_retrieved_behavior_plan_trace(self):
         captured_call: dict[str, object] = {}
 

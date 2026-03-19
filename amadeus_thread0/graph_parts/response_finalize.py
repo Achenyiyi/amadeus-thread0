@@ -159,6 +159,13 @@ def _finalize_text_response(
         if isinstance(state.get("semantic_narrative_profile"), dict)
         else {}
     )
+    interaction_carryover = (
+        state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
+    )
+    counterpart_assessment = (
+        state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {}
+    )
+    world_model_state = state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {}
     semantic_history_weight = float(semantic_narrative_profile.get("history_weight") or 0.0)
     semantic_prompt_anchor_count = len(
         [
@@ -222,18 +229,10 @@ def _finalize_text_response(
                 profile_rows=list(light_dialog_profile.get("rows") or []),
                 current_event=current_event,
                 behavior_action=behavior_action,
-                interaction_carryover=state.get("interaction_carryover")
-                if isinstance(state.get("interaction_carryover"), dict)
-                else {},
-                semantic_narrative_profile=state.get("semantic_narrative_profile")
-                if isinstance(state.get("semantic_narrative_profile"), dict)
-                else {},
-                counterpart_assessment=state.get("counterpart_assessment")
-                if isinstance(state.get("counterpart_assessment"), dict)
-                else {},
-                world_model_state=state.get("world_model_state")
-                if isinstance(state.get("world_model_state"), dict)
-                else {},
+                interaction_carryover=interaction_carryover,
+                semantic_narrative_profile=semantic_narrative_profile,
+                counterpart_assessment=counterpart_assessment,
+                world_model_state=world_model_state,
             )
             if rewritten:
                 rewritten_pref = _daily_surface_alignment_metrics(rewritten, profile=light_dialog_profile)
@@ -324,12 +323,7 @@ def _finalize_text_response(
             [item for item in effective_targeted_flags if item in _NATURAL_REWRITE_ISSUE_KEYS]
         )
         counterpart_scene = str(
-            (
-                state.get("counterpart_assessment")
-                if isinstance(state.get("counterpart_assessment"), dict)
-                else {}
-            ).get("scene")
-            or ""
+            counterpart_assessment.get("scene") or ""
         ).strip().lower()
         scene_sensitive_rewrite = bool(
             counterpart_scene
@@ -370,18 +364,10 @@ def _finalize_text_response(
                 science_mode=science_mode,
                 current_event=current_event,
                 behavior_action=behavior_action,
-                interaction_carryover=state.get("interaction_carryover")
-                if isinstance(state.get("interaction_carryover"), dict)
-                else {},
-                semantic_narrative_profile=state.get("semantic_narrative_profile")
-                if isinstance(state.get("semantic_narrative_profile"), dict)
-                else {},
-                counterpart_assessment=state.get("counterpart_assessment")
-                if isinstance(state.get("counterpart_assessment"), dict)
-                else {},
-                world_model_state=state.get("world_model_state")
-                if isinstance(state.get("world_model_state"), dict)
-                else {},
+                interaction_carryover=interaction_carryover,
+                semantic_narrative_profile=semantic_narrative_profile,
+                counterpart_assessment=counterpart_assessment,
+                world_model_state=world_model_state,
                 previous_assistant_text=previous_assistant_text,
             )
             if rewritten:

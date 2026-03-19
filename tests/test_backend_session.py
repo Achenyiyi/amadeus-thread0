@@ -215,6 +215,178 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
         self.assertEqual(sources["claim_links"][0]["source_ids"], [9])
 
+    def test_session_views_use_final_reconsolidation_snapshot_for_evolution_summary(self):
+        final_snapshot = {
+            "event_kind": "user_utterance",
+            "interaction_frame": "relationship",
+            "primary_motive": "gentle_recontact",
+            "motive_tension": "self_rhythm_vs_contact",
+            "goal_frame": "先从自己的节奏里回头，留一个不压迫对方的小开口。",
+            "behavior_consequence": {
+                "kind": "leave_small_opening",
+                "summary": "她回头了，但只留了一个轻一点的小开口。",
+            },
+            "agenda_lifecycle_consequence": {
+                "kind": "released_to_self_activity",
+                "carryover_mode": "own_rhythm",
+            },
+        }
+        values = {
+            "persona_state": {"role": "kurisu_amadeus"},
+            "emotion_state": {"label": "care"},
+            "bond_state": {"trust": 0.7, "closeness": 0.68, "hurt": 0.02},
+            "counterpart_assessment": {"stance": "open", "scene": "care_bid"},
+            "semantic_narrative_profile": {"presence_carry": 0.5},
+            "world_model_state": {"presence_residue": 0.4, "ambient_resonance": 0.2, "self_activity_momentum": 0.3},
+            "reconsolidation_snapshot": final_snapshot,
+            "behavior_action": {
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "先从自己的节奏里回头。",
+            },
+            "behavior_plan": {"kind": "deferred_checkin"},
+            "behavior_queue": [],
+            "interaction_carryover": {"carryover_mode": "own_rhythm", "strength": 0.53, "relationship_weather": "warm_residue"},
+            "current_event": {"kind": "user_utterance"},
+            "worldline_focus": [],
+            "agenda_lifecycle_residue": {"kind": "held"},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        worldline_turn = worldline["worldline_summary"]["current_turn"]
+        self.assertEqual(worldline_turn["recon_event_kind"], "user_utterance")
+        self.assertEqual(worldline_turn["recon_interaction_frame"], "relationship")
+        self.assertEqual(worldline_turn["behavior_consequence_kind"], "leave_small_opening")
+        self.assertIn("小开口", worldline_turn["behavior_consequence_summary"])
+
+        persona = session.persona_view()
+        self.assertEqual(persona["reconsolidation_snapshot"], final_snapshot)
+        persona_turn = persona["evolution_summary"]["current_turn"]
+        self.assertEqual(persona_turn["behavior_consequence_kind"], "leave_small_opening")
+
+    def test_persona_and_worldline_views_prefer_final_persisted_behavior_plan_over_derived_plan(self):
+        values = {
+            "world_model_state": {"presence_residue": 0.42},
+            "current_event": {"kind": "self_activity_state"},
+            "behavior_action": {
+                "action_target": "offer_small_opening",
+                "interaction_mode": "self_activity_reopen",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着余温轻轻回头。",
+                "deferred_action_family": "small_opening",
+                "relationship_weather": "warm_residue",
+            },
+            "behavior_plan": {
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "observe",
+                "scheduled_after_min": 45,
+                "legacy_hint": "keep-me",
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        with patch(
+            "amadeus_thread0.runtime.final_state._behavior_plan_from_action",
+            return_value={
+                "kind": "small_opening",
+                "target": "counterpart",
+                "scheduled_after_min": 0,
+                "trigger_family": "small_opening",
+                "primary_motive": "gentle_recontact",
+            },
+        ) as mock_derive:
+            worldline = session.worldline_view()
+            persona = session.persona_view()
+
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["kind"], "deferred_checkin")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["scheduled_after_min"], 45)
+        self.assertEqual(persona["behavior_plan"]["kind"], "deferred_checkin")
+        self.assertEqual(persona["behavior_plan"]["trigger_family"], "observe")
+        self.assertEqual(persona["behavior_plan"]["legacy_hint"], "keep-me")
+        self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "deferred_checkin")
+        mock_derive.assert_not_called()
+
+    def test_worldline_view_uses_final_persisted_semantic_self_narratives_not_retrieved_copy(self):
+        final_snapshot = {
+            "event_kind": "user_utterance",
+            "interaction_frame": "relationship",
+            "primary_motive": "preserve_self_rhythm",
+            "behavior_consequence": {
+                "kind": "released_to_self_activity",
+                "summary": "她把注意力收回到自己的节奏里，但没有切断关系。",
+            },
+        }
+        values = {
+            "retrieved": {
+                "semantic_self_narratives": [
+                    {
+                        "id": "retrieved-stale",
+                        "text": "这还是上一轮检索出来的旧自我叙事。",
+                        "category": "selfhood_style",
+                    }
+                ]
+            },
+            "reconsolidation_snapshot": final_snapshot,
+            "behavior_action": {
+                "interaction_mode": "self_activity_return",
+                "primary_motive": "preserve_self_rhythm",
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        memory_store = FakeMemoryStore()
+        memory_store._snapshot["semantic_self_narratives"] = [
+            {
+                "id": 42,
+                "text": "她会把最终做出的行动沉淀回自己的长期叙事，而不是停留在检索副本里。",
+                "category": "agency_style",
+                "source": "prepare_turn_runtime",
+            }
+        ]
+        session = BackendSession(graph=graph, memory_store=memory_store, thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        narratives = worldline["semantic_self_narratives"]
+        self.assertEqual(len(narratives), 1)
+        self.assertEqual(narratives[0]["id"], 42)
+        self.assertIn("最终做出的行动", narratives[0]["text"])
+        self.assertNotIn("retrieved-stale", {item.get("id") for item in narratives})
+        self.assertEqual(
+            worldline["worldline_summary"]["current_turn"]["behavior_consequence_kind"],
+            "released_to_self_activity",
+        )
+
+    def test_bond_view_prefers_final_persisted_relationship_state_not_stale_runtime_copy(self):
+        values = {
+            "relationship": {
+                "stage": "friend",
+                "affinity_score": 0.0,
+                "trust_score": 0.0,
+                "notes": "",
+            },
+            "bond_state": {"trust": 0.68, "closeness": 0.66},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        memory_store = FakeMemoryStore()
+        memory_store._relationship = {
+            "stage": "trusted",
+            "affinity_score": 0.84,
+            "trust_score": 0.87,
+            "notes": "已经形成稳定信赖。",
+        }
+        session = BackendSession(graph=graph, memory_store=memory_store, thread_id="thread-a")
+
+        bond = session.bond_view()
+        self.assertEqual(bond["relationship_state"]["stage"], "trusted")
+        self.assertAlmostEqual(float(bond["relationship_state"]["trust_score"]), 0.87, places=3)
+        self.assertIn("稳定信赖", bond["relationship_state"]["notes"])
+        self.assertEqual(bond["relationship_timeline"][0]["summary"], "关系变近")
+
     def test_checkpoint_and_behavior_queue_views_use_backend_session_surface(self):
         values = {
             "behavior_queue": [{"agenda_id": "b1", "kind": "checkin", "status": "pending"}],
@@ -243,6 +415,25 @@ class BackendSessionTests(unittest.TestCase):
         queue = session.behavior_queue_view()
         self.assertEqual(queue["behavior_queue"][0]["agenda_id"], "b1")
         self.assertEqual(queue["behavior_queue_summary"][0]["agenda_id"], "b1")
+
+    def test_session_views_prefer_nonempty_behavior_agenda_when_behavior_queue_is_empty(self):
+        values = {
+            "behavior_queue": [],
+            "behavior_agenda": [{"agenda_id": "legacy-a1", "kind": "deferred_checkin", "status": "pending"}],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        preview = worldline["worldline_summary"]["behavior_queue_preview"]
+        self.assertEqual(preview[0]["agenda_id"], "legacy-a1")
+
+        persona = session.persona_view()
+        self.assertEqual(persona["behavior_queue"][0]["agenda_id"], "legacy-a1")
+        self.assertEqual(persona["behavior_queue_summary"][0]["agenda_id"], "legacy-a1")
+
+        queue = session.behavior_queue_view()
+        self.assertEqual(queue["behavior_queue"][0]["agenda_id"], "legacy-a1")
 
     def test_idle_helpers_and_emotion_label_use_backend_session_surface(self):
         values = {

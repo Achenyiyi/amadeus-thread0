@@ -38,6 +38,17 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 - no new desktop UI in the current phase
 - canonical shell remains `Amadeus 牧濑红莉栖`
 
+## Current Phase Lock
+
+- Current objective is backend maturation, not frontend polish.
+- Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
+- The backend is not considered complete until the loop can sustain fixed persona core, counterpart judgment, reconsolidation parity, self-narrative continuity, and own-rhythm traces without relying on prompt-heavy repair.
+- Default optimization order:
+  1. `appraisal -> internal state -> motive / goal -> behavior`
+  2. `reconsolidation -> self-narrative -> counterpart assessment` persistence
+  3. own-rhythm / proactive continuity traces
+  4. eval and regression hardening
+
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
@@ -125,6 +136,8 @@ Expected graph build result: `CompiledStateGraph`
 - Architecture alignment: [`docs/ARCHITECTURE_ALIGNMENT_MAP.md`](./docs/ARCHITECTURE_ALIGNMENT_MAP.md)
 - Self-evolution engine: [`docs/SELF_EVOLUTION_ENGINE.md`](./docs/SELF_EVOLUTION_ENGINE.md)
 - Structure guide: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering/PROJECT_STRUCTURE.md)
+- Backend handoff: [`docs/engineering/BACKEND_HANDOFF.md`](./docs/engineering/BACKEND_HANDOFF.md)
+- Progress ledger: [`docs/engineering/PROJECT_PROGRESS.md`](./docs/engineering/PROJECT_PROGRESS.md)
 
 ## Editing Rules For Agents
 
@@ -142,3 +155,12 @@ Expected graph build result: `CompiledStateGraph`
 4. Make the smallest structural change that improves maintainability.
 5. Run the required regression for the touched layer.
 6. Update docs if file ownership or execution flow changed.
+
+## Unattended Iteration Contract
+
+- When running in automation, continue backend-first iteration only.
+- Read `docs/engineering/PROJECT_PROGRESS.md` before choosing the next task.
+- Pick the single highest-leverage backend gap in the canonical loop, implement the smallest root-cause fix, validate the touched layer, and leave a concise progress note.
+- At the end of each unattended run, update `docs/engineering/PROJECT_PROGRESS.md` so the next run can resume without relying on long chat context.
+- Do not spend unattended cycles on frontend visuals, UI experiments, or prompt-style cosmetic tuning.
+- Do not add brittle keyword behavior rules unless strictly required for safety, auditability, or tool routing.

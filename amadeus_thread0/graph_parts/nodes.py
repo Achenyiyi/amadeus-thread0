@@ -23,9 +23,18 @@ from .tool_nodes import (
     _route_after_model,
 )
 from .turn_events import (
+    _append_recent_events,
     _now_ts,
     _sanitize_obj,
 )
+
+
+def _prefer_nonempty_mapping(preferred: Any, fallback: Any) -> dict[str, Any]:
+    if isinstance(preferred, dict) and preferred:
+        return preferred
+    if isinstance(fallback, dict):
+        return fallback
+    return {}
 
 
 def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
@@ -54,12 +63,12 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         turn_now_ts=turn_now_ts,
         prepared_turn=prepared_turn,
     )
-    current_event = runtime_state["current_event"] if isinstance(runtime_state.get("current_event"), dict) else current_event
-    interaction_carryover = (
-        runtime_state["interaction_carryover"]
-        if isinstance(runtime_state.get("interaction_carryover"), dict)
-        else interaction_carryover
+    current_event = _prefer_nonempty_mapping(runtime_state.get("current_event"), current_event)
+    interaction_carryover = _prefer_nonempty_mapping(
+        runtime_state.get("interaction_carryover"),
+        interaction_carryover,
     )
+    recent_events = _append_recent_events(_sanitize_obj(state.get("recent_events")), current_event, limit=6)
     retrieved = runtime_state["retrieved"]
     relationship = runtime_state["relationship"]
     worldline_focus = runtime_state["worldline_focus"]
