@@ -54,6 +54,12 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         turn_now_ts=turn_now_ts,
         prepared_turn=prepared_turn,
     )
+    current_event = runtime_state["current_event"] if isinstance(runtime_state.get("current_event"), dict) else current_event
+    interaction_carryover = (
+        runtime_state["interaction_carryover"]
+        if isinstance(runtime_state.get("interaction_carryover"), dict)
+        else interaction_carryover
+    )
     retrieved = runtime_state["retrieved"]
     relationship = runtime_state["relationship"]
     worldline_focus = runtime_state["worldline_focus"]

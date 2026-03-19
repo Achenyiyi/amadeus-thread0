@@ -158,6 +158,258 @@ def _self_narrative_salience(item: dict[str, Any]) -> float:
     )
     return _clamp01(base * max(0.55, 1.0 - 0.46 * _clamp01(contradiction_pressure, 0.0)))
 
+
+def _behavior_plan_priority(item: dict[str, Any]) -> float:
+    try:
+        carryover_strength = float(_record_value(item, "carryover_strength", 0.0) or 0.0)
+    except Exception:
+        carryover_strength = 0.0
+    try:
+        presence_residue = float(_record_value(item, "presence_residue", 0.0) or 0.0)
+    except Exception:
+        presence_residue = 0.0
+    try:
+        ambient_resonance = float(_record_value(item, "ambient_resonance", 0.0) or 0.0)
+    except Exception:
+        ambient_resonance = 0.0
+    try:
+        self_activity_momentum = float(_record_value(item, "self_activity_momentum", 0.0) or 0.0)
+    except Exception:
+        self_activity_momentum = 0.0
+    try:
+        scheduled_after_min = int(_record_value(item, "scheduled_after_min", 0) or 0)
+    except Exception:
+        scheduled_after_min = 0
+    kind = str(_record_value(item, "plan_kind", "") or "").strip().lower()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+
+    continuity_signal = max(
+        _clamp01(carryover_strength, 0.0),
+        _clamp01(presence_residue, 0.0),
+        _clamp01(ambient_resonance, 0.0),
+        _clamp01(self_activity_momentum, 0.0),
+    )
+    base = 0.12 + 0.34 * continuity_signal
+    if scheduled_after_min > 0:
+        base += 0.08
+    if kind in {"deferred_checkin", "small_opening", "shared_activity_offer", "life_nudge", "work_nudge"}:
+        base += 0.10
+    if carryover_mode in {"small_opening", "own_rhythm", "repair_residue", "warm_residue"}:
+        base += 0.10
+    return _clamp01(base, 0.0)
+
+
+def _behavior_reactivation_priority(item: dict[str, Any]) -> float:
+    try:
+        carryover_strength = float(_record_value(item, "carryover_strength", 0.0) or 0.0)
+    except Exception:
+        carryover_strength = 0.0
+    try:
+        presence_residue = float(_record_value(item, "presence_residue", 0.0) or 0.0)
+    except Exception:
+        presence_residue = 0.0
+    try:
+        ambient_resonance = float(_record_value(item, "ambient_resonance", 0.0) or 0.0)
+    except Exception:
+        ambient_resonance = 0.0
+    try:
+        self_activity_momentum = float(_record_value(item, "self_activity_momentum", 0.0) or 0.0)
+    except Exception:
+        self_activity_momentum = 0.0
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    source_plan_kind = str(_record_value(item, "source_plan_kind", "") or "").strip().lower()
+    current_plan_kind = str(_record_value(item, "current_plan_kind", "") or "").strip().lower()
+    primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
+    goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+    relationship_weather = str(_record_value(item, "relationship_weather", "") or "").strip().lower()
+
+    continuity_signal = max(
+        _clamp01(carryover_strength, 0.0),
+        _clamp01(presence_residue, 0.0),
+        _clamp01(0.82 * ambient_resonance, 0.0),
+        _clamp01(self_activity_momentum, 0.0) if carryover_mode in {"own_rhythm", "small_opening"} else 0.0,
+    )
+    base = 0.16 + 0.40 * continuity_signal
+    if carryover_mode in {"small_opening", "quiet_recontact", "own_rhythm", "life_window", "shared_window", "task_window"}:
+        base += 0.10
+    if source_plan_kind or current_plan_kind:
+        base += 0.10
+    if primary_motive or goal_frame:
+        base += 0.08
+    if relationship_weather in {"warm_residue", "guarded_residue", "repair_residue"}:
+        base += 0.06
+    return _clamp01(base, 0.0)
+
+
+def _agenda_lifecycle_priority(item: dict[str, Any]) -> float:
+    kind = str(_record_value(item, "lifecycle_kind", _record_value(item, "kind", "")) or "").strip().lower()
+    trigger_family = str(_record_value(item, "trigger_family", "") or "").strip().lower()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    try:
+        carryover_strength = float(_record_value(item, "carryover_strength", 0.0) or 0.0)
+    except Exception:
+        carryover_strength = 0.0
+    try:
+        presence_residue = float(_record_value(item, "presence_residue", 0.0) or 0.0)
+    except Exception:
+        presence_residue = 0.0
+    try:
+        ambient_resonance = float(_record_value(item, "ambient_resonance", 0.0) or 0.0)
+    except Exception:
+        ambient_resonance = 0.0
+    try:
+        self_activity_momentum = float(_record_value(item, "self_activity_momentum", 0.0) or 0.0)
+    except Exception:
+        self_activity_momentum = 0.0
+    try:
+        own_rhythm_bias = float(_record_value(item, "own_rhythm_bias", 0.0) or 0.0)
+    except Exception:
+        own_rhythm_bias = 0.0
+    try:
+        recontact_cooldown = float(_record_value(item, "recontact_cooldown", 0.0) or 0.0)
+    except Exception:
+        recontact_cooldown = 0.0
+    try:
+        continuity_anchor = float(_record_value(item, "continuity_anchor", 0.0) or 0.0)
+    except Exception:
+        continuity_anchor = 0.0
+    try:
+        own_rhythm_anchor = float(_record_value(item, "own_rhythm_anchor", 0.0) or 0.0)
+    except Exception:
+        own_rhythm_anchor = 0.0
+    try:
+        recontact_anchor = float(_record_value(item, "recontact_anchor", 0.0) or 0.0)
+    except Exception:
+        recontact_anchor = 0.0
+    try:
+        boundary_anchor = float(_record_value(item, "boundary_anchor", 0.0) or 0.0)
+    except Exception:
+        boundary_anchor = 0.0
+    try:
+        memory_anchor = float(_record_value(item, "memory_anchor", 0.0) or 0.0)
+    except Exception:
+        memory_anchor = 0.0
+    try:
+        hold_count = int(_record_value(item, "hold_count", 0) or 0)
+    except Exception:
+        hold_count = 0
+
+    continuity_signal = max(
+        _clamp01(carryover_strength, 0.0),
+        _clamp01(presence_residue, 0.0),
+        _clamp01(0.82 * ambient_resonance, 0.0),
+        _clamp01(self_activity_momentum, 0.0),
+        _clamp01(own_rhythm_bias, 0.0),
+        _clamp01(0.74 * continuity_anchor, 0.0),
+        _clamp01(0.72 * own_rhythm_anchor, 0.0) if carryover_mode == "own_rhythm" else 0.0,
+        _clamp01(0.72 * recontact_anchor, 0.0) if kind == "held" else 0.0,
+    )
+    base = 0.18 + 0.36 * continuity_signal
+    if kind in {"held", "released_to_self_activity"}:
+        base += 0.10
+    elif kind in {"dropped", "expired"}:
+        base += 0.04
+    if trigger_family in {"life_window", "shared_activity", "shared_activity_window", "deadline_window"}:
+        base += 0.08
+    if carryover_mode in {"own_rhythm", "quiet_recontact"}:
+        base += 0.08
+    if hold_count > 0:
+        base += min(0.08, 0.02 * hold_count)
+    if recontact_cooldown >= 0.28:
+        base += 0.06
+    if max(boundary_anchor, memory_anchor) >= 0.36:
+        base += 0.04
+    return _clamp01(base, 0.0)
+
+
+def _behavior_consequence_priority(item: dict[str, Any]) -> float:
+    consequence_kind = str(_record_value(item, "consequence_kind", "") or "").strip().lower()
+    relationship_effect = str(_record_value(item, "relationship_effect", "") or "").strip().lower()
+    self_effect = str(_record_value(item, "self_effect", "") or "").strip().lower()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    try:
+        timing_window_min = int(_record_value(item, "timing_window_min", 0) or 0)
+    except Exception:
+        timing_window_min = 0
+    delayed = bool(_record_value(item, "delayed", False))
+    silent = bool(_record_value(item, "silent", False))
+    stale_window = bool(_record_value(item, "stale_window", False))
+
+    base = 0.18
+    if consequence_kind:
+        base += 0.10
+    if relationship_effect or self_effect:
+        base += 0.14
+    if carryover_mode:
+        base += 0.12
+    if timing_window_min > 0:
+        base += 0.08
+    if delayed or silent:
+        base += 0.08
+    if stale_window:
+        base -= 0.04
+    return _clamp01(base, 0.0)
+
+
+def _behavior_plan_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    item_id = str(item.get("id") or "").strip()
+    plan_kind = str(_record_value(item, "plan_kind", "") or "").strip().lower()
+    trigger_family = str(_record_value(item, "trigger_family", "") or "").strip().lower()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    tags = [part for part in (plan_kind, trigger_family, carryover_mode) if part][:3]
+    prefix = f"P{item_id}" if item_id else "P"
+    if tags:
+        return f"{prefix}({'/'.join(tags)}): {summary}"
+    return f"{prefix}: {summary}"
+
+
+def _behavior_reactivation_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    item_id = str(item.get("id") or "").strip()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    source_plan_kind = str(_record_value(item, "source_plan_kind", "") or "").strip().lower()
+    current_plan_kind = str(_record_value(item, "current_plan_kind", "") or "").strip().lower()
+    tags = [part for part in (carryover_mode, source_plan_kind, current_plan_kind) if part][:3]
+    prefix = f"RA{item_id}" if item_id else "RA"
+    if tags:
+        return f"{prefix}({'/'.join(tags)}): {summary}"
+    return f"{prefix}: {summary}"
+
+
+def _agenda_lifecycle_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    item_id = str(item.get("id") or "").strip()
+    kind = str(_record_value(item, "lifecycle_kind", _record_value(item, "kind", "")) or "").strip().lower()
+    trigger_family = str(_record_value(item, "trigger_family", "") or "").strip().lower()
+    carryover_mode = str(_record_value(item, "carryover_mode", "") or "").strip().lower()
+    tags = [part for part in (kind, trigger_family, carryover_mode) if part][:3]
+    prefix = f"AL{item_id}" if item_id else "AL"
+    if tags:
+        return f"{prefix}({'/'.join(tags)}): {summary}"
+    return f"{prefix}: {summary}"
+
+
+def _behavior_consequence_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    item_id = str(item.get("id") or "").strip()
+    consequence_kind = str(_record_value(item, "consequence_kind", "") or "").strip().lower()
+    relationship_effect = str(_record_value(item, "relationship_effect", "") or "").strip().lower()
+    self_effect = str(_record_value(item, "self_effect", "") or "").strip().lower()
+    tags = [part for part in (consequence_kind, relationship_effect, self_effect) if part][:3]
+    prefix = f"BC{item_id}" if item_id else "BC"
+    if tags:
+        return f"{prefix}({'/'.join(tags)}): {summary}"
+    return f"{prefix}: {summary}"
+
 def _needs_retrieval(user_text: str) -> bool:
     t = str(user_text or "")
     if len(t) >= int(RETRIEVAL_MIN_LEN):
@@ -175,6 +427,10 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
             "commitments": [],
             "relationship_timeline": [],
             "conflict_repairs": [],
+            "behavior_reactivation_traces": [],
+            "behavior_plan_traces": [],
+            "agenda_lifecycle_traces": [],
+            "behavior_consequence_traces": [],
             "working_items": [],
             "working_chars": 0,
         }
@@ -198,6 +454,35 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
     conflict_repairs = store.list_conflict_repairs(limit=8)
     unresolved_tensions = store.list_unresolved_tensions(limit=8)
     semantic_self_narratives = store.list_semantic_self_narratives(limit=6)
+    revision_traces = store.list_revision_traces(limit=40)
+    behavior_reactivation_candidates = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip().lower() == "behavior_reactivation"
+        and str(_record_value(item, "after_summary", "") or "").strip()
+    ]
+    behavior_plan_candidates = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip().lower() == "behavior_plan"
+        and str(_record_value(item, "after_summary", "") or "").strip()
+    ]
+    agenda_lifecycle_candidates = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip().lower() == "agenda_lifecycle"
+        and str(_record_value(item, "after_summary", "") or "").strip()
+    ]
+    behavior_consequence_candidates = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip().lower() == "behavior_consequence"
+        and str(_record_value(item, "after_summary", "") or "").strip()
+    ]
+    behavior_reactivation_scored: list[tuple[float, dict[str, Any]]] = []
+    behavior_plan_scored: list[tuple[float, dict[str, Any]]] = []
+    agenda_lifecycle_scored: list[tuple[float, dict[str, Any]]] = []
+    behavior_consequence_scored: list[tuple[float, dict[str, Any]]] = []
 
     scored: list[tuple[float, str]] = []
     for item in moments:
@@ -271,6 +556,81 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         txt = f"S{item.get('id')}: {text}"
         scored.append((0.10 + 0.36 * relevance + 0.12 * recency + 0.42 * salience, txt))
 
+    for item in behavior_reactivation_candidates:
+        summary = str(_record_value(item, "after_summary", "") or "").strip()
+        if not summary:
+            continue
+        source_note = str(_record_value(item, "source_note", "") or "").strip()
+        relevance = max(_query_overlap_score(query, summary), _query_overlap_score(query, source_note))
+        recency = _recency_score(item.get("updated_at") or item.get("created_at"), 21.0)
+        priority = _behavior_reactivation_priority(item)
+        score = 0.16 + 0.28 * relevance + 0.24 * recency + 0.32 * priority
+        if not query:
+            score = max(score, 0.30 + 0.28 * recency + 0.42 * priority)
+        behavior_reactivation_scored.append((score, item))
+        txt = _behavior_reactivation_trace_line(item)
+        if txt:
+            scored.append((score, txt))
+
+    for item in behavior_plan_candidates:
+        summary = str(_record_value(item, "after_summary", "") or "").strip()
+        if not summary:
+            continue
+        relevance = _query_overlap_score(query, summary)
+        recency = _recency_score(item.get("updated_at") or item.get("created_at"), 14.0)
+        priority = _behavior_plan_priority(item)
+        score = 0.14 + 0.26 * relevance + 0.24 * recency + 0.36 * priority
+        if not query:
+            score = max(score, 0.28 + 0.30 * recency + 0.42 * priority)
+        behavior_plan_scored.append((score, item))
+        txt = _behavior_plan_trace_line(item)
+        if txt:
+            scored.append((score, txt))
+
+    for item in agenda_lifecycle_candidates:
+        summary = str(_record_value(item, "after_summary", "") or "").strip()
+        if not summary:
+            continue
+        goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+        note = str(_record_value(item, "note", "") or "").strip()
+        relevance = max(
+            _query_overlap_score(query, summary),
+            _query_overlap_score(query, goal_frame),
+            _query_overlap_score(query, note),
+        )
+        recency = _recency_score(item.get("updated_at") or item.get("created_at"), 28.0)
+        priority = _agenda_lifecycle_priority(item)
+        score = 0.15 + 0.28 * relevance + 0.23 * recency + 0.34 * priority
+        if not query:
+            score = max(score, 0.30 + 0.28 * recency + 0.42 * priority)
+        agenda_lifecycle_scored.append((score, item))
+        txt = _agenda_lifecycle_trace_line(item)
+        if txt:
+            scored.append((score, txt))
+
+    for item in behavior_consequence_candidates:
+        summary = str(_record_value(item, "after_summary", "") or "").strip()
+        if not summary:
+            continue
+        goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+        relationship_effect = str(_record_value(item, "relationship_effect", "") or "").strip()
+        self_effect = str(_record_value(item, "self_effect", "") or "").strip()
+        relevance = max(
+            _query_overlap_score(query, summary),
+            _query_overlap_score(query, goal_frame),
+            _query_overlap_score(query, relationship_effect),
+            _query_overlap_score(query, self_effect),
+        )
+        recency = _recency_score(item.get("updated_at") or item.get("created_at"), 18.0)
+        priority = _behavior_consequence_priority(item)
+        score = 0.16 + 0.30 * relevance + 0.24 * recency + 0.30 * priority
+        if not query:
+            score = max(score, 0.28 + 0.30 * recency + 0.42 * priority)
+        behavior_consequence_scored.append((score, item))
+        txt = _behavior_consequence_trace_line(item)
+        if txt:
+            scored.append((score, txt))
+
     for item in reflections:
         text = str(_record_value(item, "text", "") or "").strip()
         if not text:
@@ -284,6 +644,15 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         importance = max(0.0, min(1.0, importance))
         txt = f"R{item.get('id')}: {text}"
         scored.append((0.15 + 0.35 * relevance + 0.20 * recency + 0.30 * importance, txt))
+
+    behavior_reactivation_scored.sort(key=lambda row: row[0], reverse=True)
+    behavior_reactivation_traces = [item for _, item in behavior_reactivation_scored[:6]]
+    behavior_plan_scored.sort(key=lambda row: row[0], reverse=True)
+    behavior_plan_traces = [item for _, item in behavior_plan_scored[:6]]
+    agenda_lifecycle_scored.sort(key=lambda row: row[0], reverse=True)
+    agenda_lifecycle_traces = [item for _, item in agenda_lifecycle_scored[:6]]
+    behavior_consequence_scored.sort(key=lambda row: row[0], reverse=True)
+    behavior_consequence_traces = [item for _, item in behavior_consequence_scored[:6]]
 
     scored.sort(key=lambda x: x[0], reverse=True)
     working_items: list[str] = []
@@ -333,6 +702,10 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         "conflict_repairs": conflict_repairs,
         "unresolved_tensions": unresolved_tensions,
         "semantic_self_narratives": semantic_self_narratives,
+        "behavior_reactivation_traces": behavior_reactivation_traces,
+        "behavior_plan_traces": behavior_plan_traces,
+        "agenda_lifecycle_traces": agenda_lifecycle_traces,
+        "behavior_consequence_traces": behavior_consequence_traces,
         "working_items": working_items,
         "working_chars": cur_chars,
     }
@@ -349,6 +722,10 @@ def _empty_retrieved_context(store: MemoryStore) -> dict[str, Any]:
         "conflict_repairs": [],
         "unresolved_tensions": [],
         "semantic_self_narratives": [],
+        "behavior_reactivation_traces": [],
+        "behavior_plan_traces": [],
+        "agenda_lifecycle_traces": [],
+        "behavior_consequence_traces": [],
         "working_items": [],
         "working_chars": 0,
     }

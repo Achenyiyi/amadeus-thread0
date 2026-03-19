@@ -127,6 +127,455 @@ def _history_source_behavior_hint(source_event: dict[str, Any]) -> dict[str, str
     }
 
 
+def _has_trace_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _trace_value(item: dict[str, Any], key: str, default: Any = None) -> Any:
+    if not isinstance(item, dict):
+        return default
+    direct = item.get(key)
+    if _has_trace_value(direct):
+        return direct
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    meta_value = metadata.get(key)
+    if _has_trace_value(meta_value):
+        return meta_value
+    content = item.get("content") if isinstance(item.get("content"), dict) else {}
+    content_value = content.get(key)
+    if _has_trace_value(content_value):
+        return content_value
+    content_metadata = content.get("metadata") if isinstance(content.get("metadata"), dict) else {}
+    content_meta_value = content_metadata.get(key)
+    if _has_trace_value(content_meta_value):
+        return content_meta_value
+    return default
+
+
+def _bridge_mode_from_behavior_trace(item: dict[str, Any]) -> str:
+    trigger_family = str(
+        _trace_value(item, "trigger_family", _trace_value(item, "source_trigger_family", "")) or ""
+    ).strip().lower()
+    carryover_mode = str(_trace_value(item, "carryover_mode", "") or "").strip().lower()
+    plan_kind = str(
+        _trace_value(item, "plan_kind", _trace_value(item, "current_plan_kind", _trace_value(item, "source_plan_kind", "")))
+        or ""
+    ).strip().lower()
+
+    if trigger_family in {"shared_activity", "shared_activity_window"}:
+        return "shared_window"
+    if trigger_family == "deadline_window":
+        return "task_window"
+    if trigger_family == "life_window":
+        return "life_window"
+    if carryover_mode in {
+        "own_rhythm",
+        "quiet_recontact",
+        "small_opening",
+        "brief_presence",
+        "ambient_echo",
+        "shared_window",
+        "task_window",
+        "life_window",
+    }:
+        return carryover_mode
+    if plan_kind == "shared_activity_offer":
+        return "shared_window"
+    if plan_kind == "work_nudge":
+        return "task_window"
+    if plan_kind == "life_nudge":
+        return "life_window"
+    if plan_kind == "small_opening":
+        return "small_opening"
+    if plan_kind == "self_activity_continue":
+        return "own_rhythm"
+    if plan_kind == "presence_confirmation":
+        return "brief_presence"
+    if plan_kind == "ambient_checkin":
+        return "ambient_echo"
+    if plan_kind == "deferred_checkin":
+        return "quiet_recontact"
+    return ""
+
+
+def _bridge_defaults_for_mode(mode: str) -> tuple[str, str]:
+    key = str(mode or "").strip().lower()
+    if key == "shared_window":
+        return "shared_window", "nudge_presence"
+    if key == "task_window":
+        return "shared_task", "focus_glance"
+    if key == "life_window":
+        return "counterpart_state", "quiet_glance"
+    if key == "small_opening":
+        return "self_then_counterpart", "thought_glance"
+    if key == "own_rhythm":
+        return "self_then_counterpart", "thought_glance"
+    if key == "ambient_echo":
+        return "ambient_cue", "small_notice"
+    if key == "brief_presence":
+        return "counterpart_state", "brief_notice"
+    return "counterpart_state", "quiet_glance"
+
+
+def _implicit_strength_from_behavior_consequence_trace(item: dict[str, Any]) -> float:
+    relationship_weather = str(_trace_value(item, "relationship_weather", "") or "").strip().lower()
+    relationship_effect = str(_trace_value(item, "relationship_effect", "") or "").strip().lower()
+    self_effect = str(_trace_value(item, "self_effect", "") or "").strip().lower()
+    carryover_mode = str(_trace_value(item, "carryover_mode", "") or "").strip().lower()
+    consequence_kind = str(_trace_value(item, "consequence_kind", "") or "").strip().lower()
+
+    score = 0.0
+    if relationship_weather in {"warm_residue", "repair_residue"}:
+        score = max(score, 0.24)
+    elif relationship_weather == "guarded_residue":
+        score = max(score, 0.18)
+
+    relationship_effect_floor = {
+        "soft_reapproach": 0.34,
+        "contact_deferred": 0.28,
+        "window_released": 0.24,
+        "space_preserved": 0.22,
+    }
+    self_effect_floor = {
+        "partial_reengagement": 0.34,
+        "recheck_pending": 0.26,
+        "attention_returns_to_self": 0.24,
+        "own_rhythm_continues": 0.28,
+    }
+    kind_floor = {
+        "leave_small_opening": 0.34,
+        "defer_recontact": 0.28,
+        "let_window_expire": 0.24,
+        "hold_own_rhythm": 0.26,
+    }
+    mode_floor = {
+        "small_opening": 0.30,
+        "quiet_recontact": 0.26,
+        "own_rhythm": 0.28,
+        "brief_presence": 0.22,
+        "ambient_echo": 0.20,
+        "life_window": 0.26,
+        "shared_window": 0.28,
+        "task_window": 0.24,
+    }
+
+    score = max(
+        score,
+        relationship_effect_floor.get(relationship_effect, 0.0),
+        self_effect_floor.get(self_effect, 0.0),
+        kind_floor.get(consequence_kind, 0.0),
+        mode_floor.get(carryover_mode, 0.0),
+    )
+    return _clamp01(score, 0.0)
+
+
+def _consequence_trace_runtime_residue(
+    item: dict[str, Any],
+    *,
+    derived_strength: float,
+) -> tuple[float, float, float]:
+    relationship_weather = str(_trace_value(item, "relationship_weather", "") or "").strip().lower()
+    relationship_effect = str(_trace_value(item, "relationship_effect", "") or "").strip().lower()
+    self_effect = str(_trace_value(item, "self_effect", "") or "").strip().lower()
+    carryover_mode = str(_trace_value(item, "carryover_mode", "") or "").strip().lower()
+
+    presence_residue = _clamp01(_trace_value(item, "presence_residue", 0.0), 0.0)
+    ambient_resonance = _clamp01(_trace_value(item, "ambient_resonance", 0.0), 0.0)
+    self_activity_momentum = _clamp01(_trace_value(item, "self_activity_momentum", 0.0), 0.0)
+
+    if presence_residue <= 0.0 and (
+        relationship_weather in {"warm_residue", "repair_residue"}
+        or relationship_effect in {"soft_reapproach", "contact_deferred", "window_released"}
+    ):
+        presence_multiplier = (
+            0.86
+            if relationship_effect == "soft_reapproach"
+            else 0.82
+            if relationship_effect == "contact_deferred"
+            else 0.86
+            if relationship_effect == "window_released"
+            else 0.78
+        )
+        presence_floor = max(
+            0.0,
+            0.22 if carryover_mode == "quiet_recontact" else 0.0,
+            0.24 if carryover_mode == "brief_presence" else 0.0,
+            0.24 if relationship_weather == "warm_residue" and relationship_effect == "soft_reapproach" else 0.0,
+            0.22 if relationship_weather == "warm_residue" and relationship_effect in {"contact_deferred", "window_released"} else 0.0,
+            0.20 if relationship_weather == "repair_residue" else 0.0,
+        )
+        presence_residue = max(
+            presence_residue,
+            derived_strength * presence_multiplier,
+            presence_floor,
+        )
+
+    if ambient_resonance <= 0.0 and carryover_mode in {"quiet_recontact", "brief_presence", "ambient_echo", "life_window"}:
+        ambient_resonance = max(ambient_resonance, derived_strength * (0.42 if carryover_mode == "ambient_echo" else 0.24))
+
+    if self_activity_momentum <= 0.0 and (
+        carryover_mode in {"own_rhythm", "small_opening"}
+        or self_effect in {"own_rhythm_continues", "attention_returns_to_self"}
+    ):
+        self_activity_momentum = max(
+            self_activity_momentum,
+            derived_strength * (
+                0.88
+                if self_effect == "own_rhythm_continues"
+                else 0.76
+                if self_effect == "attention_returns_to_self"
+                else 0.70
+            ),
+        )
+
+    return (
+        round(_clamp01(presence_residue, 0.0), 3),
+        round(_clamp01(ambient_resonance, 0.0), 3),
+        round(_clamp01(self_activity_momentum, 0.0), 3),
+    )
+
+
+def _build_retrieved_behavior_trace_bridge(
+    *,
+    retrieved: dict[str, Any],
+    current_event: dict[str, Any],
+    interaction_carryover: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(retrieved, dict):
+        return {}
+    traces: list[tuple[str, dict[str, Any]]] = []
+    reactivation_traces = retrieved.get("behavior_reactivation_traces")
+    if isinstance(reactivation_traces, list):
+        traces.extend(
+            ("retrieved_behavior_reactivation", item if isinstance(item, dict) else {})
+            for item in reactivation_traces
+        )
+    consequence_traces = retrieved.get("behavior_consequence_traces")
+    if isinstance(consequence_traces, list):
+        traces.extend(
+            ("retrieved_behavior_consequence", item if isinstance(item, dict) else {})
+            for item in consequence_traces
+        )
+    plan_traces = retrieved.get("behavior_plan_traces")
+    if isinstance(plan_traces, list):
+        traces.extend(
+            ("retrieved_behavior_plan", item if isinstance(item, dict) else {})
+            for item in plan_traces
+        )
+    if not traces:
+        return {}
+
+    current = dict(current_event or {})
+    carryover = dict(interaction_carryover or {})
+    event_kind = str(current.get("kind") or "").strip().lower()
+    event_tags = {
+        str(item).strip().lower()
+        for item in (current.get("tags") if isinstance(current.get("tags"), list) else [])
+        if str(item).strip()
+    }
+    existing_mode = str(carryover.get("carryover_mode") or current.get("carryover_mode") or "").strip().lower()
+    existing_strength = max(
+        _clamp01(carryover.get("strength"), 0.0),
+        _clamp01(current.get("carryover_strength"), 0.0),
+    )
+    if existing_mode or existing_strength >= 0.18:
+        return {}
+    if event_kind not in {"user_utterance", "time_idle"}:
+        return {}
+    if {"user_busy", "cognitive_load", "respect_space"} & event_tags:
+        return {}
+
+    for trace_source, trace in traces:
+        current_plan_kind = str(_trace_value(trace, "current_plan_kind", _trace_value(trace, "plan_kind", "")) or "").strip().lower()
+        source_plan_kind = str(_trace_value(trace, "source_plan_kind", "") or "").strip().lower()
+        plan_kind = current_plan_kind or source_plan_kind
+        consequence_kind = str(_trace_value(trace, "consequence_kind", "") or "").strip().lower()
+        if trace_source == "retrieved_behavior_consequence":
+            if consequence_kind in {"", "none"}:
+                continue
+        elif plan_kind in {"", "none", "observe_only", "respond_now", "speak_now"}:
+            continue
+        summary = str(_trace_value(trace, "after_summary", "") or "").strip()
+        trigger_family = str(
+            _trace_value(trace, "trigger_family", _trace_value(trace, "source_trigger_family", ""))
+            or ""
+        ).strip().lower()
+        event_mode = str(_trace_value(trace, "carryover_mode", "") or "").strip().lower()
+        bridge_mode = _bridge_mode_from_behavior_trace(trace)
+        attention_target = str(_trace_value(trace, "attention_target", "") or "").strip().lower()
+        nonverbal_signal = str(_trace_value(trace, "nonverbal_signal", "") or "").strip().lower()
+        relationship_weather = str(_trace_value(trace, "relationship_weather", "") or "").strip().lower()
+        carryover_strength = _clamp01(_trace_value(trace, "carryover_strength", 0.0), 0.0)
+        presence_residue = _clamp01(_trace_value(trace, "presence_residue", 0.0), 0.0)
+        ambient_resonance = _clamp01(_trace_value(trace, "ambient_resonance", 0.0), 0.0)
+        self_activity_momentum = _clamp01(_trace_value(trace, "self_activity_momentum", 0.0), 0.0)
+        derived_strength = _clamp01(
+            max(
+                carryover_strength,
+                presence_residue,
+                0.82 * ambient_resonance,
+                self_activity_momentum if (event_mode or bridge_mode) in {"own_rhythm", "small_opening"} else 0.0,
+            ),
+            0.0,
+        )
+        if trace_source == "retrieved_behavior_consequence":
+            derived_strength = max(derived_strength, _implicit_strength_from_behavior_consequence_trace(trace))
+            presence_residue, ambient_resonance, self_activity_momentum = _consequence_trace_runtime_residue(
+                trace,
+                derived_strength=derived_strength,
+            )
+        if not bridge_mode or derived_strength < 0.12:
+            continue
+        default_attention_target, default_nonverbal_signal = _bridge_defaults_for_mode(bridge_mode)
+        source_tags = [
+            trace_source,
+            "continuity_anchor",
+            f"plan_kind:{plan_kind}" if plan_kind else "",
+            f"consequence_kind:{consequence_kind}" if consequence_kind else "",
+            f"trigger_family:{trigger_family}" if trigger_family else "",
+        ]
+        if source_plan_kind and source_plan_kind != plan_kind:
+            source_tags.append(f"source_plan_kind:{source_plan_kind}")
+        relationship_effect = str(_trace_value(trace, "relationship_effect", "") or "").strip().lower()
+        self_effect = str(_trace_value(trace, "self_effect", "") or "").strip().lower()
+        if relationship_effect:
+            source_tags.append(f"relationship_effect:{relationship_effect}")
+        if self_effect:
+            source_tags.append(f"self_effect:{self_effect}")
+        source_tags = [tag for tag in source_tags if tag]
+        return {
+            "interaction_carryover": {
+                "carryover_mode": bridge_mode,
+                "strength": round(derived_strength, 3),
+                "relationship_weather": relationship_weather,
+                "attention_target": attention_target or default_attention_target,
+                "nonverbal_signal": nonverbal_signal or default_nonverbal_signal,
+                "note": summary,
+                "source": trace_source,
+                "source_tags": source_tags,
+            },
+            "event_patch": {
+                "carryover_mode": event_mode or bridge_mode,
+                "carryover_strength": round(derived_strength, 3),
+                "relationship_weather": relationship_weather,
+                "presence_residue": round(presence_residue, 3),
+                "ambient_resonance": round(ambient_resonance, 3),
+                "self_activity_momentum": round(self_activity_momentum, 3),
+            },
+        }
+    return {}
+
+
+def _apply_retrieved_behavior_trace_bridge(
+    *,
+    retrieved: dict[str, Any],
+    current_event: dict[str, Any],
+    interaction_carryover: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    bridge = _build_retrieved_behavior_trace_bridge(
+        retrieved=retrieved,
+        current_event=current_event,
+        interaction_carryover=interaction_carryover,
+    )
+    if not bridge:
+        return dict(current_event or {}), dict(interaction_carryover or {})
+    merged_event = dict(current_event or {})
+    merged_event.update(dict(bridge.get("event_patch") or {}))
+    merged_carryover = dict(interaction_carryover or {})
+    merged_carryover.update(dict(bridge.get("interaction_carryover") or {}))
+    return merged_event, merged_carryover
+
+
+def _hydrate_retrieved_agenda_lifecycle_residue(
+    *,
+    retrieved: dict[str, Any],
+) -> AgendaLifecycleResiduePayload:
+    if not isinstance(retrieved, dict):
+        return {}
+    traces = retrieved.get("agenda_lifecycle_traces")
+    if not isinstance(traces, list):
+        return {}
+
+    for item in traces:
+        trace = item if isinstance(item, dict) else {}
+        summary = str(_trace_value(trace, "after_summary", "") or "").strip()
+        kind = str(_trace_value(trace, "lifecycle_kind", _trace_value(trace, "kind", "")) or "").strip().lower()
+        carryover_mode = str(_trace_value(trace, "carryover_mode", "") or "").strip().lower()
+        carryover_strength = _clamp01(_trace_value(trace, "carryover_strength", 0.0), 0.0)
+        try:
+            counterpart_boundary_delta = float(_trace_value(trace, "counterpart_boundary_delta", 0.0) or 0.0)
+        except Exception:
+            counterpart_boundary_delta = 0.0
+        if kind not in {"held", "released_to_self_activity", "dropped", "expired"}:
+            continue
+        if not summary or not carryover_mode or carryover_strength < 0.12:
+            continue
+
+        source_tags = [
+            str(tag).strip().lower()
+            for tag in (_trace_value(trace, "source_tags", []) or [])
+            if str(tag).strip()
+        ]
+        source_tags = list(
+            dict.fromkeys(
+                [
+                    *source_tags,
+                    "agenda_lifecycle",
+                    kind,
+                    "retrieved_agenda_lifecycle",
+                ]
+            )
+        )
+        return {
+            "kind": kind,
+            "source_event_kind": str(_trace_value(trace, "source_event_kind", "time_idle") or "").strip().lower()
+            or "time_idle",
+            "trigger_family": str(_trace_value(trace, "trigger_family", "") or "").strip().lower(),
+            "carryover_mode": carryover_mode,
+            "carryover_strength": round(carryover_strength, 3),
+            "relationship_weather": str(_trace_value(trace, "relationship_weather", "") or "").strip().lower(),
+            "hold_count": max(0, int(_trace_value(trace, "hold_count", 0) or 0)),
+            "idle_minutes": max(0, int(_trace_value(trace, "idle_minutes", 0) or 0)),
+            "attention_target": str(_trace_value(trace, "attention_target", "") or "").strip(),
+            "nonverbal_signal": str(_trace_value(trace, "nonverbal_signal", "") or "").strip(),
+            "note": summary,
+            "source_tags": source_tags,
+            "presence_residue": round(_clamp01(_trace_value(trace, "presence_residue", 0.0), 0.0), 3),
+            "ambient_resonance": round(_clamp01(_trace_value(trace, "ambient_resonance", 0.0), 0.0), 3),
+            "self_activity_momentum": round(_clamp01(_trace_value(trace, "self_activity_momentum", 0.0), 0.0), 3),
+            "continuity_anchor": round(_clamp01(_trace_value(trace, "continuity_anchor", 0.0), 0.0), 3),
+            "own_rhythm_anchor": round(_clamp01(_trace_value(trace, "own_rhythm_anchor", 0.0), 0.0), 3),
+            "recontact_anchor": round(_clamp01(_trace_value(trace, "recontact_anchor", 0.0), 0.0), 3),
+            "boundary_anchor": round(_clamp01(_trace_value(trace, "boundary_anchor", 0.0), 0.0), 3),
+            "memory_anchor": round(_clamp01(_trace_value(trace, "memory_anchor", 0.0), 0.0), 3),
+            "semantic_continuity_depth": round(
+                _clamp01(_trace_value(trace, "semantic_continuity_depth", 0.0), 0.0),
+                3,
+            ),
+            "semantic_identity_gravity": round(
+                _clamp01(_trace_value(trace, "semantic_identity_gravity", 0.0), 0.0),
+                3,
+            ),
+            "long_term_axis_count": max(0, int(_trace_value(trace, "long_term_axis_count", 0) or 0)),
+            "lineage_gravity": round(_clamp01(_trace_value(trace, "lineage_gravity", 0.0), 0.0), 3),
+            "contact_lineage": round(_clamp01(_trace_value(trace, "contact_lineage", 0.0), 0.0), 3),
+            "repair_lineage": round(_clamp01(_trace_value(trace, "repair_lineage", 0.0), 0.0), 3),
+            "boundary_lineage": round(_clamp01(_trace_value(trace, "boundary_lineage", 0.0), 0.0), 3),
+            "selfhood_lineage": round(_clamp01(_trace_value(trace, "selfhood_lineage", 0.0), 0.0), 3),
+            "agency_lineage": round(_clamp01(_trace_value(trace, "agency_lineage", 0.0), 0.0), 3),
+            "own_rhythm_bias": round(_clamp01(_trace_value(trace, "own_rhythm_bias", 0.0), 0.0), 3),
+            "recontact_cooldown": round(_clamp01(_trace_value(trace, "recontact_cooldown", 0.0), 0.0), 3),
+            "counterpart_scene_bias": str(_trace_value(trace, "counterpart_scene_bias", "") or "").strip().lower(),
+            "counterpart_boundary_delta": round(max(-1.0, min(1.0, counterpart_boundary_delta)), 3),
+            "created_at": int(_trace_value(trace, "created_at", _now_ts()) or _now_ts()),
+        }
+    return {}
+
+
 def _long_horizon_interaction_carryover(
     *,
     world_model_state: dict[str, Any] | None = None,

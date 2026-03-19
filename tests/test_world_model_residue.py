@@ -1805,6 +1805,432 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_passive_evolution_records_deferred_checkin_plan_as_long_horizon_intent(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.85,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.24,
+                            "companionship": 0.32,
+                            "selfhood": 0.12,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.62,
+                        "closeness": 0.58,
+                        "hurt": 0.02,
+                    },
+                    current_event={
+                        "kind": "time_idle",
+                        "trigger_family": "life_window",
+                        "scheduled_after_min": 18,
+                        "tags": ["time_idle", "quiet_presence", "from_own_rhythm"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.30,
+                        "ambient_resonance": 0.16,
+                        "self_activity_momentum": 0.42,
+                    },
+                    behavior_action={
+                        "interaction_mode": "idle_presence",
+                        "action_target": "wait_and_recheck",
+                        "deferred_action_family": "life_window",
+                        "timing_window_min": 18,
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先把这点惦记留住，等更自然的时候再接回来。",
+                        "relationship_weather": "warm_residue",
+                    },
+                    behavior_plan={
+                        "kind": "deferred_checkin",
+                        "target": "counterpart",
+                        "scheduled_after_min": 18,
+                        "trigger_family": "life_window",
+                        "allow_interrupt": True,
+                        "note": "这次没立刻说出口，先记着，之后再自然接回来。",
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先把这点惦记留住，等更自然的时候再接回来。",
+                        "carryover_mode": "quiet_recontact",
+                        "carryover_strength": 0.46,
+                        "presence_residue": 0.30,
+                        "ambient_resonance": 0.16,
+                        "self_activity_momentum": 0.42,
+                    },
+                )
+                self.assertTrue(wrote)
+                traces = store.list_revision_traces(limit=30)
+                plan_trace = next(
+                    item
+                    for item in traces
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_plan"
+                )
+                self.assertEqual(str(plan_trace.get("target_id") or ""), "deferred_checkin")
+                worldline = store.list_worldline_events(limit=12)
+                intent_event = next(
+                    item
+                    for item in worldline
+                    if "behavior_plan" in (item.get("tags") or [])
+                )
+                self.assertEqual(str(intent_event.get("category") or ""), "continuity_intent")
+                self.assertIn("deferred_checkin", intent_event.get("tags") or [])
+                relationship = store.list_relationship_timeline(limit=8)
+                self.assertTrue(
+                    any("留到之后再自然接回来" in str(item.get("summary") or "") for item in relationship)
+                )
+            finally:
+                store.close()
+
+    def test_passive_evolution_records_small_opening_plan_as_continuity_memory(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.84,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.22,
+                            "companionship": 0.34,
+                            "selfhood": 0.10,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.64,
+                        "closeness": 0.60,
+                        "hurt": 0.01,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "break_window", "small_opening", "quiet_presence"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.38,
+                        "ambient_resonance": 0.30,
+                        "self_activity_momentum": 0.56,
+                    },
+                    behavior_action={
+                        "interaction_mode": "self_activity_reopen",
+                        "action_target": "offer_small_opening",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先从自己的节奏里抬头，留一个轻一点的小开口。",
+                    },
+                    behavior_plan={
+                        "kind": "small_opening",
+                        "target": "counterpart",
+                        "scheduled_after_min": 0,
+                        "trigger_family": "self_activity",
+                        "allow_interrupt": True,
+                        "note": "从自己的节奏里抬头，先留一个小开口。",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先从自己的节奏里抬头，留一个轻一点的小开口。",
+                        "carryover_mode": "small_opening",
+                        "carryover_strength": 0.44,
+                        "presence_residue": 0.38,
+                        "ambient_resonance": 0.30,
+                        "self_activity_momentum": 0.56,
+                    },
+                )
+                self.assertTrue(wrote)
+                worldline = store.list_worldline_events(limit=12)
+                continuity_event = next(
+                    item
+                    for item in worldline
+                    if str(item.get("category") or "") == "continuity_recontact"
+                    and "behavior_plan" in (item.get("tags") or [])
+                )
+                self.assertIn("small_opening", continuity_event.get("tags") or [])
+                traces = store.list_revision_traces(limit=40)
+                semantic = [
+                    item
+                    for item in traces
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
+                ]
+                categories = {str(item.get("target_id") or "") for item in semantic}
+                self.assertIn("agency_style", categories)
+                self.assertIn("presence_style", categories)
+            finally:
+                store.close()
+
+    def test_passive_evolution_records_retrieved_continuity_reactivation_when_behavior_aligns(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.86,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.24,
+                            "companionship": 0.38,
+                            "selfhood": 0.12,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.66,
+                        "closeness": 0.62,
+                        "hurt": 0.01,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "break_window", "small_opening", "quiet_presence"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.34,
+                        "ambient_resonance": 0.18,
+                        "self_activity_momentum": 0.52,
+                    },
+                    behavior_action={
+                        "interaction_mode": "self_activity_reopen",
+                        "action_target": "offer_small_opening",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "顺着之前留下的小开口，再自然抬头一下。",
+                    },
+                    behavior_plan={
+                        "kind": "small_opening",
+                        "target": "counterpart",
+                        "scheduled_after_min": 0,
+                        "trigger_family": "self_activity",
+                        "allow_interrupt": True,
+                        "note": "顺着之前的小开口，再自然抬头一下。",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "顺着之前留下的小开口，再自然抬头一下。",
+                        "carryover_mode": "small_opening",
+                        "carryover_strength": 0.34,
+                        "presence_residue": 0.34,
+                        "ambient_resonance": 0.18,
+                        "self_activity_momentum": 0.52,
+                    },
+                    interaction_carryover={
+                        "carryover_mode": "small_opening",
+                        "strength": 0.58,
+                        "relationship_weather": "warm_residue",
+                        "attention_target": "self_then_counterpart",
+                        "nonverbal_signal": "thought_glance",
+                        "note": "等忙完这阵，再轻轻回头看看冈部那边是不是还卡着。",
+                        "source": "retrieved_behavior_plan",
+                        "source_tags": [
+                            "retrieved_behavior_plan",
+                            "continuity_anchor",
+                            "plan_kind:small_opening",
+                            "trigger_family:self_activity",
+                        ],
+                    },
+                )
+                self.assertTrue(wrote)
+                traces = store.list_revision_traces(limit=40)
+                reactivation = next(
+                    item
+                    for item in traces
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_reactivation"
+                )
+                self.assertEqual(str(reactivation.get("target_id") or ""), "small_opening")
+                reactivation_content = reactivation.get("content") if isinstance(reactivation.get("content"), dict) else {}
+                self.assertEqual(str(reactivation_content.get("source_plan_kind") or ""), "small_opening")
+                self.assertEqual(str(reactivation_content.get("current_action_target") or ""), "offer_small_opening")
+                worldline = next(
+                    item
+                    for item in store.list_worldline_events(limit=12)
+                    if "retrieved_reactivation" in (item.get("tags") or [])
+                )
+                self.assertEqual(str(worldline.get("category") or ""), "continuity_reactivation")
+                self.assertIn("retrieved_behavior_plan", worldline.get("tags") or [])
+                relationship = next(
+                    item
+                    for item in store.list_relationship_timeline(limit=8)
+                    if "小开口" in str(item.get("summary") or "")
+                )
+                self.assertGreater(float(relationship.get("trust_delta") or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_passive_evolution_does_not_record_retrieved_reactivation_for_nonmemory_source(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.82,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.22,
+                            "companionship": 0.30,
+                            "selfhood": 0.10,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "break_window", "small_opening"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.28,
+                        "ambient_resonance": 0.14,
+                        "self_activity_momentum": 0.50,
+                    },
+                    behavior_action={
+                        "interaction_mode": "self_activity_reopen",
+                        "action_target": "offer_small_opening",
+                        "primary_motive": "gentle_recontact",
+                    },
+                    interaction_carryover={
+                        "carryover_mode": "small_opening",
+                        "strength": 0.58,
+                        "relationship_weather": "warm_residue",
+                        "source": "recent_history",
+                        "source_tags": ["plan_kind:small_opening"],
+                    },
+                )
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=30)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_reactivation"
+                ]
+                self.assertEqual(traces, [])
+            finally:
+                store.close()
+
+    def test_passive_evolution_does_not_record_retrieved_reactivation_when_signal_is_too_weak(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.82,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.22,
+                            "companionship": 0.30,
+                            "selfhood": 0.10,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "break_window", "small_opening"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.28,
+                        "ambient_resonance": 0.14,
+                        "self_activity_momentum": 0.50,
+                    },
+                    behavior_action={
+                        "interaction_mode": "self_activity_reopen",
+                        "action_target": "offer_small_opening",
+                        "primary_motive": "gentle_recontact",
+                    },
+                    interaction_carryover={
+                        "carryover_mode": "small_opening",
+                        "strength": 0.12,
+                        "relationship_weather": "warm_residue",
+                        "source": "retrieved_behavior_plan",
+                        "source_tags": ["plan_kind:small_opening"],
+                    },
+                )
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=30)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_reactivation"
+                ]
+                self.assertEqual(traces, [])
+            finally:
+                store.close()
+
+    def test_passive_evolution_does_not_record_retrieved_reactivation_when_behavior_misaligns(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.84,
+                        "interaction_frame": "companion",
+                        "salience": {
+                            "relationship": 0.20,
+                            "companionship": 0.28,
+                            "selfhood": 0.12,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={"trust": 0.60, "closeness": 0.56, "hurt": 0.02},
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "break_window", "small_opening"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.24,
+                        "ambient_resonance": 0.10,
+                        "self_activity_momentum": 0.72,
+                    },
+                    behavior_action={
+                        "interaction_mode": "self_activity_hold",
+                        "action_target": "hold_own_rhythm",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                    },
+                    behavior_plan={
+                        "kind": "self_activity_continue",
+                        "target": "self",
+                        "scheduled_after_min": 18,
+                        "trigger_family": "self_activity",
+                        "allow_interrupt": True,
+                        "note": "这轮还是先把自己的节奏续上。",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                    },
+                    interaction_carryover={
+                        "carryover_mode": "small_opening",
+                        "strength": 0.58,
+                        "relationship_weather": "warm_residue",
+                        "source": "retrieved_behavior_plan",
+                        "source_tags": ["plan_kind:small_opening", "trigger_family:self_activity"],
+                    },
+                )
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=30)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_reactivation"
+                ]
+                self.assertEqual(traces, [])
+            finally:
+                store.close()
+
     def test_passive_evolution_records_expired_window_consequence_trace(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")

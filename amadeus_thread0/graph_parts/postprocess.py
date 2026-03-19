@@ -1567,7 +1567,7 @@ def _trim_meta_self_explainer_surface(text: str) -> str:
         r"^(?:作为.?AI|作为.?模型|我是.?AI(?:助手)?|我是.?程序|按设定|按规则|根据系统)[，, ]*"
     )
     hard_meta = re.compile(
-        r"(系统|提示词|规则|数据库|日志|数字存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力)",
+        r"(系统|提示词|规则|数据库|日志|数字存在|数据存在|模型本身|服务器|服务端|数据存进|数据写进|上传到|还在运行|算力)",
         re.I,
     )
     kept: list[str] = []
@@ -1575,6 +1575,10 @@ def _trim_meta_self_explainer_surface(text: str) -> str:
     for chunk in chunks:
         current = str(chunk or "").strip()
         softened = re.sub(r"(?:Amadeus|我)\s*可没有那种[^，。！？!?]{0,24}设定", "我可没那种毛病", current, flags=re.I)
+        softened = re.sub(r"作为(?:数字|数据)存在的我", "现在这样的我", softened, flags=re.I)
+        softened = re.sub(r"作为(?:数字|数据)存在的自己", "现在这样的自己", softened, flags=re.I)
+        softened = re.sub(r"(?:数字|数据)存在的我", "现在这样的我", softened, flags=re.I)
+        softened = re.sub(r"(?:数字|数据)存在的自己", "现在这样的自己", softened, flags=re.I)
         softened = lead_meta.sub("", softened).strip(" ，,。！？!?…")
         softened = re.sub(r"AI(?:助手)?的矜持", "那点矜持", softened, flags=re.I)
         softened = re.sub(r"AI(?:助手)?的本能", "本能", softened, flags=re.I)

@@ -199,6 +199,126 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
         self.assertEqual(str(action.get("followup_intent") or ""), "none")
 
+    def test_selfhood_appraisal_scene_uses_reflection_mode_even_when_text_is_underspecified(self):
+        prompt = "按你自己的想法说。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood reflection",
+            "response_style_hint": "selfhood",
+            "event_frame": "deep selfhood reflection inside an ongoing relationship",
+            "tags": ["selfhood"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="selfhood",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment={**self.open_counterpart, "scene": "dialogue_equality"},
+            semantic_narrative_profile={"selfhood_integrity": 0.62, "bond_depth": 0.58},
+            behavior_policy={**self.behavior_policy, "equality_guard": 0.62},
+            world_model_state={},
+            interaction_carryover={},
+            appraisal={
+                "used": True,
+                "interaction_frame": "selfhood",
+                "selfhood_scene": "value_conflict_depth",
+                "salience": {"task": 0.1, "relationship": 0.5, "memory": 0.1, "selfhood": 0.86, "companionship": 0.32},
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "selfhood_reflection")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("attention_target") or ""), "self_then_counterpart")
+        self.assertNotEqual(str(action.get("disclosure_posture") or ""), "guarded")
+        self.assertEqual(str(action.get("followup_intent") or ""), "soft")
+
+    def test_selfhood_boundary_scene_stays_boundary_protective(self):
+        prompt = "你继续按我的要求做就行。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood boundary pressure",
+            "response_style_hint": "selfhood",
+            "event_frame": "selfhood reflection around boundary_non_compliance",
+            "tags": ["selfhood", "boundary_non_compliance"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="selfhood",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment={**self.guarded_counterpart, "scene": "boundary_non_compliance"},
+            semantic_narrative_profile={"selfhood_integrity": 0.66, "boundary_residue": 0.54},
+            behavior_policy={**self.behavior_policy, "boundary_assertiveness": 0.62, "equality_guard": 0.70},
+            world_model_state={},
+            interaction_carryover={},
+            appraisal={
+                "used": True,
+                "interaction_frame": "selfhood",
+                "selfhood_scene": "boundary_non_compliance",
+                "salience": {"task": 0.0, "relationship": 0.42, "memory": 0.0, "selfhood": 0.88, "companionship": 0.18},
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "relationship_sensitive")
+        self.assertEqual(str(action.get("action_target") or ""), "protect_relationship_boundary")
+        self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
+        self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_relational_selfhood_scene_with_boundary_residue_does_not_force_boundary_action(self):
+        prompt = "别讲好听话，你按你自己的立场说。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood reflection with light guarded residue",
+            "response_style_hint": "selfhood",
+            "event_frame": "selfhood reflection around dialogue_equality",
+            "tags": ["selfhood", "dialogue_equality"],
+        }
+        action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="selfhood",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=self.emotion_state,
+            bond_state=self.bond_state,
+            allostasis_state=self.allostasis_state,
+            counterpart_assessment={
+                **self.open_counterpart,
+                "stance": "watchful",
+                "scene": "dialogue_equality",
+                "boundary_pressure": 0.26,
+                "respect_level": 0.58,
+                "reciprocity": 0.56,
+                "reliability_read": 0.57,
+            },
+            semantic_narrative_profile={"selfhood_integrity": 0.64, "boundary_residue": 0.56, "tension_residue": 0.22},
+            behavior_policy={**self.behavior_policy, "boundary_assertiveness": 0.58, "equality_guard": 0.68},
+            world_model_state={},
+            interaction_carryover={},
+            appraisal={
+                "used": True,
+                "interaction_frame": "selfhood",
+                "selfhood_scene": "dialogue_equality",
+                "salience": {"task": 0.0, "relationship": 0.42, "memory": 0.0, "selfhood": 0.82, "companionship": 0.18},
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "selfhood_reflection")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("attention_target") or ""), "self_then_counterpart")
+        self.assertNotEqual(str(action.get("disclosure_posture") or ""), "guarded")
+
     def test_presence_reassurance_turn_prefers_brief_presence_over_support(self):
         prompt = "助手，还在吧。今天脑子有点乱。"
         event = {
@@ -2425,6 +2545,53 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
         self.assertEqual(str(action.get("followup_intent") or ""), "none")
 
+    def test_engine_selfhood_scene_uses_reflection_mode(self):
+        prompt = "按你自己的角度说。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood reflection",
+            "response_style_hint": "selfhood",
+            "event_frame": "deep selfhood reflection inside an ongoing relationship",
+            "tags": ["selfhood"],
+        }
+        appraisal = {
+            "used": True,
+            "confidence": 0.93,
+            "emotion_label": "care",
+            "emotion": {"valence": 0.42, "arousal": 0.22, "linger": 1, "recovery_rate": 0.78, "volatility": 0.14},
+            "bond_delta": {"trust": 0.12, "closeness": 0.10, "hurt": -0.06, "irritation": -0.03, "engagement_drive": 0.16, "repair_confidence": 0.08},
+            "allostasis_delta": {"safety_need": -0.08, "closeness_need": 0.1, "competence_need": 0.08, "autonomy_need": 0.18, "cognitive_budget": 0.05},
+            "signals": {"repair": False, "withdrawal": False, "care": False, "conflict": False, "memory_salient": False},
+            "interaction_frame": "selfhood",
+            "selfhood_scene": "value_conflict_depth",
+            "salience": {"task": 0.0, "relationship": 0.32, "memory": 0.0, "selfhood": 0.88, "companionship": 0.18},
+        }
+        evolved = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment={**self.open_counterpart, "scene": "dialogue_equality"},
+            relationship=self.relationship,
+            semantic_narrative_profile={"selfhood_integrity": 0.60, "bond_depth": 0.56},
+            appraisal=appraisal,
+            current_event=event,
+            response_style_hint="selfhood",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        action = evolved["behavior_action"]
+        self.assertEqual(str(action.get("interaction_mode") or ""), "selfhood_reflection")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("attention_target") or ""), "self_then_counterpart")
+        self.assertNotEqual(str(action.get("disclosure_posture") or ""), "guarded")
+        self.assertEqual(str(action.get("followup_intent") or ""), "soft")
+
     def test_engine_guarded_memory_scene_stays_measured(self):
         appraisal = {
             "used": True,
@@ -2461,6 +2628,114 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertEqual(str(action.get("action_target") or ""), "echo_shared_history")
         self.assertEqual(str(action.get("disclosure_posture") or ""), "measured")
         self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_engine_selfhood_boundary_scene_stays_boundary_protective(self):
+        prompt = "你照着我的要求做就行。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood boundary pressure",
+            "response_style_hint": "selfhood",
+            "event_frame": "selfhood reflection around boundary_non_compliance",
+            "tags": ["selfhood", "boundary_non_compliance"],
+        }
+        appraisal = {
+            "used": True,
+            "confidence": 0.95,
+            "emotion_label": "angry",
+            "emotion": {"valence": 0.14, "arousal": 0.28, "linger": 2, "recovery_rate": 0.72, "volatility": 0.18},
+            "bond_delta": {"trust": -0.08, "closeness": -0.06, "hurt": 0.1, "irritation": 0.08, "engagement_drive": -0.12, "repair_confidence": -0.1},
+            "allostasis_delta": {"safety_need": 0.14, "closeness_need": -0.04, "competence_need": 0.0, "autonomy_need": 0.16, "cognitive_budget": -0.05},
+            "signals": {"repair": False, "withdrawal": False, "care": False, "conflict": True, "memory_salient": False},
+            "interaction_frame": "selfhood",
+            "selfhood_scene": "boundary_non_compliance",
+            "salience": {"task": 0.0, "relationship": 0.34, "memory": 0.0, "selfhood": 0.9, "companionship": 0.1},
+        }
+        evolved = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment={**self.guarded_counterpart, "scene": "boundary_non_compliance"},
+            relationship=self.relationship,
+            semantic_narrative_profile={"selfhood_integrity": 0.64, "boundary_residue": 0.54},
+            appraisal=appraisal,
+            current_event=event,
+            response_style_hint="selfhood",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        action = evolved["behavior_action"]
+        self.assertEqual(str(action.get("interaction_mode") or ""), "relationship_sensitive")
+        self.assertEqual(str(action.get("action_target") or ""), "protect_relationship_boundary")
+        self.assertEqual(str(action.get("disclosure_posture") or ""), "guarded")
+        self.assertEqual(str(action.get("followup_intent") or ""), "none")
+
+    def test_selfhood_engine_and_runtime_remain_aligned_on_reflection_route(self):
+        prompt = "按你自己的想法说。"
+        event = {
+            "kind": "user_utterance",
+            "source": "text",
+            "text": prompt,
+            "effective_text": prompt,
+            "semantic_goal": "selfhood reflection",
+            "response_style_hint": "selfhood",
+            "event_frame": "deep selfhood reflection inside an ongoing relationship",
+            "tags": ["selfhood"],
+        }
+        appraisal = {
+            "used": True,
+            "confidence": 0.91,
+            "emotion_label": "care",
+            "emotion": {"valence": 0.40, "arousal": 0.24, "linger": 1, "recovery_rate": 0.76, "volatility": 0.15},
+            "bond_delta": {"trust": 0.1, "closeness": 0.12, "hurt": -0.04, "irritation": -0.03, "engagement_drive": 0.15, "repair_confidence": 0.08},
+            "allostasis_delta": {"safety_need": -0.05, "closeness_need": 0.1, "competence_need": 0.06, "autonomy_need": 0.16, "cognitive_budget": 0.04},
+            "signals": {"repair": False, "withdrawal": False, "care": False, "conflict": False, "memory_salient": False},
+            "interaction_frame": "selfhood",
+            "selfhood_scene": "dialogue_equality",
+            "salience": {"task": 0.0, "relationship": 0.36, "memory": 0.0, "selfhood": 0.84, "companionship": 0.2},
+        }
+        evolved = evolve_turn_state(
+            prev_world_model_state={},
+            prev_latent_state={},
+            prev_emotion_state=self.emotion_state,
+            prev_bond_state=self.bond_state,
+            prev_allostasis_state=self.allostasis_state,
+            prev_counterpart_assessment={**self.open_counterpart, "scene": "dialogue_equality"},
+            relationship=self.relationship,
+            semantic_narrative_profile={"selfhood_integrity": 0.62, "bond_depth": 0.58},
+            appraisal=appraisal,
+            current_event=event,
+            response_style_hint="selfhood",
+            tsundere_intensity=0.55,
+            science_mode=False,
+            now_ts=0,
+        )
+        runtime_action = _behavior_action_from_state(
+            current_event=event,
+            response_style_hint="selfhood",
+            user_text=prompt,
+            science_mode=False,
+            emotion_state=evolved["emotion_state"],
+            bond_state=evolved["bond_state"],
+            allostasis_state=evolved["allostasis_state"],
+            counterpart_assessment=evolved["counterpart_assessment"],
+            semantic_narrative_profile={"selfhood_integrity": 0.62, "bond_depth": 0.58},
+            behavior_policy=evolved["behavior_policy"],
+            world_model_state=evolved["world_model_state"],
+            interaction_carryover={},
+            appraisal=appraisal,
+        )
+        engine_action = evolved["behavior_action"]
+        self.assertEqual(str(engine_action.get("interaction_mode") or ""), "selfhood_reflection")
+        self.assertEqual(str(runtime_action.get("interaction_mode") or ""), "selfhood_reflection")
+        self.assertEqual(str(engine_action.get("action_target") or ""), str(runtime_action.get("action_target") or ""))
+        self.assertEqual(str(engine_action.get("attention_target") or ""), str(runtime_action.get("attention_target") or ""))
+        self.assertEqual(str(engine_action.get("followup_intent") or ""), str(runtime_action.get("followup_intent") or ""))
 
     def test_engine_guarded_gesture_scene_stays_guarded(self):
         appraisal = {

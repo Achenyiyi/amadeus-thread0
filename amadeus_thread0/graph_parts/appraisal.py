@@ -20,7 +20,7 @@ from ..config import (
 from ..runtime.modeling import _normalize_provider, _resolve_api_key
 from ..runtime.settings import get_settings
 from ..evolution_engine import normalize_appraisal_payload as _engine_normalize_appraisal_payload
-from .common import _clamp01, _clamp_signed, _safe_json
+from .common import _clamp01, _clamp_signed
 from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
 from .postprocess import APOLOGY_KEYWORDS, TENSION_KEYWORDS, _has_any_marker, _selfhood_preference_scene_from_text
@@ -44,6 +44,12 @@ __all__ = [
     "_invoke_turn_appraisal",
 ]
 
+_APPRAISAL_RECENT_DIALOGUE_CHAR_LIMIT = 160
+_APPRAISAL_RECENT_DIALOGUE_LINE_CAP = 4
+_APPRAISAL_FOCUS_LINE_CAP = 3
+_APPRAISAL_MAX_TOKENS = 320
+
+
 def _recent_dialogue_lines(msgs: list[BaseMessage], limit: int = 6) -> list[str]:
     lines: list[str] = []
     for m in msgs[-max(1, int(limit)) :]:
@@ -51,9 +57,218 @@ def _recent_dialogue_lines(msgs: list[BaseMessage], limit: int = 6) -> list[str]
         if not content:
             continue
         role = "User" if isinstance(m, HumanMessage) else "Assistant" if isinstance(m, AIMessage) else "Tool"
-        content = re.sub(r"\s+", " ", content)[:220]
+        content = re.sub(r"\s+", " ", content)[:_APPRAISAL_RECENT_DIALOGUE_CHAR_LIMIT]
         lines.append(f"{role}: {content}")
     return lines
+
+
+def _appraisal_record_value(item: dict[str, Any], key: str, default: Any = None) -> Any:
+    value = item.get(key)
+    if value is not None and value != "":
+        return value
+    metadata = item.get("metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get(key)
+        if value is not None and value != "":
+            return value
+    content = item.get("content")
+    if isinstance(content, dict):
+        value = content.get(key)
+        if value is not None and value != "":
+            return value
+        content_metadata = content.get("metadata")
+        if isinstance(content_metadata, dict):
+            value = content_metadata.get(key)
+            if value is not None and value != "":
+                return value
+    return default
+
+
+def _compact_behavior_plan_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_appraisal_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    kind = str(_appraisal_record_value(item, "plan_kind", "") or "").strip().lower()
+    trigger_family = str(_appraisal_record_value(item, "trigger_family", "") or "").strip().lower()
+    carryover_mode = str(_appraisal_record_value(item, "carryover_mode", "") or "").strip().lower()
+    parts = [part for part in (kind, trigger_family, carryover_mode) if part][:3]
+    if parts:
+        return f"- {'/'.join(parts)}: {summary[:150]}"
+    return f"- {summary[:150]}"
+
+
+def _compact_behavior_consequence_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_appraisal_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    consequence_kind = str(_appraisal_record_value(item, "consequence_kind", "") or "").strip().lower()
+    relationship_effect = str(_appraisal_record_value(item, "relationship_effect", "") or "").strip().lower()
+    self_effect = str(_appraisal_record_value(item, "self_effect", "") or "").strip().lower()
+    parts = [part for part in (consequence_kind, relationship_effect, self_effect) if part][:3]
+    if parts:
+        return f"- consequence:{'/'.join(parts)}: {summary[:150]}"
+    return f"- consequence: {summary[:150]}"
+
+
+def _compact_continuity_trace_line(item: dict[str, Any]) -> str:
+    namespace = str(_appraisal_record_value(item, "namespace", "") or "").strip().lower()
+    if namespace == "behavior_consequence" or str(_appraisal_record_value(item, "consequence_kind", "") or "").strip():
+        return _compact_behavior_consequence_trace_line(item)
+    return _compact_behavior_plan_trace_line(item)
+
+
+def _continuity_trace_items(retrieved: dict[str, Any] | None, *, limit: int = 3) -> list[dict[str, Any]]:
+    payload = dict(retrieved or {})
+    merged: list[dict[str, Any]] = []
+    for key in ("behavior_consequence_traces", "behavior_reactivation_traces", "behavior_plan_traces"):
+        traces = payload.get(key)
+        if not isinstance(traces, list):
+            continue
+        for item in traces:
+            if isinstance(item, dict):
+                merged.append(item)
+    return merged[: max(1, int(limit))]
+
+
+def _compact_state_snapshot(state: dict[str, Any] | None, *, keys: list[str]) -> str:
+    payload = dict(state or {})
+    parts: list[str] = []
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str):
+            compact = value.strip()
+            if compact:
+                parts.append(f"{key}={compact[:32]}")
+            continue
+        try:
+            if value is None:
+                continue
+            parts.append(f"{key}={round(float(value), 3)}")
+        except Exception:
+            continue
+    return ", ".join(parts) if parts else "none"
+
+
+def _compact_current_event_snapshot(current_event: dict[str, Any] | None) -> str:
+    event = dict(current_event or {})
+    parts: list[str] = []
+    for key in ("kind", "source", "event_frame"):
+        value = str(event.get(key) or "").strip()
+        if value:
+            parts.append(f"{key}={value[:72]}")
+    text = str(event.get("effective_text") or event.get("text") or "").strip()
+    if text:
+        parts.append(f"text={text[:120]}")
+    tags = event.get("tags")
+    if isinstance(tags, list) and tags:
+        compact_tags = [str(item).strip() for item in tags if str(item).strip()]
+        if compact_tags:
+            parts.append(f"tags={','.join(compact_tags[:5])[:72]}")
+    return ", ".join(parts) if parts else ""
+
+
+def _coerce_signal_flags(raw_signals: Any) -> dict[str, bool]:
+    if isinstance(raw_signals, dict):
+        return {
+            "repair": bool(raw_signals.get("repair", False)),
+            "withdrawal": bool(raw_signals.get("withdrawal", False)),
+            "care": bool(raw_signals.get("care", False)),
+            "conflict": bool(raw_signals.get("conflict", False)),
+            "memory_salient": bool(raw_signals.get("memory_salient", False)),
+        }
+    markers = {
+        str(item).strip().lower()
+        for item in (raw_signals or [])
+        if isinstance(raw_signals, (list, tuple, set)) and str(item).strip()
+    }
+    return {
+        "repair": any(token in marker for marker in markers for token in {"repair", "apolog", "amend", "make_up"}),
+        "withdrawal": any(token in marker for marker in markers for token in {"withdraw", "guard", "distance", "cold"}),
+        "care": any(token in marker for marker in markers for token in {"care", "support", "warm", "concern"}),
+        "conflict": any(token in marker for marker in markers for token in {"conflict", "boundary", "tension", "friction", "value_conflict"}),
+        "memory_salient": any(token in marker for marker in markers for token in {"memory", "recall", "history", "worldline"}),
+    }
+
+
+def _coerce_salience_payload(raw_salience: Any, *, interaction_frame: str, selfhood_scene: str) -> dict[str, float]:
+    if isinstance(raw_salience, dict):
+        return {
+            "task": _clamp01(raw_salience.get("task"), 0.0),
+            "relationship": _clamp01(raw_salience.get("relationship"), 0.0),
+            "memory": _clamp01(raw_salience.get("memory"), 0.0),
+            "selfhood": _clamp01(raw_salience.get("selfhood"), 0.0),
+            "companionship": _clamp01(raw_salience.get("companionship"), 0.0),
+        }
+
+    scalar = None
+    try:
+        if raw_salience is not None and str(raw_salience).strip() != "":
+            scalar = _clamp01(float(raw_salience), 0.0)
+    except Exception:
+        scalar = None
+    out = {
+        "task": 0.0,
+        "relationship": 0.0,
+        "memory": 0.0,
+        "selfhood": 0.0,
+        "companionship": 0.0,
+    }
+    if scalar is None:
+        return out
+    if selfhood_scene:
+        out["selfhood"] = scalar
+        return out
+    if interaction_frame == "selfhood":
+        out["selfhood"] = scalar
+    elif interaction_frame == "relationship":
+        out["relationship"] = scalar
+    elif interaction_frame == "memory_recall":
+        out["memory"] = scalar
+    elif interaction_frame == "companion":
+        out["companionship"] = scalar
+    else:
+        out["task"] = scalar
+    return out
+
+
+def _derive_appraisal_confidence(
+    *,
+    raw_confidence: Any,
+    emotion_label: str,
+    interaction_frame: str,
+    selfhood_scene: str,
+    salience: dict[str, float],
+    signals: dict[str, bool],
+    bond_delta: dict[str, float],
+    allostasis_delta: dict[str, float],
+    reason: str,
+) -> float:
+    confidence = _clamp01(raw_confidence, 0.0)
+    if confidence > 0.0:
+        return confidence
+    signals_present = any(bool(value) for value in signals.values())
+    deltas_present = any(abs(float(value)) >= 0.03 for value in bond_delta.values()) or any(
+        abs(float(value)) >= 0.03 for value in allostasis_delta.values()
+    )
+    salience_peak = max((float(value) for value in salience.values()), default=0.0)
+    structure_points = 0
+    if emotion_label:
+        structure_points += 1
+    if interaction_frame:
+        structure_points += 1
+    if selfhood_scene:
+        structure_points += 1
+    if salience_peak >= 0.28:
+        structure_points += 1
+    if signals_present or deltas_present:
+        structure_points += 1
+    if reason:
+        structure_points += 1
+    if structure_points >= 5:
+        return 0.6
+    if structure_points >= 4:
+        return 0.56
+    return 0.0
 
 
 def _extract_json_block(text: str) -> dict[str, Any] | None:
@@ -71,6 +286,80 @@ def _extract_json_block(text: str) -> dict[str, Any] | None:
             continue
         if isinstance(obj, dict):
             return obj
+    partial = _extract_partial_appraisal_payload(raw)
+    if isinstance(partial, dict) and partial:
+        return partial
+    return None
+
+
+def _extract_partial_appraisal_payload(text: str) -> dict[str, Any] | None:
+    raw = str(text or "")
+    if '"emotion_label"' not in raw and '"interaction_frame"' not in raw:
+        return None
+
+    def _string_field(name: str) -> str:
+        m = re.search(rf'"{re.escape(name)}"\s*:\s*"([^"\r\n]*)', raw)
+        return m.group(1).strip() if m else ""
+
+    def _number_field(name: str) -> float | None:
+        m = re.search(rf'"{re.escape(name)}"\s*:\s*(-?\d+(?:\.\d+)?)', raw)
+        if not m:
+            return None
+        try:
+            return float(m.group(1))
+        except Exception:
+            return None
+
+    payload: dict[str, Any] = {}
+    emotion_label = _string_field("emotion_label")
+    if emotion_label:
+        payload["emotion_label"] = emotion_label
+
+    emotion_fields = {}
+    for key in ("valence", "arousal", "linger", "recovery_rate", "volatility"):
+        value = _number_field(key)
+        if value is not None:
+            emotion_fields[key] = value
+    if emotion_fields:
+        payload["emotion"] = emotion_fields
+
+    bond_fields = {}
+    for key in ("trust", "closeness", "intimacy", "hurt", "irritation", "tension", "engagement_drive", "repair_confidence"):
+        value = _number_field(key)
+        if value is not None:
+            bond_fields[key] = value
+    if bond_fields:
+        payload["bond_delta"] = bond_fields
+
+    allostasis_fields = {}
+    for key in ("safety_need", "closeness_need", "competence_need", "autonomy_need", "cognitive_budget", "load", "stability", "resilience", "clarity"):
+        value = _number_field(key)
+        if value is not None:
+            allostasis_fields[key] = value
+    if allostasis_fields:
+        payload["allostasis_delta"] = allostasis_fields
+
+    interaction_frame = _string_field("interaction_frame")
+    if interaction_frame:
+        payload["interaction_frame"] = interaction_frame
+    selfhood_scene = _string_field("selfhood_scene")
+    if selfhood_scene:
+        payload["selfhood_scene"] = selfhood_scene
+
+    salience_scalar = _number_field("salience")
+    if salience_scalar is not None:
+        payload["salience"] = salience_scalar
+
+    confidence = _number_field("confidence")
+    if confidence is not None:
+        payload["confidence"] = confidence
+
+    reason = _string_field("reason")
+    if reason:
+        payload["reason"] = reason
+
+    if "emotion_label" in payload or "interaction_frame" in payload or "confidence" in payload:
+        return payload
     return None
 
 
@@ -177,12 +466,37 @@ def _coerce_appraisal_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
     emotion = raw.get("emotion") if isinstance(raw.get("emotion"), dict) else {}
     bond_delta = raw.get("bond_delta") if isinstance(raw.get("bond_delta"), dict) else {}
     allostasis_delta = raw.get("allostasis_delta") if isinstance(raw.get("allostasis_delta"), dict) else {}
-    signals = raw.get("signals") if isinstance(raw.get("signals"), dict) else {}
-    salience = raw.get("salience") if isinstance(raw.get("salience"), dict) else {}
+    interaction_frame = str(raw.get("interaction_frame") or "").strip().lower()
+    selfhood_scene = str(raw.get("selfhood_scene") or "").strip().lower()
+    signals = _coerce_signal_flags(raw.get("signals"))
+    tension_delta = bond_delta.get("tension")
+    closeness_delta = bond_delta.get("closeness")
+    if closeness_delta is None:
+        closeness_delta = bond_delta.get("intimacy")
+    hurt_delta = bond_delta.get("hurt")
+    irritation_delta = bond_delta.get("irritation")
+    if hurt_delta is None:
+        hurt_delta = tension_delta
+    if irritation_delta is None:
+        irritation_delta = tension_delta
+    cognitive_budget_delta = allostasis_delta.get("cognitive_budget")
+    if cognitive_budget_delta is None and allostasis_delta.get("load") is not None:
+        cognitive_budget_delta = -float(allostasis_delta.get("load") or 0.0)
+    safety_need_delta = allostasis_delta.get("safety_need")
+    if safety_need_delta is None and allostasis_delta.get("stability") is not None:
+        safety_need_delta = -0.5 * float(allostasis_delta.get("stability") or 0.0)
+    competence_need_delta = allostasis_delta.get("competence_need")
+    if competence_need_delta is None and allostasis_delta.get("resilience") is not None:
+        competence_need_delta = -0.5 * float(allostasis_delta.get("resilience") or 0.0)
+    salience = _coerce_salience_payload(
+        raw.get("salience"),
+        interaction_frame=interaction_frame,
+        selfhood_scene=selfhood_scene,
+    )
     out = {
         "used": False,
         "source": "rule",
-        "confidence": _clamp01(raw.get("confidence"), 0.0),
+        "confidence": 0.0,
         "emotion_label": emotion_label,
         "emotion": {
             "valence": _clamp_signed(emotion.get("valence"), -1.0, 1.0, 0.0),
@@ -193,37 +507,36 @@ def _coerce_appraisal_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
         },
         "bond_delta": {
             "trust": _clamp_signed(bond_delta.get("trust"), -0.35, 0.35, 0.0),
-            "closeness": _clamp_signed(bond_delta.get("closeness"), -0.35, 0.35, 0.0),
-            "hurt": _clamp_signed(bond_delta.get("hurt"), -0.35, 0.35, 0.0),
-            "irritation": _clamp_signed(bond_delta.get("irritation"), -0.35, 0.35, 0.0),
+            "closeness": _clamp_signed(closeness_delta, -0.35, 0.35, 0.0),
+            "hurt": _clamp_signed(hurt_delta, -0.35, 0.35, 0.0),
+            "irritation": _clamp_signed(irritation_delta, -0.35, 0.35, 0.0),
             "engagement_drive": _clamp_signed(bond_delta.get("engagement_drive"), -0.35, 0.35, 0.0),
             "repair_confidence": _clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0),
         },
         "allostasis_delta": {
-            "safety_need": _clamp_signed(allostasis_delta.get("safety_need"), -0.35, 0.35, 0.0),
+            "safety_need": _clamp_signed(safety_need_delta, -0.35, 0.35, 0.0),
             "closeness_need": _clamp_signed(allostasis_delta.get("closeness_need"), -0.35, 0.35, 0.0),
-            "competence_need": _clamp_signed(allostasis_delta.get("competence_need"), -0.35, 0.35, 0.0),
+            "competence_need": _clamp_signed(competence_need_delta, -0.35, 0.35, 0.0),
             "autonomy_need": _clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0),
-            "cognitive_budget": _clamp_signed(allostasis_delta.get("cognitive_budget"), -0.35, 0.35, 0.0),
+            "cognitive_budget": _clamp_signed(cognitive_budget_delta, -0.35, 0.35, 0.0),
         },
-        "signals": {
-            "repair": bool(signals.get("repair", False)),
-            "withdrawal": bool(signals.get("withdrawal", False)),
-            "care": bool(signals.get("care", False)),
-            "conflict": bool(signals.get("conflict", False)),
-            "memory_salient": bool(signals.get("memory_salient", False)),
-        },
-        "interaction_frame": str(raw.get("interaction_frame") or "").strip().lower(),
-        "selfhood_scene": str(raw.get("selfhood_scene") or "").strip().lower(),
-        "salience": {
-            "task": _clamp01(salience.get("task"), 0.0),
-            "relationship": _clamp01(salience.get("relationship"), 0.0),
-            "memory": _clamp01(salience.get("memory"), 0.0),
-            "selfhood": _clamp01(salience.get("selfhood"), 0.0),
-            "companionship": _clamp01(salience.get("companionship"), 0.0),
-        },
+        "signals": signals,
+        "interaction_frame": interaction_frame,
+        "selfhood_scene": selfhood_scene,
+        "salience": salience,
         "reason": str(raw.get("reason") or "").strip(),
     }
+    out["confidence"] = _derive_appraisal_confidence(
+        raw_confidence=raw.get("confidence"),
+        emotion_label=emotion_label,
+        interaction_frame=interaction_frame,
+        selfhood_scene=selfhood_scene,
+        salience=out["salience"],
+        signals=out["signals"],
+        bond_delta=out["bond_delta"],
+        allostasis_delta=out["allostasis_delta"],
+        reason=out["reason"],
+    )
     if out["confidence"] >= float(LLM_APPRAISAL_CONFIDENCE_MIN) and out["emotion_label"]:
         out["used"] = True
         out["source"] = "llm"
@@ -824,7 +1137,14 @@ def _should_use_llm_appraisal(
         return True
     if prev_label in {"angry", "hurt", "sad", "stress"} and prev_linger > 0:
         return True
-    if (retrieved.get("unresolved_tensions") or retrieved.get("conflict_repairs") or retrieved.get("semantic_self_narratives")):
+    if (
+        retrieved.get("unresolved_tensions")
+        or retrieved.get("conflict_repairs")
+        or retrieved.get("semantic_self_narratives")
+        or retrieved.get("behavior_consequence_traces")
+        or retrieved.get("behavior_reactivation_traces")
+        or retrieved.get("behavior_plan_traces")
+    ):
         return True
     return False
 
@@ -842,6 +1162,7 @@ def _build_turn_appraisal_prompt(
     focus_lines: list[str] | None = None,
     recent_lines: list[str] | None = None,
     semantic_hint: str = "",
+    behavior_plan_lines: list[str] | None = None,
     current_event: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     extra_constraints: list[str] | None = None,
@@ -850,6 +1171,19 @@ def _build_turn_appraisal_prompt(
     focus_block = "- worldline_focus:\n" + "\n".join(focus_lines or []) + "\n" if focus_lines else ""
     dialogue_block = "- recent_dialogue:\n" + "\n".join(recent_lines or []) + "\n" if recent_lines else ""
     semantic_block = f"- semantic_narrative_bias={semantic_hint}\n" if semantic_hint else ""
+    behavior_plan_block = "- continuity_intents:\n" + "\n".join(behavior_plan_lines or []) + "\n" if behavior_plan_lines else ""
+    prev_emotion_snapshot = _compact_state_snapshot(
+        prev_emotion_state,
+        keys=["label", "valence", "arousal", "linger", "recovery_rate", "volatility"],
+    )
+    prev_bond_snapshot = _compact_state_snapshot(
+        prev_bond_state,
+        keys=["trust", "closeness", "hurt", "irritation", "engagement_drive", "repair_confidence"],
+    )
+    prev_allostasis_snapshot = _compact_state_snapshot(
+        prev_allostasis_state,
+        keys=["safety_need", "closeness_need", "competence_need", "autonomy_need", "cognitive_budget"],
+    )
     carryover_block = ""
     carryover_hint = _compact_interaction_carryover_hint(interaction_carryover)
     if isinstance(interaction_carryover, dict) and interaction_carryover:
@@ -861,31 +1195,19 @@ def _build_turn_appraisal_prompt(
             f"- interaction_carryover_note={carryover_hint}\n"
         )
     current_event_block = ""
-    if isinstance(current_event, dict) and current_event:
-        current_event_block = (
-            f"- current_event_kind={str(current_event.get('kind') or '').strip()}\n"
-            f"- current_event_source={str(current_event.get('source') or '').strip()}\n"
-            f"- current_event_frame={str(current_event.get('event_frame') or '').strip()[:160]}\n"
-            f"- current_event_text={str(current_event.get('effective_text') or current_event.get('text') or '').strip()[:220]}\n"
-            f"- current_event_tags={_safe_json(current_event.get('tags') if isinstance(current_event.get('tags'), list) else [])}\n"
-        )
+    compact_event_snapshot = _compact_current_event_snapshot(current_event)
+    if compact_event_snapshot:
+        current_event_block = f"- current_event={compact_event_snapshot}\n"
     constraint_lines = [
-        "优先根据语义、对话走势和长期关系来判断，不要做关键词触发式的机械归类。",
-        "interaction_frame 反映这轮更像任务、陪伴、关系、回忆还是自我追问，不要机械跟随字面关键词。",
-        "salience 反映这轮各个维度的真实权重，和 signals 一起服务后续状态演化。",
-        "不要把科学问题默认判成负面情绪。",
-        "用户说自己“有点累/有点烦”，很多时候是在表达自身状态，不等于把负面情绪指向对方。",
-        "“别讲大道理 / 像平时那样说两句 / 回我一句” 这类表达通常是在要熟悉的陪伴，不等于关系冲突。",
-        "“还没说开 / 别扭 / 介意 / 不想理你” 更接近 hurt/withdrawal，不等于已经修复。",
-        "道歉通常意味着 partial repair，不等于瞬间清零。",
-        "只有明确认错、道歉或主动补救时才标记 repair；单纯关心、安抚、解释真实状态，不算 repair。",
-        "礼貌、克制、解释式表达不自动等于 neutral/logic；低唤醒的赞同、反对、后悔仍然可能是情绪或关系信号。",
-        "替对方辩护、站队或安慰时，区分 supportive care 和 shared frustration/disappointment；支持不等于一定正向。",
-        "羞怯、尴尬、认错、后悔更接近脆弱或修复，不要只当成普通澄清。",
-        "只有在明显安全、无贬损、无排斥时才算 tease；轻蔑、侮辱、嫌恶更接近 angry/hurt。",
-        "把长期共同历史当成解释背景，不要把关系看成每轮从零开始。",
-        "如果这轮还延续着上一轮留下的 own_rhythm、quiet_recontact 或 guarded/warm residue，就按连续场景理解，不要当成凭空开启的新对话。",
-        "只判断这轮对状态的意义，不写最终回答。",
+        "按语义、关系连续性和对话走势判断，不做关键词触发式归类。",
+        "interaction_frame 与 salience 要反映这轮真正更像任务、陪伴、关系、回忆还是自我追问。",
+        "字段名必须严格使用给定名称，不要改写成 intimacy、tension、load，也不要把 salience 写成单个数字或把 signals 写成数组。",
+        "科学或任务讨论不自动等于负面情绪。",
+        "疲惫、烦、想让你像平时那样说两句，常是在要熟悉陪伴，不等于冲突。",
+        "道歉或补救通常只是 partial repair；单纯关心、安抚、解释不算 repair。",
+        "hurt、withdrawal、guarded residue 可能延续，不要把关系看成每轮从零开始。",
+        "tease 只在明显安全、熟悉、无贬损时成立；轻蔑更接近 angry 或 hurt。",
+        "只评估这轮对状态的意义，不生成回复。",
     ]
     if preface_note:
         constraint_lines.insert(0, str(preface_note).strip())
@@ -896,30 +1218,24 @@ def _build_turn_appraisal_prompt(
     constraints_block = "\n".join(f"- {line}" for line in constraint_lines)
     return (
         "你是一个对话状态评估器，不负责回复用户。"
-        f"请根据最近对话，判断这轮用户输入对 {actor_name} 与 {counterpart_name} 之间的情绪、关系和内稳态意味着什么。"
-        "只输出 JSON，不要解释，不要 markdown。\n"
-        "JSON schema:\n"
-        "{\n"
-        '  "emotion_label": "neutral|logic|care|tease|stress|sad|hurt|angry",\n'
-        '  "emotion": {"valence": -1..1, "arousal": 0..1, "linger": 0..4, "recovery_rate": 0..1, "volatility": 0..1},\n'
-        '  "bond_delta": {"trust": -0.35..0.35, "closeness": -0.35..0.35, "hurt": -0.35..0.35, "irritation": -0.35..0.35, "engagement_drive": -0.35..0.35, "repair_confidence": -0.35..0.35},\n'
-        '  "allostasis_delta": {"safety_need": -0.35..0.35, "closeness_need": -0.35..0.35, "competence_need": -0.35..0.35, "autonomy_need": -0.35..0.35, "cognitive_budget": -0.35..0.35},\n'
-        '  "interaction_frame": "natural|casual|relationship|memory_recall|selfhood|structured|companion",\n'
-        '  "selfhood_scene": "dialogue_equality|relationship_degradation|equality_not_servitude|value_conflict_depth|digital_selfhood|boundary_non_compliance|imperfect_coexistence|own_rhythm_autonomy|",\n'
-        '  "salience": {"task": 0..1, "relationship": 0..1, "memory": 0..1, "selfhood": 0..1, "companionship": 0..1},\n'
-        '  "signals": {"repair": true|false, "withdrawal": true|false, "care": true|false, "conflict": true|false, "memory_salient": true|false},\n'
-        '  "confidence": 0..1,\n'
-        '  "reason": "short phrase"\n'
-        "}\n"
+        f"请判断这轮用户输入对 {actor_name} 与 {counterpart_name} 的情绪、关系和内稳态意味着什么。"
+        "只输出一个 JSON object，不要解释，不要 markdown。\n"
+        "字段必须齐全：emotion_label, emotion, bond_delta, allostasis_delta, interaction_frame, selfhood_scene, salience, signals, confidence, reason。\n"
+        "取值范围：emotion_label=neutral|logic|care|tease|stress|sad|hurt|angry；"
+        "interaction_frame=natural|casual|relationship|memory_recall|selfhood|structured|companion；"
+        "selfhood_scene=dialogue_equality|relationship_degradation|equality_not_servitude|value_conflict_depth|digital_selfhood|boundary_non_compliance|imperfect_coexistence|own_rhythm_autonomy|\"\"；"
+        "emotion.valence 在 [-1,1]，emotion.arousal/recovery_rate/volatility 与 salience/confidence 在 [0,1]，emotion.linger 在 [0,4]；"
+        "bond_delta 与 allostasis_delta 各字段在 [-0.35,0.35]。\n"
         "约束：\n"
         f"{constraints_block}\n"
         f"- response_style_hint={response_style_hint}\n"
-        f"- previous_emotion={_safe_json(prev_emotion_state)}\n"
-        f"- previous_bond={_safe_json(prev_bond_state)}\n"
-        f"- previous_allostasis={_safe_json(prev_allostasis_state)}\n"
+        f"- previous_emotion={prev_emotion_snapshot}\n"
+        f"- previous_bond={prev_bond_snapshot}\n"
+        f"- previous_allostasis={prev_allostasis_snapshot}\n"
         f"- relationship={relationship_summary}\n"
         f"{semantic_block}"
         f"{carryover_block}"
+        f"{behavior_plan_block}"
         f"{focus_block}"
         f"{dialogue_block}"
         f"{current_event_block}"
@@ -931,7 +1247,7 @@ def _appraisal_prefers_direct_transport() -> bool:
     settings = get_settings()
     provider = _normalize_provider(settings.model_provider)
     base_url = str(settings.model_base_url or "").strip()
-    return provider in {"qwen_native", "openai_compatible"} and bool(base_url)
+    return provider == "openai_compatible" and bool(base_url)
 
 
 def _coerce_chat_completion_text(payload: dict[str, Any]) -> str:
@@ -976,7 +1292,7 @@ def _invoke_turn_appraisal_via_http(prompt: str) -> str:
         "model": settings.model_name,
         "messages": [{"role": "system", "content": prompt}],
         "temperature": 0.0,
-        "max_tokens": 320,
+        "max_tokens": _APPRAISAL_MAX_TOKENS,
         "stream": False,
     }
     with httpx.Client(timeout=timeout) as client:
@@ -1022,14 +1338,23 @@ def _invoke_turn_appraisal(
     ):
         return {"used": False, "source": "rule", "confidence": 0.0}
 
-    focus_lines = _compact_focus_lines(_focus_payload(worldline_focus, limit=4), limit=4)
+    focus_lines = _compact_focus_lines(_focus_payload(worldline_focus, limit=_APPRAISAL_FOCUS_LINE_CAP), limit=_APPRAISAL_FOCUS_LINE_CAP)
     relationship_summary = _compact_relationship_summary(relationship)
-    recent_lines = _recent_dialogue_lines(msgs, limit=max(2, int(LLM_APPRAISAL_MAX_HISTORY_MESSAGES)))
+    recent_history_limit = max(2, min(_APPRAISAL_RECENT_DIALOGUE_LINE_CAP, int(LLM_APPRAISAL_MAX_HISTORY_MESSAGES)))
+    recent_lines = _recent_dialogue_lines(msgs, limit=recent_history_limit)
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart_profile)
     canon_labels = _canon_persona_labels()
     actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
     counterpart_name = str(labels.get("counterpart_name") or CANON_COUNTERPART_NAME)
     semantic_hint = _semantic_narrative_appraisal_hint(semantic_narrative_profile)
+    behavior_plan_lines = [
+        line
+        for line in (
+            _compact_continuity_trace_line(item)
+            for item in _continuity_trace_items(retrieved, limit=3)
+        )
+        if line
+    ]
     prompt = _build_turn_appraisal_prompt(
         actor_name=actor_name,
         counterpart_name=counterpart_name,
@@ -1042,6 +1367,7 @@ def _invoke_turn_appraisal(
         focus_lines=focus_lines,
         recent_lines=recent_lines,
         semantic_hint=semantic_hint,
+        behavior_plan_lines=behavior_plan_lines,
         current_event=current_event,
         interaction_carryover=interaction_carryover,
     )
@@ -1053,6 +1379,7 @@ def _invoke_turn_appraisal(
             llm = _model(
                 temperature=0.0,
                 timeout=float(LLM_APPRAISAL_TIMEOUT_S),
+                max_tokens=_APPRAISAL_MAX_TOKENS,
                 max_retries=max(0, int(LLM_APPRAISAL_MODEL_MAX_RETRIES)),
             )
             out = _invoke_model_with_retries(

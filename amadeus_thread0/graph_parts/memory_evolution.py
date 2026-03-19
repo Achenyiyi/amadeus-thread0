@@ -2318,6 +2318,523 @@ def _record_behavior_consequence(
     return wrote
 
 
+def _record_behavior_plan_long_horizon_memory(
+    store: MemoryStore,
+    *,
+    behavior_plan: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    plan = dict(behavior_plan or {})
+    kind = str(plan.get("kind") or "").strip().lower()
+    if not kind or kind in {
+        "none",
+        "observe_only",
+        "respond_now",
+        "speak_now",
+        "presence_confirmation",
+        "ambient_checkin",
+        "low_pressure_support",
+    }:
+        return False
+
+    target = str(plan.get("target") or "").strip().lower()
+    trigger_family = str(plan.get("trigger_family") or "").strip().lower()
+    carryover_mode = str(plan.get("carryover_mode") or "").strip().lower()
+    note = str(plan.get("note") or "").strip()
+    primary_motive = str(plan.get("primary_motive") or "").strip()
+    motive_tension = str(plan.get("motive_tension") or "").strip()
+    goal_frame = str(plan.get("goal_frame") or "").strip()[:220]
+    scheduled_after_min = max(0, int(plan.get("scheduled_after_min") or 0))
+    allow_interrupt = bool(plan.get("allow_interrupt", True))
+    carryover_strength = _clamp01(plan.get("carryover_strength"), 0.0)
+    presence_residue = _clamp01(plan.get("presence_residue"), 0.0)
+    ambient_resonance = _clamp01(plan.get("ambient_resonance"), 0.0)
+    self_activity_momentum = _clamp01(plan.get("self_activity_momentum"), 0.0)
+    continuity_signal = max(
+        carryover_strength,
+        presence_residue,
+        ambient_resonance if kind in {"small_opening", "shared_activity_offer"} else 0.0,
+    )
+    self_rhythm_signal = max(
+        self_activity_momentum,
+        carryover_strength if carryover_mode == "own_rhythm" else 0.0,
+    )
+
+    worldline_category = ""
+    worldline_summary = ""
+    relationship_summary = ""
+    affinity_delta = 0.0
+    trust_delta = 0.0
+    importance_base = 0.52
+    category_summaries: dict[str, str] = {}
+
+    if kind == "deferred_checkin":
+        worldline_category = "continuity_intent"
+        worldline_summary = "她会把这次没立刻说出口的靠近留成后续窗口，等更自然的时候再接回来，而不是每次都临场从零开始。"
+        relationship_summary = "这段关系里的靠近不需要每次都当场说完；她会把一部分惦记留到之后再自然接回来。"
+        affinity_delta = 0.02
+        trust_delta = 0.03
+        importance_base = 0.58
+        category_summaries = {
+            "agency_style": "她会把没立刻说出口的靠近留成后续窗口，让下一次回头带着连续性，而不是次次临场起意。",
+            "presence_style": "没立刻开口不等于那点在意消失了；她会把它留到更自然的时候再接回来。",
+        }
+    elif kind == "self_activity_continue":
+        worldline_category = "self_rhythm"
+        worldline_summary = "当没有必要立刻回头时，她会先把自己的节奏继续走下去，再决定之后是否重新靠近。"
+        relationship_summary = "她不会靠一直围着对方来证明关系在场；她会先把自己的节奏继续走下去。"
+        affinity_delta = 0.01
+        trust_delta = 0.02
+        importance_base = 0.56
+        category_summaries = {
+            "agency_style": "她允许自己先把手头的节奏继续下去，不会因为关系里出现一个窗口就立刻中断自己。",
+            "rhythm_style": "对她来说，继续自己的节奏和之后回头并不冲突；两者会落在同一条连续线上。",
+        }
+    elif kind == "shared_activity_offer":
+        worldline_category = "shared_window"
+        worldline_summary = "她会把之前留下的共同窗口真正接成一次轻量邀约，让关系里的共同时间带着连续性出现。"
+        relationship_summary = "之前留下的共同窗口被她接成了真正的邀约，这让关系不只停在被动回应里。"
+        affinity_delta = 0.04
+        trust_delta = 0.03
+        importance_base = 0.60
+        category_summaries = {
+            "agency_style": "她会把之前积下来的共同窗口真正接成邀请，而不是等每次互动都从零开始。",
+            "presence_style": "她留给对方的是一起做点什么的空当，不是流程化的任务提醒。",
+        }
+    elif kind == "life_nudge":
+        worldline_category = "care_continuity"
+        worldline_summary = "她会把生活上的小惦记记到之后，再在合适的时候顺手接回来，让关心带着连续性落地。"
+        relationship_summary = "她会把生活上的小惦记留到合适的时候再接回来，这让关心显得持续而具体。"
+        affinity_delta = 0.03
+        trust_delta = 0.04
+        importance_base = 0.59
+        category_summaries = {
+            "agency_style": "她会把生活上的小惦记留到更合适的节点再接回来，不把关心做成即时打断。",
+            "presence_style": "她记住的不是抽象任务，而是对方生活里那些之后还值得回头的小细节。",
+        }
+    elif kind == "work_nudge":
+        worldline_category = "care_continuity"
+        worldline_summary = "她会记住对方眼前事情的节点，在合适的时候轻轻拎一下，让关心和判断都带着连续性。"
+        relationship_summary = "她会记住对方眼前事情的节点，在合适的时候轻轻拎一下，而不是把提醒做成冰冷通知。"
+        affinity_delta = 0.02
+        trust_delta = 0.05
+        importance_base = 0.59
+        category_summaries = {
+            "agency_style": "她会在自己认可的时机轻轻把事情拎一下，而不是机械地按到点广播提醒。",
+            "presence_style": "她记住的是对方眼前事情的节奏，因此提醒会更像延续过往关注，而不是外部通知。",
+        }
+    elif kind == "small_opening":
+        worldline_category = "continuity_recontact"
+        worldline_summary = "她会从自己的节奏里回头留一个轻一点的小开口，让关系保持在场感，但不把靠近一下子做满。"
+        relationship_summary = "她会从自己的节奏里回头留一个小开口，让关系保持轻而连续的在场感。"
+        affinity_delta = 0.03
+        trust_delta = 0.03
+        importance_base = 0.55
+        category_summaries = {
+            "agency_style": "她会回头，但只先留一个小开口，不会把每次靠近一下子做满。",
+            "presence_style": "她更愿意先确认那点在场感还在，再决定要不要继续往下展开。",
+        }
+    else:
+        return False
+
+    metadata = {
+        "plan_kind": kind,
+        "plan_target": target,
+        "trigger_family": trigger_family,
+        "carryover_mode": carryover_mode,
+        "scheduled_after_min": scheduled_after_min,
+        "allow_interrupt": allow_interrupt,
+        "primary_motive": primary_motive,
+        "motive_tension": motive_tension,
+        "goal_frame": goal_frame,
+        "carryover_strength": carryover_strength,
+        "presence_residue": presence_residue,
+        "ambient_resonance": ambient_resonance,
+        "self_activity_momentum": self_activity_momentum,
+    }
+
+    recent_plan = [
+        item
+        for item in store.list_revision_traces(limit=20)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "behavior_plan"
+    ]
+    trace_summary = note or worldline_summary
+    wrote = False
+    if trace_summary and not _recent_summary_overlap(recent_plan, trace_summary, field="after_summary", threshold=0.90):
+        store.add_revision_trace(
+            namespace="behavior_plan",
+            target_id=kind,
+            before_summary="",
+            after_summary=trace_summary[:180],
+            reason=f"behavior_plan:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata=metadata,
+        )
+        wrote = True
+
+    worldline_tags = ["behavior_plan", kind]
+    if trigger_family:
+        worldline_tags.append(trigger_family)
+    if carryover_mode:
+        worldline_tags.append(carryover_mode)
+    if primary_motive:
+        worldline_tags.append(primary_motive)
+    worldline_tags = list(dict.fromkeys(tag for tag in worldline_tags if tag))[:12]
+    if worldline_summary:
+        recent_worldline = store.list_worldline_events(limit=10)
+        if not _recent_summary_overlap(recent_worldline, worldline_summary):
+            importance = round(
+                _clamp01(
+                    importance_base
+                    + 0.08 * continuity_signal
+                    + 0.08 * self_rhythm_signal
+                    + (0.04 if scheduled_after_min > 0 else 0.0)
+                ),
+                3,
+            )
+            store.add_worldline_event(
+                summary=worldline_summary,
+                category=worldline_category or "continuity_intent",
+                importance=importance,
+                tags=worldline_tags,
+                confidence=max(0.72, confidence),
+            )
+            wrote = True
+
+    if relationship_summary:
+        recent_relationship = store.list_relationship_timeline(limit=10)
+        if not _recent_summary_overlap(recent_relationship, relationship_summary):
+            store.add_relationship_timeline(
+                summary=relationship_summary,
+                affinity_delta=round(affinity_delta, 3),
+                trust_delta=round(trust_delta, 3),
+                confidence=max(0.70, confidence),
+            )
+            wrote = True
+
+    recent_semantic = [
+        item
+        for item in store.list_revision_traces(limit=40)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "semantic_self_evidence"
+    ]
+    for category, category_summary in category_summaries.items():
+        category_name = str(category or "").strip()
+        text = str(category_summary or "").strip()
+        if not category_name or not text:
+            continue
+        recent_category = [
+            item
+            for item in recent_semantic
+            if str(_record_value(item, "target_id", "") or "").strip() == category_name
+        ]
+        if _recent_summary_overlap(recent_category, text, field="after_summary", threshold=0.90):
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category_name,
+            before_summary="",
+            after_summary=text[:180],
+            reason=f"behavior_plan:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata={
+                **metadata,
+                "evidence_category": category_name,
+            },
+        )
+        wrote = True
+    return wrote
+
+
+def _carryover_source_tag_value(interaction_carryover: dict[str, Any] | None, key: str) -> str:
+    carryover = interaction_carryover if isinstance(interaction_carryover, dict) else {}
+    prefix = f"{str(key or '').strip().lower()}:"
+    tags = carryover.get("source_tags")
+    if not isinstance(tags, list) or not prefix:
+        return ""
+    for item in tags:
+        text = str(item or "").strip()
+        if text.lower().startswith(prefix):
+            return text[len(prefix) :].strip().lower()
+    return ""
+
+
+def _record_retrieved_continuity_reactivation(
+    store: MemoryStore,
+    *,
+    interaction_carryover: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+    behavior_plan: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    carryover = interaction_carryover if isinstance(interaction_carryover, dict) else {}
+    if str(carryover.get("source") or "").strip().lower() != "retrieved_behavior_plan":
+        return False
+
+    carryover_strength = _clamp01(carryover.get("strength"), 0.0)
+    carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
+    if not carryover_mode or carryover_strength < 0.18:
+        return False
+
+    action = behavior_action if isinstance(behavior_action, dict) else {}
+    plan = behavior_plan if isinstance(behavior_plan, dict) else {}
+    action_target = str(action.get("action_target") or "").strip().lower()
+    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    plan_kind = str(plan.get("kind") or "").strip().lower()
+    if not action_target and not plan_kind and not interaction_mode:
+        return False
+
+    source_plan_kind = _carryover_source_tag_value(carryover, "plan_kind")
+    source_trigger_family = _carryover_source_tag_value(carryover, "trigger_family")
+    relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
+    source_note = str(carryover.get("note") or "").strip()
+    primary_motive = str(action.get("primary_motive") or plan.get("primary_motive") or "").strip().lower()
+    motive_tension = str(action.get("motive_tension") or plan.get("motive_tension") or "").strip().lower()
+    goal_frame = str(action.get("goal_frame") or plan.get("goal_frame") or "").strip()[:220]
+
+    alignment_specs = {
+        "self_activity_continue": {
+            "plan_kinds": {"self_activity_continue"},
+            "action_targets": {"hold_own_rhythm"},
+            "interaction_modes": {"self_activity_hold"},
+        },
+        "small_opening": {
+            "plan_kinds": {"small_opening"},
+            "action_targets": {"offer_small_opening", "respond_now", "confirm_presence"},
+            "interaction_modes": {"self_activity_reopen", "companion_reply", "steady_reply", "brief_presence"},
+        },
+        "deferred_checkin": {
+            "plan_kinds": {"deferred_checkin"},
+            "action_targets": {"wait_and_recheck", "respond_now", "confirm_presence"},
+            "interaction_modes": {"steady_reply", "companion_reply", "brief_presence"},
+        },
+        "shared_activity_offer": {
+            "plan_kinds": {"shared_activity_offer"},
+            "action_targets": {"offer_shared_activity", "respond_now"},
+            "interaction_modes": {"shared_activity_offer", "companion_reply", "steady_reply"},
+        },
+        "life_nudge": {
+            "plan_kinds": {"life_nudge", "work_nudge", "deferred_checkin"},
+            "action_targets": {"light_life_nudge", "light_work_nudge", "wait_and_recheck", "respond_now"},
+            "interaction_modes": {"scheduled_life_nudge", "companion_reply", "steady_reply"},
+        },
+        "work_nudge": {
+            "plan_kinds": {"work_nudge", "deferred_checkin"},
+            "action_targets": {"light_work_nudge", "wait_and_recheck", "respond_now"},
+            "interaction_modes": {"scheduled_life_nudge", "companion_reply", "steady_reply"},
+        },
+        "own_rhythm": {
+            "plan_kinds": {"self_activity_continue"},
+            "action_targets": {"hold_own_rhythm"},
+            "interaction_modes": {"self_activity_hold"},
+        },
+        "shared_window": {
+            "plan_kinds": {"shared_activity_offer"},
+            "action_targets": {"offer_shared_activity", "respond_now"},
+            "interaction_modes": {"shared_activity_offer", "companion_reply", "steady_reply"},
+        },
+        "life_window": {
+            "plan_kinds": {"deferred_checkin", "life_nudge", "work_nudge"},
+            "action_targets": {"wait_and_recheck", "light_life_nudge", "light_work_nudge", "respond_now"},
+            "interaction_modes": {"scheduled_life_nudge", "companion_reply", "steady_reply", "brief_presence"},
+        },
+        "quiet_recontact": {
+            "plan_kinds": {"deferred_checkin"},
+            "action_targets": {"wait_and_recheck", "respond_now", "confirm_presence"},
+            "interaction_modes": {"companion_reply", "steady_reply", "brief_presence"},
+        },
+        "brief_presence": {
+            "plan_kinds": {"presence_confirmation", "deferred_checkin"},
+            "action_targets": {"confirm_presence", "respond_now"},
+            "interaction_modes": {"brief_presence", "companion_reply", "steady_reply"},
+        },
+        "ambient_echo": {
+            "plan_kinds": {"ambient_checkin"},
+            "action_targets": {"ambient_checkin", "respond_now"},
+            "interaction_modes": {"ambient_checkin", "companion_reply", "steady_reply"},
+        },
+    }
+    alignment_key = source_plan_kind if source_plan_kind in alignment_specs else carryover_mode if carryover_mode in alignment_specs else ""
+    if not alignment_key:
+        return False
+    spec = alignment_specs.get(alignment_key) or {}
+    aligned = bool(
+        (plan_kind and plan_kind in spec.get("plan_kinds", set()))
+        or (action_target and action_target in spec.get("action_targets", set()))
+        or (interaction_mode and interaction_mode in spec.get("interaction_modes", set()))
+    )
+    if not aligned:
+        return False
+
+    if alignment_key in {"self_activity_continue", "own_rhythm"}:
+        trace_summary = "之前沉下来的自我节奏这次又被重新接上，她仍先顺着自己的步子走，而不是为了回应临时折返。"
+        worldline_summary = "先走自己的节奏这条连续性被她重新接上了，这次的动作仍沿着同一条线往前。"
+        relationship_summary = "她把先走自己节奏这条连续性又接了回来，这段关系里的在场感不再只靠即时回应维持。"
+        worldline_category = "self_rhythm"
+        affinity_delta = 0.01
+        trust_delta = 0.02
+        importance = 0.57
+        category_summaries = {
+            "agency_style": "她会把先走自己节奏这条连续性重新接上，不会因为旧惦记浮回来就立刻把自己折回去。",
+            "rhythm_style": "旧的连续性被重新点亮时，她依旧会先顺着自己的步子走，让关系和自我节奏落在同一条线上。",
+        }
+    elif alignment_key in {"small_opening"}:
+        trace_summary = "之前留下的小开口这次又被重新接上，她顺着那点在场感自然把话接了回来，而不是从零起意。"
+        worldline_summary = "她把之前留下的小开口重新接上了，这次的靠近更像连续回头，不像临时起意。"
+        relationship_summary = "之前留下的小开口被她顺着接了回来，让这段关系的在场感带着延续性出现。"
+        worldline_category = "continuity_reactivation"
+        affinity_delta = 0.03
+        trust_delta = 0.03
+        importance = 0.60
+        category_summaries = {
+            "agency_style": "她会把之前留过的小开口重新接上，让靠近顺着旧连续性继续下去，而不是每次都从零起手。",
+            "presence_style": "那点在场感被重新点亮时，她更像自然把话接回来，而不是做一次突兀的重新开场。",
+        }
+    elif alignment_key in {"shared_activity_offer", "shared_window"}:
+        trace_summary = "之前积下来的共同窗口这次又被重新接上，她把那点一起做点什么的可能真正带回了眼前。"
+        worldline_summary = "共同窗口被重新点亮后，她把那条线继续往前接成了真实的共同时间。"
+        relationship_summary = "之前积着的共同窗口被她重新接上，这让关系里的共同时间带着连续性出现。"
+        worldline_category = "shared_window"
+        affinity_delta = 0.04
+        trust_delta = 0.03
+        importance = 0.62
+        category_summaries = {
+            "agency_style": "旧的共同窗口一旦重新浮起来，她会把它接成真实邀约，而不是每次都等新的理由从头开始。",
+            "presence_style": "她留给对方的是继续共享一段时间的入口，不是一次孤立的互动动作。",
+        }
+    elif alignment_key in {"life_nudge", "work_nudge", "life_window", "quiet_recontact", "brief_presence", "ambient_echo", "deferred_checkin"}:
+        trace_summary = "之前留着的那点惦记这次又被重新接上，她不是临时想起，而是顺着旧连续性重新回头。"
+        worldline_summary = "旧的惦记再次浮回注意力时，她顺着那条连续线重新回头，而不是从空白重新起意。"
+        relationship_summary = "之前留着的那点惦记被她重新接上，这让关心和在场感显得持续，而不是一次性的临时动作。"
+        worldline_category = "continuity_reactivation"
+        affinity_delta = 0.02
+        trust_delta = 0.03
+        importance = 0.59
+        category_summaries = {
+            "agency_style": "旧的惦记一旦重新浮回来，她会顺着那条连续线继续判断，而不是把每次回头都做成断开的新动作。",
+            "presence_style": "她的关心会沿着先前留下的连续性重新亮起，所以这次回头更像延续，而不是突兀插入。",
+        }
+    else:
+        return False
+
+    metadata = {
+        "carryover_mode": carryover_mode,
+        "carryover_strength": round(carryover_strength, 3),
+        "relationship_weather": relationship_weather,
+        "source_plan_kind": source_plan_kind,
+        "source_trigger_family": source_trigger_family,
+        "current_plan_kind": plan_kind,
+        "current_action_target": action_target,
+        "current_interaction_mode": interaction_mode,
+        "primary_motive": primary_motive,
+        "motive_tension": motive_tension,
+        "goal_frame": goal_frame,
+        "source_note": source_note,
+        "source_tags": list(carryover.get("source_tags") or [])[:12] if isinstance(carryover.get("source_tags"), list) else [],
+    }
+    target_id = source_plan_kind or carryover_mode or action_target or plan_kind or "reactivation"
+    reason = "retrieved_continuity_reactivation"
+    wrote = False
+
+    recent_reactivation = [
+        item
+        for item in store.list_revision_traces(limit=20)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "behavior_reactivation"
+    ]
+    if not _recent_summary_overlap(recent_reactivation, trace_summary, field="after_summary", threshold=0.90):
+        store.add_revision_trace(
+            namespace="behavior_reactivation",
+            target_id=target_id,
+            before_summary="",
+            after_summary=trace_summary[:180],
+            reason=reason,
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata=metadata,
+        )
+        wrote = True
+
+    recent_worldline = [
+        item
+        for item in store.list_worldline_events(limit=10)
+        if "retrieved_reactivation"
+        in (
+            (item.get("tags") if isinstance(item.get("tags"), list) else [])
+            or ((item.get("content") or {}).get("tags") if isinstance(item.get("content"), dict) else [])
+        )
+    ]
+    if not _recent_summary_overlap(recent_worldline, worldline_summary):
+        tags = [
+            "retrieved_reactivation",
+            "retrieved_behavior_plan",
+            carryover_mode,
+            source_plan_kind,
+            source_trigger_family,
+            action_target,
+            plan_kind,
+        ]
+        if relationship_weather:
+            tags.append(relationship_weather)
+        store.add_worldline_event(
+            summary=worldline_summary,
+            category=worldline_category,
+            importance=round(_clamp01(importance + 0.10 * carryover_strength), 3),
+            tags=list(dict.fromkeys(tag for tag in tags if tag))[:12],
+            confidence=max(0.72, confidence),
+        )
+        wrote = True
+
+    recent_relationship = store.list_relationship_timeline(limit=10)
+    if not _recent_summary_overlap(recent_relationship, relationship_summary):
+        store.add_relationship_timeline(
+            summary=relationship_summary,
+            affinity_delta=round(affinity_delta, 3),
+            trust_delta=round(trust_delta, 3),
+            confidence=max(0.70, confidence),
+        )
+        wrote = True
+
+    recent_semantic = [
+        item
+        for item in store.list_revision_traces(limit=40)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "semantic_self_evidence"
+    ]
+    for category, category_summary in category_summaries.items():
+        category_name = str(category or "").strip()
+        text = str(category_summary or "").strip()
+        if not category_name or not text:
+            continue
+        recent_category = [
+            item
+            for item in recent_semantic
+            if str(_record_value(item, "target_id", "") or "").strip() == category_name
+        ]
+        if _recent_summary_overlap(recent_category, text, field="after_summary", threshold=0.90):
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category_name,
+            before_summary="",
+            after_summary=text[:180],
+            reason=reason,
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata={
+                **metadata,
+                "evidence_category": category_name,
+            },
+        )
+        wrote = True
+    return wrote
+
+
 def _record_agenda_lifecycle_consequence(
     store: MemoryStore,
     *,
@@ -2653,6 +3170,8 @@ def _passive_evolution_memory_update(
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    behavior_plan: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
 ) -> bool:
     text = str(user_text or "").strip()
@@ -2861,6 +3380,26 @@ def _passive_evolution_memory_update(
         confidence=confidence,
     )
     if consequence_written:
+        wrote = True
+
+    behavior_plan_written = _record_behavior_plan_long_horizon_memory(
+        store,
+        behavior_plan=behavior_plan,
+        source="auto:passive_evolution",
+        confidence=confidence,
+    )
+    if behavior_plan_written:
+        wrote = True
+
+    reactivation_written = _record_retrieved_continuity_reactivation(
+        store,
+        interaction_carryover=interaction_carryover,
+        behavior_action=behavior_action,
+        behavior_plan=behavior_plan,
+        source="auto:passive_evolution",
+        confidence=confidence,
+    )
+    if reactivation_written:
         wrote = True
 
     lifecycle_written = _record_agenda_lifecycle_consequence(
