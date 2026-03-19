@@ -20,17 +20,27 @@ def derive_behavior_consequence(
     *,
     current_event: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None = None,
+    allow_event_behavior_fallback: bool = True,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
     behavior = behavior_action if isinstance(behavior_action, dict) else {}
     event_kind = str(event.get("kind") or "").strip().lower()
     event_frame = str(event.get("event_frame") or "").strip().lower()
     tags = _normalized_event_tags(event)
-    interaction_mode = str(behavior.get("interaction_mode") or event.get("interaction_mode") or "").strip().lower()
+    interaction_mode = str(behavior.get("interaction_mode") or "").strip().lower()
+    if allow_event_behavior_fallback and not interaction_mode:
+        interaction_mode = str(event.get("interaction_mode") or "").strip().lower()
     action_target = str(behavior.get("action_target") or "").strip().lower()
-    primary_motive = str(behavior.get("primary_motive") or event.get("primary_motive") or "").strip().lower()
-    motive_tension = str(behavior.get("motive_tension") or event.get("motive_tension") or "").strip().lower()
-    goal_frame = str(behavior.get("goal_frame") or event.get("goal_frame") or "").strip()
+    primary_motive = str(behavior.get("primary_motive") or "").strip().lower()
+    motive_tension = str(behavior.get("motive_tension") or "").strip().lower()
+    goal_frame = str(behavior.get("goal_frame") or "").strip()
+    if allow_event_behavior_fallback:
+        if not primary_motive:
+            primary_motive = str(event.get("primary_motive") or "").strip().lower()
+        if not motive_tension:
+            motive_tension = str(event.get("motive_tension") or "").strip().lower()
+        if not goal_frame:
+            goal_frame = str(event.get("goal_frame") or "").strip()
     trigger_family = str(event.get("trigger_family") or behavior.get("deferred_action_family") or "").strip().lower()
     relationship_weather = str(behavior.get("relationship_weather") or event.get("relationship_weather") or "").strip().lower()
     carryover_mode = str(event.get("carryover_mode") or "").strip().lower()
@@ -293,6 +303,7 @@ def build_reconsolidation_snapshot(
     behavior_consequence = derive_behavior_consequence(
         current_event=event,
         behavior_action=behavior,
+        allow_event_behavior_fallback=False,
     )
     agenda_lifecycle_consequence = derive_agenda_lifecycle_consequence(
         agenda_lifecycle_residue=agenda_lifecycle_residue,
@@ -309,10 +320,10 @@ def build_reconsolidation_snapshot(
         "event_kind": str(event.get("kind") or "user_utterance"),
         "interaction_frame": str(app.get("interaction_frame") or ""),
         "selfhood_scene": str(app.get("selfhood_scene") or ""),
-        "behavior_mode": str(behavior.get("interaction_mode") or event.get("interaction_mode") or ""),
-        "primary_motive": str(behavior.get("primary_motive") or event.get("primary_motive") or ""),
-        "motive_tension": str(behavior.get("motive_tension") or event.get("motive_tension") or ""),
-        "goal_frame": str(behavior.get("goal_frame") or event.get("goal_frame") or "")[:220],
+        "behavior_mode": str(behavior.get("interaction_mode") or ""),
+        "primary_motive": str(behavior.get("primary_motive") or ""),
+        "motive_tension": str(behavior.get("motive_tension") or ""),
+        "goal_frame": str(behavior.get("goal_frame") or "")[:220],
         "behavior_consequence": behavior_consequence,
         "agenda_lifecycle_consequence": agenda_lifecycle_consequence,
         "salience": dict(salience),

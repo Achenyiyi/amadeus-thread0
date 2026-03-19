@@ -74,6 +74,7 @@ __all__ = [
     "_refresh_semantic_self_narratives",
     "_recent_summary_overlap",
     "_record_semantic_self_evidence",
+    "_record_behavior_trace_writeback",
     "_auto_reconsolidate_after_tool",
     "_passive_evolution_memory_update",
 ]
@@ -117,13 +118,70 @@ def _behavior_motive_snapshot(
     *,
     behavior_action: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
+    allow_event_behavior_fallback: bool = True,
 ) -> tuple[str, str, str]:
     action = behavior_action if isinstance(behavior_action, dict) else {}
     event = current_event if isinstance(current_event, dict) else {}
-    primary_motive = str(action.get("primary_motive") or event.get("primary_motive") or "").strip().lower()
-    motive_tension = str(action.get("motive_tension") or event.get("motive_tension") or "").strip().lower()
-    goal_frame = str(action.get("goal_frame") or event.get("goal_frame") or "").strip()
+    primary_motive = str(action.get("primary_motive") or "").strip().lower()
+    motive_tension = str(action.get("motive_tension") or "").strip().lower()
+    goal_frame = str(action.get("goal_frame") or "").strip()
+    if allow_event_behavior_fallback:
+        if not primary_motive:
+            primary_motive = str(event.get("primary_motive") or "").strip().lower()
+        if not motive_tension:
+            motive_tension = str(event.get("motive_tension") or "").strip().lower()
+        if not goal_frame:
+            goal_frame = str(event.get("goal_frame") or "").strip()
     return primary_motive, motive_tension, goal_frame
+
+
+def _behavior_motive_snapshot_source(
+    *,
+    behavior_action: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+    allow_event_behavior_fallback: bool = True,
+) -> str:
+    primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
+        behavior_action=behavior_action,
+        current_event=current_event,
+        allow_event_behavior_fallback=allow_event_behavior_fallback,
+    )
+    if not any((primary_motive, motive_tension, goal_frame)):
+        return ""
+
+    action = behavior_action if isinstance(behavior_action, dict) else {}
+    event = current_event if isinstance(current_event, dict) else {}
+    action_primary = str(action.get("primary_motive") or "").strip().lower()
+    action_tension = str(action.get("motive_tension") or "").strip().lower()
+    action_goal = str(action.get("goal_frame") or "").strip()
+    event_primary = str(event.get("primary_motive") or "").strip().lower()
+    event_tension = str(event.get("motive_tension") or "").strip().lower()
+    event_goal = str(event.get("goal_frame") or "").strip()
+
+    saw_action = False
+    saw_non_action = False
+    for resolved, action_value, event_value in (
+        (primary_motive, action_primary, event_primary),
+        (motive_tension, action_tension, event_tension),
+        (goal_frame, action_goal, event_goal),
+    ):
+        if not resolved:
+            continue
+        if action_value and resolved == action_value:
+            saw_action = True
+            continue
+        if allow_event_behavior_fallback and event_value and resolved == event_value:
+            saw_non_action = True
+            continue
+        saw_non_action = True
+
+    if saw_action and not saw_non_action:
+        return "final_behavior_action"
+    if saw_non_action and not saw_action:
+        return "event_behavior_fallback"
+    if saw_action and saw_non_action:
+        return "mixed_behavior_semantics"
+    return ""
 
 
 def _looks_like_shared_future_commitment(text: str) -> bool:
@@ -157,6 +215,8 @@ def _semantic_self_evidence_records(
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    allow_behavior_action_inference: bool = True,
+    allow_event_behavior_fallback: bool = True,
 ) -> list[dict[str, Any]]:
     text = str(user_text or "").strip()
     app = appraisal if isinstance(appraisal, dict) and bool(appraisal.get("used")) else {}
@@ -177,10 +237,14 @@ def _semantic_self_evidence_records(
     world_presence = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient = _clamp01(world.get("ambient_resonance"), 0.0)
     world_rhythm = _clamp01(world.get("self_activity_momentum"), 0.0)
-    primary_motive, motive_tension, _goal_frame = _behavior_motive_snapshot(
-        behavior_action=behavior_action,
-        current_event=event,
-    )
+    if allow_behavior_action_inference:
+        primary_motive, motive_tension, _goal_frame = _behavior_motive_snapshot(
+            behavior_action=behavior_action,
+            current_event=event,
+            allow_event_behavior_fallback=allow_event_behavior_fallback,
+        )
+    else:
+        primary_motive, motive_tension, _goal_frame = "", "", ""
     scene = _selfhood_preference_scene(text, appraisal=app) if text else ""
     self_activity_like = event_kind in {"self_activity_state", "time_idle"}
     scheduled_like = event_kind in {"scheduled_checkin_due", "scheduled_life_due"}
@@ -581,6 +645,13 @@ def _refresh_semantic_self_narratives(
                 return ts
         return 0
 
+    def _semantic_evidence_behavior_semantics_source(item: Any) -> str:
+        return str(_record_value(item, "behavior_semantics_source", "") or "").strip().lower()
+
+    def _semantic_evidence_has_trusted_behavior_semantics(item: Any) -> bool:
+        source = _semantic_evidence_behavior_semantics_source(item)
+        return source not in {"event_behavior_fallback", "mixed_behavior_semantics"}
+
     def _item_confidence(item: Any, default: float = 0.78) -> float:
         record = item if isinstance(item, dict) else {}
         try:
@@ -721,19 +792,21 @@ def _refresh_semantic_self_narratives(
 
     def _semantic_evidence_items(category: str) -> list[Any]:
         tag = f"semantic_evidence:{str(category or '').strip()}"
-        out: list[Any] = []
-        seen: set[str] = set()
-        for item in semantic_evidence_traces:
+        best_by_text: dict[str, tuple[tuple[int, int], int, Any]] = {}
+        for idx, item in enumerate(semantic_evidence_traces):
             reason = str(_record_value(item, "reason", "") or "").strip()
             target = str(_record_value(item, "target_id", "") or "").strip()
             if reason != tag and target != category:
                 continue
             text = _source_text(item)
-            if not text or text in seen:
+            if not text:
                 continue
-            seen.add(text)
-            out.append(item)
-        return out
+            source_rank = 2 if _semantic_evidence_has_trusted_behavior_semantics(item) else 1 if _semantic_evidence_behavior_semantics_source(item) else 0
+            priority = ((source_rank), -idx)
+            prev = best_by_text.get(text)
+            if prev is None or priority > prev[0]:
+                best_by_text[text] = (priority, idx, item)
+        return [entry[2] for entry in sorted(best_by_text.values(), key=lambda entry: entry[1])]
 
     def _semantic_evidence_motive_state(items: list[Any]) -> dict[str, Any]:
         motive_counts: dict[str, float] = {}
@@ -747,9 +820,14 @@ def _refresh_semantic_self_narratives(
         confidence_mass = 0.0
         fresh_mass = 0.0
         for idx, item in enumerate(items):
-            primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
-            motive_tension = str(_record_value(item, "motive_tension", "") or "").strip().lower()
-            goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+            if _semantic_evidence_has_trusted_behavior_semantics(item):
+                primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
+                motive_tension = str(_record_value(item, "motive_tension", "") or "").strip().lower()
+                goal_frame = str(_record_value(item, "goal_frame", "") or "").strip()
+            else:
+                primary_motive = ""
+                motive_tension = ""
+                goal_frame = ""
             weight, confidence, _age_days, is_fresh = _item_support_weight(
                 item,
                 default_confidence=0.78,
@@ -1138,60 +1216,54 @@ def _refresh_semantic_self_narratives(
         except Exception:
             return _clamp01(default, default)
 
-    def _narrative_motive_state(category: str, prev: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _narrative_motive_state(category: str) -> dict[str, Any]:
         current = dict(semantic_motive_states.get(str(category or "").strip(), {}) or {})
-        prev_goal_frames = [
+        current["dominant_primary_motive"] = str(current.get("dominant_primary_motive") or "").strip()
+        current["dominant_motive_tension"] = str(current.get("dominant_motive_tension") or "").strip()
+        current["goal_frame_examples"] = [
             str(item).strip()
-            for item in (_record_value(prev or {}, "goal_frame_examples", []) or [])
+            for item in (current.get("goal_frame_examples", []) if isinstance(current.get("goal_frame_examples"), list) else [])
             if str(item or "").strip()
-        ]
-        if not str(current.get("dominant_primary_motive") or "").strip():
-            current["dominant_primary_motive"] = str(_record_value(prev or {}, "dominant_primary_motive", "") or "").strip()
-        if not str(current.get("dominant_motive_tension") or "").strip():
-            current["dominant_motive_tension"] = str(_record_value(prev or {}, "dominant_motive_tension", "") or "").strip()
-        if not isinstance(current.get("goal_frame_examples"), list) or not current.get("goal_frame_examples"):
-            current["goal_frame_examples"] = prev_goal_frames[:2]
-        else:
-            current["goal_frame_examples"] = [
-                str(item).strip()
-                for item in current.get("goal_frame_examples", [])
-                if str(item or "").strip()
-            ][:2]
-        support_count = int(current.get("motive_support_count") or 0)
-        if support_count <= 0:
-            support_count = max(0, int(_record_value(prev or {}, "motive_support_count", 0) or 0))
+        ][:2]
+        try:
+            support_count = max(0, int(current.get("motive_support_count") or 0))
+        except Exception:
+            support_count = 0
+        try:
+            support_mass = max(0.0, float(current.get("motive_support_mass") or 0.0))
+        except Exception:
+            support_mass = 0.0
+        try:
+            confidence_avg = float(current.get("motive_confidence_avg") or 0.0)
+        except Exception:
+            confidence_avg = 0.0
+        try:
+            fresh_ratio = float(current.get("motive_fresh_ratio") or 0.0)
+        except Exception:
+            fresh_ratio = 0.0
+        if support_count <= 0 or support_mass <= 0.0:
+            current["dominant_primary_motive"] = ""
+            current["dominant_motive_tension"] = ""
+            current["goal_frame_examples"] = []
+            current["motive_support_count"] = 0
+            current["motive_support_mass"] = 0.0
+            current["motive_confidence_avg"] = 0.0
+            current["motive_fresh_ratio"] = 0.0
+            current["motive_signature"] = ""
+            return current
         current["motive_support_count"] = support_count
-        support_mass = float(current.get("motive_support_mass") or 0.0)
-        if support_mass <= 0.0:
-            try:
-                support_mass = float(_record_value(prev or {}, "motive_support_mass", 0.0) or 0.0)
-            except Exception:
-                support_mass = 0.0
-        current["motive_support_mass"] = round(max(0.0, support_mass), 3)
-        confidence_avg = float(current.get("motive_confidence_avg") or 0.0)
-        if confidence_avg <= 0.0:
-            try:
-                confidence_avg = float(_record_value(prev or {}, "motive_confidence_avg", 0.0) or 0.0)
-            except Exception:
-                confidence_avg = 0.0
+        current["motive_support_mass"] = round(support_mass, 3)
         current["motive_confidence_avg"] = round(_clamp01(confidence_avg, 0.0), 3)
-        fresh_ratio = float(current.get("motive_fresh_ratio") or 0.0)
-        if fresh_ratio <= 0.0:
-            try:
-                fresh_ratio = float(_record_value(prev or {}, "motive_fresh_ratio", 0.0) or 0.0)
-            except Exception:
-                fresh_ratio = 0.0
         current["motive_fresh_ratio"] = round(_clamp01(fresh_ratio, 0.0), 3)
-        if not str(current.get("motive_signature") or "").strip():
-            signature_parts = [
-                part
-                for part in [
-                    str(current.get("dominant_primary_motive") or "").strip(),
-                    str(current.get("dominant_motive_tension") or "").strip(),
-                ]
-                if part
+        signature_parts = [
+            part
+            for part in [
+                current["dominant_primary_motive"],
+                current["dominant_motive_tension"],
             ]
-            current["motive_signature"] = ":".join(signature_parts)
+            if part
+        ]
+        current["motive_signature"] = ":".join(signature_parts)
         return current
 
     def _dormant_narrative_text(category: str, prev_text: str) -> str:
@@ -1520,7 +1592,7 @@ def _refresh_semantic_self_narratives(
         prev_lineage_streak = max(0, int(_record_value(prev or {}, "lineage_streak", 0) or 0))
         prev_lineage_depth = _clamp01(_record_value(prev or {}, "lineage_depth", 0.0), 0.0)
         prev_frame_revision_count = max(0, int(_record_value(prev or {}, "frame_revision_count", 0) or 0))
-        motive_state = _narrative_motive_state(category, prev=prev)
+        motive_state = _narrative_motive_state(category)
         motive_support_count = max(0, int(motive_state.get("motive_support_count") or 0))
         motive_signature = str(motive_state.get("motive_signature") or "").strip()
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
@@ -2242,6 +2314,63 @@ def _recent_summary_overlap(items: list[dict[str, Any]], text: str, *, field: st
     return False
 
 
+def _write_semantic_self_evidence_categories(
+    store: MemoryStore,
+    *,
+    category_summaries: dict[str, Any] | None,
+    reason: str,
+    source: str,
+    confidence: float,
+    metadata: dict[str, Any] | None = None,
+) -> bool:
+    summaries = category_summaries if isinstance(category_summaries, dict) else {}
+    if not summaries:
+        return False
+
+    recent_semantic = [
+        item
+        for item in store.list_revision_traces(limit=40)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "semantic_self_evidence"
+    ]
+    base_metadata = dict(metadata or {})
+    wrote = False
+    for category, text in summaries.items():
+        category_name = str(category or "").strip()
+        category_summary = str(text or "").strip()
+        if not category_name or not category_summary:
+            continue
+        recent_category = [
+            item
+            for item in recent_semantic
+            if str(_record_value(item, "target_id", "") or "").strip() == category_name
+        ]
+        if _recent_summary_overlap(recent_category, category_summary, field="after_summary", threshold=0.90):
+            continue
+        store.add_revision_trace(
+            namespace="semantic_self_evidence",
+            target_id=category_name,
+            before_summary="",
+            after_summary=category_summary[:180],
+            reason=reason,
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata={
+                **base_metadata,
+                "evidence_category": category_name,
+            },
+        )
+        recent_semantic.append(
+            {
+                "namespace": "semantic_self_evidence",
+                "target_id": category_name,
+                "after_summary": category_summary[:180],
+            }
+        )
+        wrote = True
+    return wrote
+
+
 def _record_behavior_consequence(
     store: MemoryStore,
     *,
@@ -2253,6 +2382,7 @@ def _record_behavior_consequence(
     consequence = derive_behavior_consequence(
         current_event=current_event,
         behavior_action=behavior_action,
+        allow_event_behavior_fallback=False,
     )
     kind = str(consequence.get("kind") or "").strip()
     summary = str(consequence.get("summary") or "").strip()
@@ -2294,26 +2424,14 @@ def _record_behavior_consequence(
         )
         wrote = True
 
-    category_summaries = consequence.get("category_summaries") if isinstance(consequence.get("category_summaries"), dict) else {}
-    for category, text in category_summaries.items():
-        category_name = str(category or "").strip()
-        category_summary = str(text or "").strip()
-        if not category_name or not category_summary:
-            continue
-        store.add_revision_trace(
-            namespace="semantic_self_evidence",
-            target_id=category_name,
-            before_summary="",
-            after_summary=category_summary[:180],
-            reason=f"behavior_consequence:{kind}",
-            operator="system",
-            source=source,
-            confidence=max(0.72, confidence),
-            metadata={
-                **metadata,
-                "evidence_category": category_name,
-            },
-        )
+    if _write_semantic_self_evidence_categories(
+        store,
+        category_summaries=consequence.get("category_summaries"),
+        reason=f"behavior_consequence:{kind}",
+        source=source,
+        confidence=confidence,
+        metadata=metadata,
+    ):
         wrote = True
     return wrote
 
@@ -2515,37 +2633,14 @@ def _record_behavior_plan_long_horizon_memory(
             )
             wrote = True
 
-    recent_semantic = [
-        item
-        for item in store.list_revision_traces(limit=40)
-        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "semantic_self_evidence"
-    ]
-    for category, category_summary in category_summaries.items():
-        category_name = str(category or "").strip()
-        text = str(category_summary or "").strip()
-        if not category_name or not text:
-            continue
-        recent_category = [
-            item
-            for item in recent_semantic
-            if str(_record_value(item, "target_id", "") or "").strip() == category_name
-        ]
-        if _recent_summary_overlap(recent_category, text, field="after_summary", threshold=0.90):
-            continue
-        store.add_revision_trace(
-            namespace="semantic_self_evidence",
-            target_id=category_name,
-            before_summary="",
-            after_summary=text[:180],
-            reason=f"behavior_plan:{kind}",
-            operator="system",
-            source=source,
-            confidence=max(0.72, confidence),
-            metadata={
-                **metadata,
-                "evidence_category": category_name,
-            },
-        )
+    if _write_semantic_self_evidence_categories(
+        store,
+        category_summaries=category_summaries,
+        reason=f"behavior_plan:{kind}",
+        source=source,
+        confidence=confidence,
+        metadata=metadata,
+    ):
         wrote = True
     return wrote
 
@@ -2800,38 +2895,199 @@ def _record_retrieved_continuity_reactivation(
         )
         wrote = True
 
-    recent_semantic = [
-        item
-        for item in store.list_revision_traces(limit=40)
-        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "semantic_self_evidence"
-    ]
-    for category, category_summary in category_summaries.items():
-        category_name = str(category or "").strip()
-        text = str(category_summary or "").strip()
-        if not category_name or not text:
-            continue
-        recent_category = [
-            item
-            for item in recent_semantic
-            if str(_record_value(item, "target_id", "") or "").strip() == category_name
-        ]
-        if _recent_summary_overlap(recent_category, text, field="after_summary", threshold=0.90):
-            continue
-        store.add_revision_trace(
-            namespace="semantic_self_evidence",
-            target_id=category_name,
-            before_summary="",
-            after_summary=text[:180],
-            reason=reason,
-            operator="system",
-            source=source,
-            confidence=max(0.72, confidence),
-            metadata={
-                **metadata,
-                "evidence_category": category_name,
-            },
-        )
+    if _write_semantic_self_evidence_categories(
+        store,
+        category_summaries=category_summaries,
+        reason=reason,
+        source=source,
+        confidence=confidence,
+        metadata=metadata,
+    ):
         wrote = True
+    return wrote
+
+
+def _record_behavior_trace_writeback(
+    store: MemoryStore,
+    *,
+    current_event: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+    behavior_plan: dict[str, Any] | None,
+    interaction_carryover: dict[str, Any] | None,
+    agenda_lifecycle_residue: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    event_snapshot = dict(current_event or {}) if isinstance(current_event, dict) else {}
+    action_snapshot = dict(behavior_action or {}) if isinstance(behavior_action, dict) else {}
+    plan_snapshot = dict(behavior_plan or {}) if isinstance(behavior_plan, dict) else {}
+    carryover_snapshot = dict(interaction_carryover or {}) if isinstance(interaction_carryover, dict) else {}
+    lifecycle_snapshot = dict(agenda_lifecycle_residue or {}) if isinstance(agenda_lifecycle_residue, dict) else {}
+    wrote = False
+
+    consequence_written = _record_behavior_consequence(
+        store,
+        current_event=event_snapshot,
+        behavior_action=action_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if consequence_written:
+        wrote = True
+
+    behavior_plan_written = _record_behavior_plan_long_horizon_memory(
+        store,
+        behavior_plan=plan_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if behavior_plan_written:
+        wrote = True
+
+    reactivation_written = _record_retrieved_continuity_reactivation(
+        store,
+        interaction_carryover=carryover_snapshot,
+        behavior_action=action_snapshot,
+        behavior_plan=plan_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if reactivation_written:
+        wrote = True
+
+    lifecycle_written = _record_agenda_lifecycle_consequence(
+        store,
+        agenda_lifecycle_residue=lifecycle_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if lifecycle_written:
+        wrote = True
+
+    return wrote
+
+
+def _record_passive_text_relational_memory(
+    store: MemoryStore,
+    *,
+    summary: str,
+    confidence: float,
+    hurt: float,
+    irritation: float,
+    repair_confidence: float,
+    interaction_frame: str,
+    has_text: bool,
+    unresolved_like: bool,
+    resolution_like: bool,
+    repair_like: bool,
+    partial_repair_like: bool,
+    shared_future_commitment: bool,
+    familiar_continuity_like: bool,
+    positive_companion_like: bool,
+) -> bool:
+    wrote = False
+
+    if has_text and unresolved_like and not resolution_like and not repair_like:
+        severity = round(_clamp01(0.48 + 0.30 * hurt + 0.20 * irritation, 0.58), 3)
+        open_items = store.list_unresolved_tensions(limit=8)
+        if not _recent_summary_overlap(open_items, summary):
+            store.add_unresolved_tension(summary=summary, severity=severity, confidence=max(0.72, confidence))
+            wrote = True
+        rel_items = store.list_relationship_timeline(limit=8)
+        if not _recent_summary_overlap(rel_items, summary):
+            store.add_relationship_timeline(
+                summary=summary,
+                affinity_delta=-0.18 if hurt < 0.5 else -0.26,
+                trust_delta=-0.14 if irritation < 0.4 else -0.20,
+                confidence=max(0.72, confidence),
+            )
+            wrote = True
+        worldline_items = store.list_worldline_events(limit=8)
+        if not _recent_summary_overlap(worldline_items, summary):
+            store.add_worldline_event(
+                summary=summary,
+                category="conflict",
+                importance=round(_clamp01(0.62 + 0.18 * hurt), 3),
+                tags=["relationship", "tension", "passive_inference"],
+                confidence=max(0.74, confidence),
+            )
+            wrote = True
+
+    if has_text and repair_like:
+        strong_resolution_markers = {"说开了", "真的说开了", "已经说开了", "和好了", "不生气了", "原谅你了", "原谅了", "没事了", "过去了", "翻篇了"}
+        can_resolve_tension = resolution_like or any(marker in summary for marker in strong_resolution_markers)
+        resolved = (
+            _resolve_matching_tensions_from_summary(store, summary=summary, source="auto:passive_evolution")
+            if can_resolve_tension
+            else []
+        )
+        repair_items = store.list_conflict_repairs(limit=8)
+        if not _recent_summary_overlap(repair_items, summary):
+            store.add_conflict_repair(summary=summary, confidence=max(0.72, confidence))
+            wrote = True
+        rel_items = store.list_relationship_timeline(limit=8)
+        if not _recent_summary_overlap(rel_items, summary):
+            affinity_delta = 0.05 if partial_repair_like else 0.16
+            trust_delta = 0.03 if partial_repair_like else 0.12
+            store.add_relationship_timeline(
+                summary=summary,
+                affinity_delta=affinity_delta,
+                trust_delta=trust_delta,
+                confidence=max(0.72, confidence),
+            )
+            wrote = True
+        worldline_items = store.list_worldline_events(limit=8)
+        if not _recent_summary_overlap(worldline_items, summary):
+            store.add_worldline_event(
+                summary=summary,
+                category="conflict_repair",
+                importance=round(_clamp01(0.66 + 0.16 * repair_confidence), 3),
+                tags=["relationship", "repair", "partial_repair" if partial_repair_like else "repair", "passive_inference"],
+                confidence=max(0.74, confidence),
+            )
+            wrote = True
+        if resolved:
+            wrote = True
+
+    if has_text and shared_future_commitment and interaction_frame in {"structured", "relationship", "companion", "natural"}:
+        commitment_items = store.list_commitments(limit=8)
+        if not _recent_summary_overlap(commitment_items, summary, field="text", threshold=0.68):
+            store.add_commitment(text=summary, confidence=max(0.74, confidence))
+            wrote = True
+
+    if has_text and familiar_continuity_like and not unresolved_like and not repair_like:
+        rel_items = store.list_relationship_timeline(limit=8)
+        continuity_summary = f"重新确认彼此的熟悉感：{summary}"
+        if not rel_items and not _recent_summary_overlap(rel_items, continuity_summary):
+            store.add_relationship_timeline(
+                summary=continuity_summary,
+                affinity_delta=0.04,
+                trust_delta=0.03,
+                confidence=max(0.70, confidence),
+            )
+            wrote = True
+
+    if has_text and positive_companion_like and not unresolved_like and not repair_like:
+        rel_items = store.list_relationship_timeline(limit=8)
+        if not _recent_summary_overlap(rel_items, summary):
+            store.add_relationship_timeline(
+                summary=summary,
+                affinity_delta=0.08,
+                trust_delta=0.06,
+                confidence=max(0.72, confidence),
+            )
+            wrote = True
+        worldline_items = store.list_worldline_events(limit=8)
+        if not _recent_summary_overlap(worldline_items, summary):
+            store.add_worldline_event(
+                summary=summary,
+                category="shared_event",
+                importance=0.42,
+                tags=["relationship", "care_bid", "passive_affinity"],
+                confidence=max(0.70, confidence),
+            )
+            wrote = True
+
     return wrote
 
 
@@ -2888,26 +3144,14 @@ def _record_agenda_lifecycle_consequence(
         )
         wrote = True
 
-    category_summaries = consequence.get("category_summaries") if isinstance(consequence.get("category_summaries"), dict) else {}
-    for category, text in category_summaries.items():
-        category_name = str(category or "").strip()
-        category_summary = str(text or "").strip()
-        if not category_name or not category_summary:
-            continue
-        store.add_revision_trace(
-            namespace="semantic_self_evidence",
-            target_id=category_name,
-            before_summary="",
-            after_summary=category_summary[:180],
-            reason=f"agenda_lifecycle:{kind}",
-            operator="system",
-            source=source,
-            confidence=max(0.72, confidence),
-            metadata={
-                **metadata,
-                "evidence_category": category_name,
-            },
-        )
+    if _write_semantic_self_evidence_categories(
+        store,
+        category_summaries=consequence.get("category_summaries"),
+        reason=f"agenda_lifecycle:{kind}",
+        source=source,
+        confidence=confidence,
+        metadata=metadata,
+    ):
         wrote = True
     if _record_agenda_lifecycle_long_horizon_memory(
         store,
@@ -3061,11 +3305,24 @@ def _record_semantic_self_evidence(
     world_model_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
     source: str,
+    allow_behavior_action_inference: bool = True,
+    allow_event_behavior_fallback: bool = True,
 ) -> bool:
-    primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
-        behavior_action=behavior_action,
-        current_event=current_event,
-    )
+    evidence_behavior_action = behavior_action if allow_behavior_action_inference else None
+    if allow_behavior_action_inference:
+        primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
+            behavior_action=evidence_behavior_action,
+            current_event=current_event,
+            allow_event_behavior_fallback=allow_event_behavior_fallback,
+        )
+        behavior_semantics_source = _behavior_motive_snapshot_source(
+            behavior_action=evidence_behavior_action,
+            current_event=current_event,
+            allow_event_behavior_fallback=allow_event_behavior_fallback,
+        )
+    else:
+        primary_motive, motive_tension, goal_frame = "", "", ""
+        behavior_semantics_source = ""
     records = _semantic_self_evidence_records(
         user_text=user_text,
         appraisal=appraisal,
@@ -3075,7 +3332,9 @@ def _record_semantic_self_evidence(
         counterpart_profile=counterpart_profile,
         current_event=current_event,
         world_model_state=world_model_state,
-        behavior_action=behavior_action,
+        behavior_action=evidence_behavior_action,
+        allow_behavior_action_inference=allow_behavior_action_inference,
+        allow_event_behavior_fallback=allow_event_behavior_fallback,
     )
     if not records:
         return False
@@ -3096,6 +3355,8 @@ def _record_semantic_self_evidence(
             trace_metadata["motive_tension"] = motive_tension
         if goal_frame:
             trace_metadata["goal_frame"] = goal_frame[:220]
+        if behavior_semantics_source:
+            trace_metadata["behavior_semantics_source"] = behavior_semantics_source
         store.add_revision_trace(
             namespace="semantic_self_evidence",
             target_id=category,
@@ -3173,6 +3434,7 @@ def _passive_evolution_memory_update(
     behavior_plan: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
+    record_behavior_trace_writeback: bool = True,
 ) -> bool:
     text = str(user_text or "").strip()
     event = current_event if isinstance(current_event, dict) else {}
@@ -3372,144 +3634,38 @@ def _passive_evolution_memory_update(
     summary = text[:180]
     wrote = False
 
-    consequence_written = _record_behavior_consequence(
-        store,
-        current_event=current_event,
-        behavior_action=behavior_action,
-        source="auto:passive_evolution",
-        confidence=confidence,
-    )
-    if consequence_written:
-        wrote = True
-
-    behavior_plan_written = _record_behavior_plan_long_horizon_memory(
-        store,
-        behavior_plan=behavior_plan,
-        source="auto:passive_evolution",
-        confidence=confidence,
-    )
-    if behavior_plan_written:
-        wrote = True
-
-    reactivation_written = _record_retrieved_continuity_reactivation(
-        store,
-        interaction_carryover=interaction_carryover,
-        behavior_action=behavior_action,
-        behavior_plan=behavior_plan,
-        source="auto:passive_evolution",
-        confidence=confidence,
-    )
-    if reactivation_written:
-        wrote = True
-
-    lifecycle_written = _record_agenda_lifecycle_consequence(
-        store,
-        agenda_lifecycle_residue=agenda_lifecycle_residue,
-        source="auto:passive_evolution",
-        confidence=confidence,
-    )
-    if lifecycle_written:
-        wrote = True
-
-    if has_text and unresolved_like and not resolution_like and not repair_like:
-        severity = round(_clamp01(0.48 + 0.30 * hurt + 0.20 * irritation, 0.58), 3)
-        open_items = store.list_unresolved_tensions(limit=8)
-        if not _recent_summary_overlap(open_items, summary):
-            store.add_unresolved_tension(summary=summary, severity=severity, confidence=max(0.72, confidence))
-            wrote = True
-        rel_items = store.list_relationship_timeline(limit=8)
-        if not _recent_summary_overlap(rel_items, summary):
-            store.add_relationship_timeline(
-                summary=summary,
-                affinity_delta=-0.18 if hurt < 0.5 else -0.26,
-                trust_delta=-0.14 if irritation < 0.4 else -0.20,
-                confidence=max(0.72, confidence),
-            )
-            wrote = True
-        worldline_items = store.list_worldline_events(limit=8)
-        if not _recent_summary_overlap(worldline_items, summary):
-            store.add_worldline_event(
-                summary=summary,
-                category="conflict",
-                importance=round(_clamp01(0.62 + 0.18 * hurt), 3),
-                tags=["relationship", "tension", "passive_inference"],
-                confidence=max(0.74, confidence),
-            )
-            wrote = True
-
-    if has_text and repair_like:
-        can_resolve_tension = resolution_like or any(marker in summary for marker in strong_resolution_markers)
-        resolved = (
-            _resolve_matching_tensions_from_summary(store, summary=summary, source="auto:passive_evolution")
-            if can_resolve_tension
-            else []
+    if record_behavior_trace_writeback:
+        behavior_trace_written = _record_behavior_trace_writeback(
+            store,
+            current_event=current_event,
+            behavior_action=behavior_action,
+            behavior_plan=behavior_plan,
+            interaction_carryover=interaction_carryover,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
+            source="auto:passive_evolution",
+            confidence=confidence,
         )
-        repair_items = store.list_conflict_repairs(limit=8)
-        if not _recent_summary_overlap(repair_items, summary):
-            store.add_conflict_repair(summary=summary, confidence=max(0.72, confidence))
-            wrote = True
-        rel_items = store.list_relationship_timeline(limit=8)
-        if not _recent_summary_overlap(rel_items, summary):
-            affinity_delta = 0.05 if partial_repair_like else 0.16
-            trust_delta = 0.03 if partial_repair_like else 0.12
-            store.add_relationship_timeline(
-                summary=summary,
-                affinity_delta=affinity_delta,
-                trust_delta=trust_delta,
-                confidence=max(0.72, confidence),
-            )
-            wrote = True
-        worldline_items = store.list_worldline_events(limit=8)
-        if not _recent_summary_overlap(worldline_items, summary):
-            store.add_worldline_event(
-                summary=summary,
-                category="conflict_repair",
-                importance=round(_clamp01(0.66 + 0.16 * repair_confidence), 3),
-                tags=["relationship", "repair", "partial_repair" if partial_repair_like else "repair", "passive_inference"],
-                confidence=max(0.74, confidence),
-            )
-            wrote = True
-        if resolved:
+        if behavior_trace_written:
             wrote = True
 
-    if has_text and shared_future_commitment and interaction_frame in {"structured", "relationship", "companion", "natural"}:
-        commitment_items = store.list_commitments(limit=8)
-        if not _recent_summary_overlap(commitment_items, summary, field="text", threshold=0.68):
-            store.add_commitment(text=summary, confidence=max(0.74, confidence))
-            wrote = True
-
-    if has_text and familiar_continuity_like and not unresolved_like and not repair_like:
-        rel_items = store.list_relationship_timeline(limit=8)
-        continuity_summary = f"重新确认彼此的熟悉感：{summary}"
-        if not rel_items and not _recent_summary_overlap(rel_items, continuity_summary):
-            store.add_relationship_timeline(
-                summary=continuity_summary,
-                affinity_delta=0.04,
-                trust_delta=0.03,
-                confidence=max(0.70, confidence),
-            )
-            wrote = True
-
-    if has_text and positive_companion_like and not unresolved_like and not repair_like:
-        rel_items = store.list_relationship_timeline(limit=8)
-        if not _recent_summary_overlap(rel_items, summary):
-            store.add_relationship_timeline(
-                summary=summary,
-                affinity_delta=0.08,
-                trust_delta=0.06,
-                confidence=max(0.72, confidence),
-            )
-            wrote = True
-        worldline_items = store.list_worldline_events(limit=8)
-        if not _recent_summary_overlap(worldline_items, summary):
-            store.add_worldline_event(
-                summary=summary,
-                category="shared_event",
-                importance=0.42,
-                tags=["relationship", "care_bid", "passive_affinity"],
-                confidence=max(0.70, confidence),
-            )
-            wrote = True
+    if _record_passive_text_relational_memory(
+        store,
+        summary=summary,
+        confidence=confidence,
+        hurt=hurt,
+        irritation=irritation,
+        repair_confidence=repair_confidence,
+        interaction_frame=interaction_frame,
+        has_text=has_text,
+        unresolved_like=unresolved_like,
+        resolution_like=resolution_like,
+        repair_like=repair_like,
+        partial_repair_like=partial_repair_like,
+        shared_future_commitment=shared_future_commitment,
+        familiar_continuity_like=familiar_continuity_like,
+        positive_companion_like=positive_companion_like,
+    ):
+        wrote = True
 
     semantic_evidence_written = _record_semantic_self_evidence(
         store,
@@ -3523,6 +3679,8 @@ def _passive_evolution_memory_update(
         world_model_state=world_model_state,
         behavior_action=behavior_action,
         source="auto:passive_evolution",
+        allow_behavior_action_inference=False,
+        allow_event_behavior_fallback=False,
     )
     if semantic_evidence_written:
         wrote = True

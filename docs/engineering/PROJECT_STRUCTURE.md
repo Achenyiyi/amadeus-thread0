@@ -130,6 +130,12 @@ Rule:
 - state snapshot / checkpoint history / behavior queue / persona / worldline / sources view assembly
 - the thin boundary future frontends should depend on instead of CLI print logic
 
+`final_state.py` holds final-state normalization for readback parity:
+
+- canonical `behavior_action` / `behavior_plan` resolution for backend views and turn envelopes
+- behavior queue fallback normalization
+- the shared rule that persisted final plan wins, and plan derivation from action is fallback-only
+
 `backend_api.py` is the transport-neutral frontend schema surface:
 
 - wraps backend session and memory-admin views in stable envelopes

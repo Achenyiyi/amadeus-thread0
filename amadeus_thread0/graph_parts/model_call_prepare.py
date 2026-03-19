@@ -42,6 +42,11 @@ def _prepare_model_call(state: ThreadState, store: MemoryStore) -> dict[str, Any
         pending_fragment=pending_fragment,
     )
     active_continuation = continuation_mode and bool(continuation_seed)
+    generation_user_text = (
+        canonicalize_pending_goal_text(pending_user_goal)
+        if active_continuation and pending_user_goal
+        else user_text
+    )
     prompt = _build_task_prompt(state, user_text, store)
     history = _window_messages(msgs, int(CONTEXT_KEEP_LAST_MESSAGES))
     recent_assistant_texts = _recent_ai_texts(msgs, limit=4)
@@ -76,6 +81,20 @@ def _prepare_model_call(state: ThreadState, store: MemoryStore) -> dict[str, Any
     free_dialog = _is_free_dialog_style(response_style_hint, user_text, science_mode)
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
+    emotion_state = state.get("emotion_state") if isinstance(state.get("emotion_state"), dict) else {}
+    bond_state = state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {}
+    allostasis_state = state.get("allostasis_state") if isinstance(state.get("allostasis_state"), dict) else {}
+    counterpart_assessment = (
+        state.get("counterpart_assessment") if isinstance(state.get("counterpart_assessment"), dict) else {}
+    )
+    behavior_policy = state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {}
+    world_model_state = state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {}
+    interaction_carryover = (
+        state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {}
+    )
+    semantic_narrative_profile = (
+        state.get("semantic_narrative_profile") if isinstance(state.get("semantic_narrative_profile"), dict) else {}
+    )
     current_event_kind = str(current_event.get("kind") or "user_utterance").strip()
     light_free_dialog = _is_light_free_dialog_turn(
         user_text=user_text,
@@ -93,26 +112,20 @@ def _prepare_model_call(state: ThreadState, store: MemoryStore) -> dict[str, Any
         response_style_hint=response_style_hint,
         science_mode=science_mode,
         continuation_mode=active_continuation,
-        user_text=user_text,
+        user_text=generation_user_text,
         runtime_mode=RUNTIME_MODE,
         turn_index=len(msgs),
         recent_assistant_texts=recent_assistant_texts,
         current_event=current_event,
-        emotion_state=state.get("emotion_state") if isinstance(state.get("emotion_state"), dict) else {},
-        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
-        allostasis_state=state.get("allostasis_state") if isinstance(state.get("allostasis_state"), dict) else {},
-        counterpart_assessment=state.get("counterpart_assessment")
-        if isinstance(state.get("counterpart_assessment"), dict)
-        else {},
-        behavior_policy=state.get("behavior_policy") if isinstance(state.get("behavior_policy"), dict) else {},
-        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        allostasis_state=allostasis_state,
+        counterpart_assessment=counterpart_assessment,
+        behavior_policy=behavior_policy,
+        world_model_state=world_model_state,
         behavior_action=behavior_action,
-        interaction_carryover=state.get("interaction_carryover")
-        if isinstance(state.get("interaction_carryover"), dict)
-        else {},
-        semantic_narrative_profile=state.get("semantic_narrative_profile")
-        if isinstance(state.get("semantic_narrative_profile"), dict)
-        else {},
+        interaction_carryover=interaction_carryover,
+        semantic_narrative_profile=semantic_narrative_profile,
     )
     generation_runtime_mode = str(generation_profile.pop("runtime_mode", RUNTIME_MODE) or RUNTIME_MODE)
     generation_repetition_pressure = float(generation_profile.pop("repetition_pressure", 0.0) or 0.0)

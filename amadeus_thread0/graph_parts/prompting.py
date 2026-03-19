@@ -14,6 +14,7 @@ from .prompt_helpers import (
     _compact_long_horizon_continuity_hint,
     _compact_recent_event_lines,
     _compact_rule_lines,
+    _resolve_behavior_agenda,
     _compact_working_item_fallback_texts,
     _recent_background_scene_hint,
 )
@@ -109,7 +110,10 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     recent_events = state.get("recent_events") if isinstance(state.get("recent_events"), list) else []
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
-    behavior_agenda = state.get("behavior_agenda") if isinstance(state.get("behavior_agenda"), list) else []
+    behavior_agenda = _resolve_behavior_agenda(
+        state.get("behavior_agenda"),
+        behavior_queue=state.get("behavior_queue"),
+    )
     pending_fragment = str(state.get("pending_utterance_fragment") or "").strip()
     pending_user_goal = str(state.get("pending_user_goal") or "").strip()
     continuation_mode = has_active_continuation(user_text=user_text, pending_fragment=pending_fragment)
@@ -130,8 +134,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     ts = float(state.get("tsundere_intensity", 0.55))
     persona_ablation = bool(ABLATE_PERSONA_ALIGNMENT)
     worldline_ablation = bool(ABLATE_WORLDLINE_MEMORY)
-    quick_judgment = _wants_quick_judgment(user_text)
-    per_topic_conclusions = _wants_per_topic_conclusions(user_text)
+    quick_judgment = _wants_quick_judgment(prompt_user_text)
+    per_topic_conclusions = _wants_per_topic_conclusions(prompt_user_text)
     counterpart = profile
     labels = _narrative_actor_profile(persona_core=persona_core, counterpart_profile=counterpart)
     actor_name = str(labels.get("actor_name") or canon_labels.get("narrative_ref") or "红莉栖")
@@ -319,7 +323,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         evolution_state=evolution_state,
         behavior_action=behavior_action,
     )
-    free_dialog = _is_free_dialog_style(response_style_hint, user_text, science_mode)
+    free_dialog = _is_free_dialog_style(response_style_hint, prompt_user_text, science_mode)
     light_free_dialog = _is_light_free_dialog_turn(
         user_text=prompt_user_text,
         response_style_hint=response_style_hint,
@@ -727,9 +731,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         if (not prefer_runtime_state_brief)
         else ""
     )
+    draft_shape_block = f"回答形态：\n{draft_shape}" if draft_shape else ""
     answer_requirements = (
         f"{runtime_brief_block}"
         f"{self_anchor_block}"
+        f"{draft_shape_block}"
         "当前上下文：\n"
         f"- actor={actor_name}\n"
         f"- counterpart={counterpart_name}\n"

@@ -178,19 +178,31 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual((semantic.get("lineage_snapshot") or {}).get("rhythm_style"), 0.76)
         self.assertEqual(snapshot.get("behavior_mode"), "self_activity_reopen")
         self.assertEqual(snapshot.get("primary_motive"), "gentle_recontact")
-        self.assertEqual(snapshot.get("motive_tension"), "self_rhythm_vs_contact")
-        self.assertIn("自己的节奏", str(snapshot.get("goal_frame") or ""))
-        consequence = snapshot.get("behavior_consequence") if isinstance(snapshot.get("behavior_consequence"), dict) else {}
-        self.assertEqual(str(consequence.get("kind") or ""), "leave_small_opening")
-        self.assertIn("小开口", str(consequence.get("summary") or ""))
-        lifecycle = snapshot.get("agenda_lifecycle_consequence") if isinstance(snapshot.get("agenda_lifecycle_consequence"), dict) else {}
-        self.assertEqual(str(lifecycle.get("kind") or ""), "released_to_self_activity")
-        self.assertEqual(str(lifecycle.get("carryover_mode") or ""), "own_rhythm")
-        self.assertIn("自己的节奏", str(lifecycle.get("summary") or ""))
-        self.assertIn("agency_style", lifecycle.get("narrative_categories") or [])
-        self.assertEqual(str(lifecycle.get("primary_motive") or ""), "preserve_self_rhythm")
-        self.assertEqual(str(lifecycle.get("motive_tension") or ""), "self_rhythm_vs_contact")
-        self.assertIn("自己的节奏", str(lifecycle.get("goal_frame") or ""))
+
+    def test_reconsolidation_snapshot_does_not_fall_back_to_stale_event_behavior_fields(self):
+        snapshot = build_reconsolidation_snapshot(
+            current_event={
+                "kind": "user_utterance",
+                "interaction_mode": "stale_event_mode",
+                "primary_motive": "stale_event_motive",
+                "motive_tension": "stale_event_tension",
+                "goal_frame": "stale event frame",
+                "trigger_family": "self_activity",
+            },
+            appraisal={"used": True, "interaction_frame": "relationship"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={},
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.6, "closeness": 0.6, "hurt": 0.0},
+            behavior_action={},
+            agenda_lifecycle_residue={},
+        )
+        self.assertEqual(snapshot.get("behavior_mode"), "")
+        self.assertEqual(snapshot.get("primary_motive"), "")
+        self.assertEqual(snapshot.get("motive_tension"), "")
+        self.assertEqual(snapshot.get("goal_frame"), "")
+        self.assertEqual(snapshot.get("behavior_consequence"), {})
 
     def test_build_evolution_summary_line_is_compact_and_informative(self):
         summary = build_evolution_cli_summary(

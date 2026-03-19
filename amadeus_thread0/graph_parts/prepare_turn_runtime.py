@@ -13,7 +13,12 @@ from ..evolution_engine.reconsolidation import build_reconsolidation_snapshot
 from ..memory_store import MemoryStore
 from .behavior_agenda import _merge_behavior_agenda
 from .behavior_runtime import _behavior_action_from_state, _behavior_plan_from_action
-from .memory_evolution import _passive_evolution_memory_update
+from .memory_evolution import (
+    _passive_evolution_memory_update,
+    _record_behavior_trace_writeback,
+    _record_semantic_self_evidence,
+    _refresh_semantic_self_narratives,
+)
 from .persona_runtime import _canon_persona_labels, _tsundere_next
 from .relational_carryover import _apply_retrieved_behavior_trace_bridge
 from .relational_runtime import (
@@ -478,6 +483,7 @@ def _prepare_turn_runtime(
             behavior_plan=behavior_plan,
             interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
+            record_behavior_trace_writeback=False,
         )
 
     if memory_evolved:
@@ -599,6 +605,77 @@ def _prepare_turn_runtime(
         prior_counterpart_assessment=seed_counterpart_assessment,
         appraisal=appraisal,
     )
+    behavior_plan = _behavior_plan_from_action(
+        current_event,
+        behavior_action,
+        world_model_state=world_model_state,
+    )
+    if not external_probe_mode and current_event_kind in {
+        "user_utterance",
+        "gesture_signal",
+        "ambient_shift",
+        "scene_observation",
+        "time_idle",
+        "self_activity_state",
+        "scheduled_checkin_due",
+        "scheduled_life_due",
+    } and all(
+        hasattr(store, attr)
+        for attr in (
+            "list_revision_traces",
+            "add_revision_trace",
+            "list_worldline_events",
+            "add_worldline_event",
+            "list_relationship_timeline",
+            "add_relationship_timeline",
+        )
+    ):
+        behavior_trace_confidence = 0.78
+        if isinstance(appraisal, dict) and bool(appraisal.get("used")):
+            behavior_trace_confidence = float(appraisal.get("confidence", 0.78) or 0.78)
+        behavior_trace_written = _record_behavior_trace_writeback(
+            store,
+            current_event=current_event,
+            behavior_action=behavior_action,
+            behavior_plan=behavior_plan,
+            interaction_carryover=interaction_carryover,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
+            source="auto:passive_evolution",
+            confidence=behavior_trace_confidence,
+        )
+        semantic_evidence_written = _record_semantic_self_evidence(
+            store,
+            user_text=effective_user_text or user_text,
+            appraisal=appraisal,
+            emotion_state=emotion_state,
+            bond_state=bond_state,
+            persona_core=persona_core,
+            counterpart_profile=profile,
+            current_event=current_event,
+            world_model_state=world_model_state,
+            behavior_action=behavior_action,
+            source="auto:passive_evolution_final",
+            allow_behavior_action_inference=True,
+            allow_event_behavior_fallback=False,
+        )
+        if (behavior_trace_written or semantic_evidence_written) and isinstance(store, MemoryStore):
+            _refresh_semantic_self_narratives(
+                store,
+                source="auto:passive_evolution_final",
+                persona_core=persona_core,
+                counterpart_profile=profile,
+            )
+            refreshed_semantic_narratives = list(store.list_semantic_self_narratives(limit=20))
+            if isinstance(retrieved, dict):
+                retrieved = {
+                    **retrieved,
+                    "semantic_self_narratives": refreshed_semantic_narratives,
+                }
+            semantic_narrative_profile = _semantic_narrative_profile(
+                refreshed_semantic_narratives,
+                user_text=effective_user_text or user_text,
+                current_event=current_event,
+            )
     reconsolidation_snapshot = build_reconsolidation_snapshot(
         current_event=current_event,
         appraisal=appraisal,

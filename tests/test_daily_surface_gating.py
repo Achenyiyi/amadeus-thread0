@@ -832,6 +832,31 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("已经形成了稳定而熟悉的共同历史", prompt)
         self.assertNotIn("这是旧的弱关系锚点", prompt)
 
+    def test_continuation_prompt_inherits_pending_goal_task_shape(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "structured",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.62, "closeness": 0.58, "hurt": 0.04},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.42},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.72, "reciprocity": 0.70},
+                    "behavior_policy": {"warmth": 0.54, "approach_vs_withdraw": 0.56},
+                    "behavior_action": {"interaction_mode": "science_partner", "followup_intent": "active"},
+                    "pending_user_goal": "请你先给一句判断，并分别给出实验设计和风险控制的结论。",
+                    "pending_utterance_fragment": "先说实验设计这边，",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "structured"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "继续", store)
+            finally:
+                store.close()
+        self.assertIn("This is a quick-judgment request", prompt)
+
     def test_relationship_prompt_includes_semantic_evidence_runtime_line(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -1130,6 +1155,49 @@ class DailySurfaceGatingTests(unittest.TestCase):
                     "behavior_policy": {"warmth": 0.72, "approach_vs_withdraw": 0.60, "self_directedness": 0.38},
                     "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
                     "behavior_agenda": [
+                        {
+                            "kind": "self_activity_continue",
+                            "priority": 0.68,
+                            "trigger_family": "self_activity",
+                            "carryover_mode": "own_rhythm",
+                            "attention_target": "self_then_counterpart",
+                            "self_activity_momentum": 0.74,
+                            "hold_count": 1,
+                        }
+                    ],
+                    "semantic_narrative_profile": {
+                        "bond_depth": 0.64,
+                        "selfhood_integrity": 0.61,
+                        "summary_lines": ["她不是围着对方转，而是带着自己的节奏靠近。"],
+                    },
+                    "interaction_carryover": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你现在怎么看我们之间的关系？", store)
+            finally:
+                store.close()
+        self.assertIn("背景里还挂着的事", prompt)
+        self.assertIn("自己的节奏", prompt)
+
+    def test_relationship_prompt_falls_back_to_behavior_queue_when_behavior_agenda_is_empty(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.74, "closeness": 0.78, "hurt": 0.04},
+                    "allostasis_state": {"safety_need": 0.16, "autonomy_need": 0.42},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.76, "reciprocity": 0.78},
+                    "behavior_policy": {"warmth": 0.72, "approach_vs_withdraw": 0.60, "self_directedness": 0.38},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "behavior_agenda": [],
+                    "behavior_queue": [
                         {
                             "kind": "self_activity_continue",
                             "priority": 0.68,

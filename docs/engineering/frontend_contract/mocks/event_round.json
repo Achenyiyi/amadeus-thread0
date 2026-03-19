@@ -1,0 +1,179 @@
+{
+  "schema_version": "backend.v1",
+  "generated_at": 1710000001,
+  "kind": "event_round",
+  "thread_id": "thread-demo",
+  "payload": {
+    "final_text": "You can finish your current step first.",
+    "emotion_label": "neutral",
+    "behavior_action": {
+      "interaction_mode": "self_activity_reopen",
+      "action_target": "offer_small_opening",
+      "primary_motive": "gentle_recontact",
+      "motive_tension": "self_rhythm_vs_contact",
+      "goal_frame": "Return from her own rhythm and leave a small opening."
+    },
+    "behavior_plan": {
+      "kind": "small_opening",
+      "target": "counterpart",
+      "trigger_family": "self_activity",
+      "scheduled_after_min": 0,
+      "primary_motive": "gentle_recontact",
+      "motive_tension": "self_rhythm_vs_contact",
+      "goal_frame": "Return from her own rhythm and leave a small opening.",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.57,
+      "relationship_weather": "warm_residue"
+    },
+    "reconsolidation_snapshot": {
+      "event_kind": "scheduled_life_due",
+      "interaction_frame": "relationship",
+      "behavior_consequence": {
+        "kind": "leave_small_opening",
+        "summary": "She responded without taking over the whole scene."
+      }
+    },
+    "current_event": {
+      "kind": "scheduled_life_due",
+      "trigger_family": "life_window",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.41,
+      "relationship_weather": "warm_residue"
+    },
+    "turn_appraisal": {
+      "interaction_frame": "relationship",
+      "selfhood_scene": "dialogue_equality"
+    },
+    "turn_summary": {
+      "relationship": {
+        "stage": "warming",
+        "affinity_score": 0.72,
+        "trust_score": 0.74,
+        "notes": "Stable mutual trust is forming."
+      },
+      "continuity_vector": {
+        "presence": {
+          "semantic": 0.58,
+          "world": 0.41
+        },
+        "ambient": {
+          "semantic": 0.46,
+          "world": 0.32
+        },
+        "rhythm": {
+          "semantic": 0.63,
+          "world": 0.57
+        }
+      },
+      "semantic_continuity": {
+        "history_weight": 0.67,
+        "dominant_category": "rhythm_style",
+        "active_categories": [
+          "presence_style",
+          "rhythm_style"
+        ],
+        "reactivated_categories": [],
+        "summary_lines": [],
+        "anchor_lines": [],
+        "top_narratives": []
+      },
+      "identity_continuity": {
+        "identity_lines": [],
+        "identity_prompt_lines": [],
+        "dominant_identity_category": "",
+        "long_term_self_narratives": []
+      },
+      "world_dynamics": {
+        "bond_depth": 0.64,
+        "tension_load": 0.08,
+        "selfhood_load": 0.42,
+        "agency_load": 0.51,
+        "memory_gravity": 0.48,
+        "companionship_pull": 0.54,
+        "task_pull": 0.2
+      },
+      "current_turn": {
+        "event_kind": "scheduled_life_due",
+        "emotion_label": "neutral",
+        "trust": 0.68,
+        "closeness": 0.66,
+        "hurt": 0.04,
+        "counterpart_stance": "open",
+        "counterpart_scene": "care_bid",
+        "behavior_mode": "self_activity_reopen",
+        "action_target": "offer_small_opening",
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "behavior_weather": "warm_residue",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.57,
+        "carryover_weather": "warm_residue",
+        "recon_event_kind": "scheduled_life_due",
+        "recon_interaction_frame": "relationship",
+        "behavior_consequence_kind": "leave_small_opening",
+        "behavior_consequence_summary": "She responded without taking over the whole scene."
+      },
+      "event_residue": {
+        "event_kind": "scheduled_life_due",
+        "trigger_family": "life_window",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.41,
+        "relationship_weather": "warm_residue",
+        "presence_residue": 0.0,
+        "ambient_resonance": 0.0,
+        "self_activity_momentum": 0.0,
+        "scheduled_after_min": 0,
+        "idle_minutes": 0
+      },
+      "agenda_lifecycle": {
+        "kind": "held",
+        "source_event_kind": "scheduled_life_due",
+        "trigger_family": "life_window",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.41,
+        "relationship_weather": "warm_residue",
+        "hold_count": 1,
+        "idle_minutes": 0,
+        "attention_target": "",
+        "nonverbal_signal": "",
+        "presence_residue": 0.0,
+        "ambient_resonance": 0.0,
+        "self_activity_momentum": 0.0,
+        "continuity_anchor": 0.0,
+        "own_rhythm_anchor": 0.0,
+        "recontact_anchor": 0.0,
+        "boundary_anchor": 0.0,
+        "memory_anchor": 0.0,
+        "lineage_gravity": 0.0,
+        "contact_lineage": 0.0,
+        "boundary_lineage": 0.0,
+        "agency_lineage": 0.0,
+        "own_rhythm_bias": 0.0,
+        "recontact_cooldown": 0.0,
+        "counterpart_scene_bias": "",
+        "counterpart_boundary_delta": 0.0,
+        "source_tags": [],
+        "note": ""
+      },
+      "opening_window": {},
+      "behavior_plan": {
+        "kind": "small_opening",
+        "target": "counterpart",
+        "trigger_family": "self_activity",
+        "scheduled_after_min": 0,
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.57,
+        "relationship_weather": "warm_residue"
+      },
+      "behavior_queue_preview": [],
+      "worldline_focus_preview": []
+    }
+  },
+  "meta": {
+    "event_kind": "scheduled_life_due"
+  }
+}
