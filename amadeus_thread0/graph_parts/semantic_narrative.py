@@ -696,6 +696,61 @@ def _semantic_narrative_profile(
     out["top_narratives"] = top_narratives
     return out
 
+
+def _semantic_narrative_signal_strength(profile: dict[str, Any] | None) -> float:
+    if not isinstance(profile, dict):
+        return 0.0
+    numeric_keys = (
+        "bond_depth",
+        "presence_carry",
+        "ambient_attunement",
+        "commitment_carry",
+        "repair_residue",
+        "tension_residue",
+        "boundary_residue",
+        "selfhood_integrity",
+        "agency_drive",
+        "rhythm_continuity",
+        "history_weight",
+        "continuity_depth",
+        "identity_gravity",
+        "lineage_gravity",
+    )
+    strength = 0.0
+    for key in numeric_keys:
+        try:
+            strength += max(0.0, float(profile.get(key, 0.0) or 0.0))
+        except Exception:
+            continue
+    active_categories = profile.get("active_categories") if isinstance(profile.get("active_categories"), list) else []
+    summary_lines = profile.get("summary_lines") if isinstance(profile.get("summary_lines"), list) else []
+    prompt_anchor_lines = profile.get("prompt_anchor_lines") if isinstance(profile.get("prompt_anchor_lines"), list) else []
+    long_term_self_narratives = (
+        profile.get("long_term_self_narratives")
+        if isinstance(profile.get("long_term_self_narratives"), list)
+        else []
+    )
+    long_term_axis_count = max(0, int(profile.get("long_term_axis_count") or 0))
+    strength += 0.10 * min(len(active_categories), 4)
+    strength += 0.08 * min(len(summary_lines), 3)
+    strength += 0.06 * min(len(prompt_anchor_lines), 3)
+    strength += 0.10 * min(len(long_term_self_narratives), 3)
+    strength += 0.12 * min(long_term_axis_count, 4)
+    return float(strength)
+
+
+def _prefer_semantic_narrative_profile(*candidates: dict[str, Any] | None) -> dict[str, Any]:
+    best: dict[str, Any] = {}
+    best_strength = -1.0
+    for item in candidates:
+        if not isinstance(item, dict) or not item:
+            continue
+        strength = _semantic_narrative_signal_strength(item)
+        if strength > best_strength:
+            best = dict(item)
+            best_strength = strength
+    return best
+
 def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
     if not isinstance(profile, dict):
         return ""

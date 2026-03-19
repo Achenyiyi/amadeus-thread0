@@ -3,14 +3,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from amadeus_thread0.cli import (
-    _generate_thread_id,
-    _has_explicit_runtime_path_overrides,
-    _resolve_startup_thread_id,
-    _sanitize_thread_id_seed,
-    _shared_runtime_artifacts,
-    _should_isolate_startup_runtime,
-    _should_warn_shared_default_runtime,
+from amadeus_thread0.runtime.thread_runtime import (
+    generate_thread_id as _generate_thread_id,
+    has_explicit_runtime_path_overrides as _has_explicit_runtime_path_overrides,
+    resolve_startup_thread_id as _resolve_startup_thread_id,
+    sanitize_thread_id_seed as _sanitize_thread_id_seed,
+    shared_runtime_artifacts as _shared_runtime_artifacts,
+    should_isolate_startup_runtime as _should_isolate_startup_runtime,
+    should_warn_shared_default_runtime as _should_warn_shared_default_runtime,
 )
 
 
@@ -99,7 +99,7 @@ class CliThreadingTests(unittest.TestCase):
     def test_should_warn_shared_default_runtime_when_plain_thread0_hits_shared_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch("amadeus_thread0.cli._repo_default_data_dir", return_value=root):
+            with patch("amadeus_thread0.runtime.thread_runtime.repo_default_data_dir", return_value=root):
                 actual = _should_warn_shared_default_runtime(
                     base_data_dir=root,
                     runtime_data_dir=root,
@@ -126,7 +126,7 @@ class CliThreadingTests(unittest.TestCase):
             root = Path(tmp)
             isolated = root / "worldlines" / "thread-a"
             isolated.mkdir(parents=True, exist_ok=True)
-            with patch("amadeus_thread0.cli._repo_default_data_dir", return_value=root):
+            with patch("amadeus_thread0.runtime.thread_runtime.repo_default_data_dir", return_value=root):
                 actual = _should_warn_shared_default_runtime(
                     base_data_dir=root,
                     runtime_data_dir=isolated,

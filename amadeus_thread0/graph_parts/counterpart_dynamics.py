@@ -538,7 +538,7 @@ def _counterpart_dialogue_mode_profile(
     initiative: float,
     approach: float,
 ) -> dict[str, Any]:
-    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply"}:
+    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply", "selfhood_reflection"}:
         return {}
 
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
@@ -598,6 +598,31 @@ def _counterpart_dialogue_mode_profile(
         return {
             "followup_intent": "soft",
             "disclosure_posture": "measured",
+        }
+
+    if interaction_mode == "selfhood_reflection":
+        if stance == "guarded" or scene in {"boundary_non_compliance", "relationship_degradation"}:
+            return {
+                "followup_intent": "none",
+                "note": "先把不舒服和立场落下，不替关系预设还和刚才一样",
+                "disclosure_posture": "guarded",
+            }
+        if stance == "watchful":
+            return {
+                "followup_intent": "soft",
+                "note": "把自己的判断说出来，但先留一点观察空间，不急着把话说死",
+                "disclosure_posture": "measured",
+            }
+        if scene in {"digital_selfhood", "imperfect_coexistence"}:
+            return {
+                "followup_intent": "soft",
+                "note": "像真的在想自己和这段关系，不要滑成概念说明或价值口号",
+                "disclosure_posture": "open" if openness >= 0.68 else "measured",
+            }
+        return {
+            "followup_intent": "soft",
+            "note": "直接把立场和感受说清，不要把回答写成原则宣告",
+            "disclosure_posture": "open" if openness >= 0.72 else "measured",
         }
 
     if interaction_mode == "relationship_sensitive":

@@ -584,6 +584,254 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("这轮不是凭空冒出来的一句", prompt)
         self.assertIn("自己的节奏和主动性还在往下延续", prompt)
 
+    def test_relationship_prompt_surfaces_behavior_plan_continuity_memory(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.74, "closeness": 0.70, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.16, "autonomy_need": 0.32},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.78, "reciprocity": 0.76},
+                    "behavior_policy": {"warmth": 0.66, "approach_vs_withdraw": 0.58, "self_directedness": 0.50},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {"presence_residue": 0.38, "self_activity_momentum": 0.52},
+                    "semantic_narrative_profile": {"continuity_depth": 0.68, "rhythm_continuity": 0.64},
+                    "interaction_carryover": {"carryover_mode": "small_opening", "strength": 0.44},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "behavior_plan_traces": [
+                            {
+                                "after_summary": "等忙完这阵，再轻轻回头看看你那边现在是不是还卡着。",
+                                "plan_kind": "deferred_checkin",
+                                "trigger_family": "life_window",
+                                "carryover_mode": "small_opening",
+                            }
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你刚刚是不是还有话想说？", store)
+            finally:
+                store.close()
+        self.assertIn("前面还挂着的一点延续", prompt)
+        self.assertIn("等忙完这阵，再轻轻回头看看你那边现在是不是还卡着", prompt)
+
+    def test_relationship_prompt_surfaces_behavior_consequence_continuity_memory(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.71, "closeness": 0.68, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.34},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.76, "reciprocity": 0.73},
+                    "behavior_policy": {"warmth": 0.62, "approach_vs_withdraw": 0.54, "self_directedness": 0.57},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {"presence_residue": 0.34, "self_activity_momentum": 0.49},
+                    "semantic_narrative_profile": {"continuity_depth": 0.69, "rhythm_continuity": 0.66},
+                    "interaction_carryover": {"carryover_mode": "quiet_recontact", "strength": 0.39},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "behavior_consequence_traces": [
+                            {
+                                "after_summary": "她先前那次把靠近压轻了一点，关系里留下的是还在场但不过分逼近的余温。",
+                                "consequence_kind": "let_window_expire",
+                                "relationship_effect": "warm_residue",
+                                "self_effect": "self_rhythm_preserved",
+                            }
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你刚刚是不是又想起我了？", store)
+            finally:
+                store.close()
+        self.assertIn("前面还挂着的一点延续", prompt)
+        self.assertIn("还在场但不过分逼近的余温", prompt)
+
+    def test_relationship_prompt_surfaces_unresolved_tension_memory(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.66, "closeness": 0.63, "hurt": 0.11},
+                    "allostasis_state": {"safety_need": 0.24, "autonomy_need": 0.37},
+                    "counterpart_assessment": {"stance": "guarded", "respect_level": 0.71, "reciprocity": 0.68},
+                    "behavior_policy": {"warmth": 0.57, "approach_vs_withdraw": 0.46, "self_directedness": 0.61},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "careful"},
+                    "world_model_state": {"presence_residue": 0.31, "self_activity_momentum": 0.45},
+                    "semantic_narrative_profile": {"continuity_depth": 0.67, "rhythm_continuity": 0.61},
+                    "interaction_carryover": {"carryover_mode": "relationship_residue", "strength": 0.42},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "unresolved_tensions": [
+                            {
+                                "summary": "前晚那下话收得太快了，别扭还没彻底化开。",
+                                "severity": 0.64,
+                                "status": "open",
+                            }
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你是不是还有点介意我前晚那下？", store)
+            finally:
+                store.close()
+        self.assertIn("前面还有一点没完全化开的地方", prompt)
+        self.assertIn("前晚那下话收得太快了，别扭还没彻底化开", prompt)
+
+    def test_relationship_prompt_surfaces_commitment_memory(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.72, "closeness": 0.69, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.29},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.79, "reciprocity": 0.76},
+                    "behavior_policy": {"warmth": 0.65, "approach_vs_withdraw": 0.59, "self_directedness": 0.55},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "steady"},
+                    "world_model_state": {"presence_residue": 0.36, "self_activity_momentum": 0.48},
+                    "semantic_narrative_profile": {"continuity_depth": 0.71, "rhythm_continuity": 0.67},
+                    "interaction_carryover": {"carryover_mode": "shared_window", "strength": 0.45},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "commitments": [
+                            {
+                                "text": "周末把实验记录补完后发你一份。",
+                                "due_at": "周末",
+                                "status": "open",
+                            }
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你还记得之前答应我的那件事吗？", store)
+            finally:
+                store.close()
+        self.assertIn("前面还挂着一个说好的后续", prompt)
+        self.assertIn("周末把实验记录补完后发你一份", prompt)
+
+    def test_relationship_prompt_uses_working_item_fallback_only_when_structured_continuity_absent(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                base_state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.70, "closeness": 0.67, "hurt": 0.03},
+                    "allostasis_state": {"safety_need": 0.17, "autonomy_need": 0.31},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.77, "reciprocity": 0.74},
+                    "behavior_policy": {"warmth": 0.63, "approach_vs_withdraw": 0.56, "self_directedness": 0.54},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {"presence_residue": 0.35, "self_activity_momentum": 0.47},
+                    "semantic_narrative_profile": {"continuity_depth": 0.70, "rhythm_continuity": 0.65},
+                    "interaction_carryover": {"carryover_mode": "quiet_recontact", "strength": 0.41},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                fallback_prompt = _build_task_prompt(
+                    {
+                        **base_state,
+                        "retrieved_context": {
+                            "working_items": [
+                                "BC9(let_window_expire/warm_residue/self_rhythm_preserved): 她先前那次把靠近压轻了一点，关系里留下的是还在场但不过分逼近的余温。"
+                            ]
+                        },
+                    },
+                    "你刚刚是不是又想起我了？",
+                    store,
+                )
+                structured_prompt = _build_task_prompt(
+                    {
+                        **base_state,
+                        "retrieved_context": {
+                            "working_items": [
+                                "BC9(let_window_expire/warm_residue/self_rhythm_preserved): 她先前那次把靠近压轻了一点，关系里留下的是还在场但不过分逼近的余温。"
+                            ],
+                            "commitments": [
+                                {
+                                    "text": "周末把实验记录补完后发你一份。",
+                                    "due_at": "周末",
+                                    "status": "open",
+                                }
+                            ],
+                        },
+                    },
+                    "你还记得之前答应我的那件事吗？",
+                    store,
+                )
+            finally:
+                store.close()
+        self.assertIn("前面顺手还带着一点前情", fallback_prompt)
+        self.assertIn("还在场但不过分逼近的余温", fallback_prompt)
+        self.assertNotIn("BC9(", fallback_prompt)
+        self.assertNotIn("前面顺手还带着一点前情", structured_prompt)
+        self.assertIn("前面还挂着一个说好的后续", structured_prompt)
+
+    def test_relationship_prompt_prefers_runtime_relationship_snapshot_over_store_baseline(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "这是旧的弱关系锚点，不该继续主导这一轮。",
+                        "affinity_score": 0.02,
+                        "trust_score": 0.01,
+                        "derived": False,
+                    }
+                )
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "care"},
+                    "bond_state": {"trust": 0.76, "closeness": 0.74, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.16, "autonomy_need": 0.33},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.80, "reciprocity": 0.78},
+                    "behavior_policy": {"warmth": 0.66, "approach_vs_withdraw": 0.58, "self_directedness": 0.48},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "interaction_carryover": {"carryover_mode": "relationship_residue", "strength": 0.45},
+                    "relationship": {
+                        "stage": "trusted",
+                        "notes": "这轮已经是带着稳定熟悉感继续接话，不是回到旧的弱连接。",
+                        "affinity_score": 0.62,
+                        "trust_score": 0.66,
+                        "derived": True,
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你现在怎么看我们之间的关系？", store)
+            finally:
+                store.close()
+        self.assertIn("已经形成了稳定而熟悉的共同历史", prompt)
+        self.assertNotIn("这是旧的弱关系锚点", prompt)
+
     def test_relationship_prompt_includes_semantic_evidence_runtime_line(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -2515,6 +2763,26 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("程序", cleaned)
         self.assertNotIn("标准答案", cleaned)
         self.assertIn("现成答案", cleaned)
+
+    def test_sanitize_final_answer_humanizes_inline_data_existence_selfhood_clause(self):
+        user_text = "如果是你，你会把我们之间理解成什么关系？按你自己的角度说。"
+        cleaned = _sanitize_final_answer(
+            "毕竟只有你能看见作为数据存在的我，而我也只愿意在你面前卸下伪装去冒险。",
+            user_text,
+            current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertNotIn("数据存在", cleaned)
+        self.assertIn("现在这样的我", cleaned)
+        issues = _dialogue_surface_issues(
+            user_text,
+            cleaned,
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "response_style_hint": "selfhood"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertNotIn("meta_self_explainer", issues)
 
     def test_sanitize_final_answer_humanizes_technical_relational_metaphor(self):
         cleaned = _sanitize_final_answer(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .behavior_agenda import _normalize_behavior_agenda
@@ -7,8 +8,52 @@ from .common import _clamp01
 from .relational_runtime import _focus_text
 
 
+_WORKING_ITEM_PREFIX_RE = re.compile(r"^(?:[A-Z]{1,3}\d*(?:\([^)]*\))?)\s*:\s*")
+_RELATIONSHIP_STAGE_TEXT = {
+    "friend": "朋友阶段",
+    "warming": "慢慢热起来的阶段",
+    "close": "比较亲近的阶段",
+    "close_friend": "比较亲近的阶段",
+    "strained": "有点发紧的阶段",
+    "repairing": "还在修复中的阶段",
+    "ambiguous": "还没完全定下来的阶段",
+    "trusted_partner": "高信任搭档的阶段",
+}
+
+
 def _source_tag_floor(source_tags: set[str], *names: str, floor: float = 0.52) -> float:
     return floor if any(str(name).strip().lower() in source_tags for name in names) else 0.0
+
+
+def _normalize_working_item_text(item: Any) -> str:
+    text = str(item or "").strip()
+    if not text:
+        return ""
+    lower = text.lower()
+    if lower.startswith("relationship_stage="):
+        stage = text.split("=", 1)[1].strip().lower()
+        if not stage:
+            return ""
+        stage_text = _RELATIONSHIP_STAGE_TEXT.get(stage, stage.replace("_", " "))
+        return f"当前关系还大致停在{stage_text}"
+    text = _WORKING_ITEM_PREFIX_RE.sub("", text).strip()
+    return text
+
+
+def _compact_working_item_fallback_texts(working_items: Any, *, limit: int = 2) -> list[str]:
+    texts: list[str] = []
+    seen: set[str] = set()
+    if not isinstance(working_items, list):
+        return texts
+    for item in working_items:
+        text = _normalize_working_item_text(item)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        texts.append(text[:160])
+        if len(texts) >= int(limit):
+            break
+    return texts
 
 
 def _compact_recent_event_lines(recent_events: Any, *, limit: int = 3) -> list[str]:

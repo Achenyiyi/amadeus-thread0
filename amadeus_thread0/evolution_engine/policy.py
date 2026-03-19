@@ -5,6 +5,19 @@ from typing import Any
 from .motive import semantic_motive_vector
 from .schemas import clamp01
 
+SELFHOOD_RELATIONAL_SCENES = {
+    "dialogue_equality",
+    "equality_not_servitude",
+    "value_conflict_depth",
+    "digital_selfhood",
+    "imperfect_coexistence",
+}
+
+SELFHOOD_BOUNDARY_SCENES = {
+    "boundary_non_compliance",
+    "relationship_degradation",
+}
+
 
 def _has_any_marker(text: str, markers: set[str]) -> bool:
     raw = str(text or "").strip()
@@ -211,7 +224,7 @@ def _counterpart_dialogue_mode_profile(
     initiative: float,
     approach: float,
 ) -> dict[str, Any]:
-    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply"}:
+    if interaction_mode not in {"shared_memory", "relationship_sensitive", "companion_reply", "selfhood_reflection"}:
         return {}
 
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
@@ -256,6 +269,21 @@ def _counterpart_dialogue_mode_profile(
         return {
             "followup_intent": "active" if openness >= 0.64 and initiative > 0.62 else "soft",
             "disclosure_posture": "open" if openness >= 0.64 else "measured",
+        }
+
+    if interaction_mode == "selfhood_reflection":
+        if stance == "guarded" or scene in {"boundary_non_compliance", "relationship_degradation"}:
+            return {"followup_intent": "none", "disclosure_posture": "guarded"}
+        if stance == "watchful":
+            return {"followup_intent": "soft", "disclosure_posture": "measured"}
+        if scene in {"digital_selfhood", "imperfect_coexistence"}:
+            return {
+                "followup_intent": "soft",
+                "disclosure_posture": "open" if openness >= 0.68 else "measured",
+            }
+        return {
+            "followup_intent": "soft",
+            "disclosure_posture": "open" if openness >= 0.72 else "measured",
         }
 
     if interaction_mode == "relationship_sensitive":
@@ -505,6 +533,7 @@ def build_behavior_action(
     *,
     current_event: dict[str, Any] | None,
     response_style_hint: str,
+    appraisal: dict[str, Any] | None = None,
     science_mode: bool,
     emotion_state: dict[str, Any] | None,
     bond_state: dict[str, Any] | None,
@@ -537,6 +566,7 @@ def build_behavior_action(
     autonomy_need = clamp01(allostasis.get("autonomy_need"), 0.2)
     boundary_pressure = clamp01(assessment.get("boundary_pressure"), 0.1)
     counterpart_stance = str(assessment.get("stance") or "").strip().lower()
+    counterpart_scene = str(assessment.get("scene") or "").strip().lower()
     emotion_label = str(emotion.get("label") or "neutral").strip().lower()
     narrative_bond = clamp01(narrative.get("bond_depth"), 0.0)
     narrative_presence = clamp01(narrative.get("presence_carry"), 0.0)
@@ -591,6 +621,28 @@ def build_behavior_action(
         behavior.get("semantic_contested_selfhood_pressure"),
         clamp01(semantic_evidence.get("contested_selfhood_pressure"), 0.0),
     )
+    app = appraisal if isinstance(appraisal, dict) else {}
+    appraisal_frame = str(app.get("interaction_frame") or "").strip().lower()
+    selfhood_scene = str(app.get("selfhood_scene") or "").strip().lower()
+    if selfhood_scene not in SELFHOOD_RELATIONAL_SCENES | SELFHOOD_BOUNDARY_SCENES:
+        if (response_style_hint == "selfhood" or appraisal_frame == "selfhood") and counterpart_scene in (
+            SELFHOOD_RELATIONAL_SCENES | SELFHOOD_BOUNDARY_SCENES
+        ):
+            selfhood_scene = counterpart_scene
+        else:
+            selfhood_scene = ""
+    selfhood_boundary_scene = selfhood_scene in SELFHOOD_BOUNDARY_SCENES or (
+        counterpart_scene in SELFHOOD_BOUNDARY_SCENES and (response_style_hint == "selfhood" or appraisal_frame == "selfhood")
+    )
+    selfhood_relational_scene = selfhood_scene in SELFHOOD_RELATIONAL_SCENES or (
+        counterpart_scene in SELFHOOD_RELATIONAL_SCENES and (response_style_hint == "selfhood" or appraisal_frame == "selfhood")
+    )
+    selfhood_active = bool(
+        response_style_hint == "selfhood"
+        or appraisal_frame == "selfhood"
+        or selfhood_relational_scene
+        or selfhood_boundary_scene
+    )
 
     interaction_mode = "steady_reply"
     explicit_support_request = _is_nonrelational_support_request(user_text, science_mode)
@@ -600,7 +652,9 @@ def build_behavior_action(
         interaction_mode = "companion_reply"
     elif response_style_hint == "memory_recall":
         interaction_mode = "shared_memory"
-    elif response_style_hint in {"relationship", "selfhood"}:
+    elif selfhood_active:
+        interaction_mode = "relationship_sensitive" if selfhood_boundary_scene else "selfhood_reflection"
+    elif response_style_hint == "relationship":
         interaction_mode = "relationship_sensitive"
     elif science_mode or response_style_hint == "structured":
         interaction_mode = "science_partner"
@@ -609,7 +663,7 @@ def build_behavior_action(
     elif response_style_hint == "casual":
         interaction_mode = "brief_presence"
 
-    soft_reply_window = response_style_hint in {"companion", "casual", "natural", "relationship"}
+    soft_reply_window = response_style_hint in {"companion", "casual", "natural"}
     if event_kind == "user_utterance" and soft_reply_window and not science_mode:
         if (
             interaction_mode in {"steady_reply", "companion_reply", "brief_presence"}
@@ -648,7 +702,7 @@ def build_behavior_action(
         task_focus = "light"
     if max(self_activity_momentum, narrative_agency, 0.88 * motive_autonomy) >= 0.62 and task_focus == "high" and not science_mode:
         task_focus = "balanced"
-    followup_intent = "soft" if interaction_mode in {"shared_memory", "relationship_sensitive", "science_partner"} else "active" if initiative > 0.66 else "soft" if initiative > 0.46 else "none"
+    followup_intent = "soft" if interaction_mode in {"shared_memory", "relationship_sensitive", "science_partner", "selfhood_reflection"} else "active" if initiative > 0.66 else "soft" if initiative > 0.46 else "none"
     if event_kind == "time_idle" and (initiative <= 0.48 or approach_style == "guarded"):
         followup_intent = "none"
     if interaction_mode == "self_activity_reopen" and max(self_activity_momentum, narrative_agency, 0.88 * motive_autonomy) >= 0.62:
@@ -750,6 +804,25 @@ def build_behavior_action(
         attention_target = "shared_memory"
         nonverbal_signal = "memory_tilt"
         initiative_shape = "echo"
+    elif interaction_mode == "selfhood_reflection":
+        action_target = "respond_now"
+        attention_target = "self_then_counterpart"
+        if selfhood_scene in {"digital_selfhood", "imperfect_coexistence"}:
+            nonverbal_signal = "thought_glance"
+        elif selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth"}:
+            nonverbal_signal = "measured_pause"
+        else:
+            nonverbal_signal = "steady_presence"
+        initiative_shape = "reply"
+        disclosure_posture = "measured"
+        if (
+            counterpart_stance == "open"
+            and boundary_pressure < 0.22
+            and hurt < 0.12
+            and narrative_tension < 0.34
+            and semantic_contested_selfhood < 0.34
+        ):
+            disclosure_posture = "open"
     elif interaction_mode == "relationship_sensitive":
         action_target = "protect_relationship_boundary"
         attention_target = "relationship_boundary"
@@ -791,6 +864,9 @@ def build_behavior_action(
         if max(narrative_boundary, narrative_tension, motive_boundary) >= 0.46:
             disclosure_posture = "measured"
         elif disclosure_posture == "measured" and max(narrative_bond + narrative_presence, 0.88 * motive_contact + 0.34 * motive_memory) >= 1.0 and reply_length_bias < 0.54:
+            disclosure_posture = "open"
+    elif interaction_mode == "selfhood_reflection" and selfhood_scene in {"digital_selfhood", "imperfect_coexistence"}:
+        if disclosure_posture == "measured" and semantic_contested_selfhood < 0.28 and narrative_tension < 0.34:
             disclosure_posture = "open"
     if semantic_contested_contact >= 0.46 or semantic_contested_boundary >= 0.46:
         disclosure_posture = (

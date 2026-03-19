@@ -114,9 +114,53 @@ Rule:
 `amadeus_thread0/runtime/` contains provider-facing and environment-facing modules:
 
 - `settings.py`
+- `backend_api.py`
+- `backend_session.py`
+- `memory_admin.py`
+- `runtime_bundle.py`
+- `thread_runtime.py`
+- `tool_approval.py`
 - `modeling.py`
 - `session_orchestrator.py`
 - `tts_io.py`
+
+`backend_session.py` is the reusable backend-facing session surface:
+
+- graph turn execution wrappers
+- state snapshot / checkpoint history / behavior queue / persona / worldline / sources view assembly
+- the thin boundary future frontends should depend on instead of CLI print logic
+
+`backend_api.py` is the transport-neutral frontend schema surface:
+
+- wraps backend session and memory-admin views in stable envelopes
+- exposes thread inventory, runtime layout, environment summary, turn/event response payloads
+- provides the interface future frontend shells should consume before any CLI formatting
+
+`tool_approval.py` holds the reusable approval policy surface:
+
+- memory auto-resume checks
+- approval preview normalization and clipping
+- second-confirmation detection for high-risk memory writes
+
+`memory_admin.py` holds direct memory-management and reflection-admin surfaces:
+
+- profile correction / undo workflows
+- memory listing and deletion helpers
+- reflection proposal generation and durable write-back
+
+`runtime_bundle.py` holds active backend lifecycle assembly:
+
+- graph + memory store + backend session + memory admin bundling
+- backend API factory for frontend-facing access
+- thread switch rebuild path
+- a stable runtime object future shells can reuse
+
+`thread_runtime.py` holds worldline/runtime management surfaces:
+
+- thread id generation and startup resolution
+- per-worldline runtime path activation
+- checkpoint/worldline directory enumeration
+- shared-runtime warning policy
 
 Top-level wrappers like `amadeus_thread0/settings.py` exist only to preserve old imports.
 They are thin facades implemented through `amadeus_thread0/_compat.py`.

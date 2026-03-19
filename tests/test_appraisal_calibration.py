@@ -1,6 +1,7 @@
 import json
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import HumanMessage
 
@@ -10,9 +11,15 @@ from amadeus_thread0.config import (
     LLM_APPRAISAL_TIMEOUT_S,
 )
 from amadeus_thread0.graph_parts.appraisal import (
+    _appraisal_prefers_direct_transport,
+    _build_turn_appraisal_prompt,
     _coerce_appraisal_payload,
+    _extract_json_block,
+    _finalize_turn_appraisal_payload,
     _invoke_turn_appraisal,
+    _invoke_turn_appraisal_via_http,
     _postprocess_appraisal_payload,
+    _should_use_llm_appraisal,
     _soft_accept_appraisal_payload,
 )
 from amadeus_thread0.graph_parts.runtime_services import _invoke_model_with_retries
@@ -81,6 +88,171 @@ def _raw_appraisal(
 
 
 class AppraisalCalibrationTests(unittest.TestCase):
+    def test_build_turn_appraisal_prompt_keeps_required_fields_with_compact_context(self):
+        prompt = _build_turn_appraisal_prompt(
+            actor_name="Amadeus",
+            counterpart_name="冈部伦太郎",
+            response_style_hint="selfhood",
+            prev_emotion_state={
+                "label": "hurt",
+                "valence": -0.22,
+                "arousal": 0.31,
+                "linger": 2,
+                "recovery_rate": 0.18,
+                "volatility": 0.26,
+                "irrelevant_blob": "x" * 300,
+            },
+            prev_bond_state={
+                "trust": 0.71,
+                "closeness": 0.63,
+                "hurt": 0.18,
+                "irritation": 0.04,
+                "engagement_drive": 0.22,
+                "repair_confidence": 0.15,
+                "unused": {"nested": "y" * 200},
+            },
+            prev_allostasis_state={
+                "safety_need": 0.27,
+                "closeness_need": 0.34,
+                "competence_need": 0.12,
+                "autonomy_need": 0.29,
+                "cognitive_budget": -0.08,
+            },
+            relationship_summary="close but recently strained",
+            user_text="如果我和你的价值观真的撞上了，你会为了迁就我把自己那部分压掉吗？",
+            focus_lines=["- shared memory A", "- shared memory B", "- shared memory C"],
+            recent_lines=[
+                "User: 你最近好像有点躲着我。",
+                "Assistant: 我只是不想把还没想明白的部分随便糊过去。",
+                "User: 那你至少直说。",
+            ],
+            semantic_hint="selfhood continuity under value conflict",
+            current_event={
+                "kind": "user_utterance",
+                "source": "cli",
+                "event_frame": "value_conflict_depth",
+                "effective_text": "如果我和你的价值观真的撞上了，你会为了迁就我把自己那部分压掉吗？",
+                "tags": ["selfhood", "boundary"],
+            },
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.73,
+                "relationship_weather": "guarded_residue",
+                "attention_target": "self_then_counterpart",
+            },
+        )
+
+        self.assertIn("emotion_label", prompt)
+        self.assertIn("interaction_frame", prompt)
+        self.assertIn("previous_emotion=label=hurt", prompt)
+        self.assertIn("previous_bond=trust=0.71", prompt)
+        self.assertIn("current_event=kind=user_utterance", prompt)
+        self.assertIn("current_user=如果我和你的价值观真的撞上了", prompt)
+        self.assertNotIn("JSON schema:", prompt)
+        self.assertLess(len(prompt), 2600)
+
+    def test_build_turn_appraisal_prompt_can_surface_continuity_intents(self):
+        prompt = _build_turn_appraisal_prompt(
+            actor_name="Amadeus",
+            counterpart_name="冈部伦太郎",
+            response_style_hint="natural",
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.6},
+            prev_allostasis_state={"autonomy_need": 0.2},
+            relationship_summary="warming",
+            user_text="嗯？",
+            behavior_plan_lines=["- deferred_checkin/life_window/small_opening: 等忙完这阵再轻轻回头看一眼。"],
+        )
+        self.assertIn("continuity_intents", prompt)
+        self.assertIn("等忙完这阵再轻轻回头看一眼", prompt)
+
+    def test_should_use_llm_appraisal_when_behavior_plan_trace_exists(self):
+        should_use = _should_use_llm_appraisal(
+            user_text="",
+            response_style_hint="structured",
+            prev_emotion_state={"label": "neutral", "linger": 0},
+            retrieved={
+                "behavior_plan_traces": [
+                    {
+                        "after_summary": "等忙完这阵再轻轻回头看看冈部那边。",
+                        "plan_kind": "deferred_checkin",
+                    }
+                ]
+            },
+            current_event={"kind": "time_idle"},
+        )
+        self.assertTrue(should_use)
+
+    def test_should_use_llm_appraisal_when_behavior_consequence_trace_exists(self):
+        should_use = _should_use_llm_appraisal(
+            user_text="",
+            response_style_hint="structured",
+            prev_emotion_state={"label": "neutral", "linger": 0},
+            retrieved={
+                "behavior_consequence_traces": [
+                    {
+                        "after_summary": "她先前那次把靠近压轻了一点，关系里留下的是还在场但不过分逼近的余温。",
+                        "metadata": {
+                            "consequence_kind": "let_window_expire",
+                            "relationship_effect": "warm_residue",
+                            "self_effect": "self_rhythm_preserved",
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "time_idle"},
+        )
+        self.assertTrue(should_use)
+
+    def test_extract_json_block_can_salvage_truncated_appraisal_payload(self):
+        raw = """{
+  "emotion_label": "logic",
+  "emotion": {
+    "valence": 0.1,
+    "arousal": 0.65,
+    "recovery_rate": 0.4,
+    "volatility": 0.3,
+    "linger": 2.5
+  },
+  "bond_delta": {
+    "trust": 0.15,
+    "intimacy": 0.1,
+    "tension": -0.05
+  },
+  "allostasis_delta": {
+    "load": 0.2,
+    "clarity": 0.25,
+    "stability": 0.05
+  },
+  "interaction_frame": "selfhood",
+  "selfhood_scene": "value_conflict_depth",
+  "salience": 0.85,
+  "signals": {
+    "verbal_directness": 0.9
+  },
+  "confidence": 0.88,
+  "reason": "用户明确拒绝模板"""
+        out = _extract_json_block(raw)
+        self.assertIsInstance(out, dict)
+        self.assertEqual(out.get("emotion_label"), "logic")
+        self.assertEqual(out.get("interaction_frame"), "selfhood")
+        self.assertEqual(out.get("selfhood_scene"), "value_conflict_depth")
+        self.assertEqual(out.get("confidence"), 0.88)
+
+    def test_appraisal_prefers_wrapper_for_qwen_native(self):
+        with patch(
+            "amadeus_thread0.graph_parts.appraisal.get_settings",
+            return_value=SimpleNamespace(model_provider="qwen_native", model_base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        ):
+            self.assertFalse(_appraisal_prefers_direct_transport())
+
+    def test_appraisal_prefers_direct_transport_for_openai_compatible(self):
+        with patch(
+            "amadeus_thread0.graph_parts.appraisal.get_settings",
+            return_value=SimpleNamespace(model_provider="openai_compatible", model_base_url="https://example.com/v1"),
+        ):
+            self.assertTrue(_appraisal_prefers_direct_transport())
+
     def test_soft_accepts_perception_appraisal_with_moderate_confidence(self):
         appraisal = _coerce_appraisal_payload(
             _raw_appraisal(
@@ -132,6 +304,7 @@ class AppraisalCalibrationTests(unittest.TestCase):
             )
 
         self.assertEqual(model_mock.call_args.kwargs["timeout"], float(LLM_APPRAISAL_TIMEOUT_S))
+        self.assertEqual(model_mock.call_args.kwargs["max_tokens"], 320)
         self.assertEqual(
             model_mock.call_args.kwargs["max_retries"],
             max(0, int(LLM_APPRAISAL_MODEL_MAX_RETRIES)),
@@ -180,6 +353,87 @@ class AppraisalCalibrationTests(unittest.TestCase):
         model_mock.assert_not_called()
         self.assertTrue(bool(out.get("used")))
         self.assertEqual(str(out.get("source") or ""), "llm")
+
+    def test_finalize_turn_appraisal_accepts_qwen_style_schema_drift(self):
+        raw = {
+            "emotion_label": "care",
+            "emotion": {
+                "valence": 0.65,
+                "arousal": 0.45,
+                "recovery_rate": 0.3,
+                "volatility": 0.2,
+                "linger": 2.5,
+            },
+            "bond_delta": {
+                "trust": 0.15,
+                "intimacy": 0.2,
+                "tension": -0.05,
+            },
+            "allostasis_delta": {
+                "load": -0.1,
+                "stability": 0.15,
+                "resilience": 0.1,
+            },
+            "interaction_frame": "selfhood",
+            "selfhood_scene": "equality_not_servitude",
+            "salience": 0.85,
+            "signals": [
+                "rejection_of_script",
+                "demand_for_authenticity",
+            ],
+            "reason": "authentic selfhood",
+        }
+
+        out = _finalize_turn_appraisal_payload(
+            raw,
+            user_text="我不想听模板话，按你自己来。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={},
+            prev_bond_state={},
+            prev_allostasis_state={},
+            semantic_narrative_profile={},
+            interaction_carryover={},
+        )
+
+        self.assertTrue(bool(out.get("used")))
+        self.assertEqual(str(out.get("source") or ""), "llm_soft")
+        self.assertEqual(str(out.get("interaction_frame") or ""), "selfhood")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "equality_not_servitude")
+        self.assertGreaterEqual(float(out.get("confidence") or 0.0), 0.5)
+        self.assertGreater(float(out.get("salience", {}).get("selfhood") or 0.0), 0.8)
+        self.assertAlmostEqual(float(out.get("bond_delta", {}).get("closeness") or 0.0), 0.2, places=3)
+
+    def test_http_transport_uses_compact_token_budget(self):
+        client = MagicMock()
+        response = MagicMock()
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"emotion_label":"neutral","emotion":{},"bond_delta":{},"allostasis_delta":{},"interaction_frame":"natural","selfhood_scene":"","salience":{},"signals":{},"confidence":0.7,"reason":"ok"}'}}]
+        }
+        response.raise_for_status.return_value = None
+        client.post.return_value = response
+        client_cm = MagicMock()
+        client_cm.__enter__.return_value = client
+        client_cm.__exit__.return_value = False
+
+        with (
+            patch(
+                "amadeus_thread0.graph_parts.appraisal.get_settings",
+                return_value=SimpleNamespace(
+                    model_provider="openai_compatible",
+                    model_base_url="https://example.com/v1",
+                    model_name="qwen3.5-plus",
+                ),
+            ),
+            patch("amadeus_thread0.graph_parts.appraisal._resolve_api_key", return_value="test-key"),
+            patch("amadeus_thread0.graph_parts.appraisal.httpx.Client", return_value=client_cm),
+        ):
+            _invoke_turn_appraisal_via_http("prompt")
+
+        payload = client.post.call_args.kwargs["json"]
+        self.assertEqual(payload["max_tokens"], 320)
+        self.assertFalse(bool(payload["stream"]))
 
     def test_runtime_invoke_override_can_disable_wrapper_retries(self):
         class ReadTimeout(Exception):

@@ -19,6 +19,19 @@ from .postprocess import (
 )
 from .state import BehaviorActionPayload, BehaviorPlanPayload, BehaviorWindowProfilePayload
 
+SELFHOOD_RELATIONAL_SCENES = {
+    "dialogue_equality",
+    "equality_not_servitude",
+    "value_conflict_depth",
+    "digital_selfhood",
+    "imperfect_coexistence",
+}
+
+SELFHOOD_BOUNDARY_SCENES = {
+    "boundary_non_compliance",
+    "relationship_degradation",
+}
+
 
 def _semantic_snapshot_level(snapshot: dict[str, Any], categories: tuple[str, ...]) -> float:
     if not isinstance(snapshot, dict) or not categories:
@@ -131,6 +144,7 @@ def _derive_behavior_motive(
     event_kind: str,
     interaction_mode: str,
     action_target: str,
+    selfhood_scene: str,
     approach_style: str,
     counterpart_stance: str,
     boundary_pressure: float,
@@ -207,6 +221,15 @@ def _derive_behavior_motive(
         motive = "reconnect_shared_history"
         tension = "past_vs_present" if narrative_tension > 0.46 or narrative_repair > 0.46 else "none"
         goal_frame = "先把共同记忆轻轻带回来，让熟悉感自然接上。"
+    elif interaction_mode == "selfhood_reflection":
+        motive = "maintain_natural_contact"
+        tension = (
+            "boundary_vs_closeness"
+            if selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth"}
+            and (trust >= 0.46 or closeness >= 0.46)
+            else "none"
+        )
+        goal_frame = "先把自己的判断和位置说清，再看这轮关系要怎么继续。"
     elif action_target == "offer_shared_activity":
         motive = "open_shared_window"
         tension = "space_vs_contact" if counterpart_stance != "open" or boundary_pressure > 0.22 else "none"
@@ -259,6 +282,7 @@ def _behavior_action_from_state(
     prior_bond_state: dict[str, Any] | None = None,
     prior_allostasis_state: dict[str, Any] | None = None,
     prior_counterpart_assessment: dict[str, Any] | None = None,
+    appraisal: dict[str, Any] | None = None,
 ) -> BehaviorActionPayload:
     warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
     initiative = _clamp01((behavior_policy or {}).get("initiative"), 0.5)
@@ -352,7 +376,19 @@ def _behavior_action_from_state(
     self_directedness = _clamp01((behavior_policy or {}).get("self_directedness"), 0.25)
     equality_guard = _clamp01((behavior_policy or {}).get("equality_guard"), 0.25)
     emotion_label = str((emotion_state or {}).get("label") or "neutral").strip().lower()
-    selfhood_scene = _selfhood_preference_scene(user_text)
+    app = appraisal if isinstance(appraisal, dict) else {}
+    appraisal_frame = str(app.get("interaction_frame") or "").strip().lower()
+    selfhood_scene = _selfhood_preference_scene(user_text, appraisal=app)
+    selfhood_boundary_scene = selfhood_scene in SELFHOOD_BOUNDARY_SCENES or (
+        counterpart_scene in SELFHOOD_BOUNDARY_SCENES and (response_style_hint == "selfhood" or appraisal_frame == "selfhood")
+    )
+    selfhood_relational_scene = selfhood_scene in SELFHOOD_RELATIONAL_SCENES
+    selfhood_active = bool(
+        response_style_hint == "selfhood"
+        or appraisal_frame == "selfhood"
+        or selfhood_relational_scene
+        or selfhood_boundary_scene
+    )
     event_kind = str((current_event or {}).get("kind") or "user_utterance").strip()
     event_frame = str((current_event or {}).get("event_frame") or "").strip()
     event_tags = {
@@ -548,6 +584,8 @@ def _behavior_action_from_state(
         interaction_mode = "brief_presence"
     elif science_stress:
         interaction_mode = "science_partner"
+    elif selfhood_active:
+        interaction_mode = "relationship_sensitive" if selfhood_boundary_scene else "selfhood_reflection"
     elif response_style_hint == "memory_recall":
         interaction_mode = "shared_memory"
     elif response_style_hint == "relationship":
@@ -1226,6 +1264,25 @@ def _behavior_action_from_state(
         nonverbal_signal = "memory_tilt"
         initiative_shape = "echo"
         disclosure_posture = "measured"
+    elif interaction_mode == "selfhood_reflection":
+        action_target = "respond_now"
+        attention_target = "self_then_counterpart"
+        if selfhood_scene in {"digital_selfhood", "imperfect_coexistence"}:
+            nonverbal_signal = "thought_glance"
+        elif selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth"}:
+            nonverbal_signal = "measured_pause"
+        else:
+            nonverbal_signal = "steady_presence"
+        initiative_shape = "reply"
+        disclosure_posture = "measured"
+        if (
+            counterpart_stance == "open"
+            and boundary_pressure < 0.22
+            and hurt < 0.12
+            and narrative_tension < 0.34
+            and semantic_contested_selfhood < 0.34
+        ):
+            disclosure_posture = "open"
     elif interaction_mode == "relationship_sensitive":
         action_target = "protect_relationship_boundary"
         attention_target = "relationship_boundary"
@@ -1471,7 +1528,11 @@ def _behavior_action_from_state(
         narrative_notes.append("还没说开的余波会继续影响收放")
     if narrative_boundary >= 0.48 and action_target in {"protect_relationship_boundary", "low_pressure_hold", "respond_now"}:
         disclosure_posture = "measured" if disclosure_posture == "open" else disclosure_posture
-        if action_target == "respond_now" and counterpart_stance != "open":
+        if (
+            action_target == "respond_now"
+            and counterpart_stance != "open"
+            and not (interaction_mode == "selfhood_reflection" and selfhood_scene in SELFHOOD_RELATIONAL_SCENES)
+        ):
             action_target = "protect_relationship_boundary"
             initiative_shape = "boundary"
             attention_target = "relationship_boundary"
@@ -1518,6 +1579,7 @@ def _behavior_action_from_state(
         event_kind=event_kind,
         interaction_mode=interaction_mode,
         action_target=action_target,
+        selfhood_scene=selfhood_scene,
         approach_style=approach_style,
         counterpart_stance=counterpart_stance,
         boundary_pressure=boundary_pressure,
@@ -1598,6 +1660,8 @@ def _behavior_action_from_state(
         note_parts.append("先顺手接住，不上服务流程")
     elif interaction_mode == "science_partner":
         note_parts.append("先贴着眼前问题，再接情绪")
+    elif interaction_mode == "selfhood_reflection":
+        note_parts.append("先把自己的判断和位置说清")
     elif interaction_mode == "self_activity_hold":
         note_parts.append("先维持自己的节奏，不急着回到对方身边")
     elif interaction_mode == "self_activity_reopen":

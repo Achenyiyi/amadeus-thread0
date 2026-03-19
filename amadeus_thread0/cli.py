@@ -5,13 +5,10 @@ import json
 import logging
 import os
 import re
-import sqlite3
-import subprocess
-import sys
 import time
-import uuid
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
+from functools import partial
 from pathlib import Path
 import io
 import math
@@ -39,9 +36,6 @@ warnings.filterwarnings(
 )
 
 from dotenv import load_dotenv
-from langchain_core.messages import SystemMessage
-from langgraph.types import Command
-
 from .config import (
     AUTO_APPROVE_MEMORY_WRITES,
     HIDE_TOOL_APPROVAL_LOGS,
@@ -49,29 +43,33 @@ from .config import (
     TOOLSET_UPGRADE_TTL_S,
     USER_FACING_MODE,
 )
-from .utils.cli_views import (
-    build_evolution_cli_summary,
-    build_evolution_summary_line,
-    render_behavior_queue_cli_text,
+from .utils.cli_views import build_evolution_summary_line, render_behavior_queue_cli_text
+from .runtime.memory_admin import MemoryAdminError
+from .runtime.modeling import runtime_model_summary
+from .runtime.runtime_bundle import RuntimeBundle
+from .runtime.thread_runtime import (
+    apply_worldline_runtime_paths as _apply_worldline_runtime_paths,
+    has_explicit_runtime_path_overrides as _has_explicit_runtime_path_overrides,
+    resolve_startup_thread_id as _resolve_startup_thread_id,
+    shared_runtime_artifacts as _shared_runtime_artifacts,
+    should_isolate_startup_runtime as _should_isolate_startup_runtime,
+    should_warn_shared_default_runtime as _should_warn_shared_default_runtime,
 )
-from .graph_parts import (
-    build_graph,
-    build_implicit_idle_event_override,
-    build_implicit_idle_state_update,
-    reset_runtime_caches,
+from .runtime.tool_approval import (
+    auto_approve_decisions,
+    needs_second_confirmation,
+    should_auto_resume_memory_approval,
+    summarize_tool_approval_request,
 )
-from .memory_store import MemoryStore
-from .runtime.modeling import build_chat_model, runtime_model_summary
 from .utils.perception_events import (
     build_seed_event,
     build_sense_event,
     list_event_seed_rows,
     list_sense_rows,
 )
-from .utils.runtime_audit import audit_runtime_layout, render_runtime_audit_report
+from .utils.runtime_audit import render_runtime_audit_report
 from .runtime.session_orchestrator import emotion_to_tts_profile, push_tts_segments
 from .runtime.settings import configure_runtime_environment, get_settings
-from .utils.tools import reset_tool_runtime_caches
 from .runtime.tts_io import create_dashscope_realtime_session, get_tts_config
 
 
@@ -100,43 +98,11 @@ def _is_transient_runtime_error(exc: Exception) -> bool:
     return False
 
 
-_SILENT_MEMORY_APPROVAL_TOOLS = {
-    "set_profile",
-    "confirm_profile",
-    "correct_profile",
-    "undo_profile_correction",
-    "delete_profile",
-    "add_moment",
-    "delete_moment",
-    "rebuild_moment_embeddings",
-    "add_reflection",
-    "delete_reflection",
-    "rebuild_reflection_embeddings",
-    "set_relationship",
-    "add_worldline_event",
-    "add_relationship_event",
-    "add_commitment",
-    "resolve_commitment",
-    "merge_moments",
-}
-
-
-def _should_auto_resume_memory_approval(payload: dict[str, object]) -> bool:
-    if not bool(USER_FACING_MODE) or not bool(AUTO_APPROVE_MEMORY_WRITES):
-        return False
-    source = str(payload.get("source") or "").strip().lower()
-    if source != "memory":
-        return False
-    tool_calls = payload.get("tool_calls")
-    if not isinstance(tool_calls, list) or not tool_calls:
-        return False
-    for tc in tool_calls:
-        if not isinstance(tc, dict):
-            return False
-        name = str(tc.get("name") or "").strip()
-        if name not in _SILENT_MEMORY_APPROVAL_TOOLS:
-            return False
-    return True
+_AUTO_RESUME_MEMORY_APPROVAL = partial(
+    should_auto_resume_memory_approval,
+    user_facing_mode=bool(USER_FACING_MODE),
+    auto_approve_memory_writes=bool(AUTO_APPROVE_MEMORY_WRITES),
+)
 
 
 def _normalize_cli_text(text: str) -> str:
@@ -182,40 +148,6 @@ def _print_help() -> None:
     )
 
 
-def _sanitize_thread_id_seed(raw: str, *, fallback: str = "thread") -> str:
-    seed = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(raw or "").strip()).strip("-._")
-    return seed or fallback
-
-
-def _generate_thread_id(
-    *,
-    prefix: str = "thread",
-    now_ts: int | None = None,
-    suffix: str | None = None,
-) -> str:
-    safe_prefix = _sanitize_thread_id_seed(prefix)
-    clock = int(now_ts if now_ts is not None else time.time())
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(clock))
-    token = _sanitize_thread_id_seed(suffix or uuid.uuid4().hex[:8], fallback="session")
-    return f"{safe_prefix}-{stamp}-{token}"
-
-
-def _resolve_startup_thread_id(
-    *,
-    default_thread_id: str,
-    cli_thread_id: str | None,
-    fresh_thread: bool,
-    fresh_thread_prefix: str,
-    now_ts: int | None = None,
-    suffix: str | None = None,
-) -> str:
-    if cli_thread_id:
-        return _sanitize_thread_id_seed(cli_thread_id, fallback=default_thread_id)
-    if fresh_thread:
-        return _generate_thread_id(prefix=fresh_thread_prefix, now_ts=now_ts, suffix=suffix)
-    return default_thread_id
-
-
 def _build_startup_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m amadeus_thread0.cli",
@@ -238,164 +170,6 @@ def _build_startup_arg_parser() -> argparse.ArgumentParser:
         help="配合 --fresh-thread 使用的 thread_id 前缀，默认 thread。",
     )
     return parser
-
-
-def _worldline_runtime_dir(base_data_dir: Path, thread_id: str) -> Path:
-    return Path(base_data_dir) / "worldlines" / _sanitize_thread_id_seed(thread_id, fallback="thread")
-
-
-def _apply_worldline_runtime_paths(base_data_dir: Path, thread_id: str) -> Path:
-    runtime_dir = _worldline_runtime_dir(base_data_dir, thread_id)
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    os.environ["AMADEUS_DATA_DIR"] = str(runtime_dir)
-    os.environ["AMADEUS_CHECKPOINT_DB"] = str(runtime_dir / "checkpoints.sqlite")
-    os.environ["AMADEUS_MEMORY_DB"] = str(runtime_dir / "memories.sqlite")
-    os.environ["AMADEUS_DIARY_PATH"] = str(runtime_dir / "diary.txt")
-    return runtime_dir
-
-
-def _has_explicit_runtime_path_overrides() -> bool:
-    return any(
-        str(os.getenv(name) or "").strip()
-        for name in {
-            "AMADEUS_DATA_DIR",
-            "AMADEUS_CHECKPOINT_DB",
-            "AMADEUS_MEMORY_DB",
-            "AMADEUS_DIARY_PATH",
-        }
-    )
-
-
-def _should_isolate_startup_runtime(
-    *,
-    startup_thread_id: str,
-    fresh_thread: bool,
-    explicit_runtime_paths: bool,
-) -> bool:
-    thread_id = str(startup_thread_id or "").strip()
-    if fresh_thread:
-        return True
-    if explicit_runtime_paths:
-        return False
-    return bool(thread_id) and thread_id != "thread0"
-
-
-def _repo_default_data_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "data"
-
-
-def _shared_runtime_artifacts(base_data_dir: Path) -> list[str]:
-    names = [
-        "checkpoints.sqlite",
-        "memories.sqlite",
-        "decision_audit.jsonl",
-        "mcp_audit.jsonl",
-        "memory_store_audit.jsonl",
-        "tool_audit.jsonl",
-    ]
-    found: list[str] = []
-    root = Path(base_data_dir)
-    for name in names:
-        path = root / name
-        try:
-            if path.exists() and path.is_file() and path.stat().st_size > 0:
-                found.append(name)
-        except Exception:
-            continue
-    return found
-
-
-def _should_warn_shared_default_runtime(
-    *,
-    base_data_dir: Path,
-    runtime_data_dir: Path,
-    startup_thread_id: str,
-    startup_explicit: bool,
-    shared_artifacts: list[str],
-) -> bool:
-    if startup_explicit:
-        return False
-    if str(startup_thread_id or "").strip() != "thread0":
-        return False
-    if not shared_artifacts:
-        return False
-    try:
-        if Path(base_data_dir).resolve() != _repo_default_data_dir().resolve():
-            return False
-        if Path(runtime_data_dir).resolve() != Path(base_data_dir).resolve():
-            return False
-    except Exception:
-        return False
-    raw = str(os.getenv("AMADEUS_CLI_SUPPRESS_SHARED_RUNTIME_WARNING", "0") or "").strip().lower()
-    if raw in {"1", "true", "yes", "y", "on"}:
-        return False
-    return True
-
-def _build_run_config(base_config: dict[str, object], pending_checkpoint_id: str | None) -> tuple[dict[str, object], str | None]:
-    run_config: dict[str, object] = base_config
-    pending_after = pending_checkpoint_id
-    if pending_checkpoint_id:
-        run_config = {
-            "configurable": {
-                "thread_id": base_config["configurable"]["thread_id"],
-                "user_id": base_config["configurable"].get("user_id"),
-                "checkpoint_id": pending_checkpoint_id,
-            }
-        }
-        pending_after = None
-    return run_config, pending_after
-
-
-def _invoke_event_round(
-    *,
-    graph,
-    run_config: dict[str, object],
-    event_payload: dict[str, object],
-    transient_label: str,
-) -> tuple[dict[str, object], str]:
-    before = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
-    before_values = getattr(before, "values", {}) if before is not None else {}
-    if not isinstance(before_values, dict):
-        before_values = {}
-    before_messages = before_values.get("messages") if isinstance(before_values.get("messages"), list) else []
-    before_len = len(before_messages)
-
-    try:
-        out = graph.invoke(event_payload, config=run_config)
-    except Exception as e:
-        if _is_transient_runtime_error(e):
-            print(f"\n[{transient_label}][warn] 本轮事件触发时网络连接中断。稍后再试就行。")
-            return {}, ""
-        raise
-
-    while out.get("__interrupt__"):
-        intr = out["__interrupt__"][0]
-        payload = getattr(intr, "value", None)
-        if payload is None and isinstance(intr, dict):
-            payload = intr.get("value")
-        payload = payload or {}
-        tool_calls = payload.get("tool_calls") if isinstance(payload.get("tool_calls"), list) else []
-        if isinstance(payload, dict) and _should_auto_resume_memory_approval(payload):
-            decisions = [{"action": "approve"} for _ in tool_calls]
-        else:
-            decisions = [{"action": "reject", "reason": f"{transient_label}_no_manual_tooling"} for _ in tool_calls]
-        out = graph.invoke(
-            Command(resume={"decisions": decisions}),
-            config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
-        )
-
-    after = graph.get_state({"configurable": {"thread_id": run_config["configurable"]["thread_id"]}})
-    after_values = getattr(after, "values", {}) if after is not None else {}
-    if not isinstance(after_values, dict):
-        after_values = {}
-    after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
-    final_text = ""
-    if len(after_messages) > before_len and after_messages:
-        last = after_messages[-1]
-        final_text = str(getattr(last, "content", "") or "").strip()
-    return after_values, final_text
-
-
 def _speak_text_realtime(
     *,
     text: str,
@@ -469,30 +243,6 @@ def _behavior_action_compact_line(action: dict[str, object] | None) -> str:
     style = str(action.get("approach_style") or "").strip() or "-"
     return f"mode={mode} | target={target} | motive={motive} | channel={channel} | style={style}"
 
-
-def _build_event_evolution_summary(
-    memory_store: MemoryStore,
-    after_values: dict[str, object] | None,
-) -> dict[str, object]:
-    vals = after_values if isinstance(after_values, dict) else {}
-    return build_evolution_cli_summary(
-        relationship=memory_store.get_relationship(),
-        semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
-        world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
-        emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
-        bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
-        counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
-        behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
-        behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
-        behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
-        interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
-        current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
-        worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
-        reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
-        agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
-    )
-
-
 def _print_behavior_queue_summary(
     queue_vals: object,
     *,
@@ -532,6 +282,47 @@ def _print_turn_appraisal(values: dict[str, object] | None, *, prefix: str = "")
     print(f"\n{prefix}[TURN_APPRAISAL]\n" + dumped)
 
 
+def _print_event_round_payload(
+    *,
+    header_label: str,
+    header_value: str,
+    payload: dict[str, object] | None,
+    tts_enabled: bool,
+    tts_ref_audio: str,
+) -> None:
+    data = payload if isinstance(payload, dict) else {}
+    behavior_action = data.get("behavior_action") if isinstance(data.get("behavior_action"), dict) else {}
+    behavior_plan = data.get("behavior_plan") if isinstance(data.get("behavior_plan"), dict) else {}
+    current_event = data.get("current_event") if isinstance(data.get("current_event"), dict) else {}
+    turn_summary = data.get("turn_summary") if isinstance(data.get("turn_summary"), dict) else {}
+    turn_appraisal = data.get("turn_appraisal") if isinstance(data.get("turn_appraisal"), dict) else {}
+    final_text = str(data.get("final_text") or "").strip()
+    emotion_label = str(data.get("emotion_label") or "neutral").strip() or "neutral"
+
+    print(
+        f"\n[{header_label}]"
+        + f" {header_value}"
+        + "\n[BEHAVIOR_ACTION]\n"
+        + json.dumps(behavior_action, ensure_ascii=False, indent=2)
+    )
+    _print_event_evolution_summary(turn_summary, detailed=True)
+    _print_turn_appraisal({"turn_appraisal": turn_appraisal})
+    if behavior_plan:
+        print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
+    if current_event:
+        print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
+    if final_text:
+        print("\nAmadeus> " + final_text)
+        _speak_text_realtime(
+            text=final_text,
+            emotion_label=emotion_label,
+            enabled=tts_enabled,
+            ref_audio=tts_ref_audio,
+        )
+    else:
+        print("\nAmadeus> （这轮她选择先不主动开口。）")
+
+
 def _implicit_idle_trigger_minutes() -> int:
     raw = str(os.getenv("AMADEUS_IMPLICIT_IDLE_MINUTES", "") or "").strip()
     if not raw:
@@ -545,58 +336,6 @@ def _implicit_idle_trigger_minutes() -> int:
 def _cli_show_turn_summary_enabled() -> bool:
     raw = str(os.getenv("AMADEUS_CLI_SHOW_TURN_SUMMARY", "0") or "").strip().lower()
     return raw in {"1", "true", "yes", "y", "on"}
-
-
-def _apply_implicit_idle_maturation(
-    *,
-    graph,
-    run_config: dict[str, object],
-    last_conversation_touch_ts: int | None,
-    now_ts: int | None = None,
-) -> None:
-    trigger_minutes = _implicit_idle_trigger_minutes()
-    if trigger_minutes <= 0 or last_conversation_touch_ts is None:
-        return
-    clock_now = int(now_ts or time.time())
-    elapsed_seconds = max(0, clock_now - int(last_conversation_touch_ts))
-    elapsed_minutes = elapsed_seconds // 60
-    if elapsed_minutes < trigger_minutes:
-        return
-
-    cfg = {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
-    current = graph.get_state(cfg)
-    values = getattr(current, "values", {}) if current is not None else {}
-    if not isinstance(values, dict):
-        return
-
-    prepared = build_implicit_idle_state_update(
-        values,
-        idle_minutes=int(elapsed_minutes),
-        created_at=clock_now,
-    )
-    graph.update_state(cfg, prepared, as_node="prepare_turn")
-
-
-def _build_idle_event_payload(
-    *,
-    graph,
-    run_config: dict[str, object],
-    idle_minutes: int,
-    note: str = "",
-    created_at: int | None = None,
-    extra_tags: list[str] | None = None,
-) -> dict[str, dict[str, object]]:
-    cfg = {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
-    current = graph.get_state(cfg)
-    values = getattr(current, "values", {}) if current is not None else {}
-    event_override = build_implicit_idle_event_override(
-        values if isinstance(values, dict) else {},
-        idle_minutes=idle_minutes,
-        note=note,
-        created_at=created_at,
-        extra_tags=extra_tags or [],
-    )
-    return {"event_override": event_override}
 
 
 def main():
@@ -666,16 +405,11 @@ def main():
         isolated_worldline_dir = _apply_worldline_runtime_paths(base_data_dir, startup_thread_id)
         s = get_settings()
     shared_runtime_artifacts = _shared_runtime_artifacts(base_data_dir)
-    graph = build_graph()
-    memory_store = MemoryStore(s.memory_db_path)
-
-    config = {
-        "configurable": {
-            # LangGraph persistence 通过 thread_id 把 checkpoint 归到同一条“世界线”
-            "thread_id": startup_thread_id,
-            "user_id": s.user_id,
-        }
-    }
+    runtime_bundle = RuntimeBundle.create(thread_id=startup_thread_id, settings=s)
+    memory_admin = runtime_bundle.memory_admin
+    backend_session = runtime_bundle.backend_session
+    backend_api = runtime_bundle.backend_api(base_data_dir=base_data_dir, cwd=Path.cwd())
+    config = runtime_bundle.config()
 
     # 用于 time travel：下一次对话从指定 checkpoint 分叉继续（用一次即清空）
     pending_checkpoint_id: str | None = None
@@ -747,67 +481,40 @@ def main():
             new_id = _normalize_cli_text(user[len("/newthread") :].strip())
             if not new_id:
                 entered = _normalize_cli_text(input("new thread_id (leave blank for auto)> "))
-                new_id = entered or _generate_thread_id(prefix="thread")
-            new_id = _sanitize_thread_id_seed(new_id, fallback=_generate_thread_id(prefix="thread"))
-            worldline_dir = _apply_worldline_runtime_paths(base_data_dir, new_id)
-            try:
-                memory_store.close()
-            except Exception:
-                pass
-            reset_tool_runtime_caches()
-            reset_runtime_caches()
-            s = get_settings()
-            graph = build_graph()
-            memory_store = MemoryStore(s.memory_db_path)
-            config["configurable"]["thread_id"] = new_id
+                new_id = entered
+            switch_plan = runtime_bundle.switch_thread(
+                base_data_dir=base_data_dir,
+                requested_thread_id=new_id,
+                fallback_prefix="thread",
+            )
+            s = runtime_bundle.settings
+            memory_admin = runtime_bundle.memory_admin
+            backend_session = runtime_bundle.backend_session
+            backend_api = runtime_bundle.backend_api(base_data_dir=base_data_dir, cwd=Path.cwd())
+            config = runtime_bundle.config()
             # 切线程后清空 time travel 目标
             pending_checkpoint_id = None
             last_conversation_touch_ts = None
-            print(f"已切换到 thread_id={new_id}")
-            print("[runtime] worldline_storage=" + str(worldline_dir))
+            print(f"已切换到 thread_id={switch_plan.thread_id}")
+            print("[runtime] worldline_storage=" + str(switch_plan.runtime_dir))
             continue
         if user.lower() == "/threads":
-            # 从 checkpoints.sqlite 里尽量枚举 thread_id（不同版本表名可能不同，这里做容错）
-            conn = sqlite3.connect(str(s.checkpoint_db_path), check_same_thread=False)
-            try:
-                tables = [
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-                    ).fetchall()
-                ]
-                thread_ids: set[str] = set()
-                for t in tables:
-                    cols = [
-                        c[1] for c in conn.execute(f"PRAGMA table_info({t})").fetchall()
-                    ]
-                    if "thread_id" not in cols:
-                        continue
-                    try:
-                        rows = conn.execute(f"SELECT DISTINCT thread_id FROM {t}").fetchall()
-                        for (tid,) in rows:
-                            if tid:
-                                thread_ids.add(str(tid))
-                    except Exception:
-                        continue
-                if not thread_ids:
-                    print("\n未在 checkpoint 数据库中找到 thread_id（可能还没有生成checkpoint）。")
-                else:
-                    print("\n[threads]")
-                    for tid in sorted(thread_ids):
-                        mark = "*" if tid == config["configurable"]["thread_id"] else " "
-                        print(f"{mark} {tid}")
-                worldline_root = Path(base_data_dir) / "worldlines"
-                worldline_ids = sorted(
-                    p.name for p in worldline_root.iterdir() if p.is_dir()
-                ) if worldline_root.exists() else []
-                if worldline_ids:
-                    print("\n[worldline_dirs]")
-                    for wid in worldline_ids:
-                        mark = "*" if wid == config["configurable"]["thread_id"] else " "
-                        print(f"{mark} {wid}")
-            finally:
-                conn.close()
+            inventory = backend_api.thread_inventory().payload
+            checkpoint_thread_ids = inventory.get("checkpoint_thread_ids", [])
+            worldline_dir_ids = inventory.get("worldline_dir_ids", [])
+            current_thread_id = inventory.get("current_thread_id")
+            if not checkpoint_thread_ids:
+                print("\n未在 checkpoint 数据库中找到 thread_id（可能还没有生成checkpoint）。")
+            else:
+                print("\n[threads]")
+                for tid in checkpoint_thread_ids:
+                    mark = "*" if tid == current_thread_id else " "
+                    print(f"{mark} {tid}")
+            if worldline_dir_ids:
+                print("\n[worldline_dirs]")
+                for wid in worldline_dir_ids:
+                    mark = "*" if wid == current_thread_id else " "
+                    print(f"{mark} {wid}")
             continue
         if user.lower().startswith("/history"):
             # /history 或 /history 10
@@ -818,18 +525,14 @@ def main():
                     limit = int(parts[1])
                 except Exception:
                     limit = 10
-            hist = list(
-                graph.get_state_history(
-                    {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-                )
-            )
+            history_view = backend_api.checkpoint_history(limit=limit, config=config).payload
+            rows = history_view.get("rows", [])
+            total = int(history_view.get("total", 0) or 0)
             print(
-                f"\n[checkpoint history] (latest first, showing {min(limit, len(hist))}/{len(hist)})"
+                f"\n[checkpoint history] (latest first, showing {len(rows)}/{total})"
             )
-            for sshot in hist[:limit]:
-                cid = sshot.config.get("configurable", {}).get("checkpoint_id")
-                nxt = sshot.next
-                print(f"- checkpoint_id={cid} next={nxt}")
+            for row in rows:
+                print(f"- checkpoint_id={row.get('checkpoint_id')} next={row.get('next')}")
             continue
         if user.lower().startswith("/rewind "):
             # /rewind <checkpoint_id>
@@ -842,133 +545,94 @@ def main():
             print(f"已设置：下一次对话将从 checkpoint_id={cid} 分叉继续")
             continue
         if user.lower() == "/where":
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            cid = cur.config.get("configurable", {}).get("checkpoint_id")
+            current_view = backend_api.current_checkpoint(config=config).payload
             print(
-                f"\n[current] thread_id={config['configurable']['thread_id']} checkpoint_id={cid}"
+                f"\n[current] thread_id={current_view.get('thread_id')} checkpoint_id={current_view.get('checkpoint_id')}"
             )
             continue
         if user.lower() == "/runtime":
+            runtime_view = backend_api.runtime_layout().payload
             print("\n[repo-runtime]")
-            print(render_runtime_audit_report(audit_runtime_layout(base_data_dir)))
-            try:
-                if Path(s.data_dir).resolve() != Path(base_data_dir).resolve():
-                    print("\n[current-runtime]")
-                    print(render_runtime_audit_report(audit_runtime_layout(s.data_dir)))
-            except Exception:
-                pass
+            print(render_runtime_audit_report(runtime_view.get("repo_runtime")))
+            current_runtime = runtime_view.get("current_runtime")
+            if isinstance(current_runtime, dict):
+                print("\n[current-runtime]")
+                print(render_runtime_audit_report(current_runtime))
             continue
         if user.lower() == "/env":
+            env_view = backend_api.environment_summary(cwd=Path.cwd()).payload
             print(
                 "\n[env] cwd="
-                + str(Path.cwd())
+                + str(env_view.get("cwd"))
                 + "\n  AMADEUS_MODEL_PROVIDER="
-                + str(s.model_provider)
+                + str(env_view.get("model_provider"))
                 + "\n  AMADEUS_MODEL_NAME="
-                + str(s.model_name)
+                + str(env_view.get("model_name"))
                 + "\n  AMADEUS_MODEL_BASE_URL="
-                + (str(s.model_base_url) if str(s.model_base_url).strip() else "(default)")
+                + str(env_view.get("model_base_url"))
                 + "\n  AMADEUS_RUNTIME_MODE="
-                + str(s.runtime_mode)
+                + str(env_view.get("runtime_mode"))
                 + "\n  AMADEUS_EVAL_MODE="
-                + str(os.getenv("AMADEUS_EVAL_MODE", "0"))
+                + str(env_view.get("eval_mode"))
                 + "\n  AMADEUS_USER_FACING_MODE="
-                + str(os.getenv("AMADEUS_USER_FACING_MODE", "1"))
+                + str(env_view.get("user_facing_mode"))
                 + "\n  AMADEUS_CLI_SHOW_TURN_SUMMARY="
-                + str(os.getenv("AMADEUS_CLI_SHOW_TURN_SUMMARY", "0"))
+                + str(env_view.get("cli_show_turn_summary"))
                 + "\n  AMADEUS_TTS_ENABLED="
-                + str(os.getenv("AMADEUS_TTS_ENABLED"))
+                + str(env_view.get("tts_enabled"))
                 + "\n  AMADEUS_TTS_BACKEND="
-                + str(os.getenv("AMADEUS_TTS_BACKEND"))
+                + str(env_view.get("tts_backend"))
                 + "\n  AMADEUS_TTS_REF_AUDIO="
-                + str(os.getenv("AMADEUS_TTS_REF_AUDIO"))
+                + str(env_view.get("tts_ref_audio"))
                 + "\n  AMADEUS_TTS_DASHSCOPE_MODEL="
-                + str(os.getenv("AMADEUS_TTS_DASHSCOPE_MODEL"))
+                + str(env_view.get("tts_model"))
                 + "\n  DASHSCOPE_API_KEY="
-                + ("(set)" if str(os.getenv("DASHSCOPE_API_KEY") or "").strip() else "(empty)")
+                + ("(set)" if bool(env_view.get("dashscope_api_key_set")) else "(empty)")
             )
             continue
         if user.lower() == "/mem":
-            snap = memory_store.snapshot()
+            snap = backend_api.memory_snapshot().payload
             print("\n[PROFILE]\n" + json.dumps(snap["profile"], ensure_ascii=False, indent=2))
             print("\n[RELATIONSHIP]\n" + json.dumps(snap["relationship"], ensure_ascii=False, indent=2))
             print("\n[MOMENTS(latest)]\n" + json.dumps(snap["moments"], ensure_ascii=False, indent=2))
             continue
         if user.lower() == "/worldline":
-            snap = memory_store.snapshot()
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            worldline_summary = build_evolution_cli_summary(
-                relationship=snap.get("relationship") if isinstance(snap.get("relationship"), dict) else {},
-                semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
-                world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
-                emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
-                bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
-                counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
-                behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
-                behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
-                behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
-                interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
-                current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
-                worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
-                reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
-                agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
-            )
-            print("\n[WORLDLINE_SUMMARY]\n" + json.dumps(worldline_summary, ensure_ascii=False, indent=2))
-            print("\n[WORLDLINE_EVENTS]\n" + json.dumps(snap.get("worldline_events", []), ensure_ascii=False, indent=2))
-            print("\n[COMMITMENTS]\n" + json.dumps(snap.get("commitments", []), ensure_ascii=False, indent=2))
-            print("\n[CONFLICT_REPAIR]\n" + json.dumps(snap.get("conflict_repair", []), ensure_ascii=False, indent=2))
-            print("\n[UNRESOLVED_TENSIONS]\n" + json.dumps(snap.get("unresolved_tensions", []), ensure_ascii=False, indent=2))
+            worldline_view = backend_api.worldline().payload
+            print("\n[WORLDLINE_SUMMARY]\n" + json.dumps(worldline_view.get("worldline_summary", {}), ensure_ascii=False, indent=2))
+            print("\n[WORLDLINE_EVENTS]\n" + json.dumps(worldline_view.get("worldline_events", []), ensure_ascii=False, indent=2))
+            print("\n[COMMITMENTS]\n" + json.dumps(worldline_view.get("commitments", []), ensure_ascii=False, indent=2))
+            print("\n[CONFLICT_REPAIR]\n" + json.dumps(worldline_view.get("conflict_repair", []), ensure_ascii=False, indent=2))
+            print("\n[UNRESOLVED_TENSIONS]\n" + json.dumps(worldline_view.get("unresolved_tensions", []), ensure_ascii=False, indent=2))
             print(
                 "\n[SEMANTIC_SELF_NARRATIVES]\n"
-                + json.dumps(snap.get("semantic_self_narratives", []), ensure_ascii=False, indent=2)
+                + json.dumps(worldline_view.get("semantic_self_narratives", []), ensure_ascii=False, indent=2)
             )
-            print("\n[REVISION_TRACES]\n" + json.dumps(snap.get("revision_traces", []), ensure_ascii=False, indent=2))
+            print("\n[REVISION_TRACES]\n" + json.dumps(worldline_view.get("revision_traces", []), ensure_ascii=False, indent=2))
             continue
         if user.lower() == "/bond":
-            rel = memory_store.get_relationship()
-            rs = list(reversed(memory_store.list_relationship_timeline(limit=30)))
-            repairs = list(reversed(memory_store.list_conflict_repairs(limit=30)))
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            current_rel = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else None
-            rel_out = current_rel if isinstance(current_rel, dict) and current_rel else rel
-            print("\n[RELATIONSHIP_STATE]\n" + json.dumps(rel_out, ensure_ascii=False, indent=2))
-            print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
+            bond_view = backend_api.bond().payload
+            print("\n[RELATIONSHIP_STATE]\n" + json.dumps(bond_view.get("relationship_state", {}), ensure_ascii=False, indent=2))
+            print("\n[BOND_STATE]\n" + json.dumps(bond_view.get("bond_state", {}), ensure_ascii=False, indent=2))
             print("\n[RELATIONSHIP_TIMELINE]")
-            if not rs:
+            relationship_timeline = bond_view.get("relationship_timeline", [])
+            if not relationship_timeline:
                 print("- (empty)")
-            for it in rs:
+            for it in relationship_timeline:
                 print(
                     f"- #{it.get('id')} {it.get('summary')} "
                     f"(aff={it.get('affinity_delta')}, trust={it.get('trust_delta')})"
                 )
             print("\n[CONFLICT_REPAIR]")
+            repairs = bond_view.get("conflict_repair", [])
             if not repairs:
                 print("- (empty)")
             for it in repairs:
                 print(f"- #{it.get('id')} {it.get('summary')}")
             continue
         if user.lower() == "/sources":
-            refs = list(reversed(memory_store.list_source_refs(limit=30)))
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            claim_links = vals.get("claim_links") if isinstance(vals.get("claim_links"), list) else []
+            sources_view = backend_api.sources().payload
             print("\n[SOURCES]")
+            refs = sources_view.get("sources", [])
             if not refs:
                 print("- (empty)")
             for it in refs:
@@ -977,6 +641,7 @@ def main():
                     f"  url={it.get('url')} query={it.get('query')}"
                 )
             print("\n[CLAIM->SOURCES]")
+            claim_links = sources_view.get("claim_links", [])
             if not claim_links:
                 print("- (empty)")
             for row in claim_links:
@@ -988,71 +653,39 @@ def main():
                 )
             continue
         if user.lower() == "/persona":
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            evolution_summary = build_evolution_cli_summary(
-                relationship=memory_store.get_relationship(),
-                semantic_narrative_profile=vals.get("semantic_narrative_profile") if isinstance(vals.get("semantic_narrative_profile"), dict) else {},
-                world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
-                emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
-                bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
-                counterpart_assessment=vals.get("counterpart_assessment") if isinstance(vals.get("counterpart_assessment"), dict) else {},
-                behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
-                behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
-                behavior_queue=vals.get("behavior_queue") if isinstance(vals.get("behavior_queue"), list) else [],
-                interaction_carryover=vals.get("interaction_carryover") if isinstance(vals.get("interaction_carryover"), dict) else {},
-                current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
-                worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
-                reconsolidation_snapshot=vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {},
-                agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue") if isinstance(vals.get("agenda_lifecycle_residue"), dict) else {},
-            )
-            print("\n[EVOLUTION_SUMMARY]\n" + json.dumps(evolution_summary, ensure_ascii=False, indent=2))
-            print("\n[PERSONA_STATE]\n" + json.dumps(vals.get("persona_state", {}), ensure_ascii=False, indent=2))
-            print("\n[EMOTION_STATE]\n" + json.dumps(vals.get("emotion_state", {}), ensure_ascii=False, indent=2))
-            print("\n[BOND_STATE]\n" + json.dumps(vals.get("bond_state", {}), ensure_ascii=False, indent=2))
-            print("\n[ALLOSTASIS_STATE]\n" + json.dumps(vals.get("allostasis_state", {}), ensure_ascii=False, indent=2))
-            print("\n[COUNTERPART_ASSESSMENT]\n" + json.dumps(vals.get("counterpart_assessment", {}), ensure_ascii=False, indent=2))
-            print("\n[SEMANTIC_NARRATIVE_PROFILE]\n" + json.dumps(vals.get("semantic_narrative_profile", {}), ensure_ascii=False, indent=2))
-            print("\n[WORLD_MODEL_STATE]\n" + json.dumps(vals.get("world_model_state", {}), ensure_ascii=False, indent=2))
-            print("\n[EVOLUTION_STATE]\n" + json.dumps(vals.get("evolution_state", {}), ensure_ascii=False, indent=2))
-            print("\n[RECONSOLIDATION_SNAPSHOT]\n" + json.dumps(vals.get("reconsolidation_snapshot", {}), ensure_ascii=False, indent=2))
-            print("\n[TURN_APPRAISAL]\n" + json.dumps(vals.get("turn_appraisal", {}), ensure_ascii=False, indent=2))
-            print("\n[BEHAVIOR_POLICY]\n" + json.dumps(vals.get("behavior_policy", {}), ensure_ascii=False, indent=2))
-            print("\n[BEHAVIOR_ACTION]\n" + json.dumps(vals.get("behavior_action", {}), ensure_ascii=False, indent=2))
-            print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(vals.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
-            print("\n[AGENDA_LIFECYCLE_RESIDUE]\n" + json.dumps(vals.get("agenda_lifecycle_residue", {}), ensure_ascii=False, indent=2))
-            print("\n[BEHAVIOR_PLAN]\n" + json.dumps(vals.get("behavior_plan", {}), ensure_ascii=False, indent=2))
-            queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            persona_view = backend_api.persona().payload
+            print("\n[EVOLUTION_SUMMARY]\n" + json.dumps(persona_view.get("evolution_summary", {}), ensure_ascii=False, indent=2))
+            print("\n[PERSONA_STATE]\n" + json.dumps(persona_view.get("persona_state", {}), ensure_ascii=False, indent=2))
+            print("\n[EMOTION_STATE]\n" + json.dumps(persona_view.get("emotion_state", {}), ensure_ascii=False, indent=2))
+            print("\n[BOND_STATE]\n" + json.dumps(persona_view.get("bond_state", {}), ensure_ascii=False, indent=2))
+            print("\n[ALLOSTASIS_STATE]\n" + json.dumps(persona_view.get("allostasis_state", {}), ensure_ascii=False, indent=2))
+            print("\n[COUNTERPART_ASSESSMENT]\n" + json.dumps(persona_view.get("counterpart_assessment", {}), ensure_ascii=False, indent=2))
+            print("\n[SEMANTIC_NARRATIVE_PROFILE]\n" + json.dumps(persona_view.get("semantic_narrative_profile", {}), ensure_ascii=False, indent=2))
+            print("\n[WORLD_MODEL_STATE]\n" + json.dumps(persona_view.get("world_model_state", {}), ensure_ascii=False, indent=2))
+            print("\n[EVOLUTION_STATE]\n" + json.dumps(persona_view.get("evolution_state", {}), ensure_ascii=False, indent=2))
+            print("\n[RECONSOLIDATION_SNAPSHOT]\n" + json.dumps(persona_view.get("reconsolidation_snapshot", {}), ensure_ascii=False, indent=2))
+            print("\n[TURN_APPRAISAL]\n" + json.dumps(persona_view.get("turn_appraisal", {}), ensure_ascii=False, indent=2))
+            print("\n[BEHAVIOR_POLICY]\n" + json.dumps(persona_view.get("behavior_policy", {}), ensure_ascii=False, indent=2))
+            print("\n[BEHAVIOR_ACTION]\n" + json.dumps(persona_view.get("behavior_action", {}), ensure_ascii=False, indent=2))
+            print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(persona_view.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
+            print("\n[AGENDA_LIFECYCLE_RESIDUE]\n" + json.dumps(persona_view.get("agenda_lifecycle_residue", {}), ensure_ascii=False, indent=2))
+            print("\n[BEHAVIOR_PLAN]\n" + json.dumps(persona_view.get("behavior_plan", {}), ensure_ascii=False, indent=2))
+            queue_vals = persona_view.get("behavior_queue", [])
             _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
-            print("\n[SCIENCE_MODE]\n" + json.dumps(vals.get("science_mode", False), ensure_ascii=False, indent=2))
-            print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(vals.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
-            print("\n[OOC_DETECTOR]\n" + json.dumps(vals.get("ooc_detector", {}), ensure_ascii=False, indent=2))
-            print("\n[CANON_GUARD]\n" + json.dumps(vals.get("canon_guard", {}), ensure_ascii=False, indent=2))
+            print("\n[SCIENCE_MODE]\n" + json.dumps(persona_view.get("science_mode", False), ensure_ascii=False, indent=2))
+            print("\n[TSUNDERE_INTENSITY]\n" + json.dumps(persona_view.get("tsundere_intensity", 0.5), ensure_ascii=False, indent=2))
+            print("\n[OOC_DETECTOR]\n" + json.dumps(persona_view.get("ooc_detector", {}), ensure_ascii=False, indent=2))
+            print("\n[CANON_GUARD]\n" + json.dumps(persona_view.get("canon_guard", {}), ensure_ascii=False, indent=2))
             continue
 
         if user.lower() == "/appraisal":
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            _print_turn_appraisal(vals)
+            _print_turn_appraisal(backend_api.appraisal().payload)
             continue
 
         if user.lower() in {"/agenda", "/queue"}:
-            cur = graph.get_state(
-                {"configurable": {"thread_id": config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if not isinstance(vals, dict):
-                vals = {}
-            queue_vals = vals.get("behavior_queue", vals.get("behavior_agenda", []))
+            queue_view = backend_api.behavior_queue(config=config).payload
+            queue_vals = queue_view.get("behavior_queue", [])
             _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
             continue
@@ -1102,51 +735,31 @@ def main():
                 continue
             resolved_seed_id, payload_event = built
 
-            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
-            after_values, final_text = _invoke_event_round(
-                graph=graph,
-                run_config=run_config,
-                event_payload={"event_override": payload_event},
-                transient_label="event",
-            )
-            if not after_values:
-                continue
-
-            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
-            behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
-            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
-            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
-
-            print(
-                "\n[event]"
-                + f" seed={resolved_seed_id}"
-                + "\n[BEHAVIOR_ACTION]\n"
-                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
-            )
-            _print_event_evolution_summary(evolution_summary, detailed=True)
-            _print_turn_appraisal(after_values)
-            if behavior_plan:
-                print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
-            if current_event:
-                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
-            if final_text:
-                print("\nAmadeus> " + final_text)
-                emotion_label = str(
-                    (
-                        after_values.get("emotion_state")
-                        if isinstance(after_values.get("emotion_state"), dict)
-                        else {}
-                    ).get("label")
-                    or "neutral"
+            run_config, pending_checkpoint_id = backend_session.build_run_config(pending_checkpoint_id)
+            try:
+                event_result = backend_session.invoke_event_round(
+                    run_config=run_config,
+                    event_payload={"event_override": payload_event},
+                    auto_resume_memory_approval=_AUTO_RESUME_MEMORY_APPROVAL,
+                    reject_reason="event_no_manual_tooling",
                 )
-                _speak_text_realtime(
-                    text=final_text,
-                    emotion_label=emotion_label,
-                    enabled=tts_enabled,
-                    ref_audio=tts_ref_audio,
-                )
-            else:
-                print("\nAmadeus> （这轮她选择先不主动开口。）")
+            except Exception as e:
+                if _is_transient_runtime_error(e):
+                    print("\n[event][warn] 本轮事件触发时网络连接中断。稍后再试就行。")
+                    continue
+                raise
+            event_payload = backend_api.build_event_round_response(
+                state_values=event_result.values,
+                final_text=event_result.final_text,
+                meta={"event_kind": "seed", "seed_id": resolved_seed_id},
+            ).payload
+            _print_event_round_payload(
+                header_label="event",
+                header_value=f"seed={resolved_seed_id}",
+                payload=event_payload,
+                tts_enabled=tts_enabled,
+                tts_ref_audio=tts_ref_audio,
+            )
             last_conversation_touch_ts = int(time.time())
             continue
 
@@ -1172,51 +785,31 @@ def main():
                 print(f"\n[sense] {exc}")
                 continue
 
-            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
-            after_values, final_text = _invoke_event_round(
-                graph=graph,
-                run_config=run_config,
-                event_payload={"event_override": payload_event},
-                transient_label="sense",
-            )
-            if not after_values:
-                continue
-
-            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
-            behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
-            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
-            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
-
-            print(
-                "\n[sense]"
-                + f" ref={resolved_ref}"
-                + "\n[BEHAVIOR_ACTION]\n"
-                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
-            )
-            _print_event_evolution_summary(evolution_summary, detailed=True)
-            _print_turn_appraisal(after_values)
-            if behavior_plan:
-                print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
-            if current_event:
-                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
-            if final_text:
-                print("\nAmadeus> " + final_text)
-                emotion_label = str(
-                    (
-                        after_values.get("emotion_state")
-                        if isinstance(after_values.get("emotion_state"), dict)
-                        else {}
-                    ).get("label")
-                    or "neutral"
+            run_config, pending_checkpoint_id = backend_session.build_run_config(pending_checkpoint_id)
+            try:
+                event_result = backend_session.invoke_event_round(
+                    run_config=run_config,
+                    event_payload={"event_override": payload_event},
+                    auto_resume_memory_approval=_AUTO_RESUME_MEMORY_APPROVAL,
+                    reject_reason="sense_no_manual_tooling",
                 )
-                _speak_text_realtime(
-                    text=final_text,
-                    emotion_label=emotion_label,
-                    enabled=tts_enabled,
-                    ref_audio=tts_ref_audio,
-                )
-            else:
-                print("\nAmadeus> （这轮她选择先不主动开口。）")
+            except Exception as e:
+                if _is_transient_runtime_error(e):
+                    print("\n[sense][warn] 本轮感知事件触发时网络连接中断。稍后再试就行。")
+                    continue
+                raise
+            sense_payload = backend_api.build_event_round_response(
+                state_values=event_result.values,
+                final_text=event_result.final_text,
+                meta={"event_kind": "sense", "sense_ref": resolved_ref},
+            ).payload
+            _print_event_round_payload(
+                header_label="sense",
+                header_value=f"ref={resolved_ref}",
+                payload=sense_payload,
+                tts_enabled=tts_enabled,
+                tts_ref_audio=tts_ref_audio,
+            )
             last_conversation_touch_ts = int(time.time())
             continue
 
@@ -1255,7 +848,7 @@ def main():
                 + f" rounds={rounds}"
             )
 
-            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            run_config, pending_checkpoint_id = backend_session.build_run_config(pending_checkpoint_id)
             spoken_rounds = 0
             silence_rounds = 0
             elapsed_minutes = 0
@@ -1267,34 +860,42 @@ def main():
                 current_step = step_minutes if idx < rounds - 1 else max(1, remaining)
                 elapsed_minutes += current_step
                 event_text = note_override or f"已经安静地过去了 {elapsed_minutes} 分钟，没有新的用户消息。"
-                idle_payload = _build_idle_event_payload(
-                    graph=graph,
+                idle_payload = backend_session.build_idle_event_payload(
                     run_config=run_config,
                     idle_minutes=elapsed_minutes,
                     note=event_text,
                     created_at=int(time.time()),
                     extra_tags=["pulse"],
                 )
-                after_values, final_text = _invoke_event_round(
-                    graph=graph,
-                    run_config=run_config,
-                    event_payload=idle_payload,
-                    transient_label="pulse",
-                )
-                if not after_values:
-                    break
-
-                behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
-                behavior_plan = after_values.get("behavior_plan") if isinstance(after_values.get("behavior_plan"), dict) else {}
-                evolution_summary = _build_event_evolution_summary(memory_store, after_values)
+                try:
+                    event_result = backend_session.invoke_event_round(
+                        run_config=run_config,
+                        event_payload=idle_payload,
+                        auto_resume_memory_approval=_AUTO_RESUME_MEMORY_APPROVAL,
+                        reject_reason="pulse_no_manual_tooling",
+                    )
+                except Exception as e:
+                    if _is_transient_runtime_error(e):
+                        print("  [pulse][warn] 这轮 idle 事件触发时网络连接中断，结束连续推进。")
+                        break
+                    raise
+                event_payload = backend_api.build_event_round_response(
+                    state_values=event_result.values,
+                    final_text=event_result.final_text,
+                    meta={"event_kind": "pulse", "elapsed_minutes": elapsed_minutes},
+                ).payload
+                behavior_action = event_payload.get("behavior_action", {}) if isinstance(event_payload.get("behavior_action"), dict) else {}
+                behavior_plan = event_payload.get("behavior_plan", {}) if isinstance(event_payload.get("behavior_plan"), dict) else {}
+                evolution_summary = event_payload.get("turn_summary", {}) if isinstance(event_payload.get("turn_summary"), dict) else {}
                 last_evolution_summary = evolution_summary
                 line = _behavior_action_compact_line(behavior_action)
                 print(f"- round={idx + 1}/{rounds} elapsed={elapsed_minutes}min | {line}")
                 _print_event_evolution_summary(evolution_summary, prefix="  ", detailed=False)
-                _print_turn_appraisal(after_values, prefix="  ")
+                _print_turn_appraisal({"turn_appraisal": event_payload.get("turn_appraisal", {})}, prefix="  ")
                 if behavior_plan:
                     print("  plan=" + json.dumps(behavior_plan, ensure_ascii=False))
 
+                final_text = str(event_payload.get("final_text") or "").strip()
                 if final_text:
                     normalized_text = re.sub(r"\s+", "", final_text).strip()
                     signature = normalized_text + "||" + json.dumps(
@@ -1313,17 +914,9 @@ def main():
                     last_spoken_signature = signature
                     spoken_rounds += 1
                     print("  Amadeus> " + final_text)
-                    emotion_label = str(
-                        (
-                            after_values.get("emotion_state")
-                            if isinstance(after_values.get("emotion_state"), dict)
-                            else {}
-                        ).get("label")
-                        or "neutral"
-                    )
                     _speak_text_realtime(
                         text=final_text,
-                        emotion_label=emotion_label,
+                        emotion_label=str(event_payload.get("emotion_label") or "neutral"),
                         enabled=tts_enabled,
                         ref_audio=tts_ref_audio,
                     )
@@ -1361,56 +954,38 @@ def main():
                         idle_note = (raw + (" | " + idle_note if idle_note else "")).strip()
                         idle_minutes = 30
 
-            run_config, pending_checkpoint_id = _build_run_config(config, pending_checkpoint_id)
+            run_config, pending_checkpoint_id = backend_session.build_run_config(pending_checkpoint_id)
             event_text = idle_note or f"已经安静地过去了 {idle_minutes} 分钟，没有新的用户消息。"
-            idle_payload = _build_idle_event_payload(
-                graph=graph,
+            idle_payload = backend_session.build_idle_event_payload(
                 run_config=run_config,
                 idle_minutes=idle_minutes,
                 note=event_text,
                 created_at=int(time.time()),
             )
-            after_values, final_text = _invoke_event_round(
-                graph=graph,
-                run_config=run_config,
-                event_payload=idle_payload,
-                transient_label="idle",
-            )
-            if not after_values:
-                continue
-
-            behavior_action = after_values.get("behavior_action") if isinstance(after_values.get("behavior_action"), dict) else {}
-            current_event = after_values.get("current_event") if isinstance(after_values.get("current_event"), dict) else {}
-            evolution_summary = _build_event_evolution_summary(memory_store, after_values)
-
-            print(
-                "\n[idle]"
-                + f" minutes={idle_minutes}"
-                + "\n[BEHAVIOR_ACTION]\n"
-                + json.dumps(behavior_action, ensure_ascii=False, indent=2)
-            )
-            _print_event_evolution_summary(evolution_summary, detailed=True)
-            _print_turn_appraisal(after_values)
-            if current_event:
-                print("\n[CURRENT_EVENT]\n" + json.dumps(current_event, ensure_ascii=False, indent=2))
-            if final_text:
-                print("\nAmadeus> " + final_text)
-                emotion_label = str(
-                    (
-                        after_values.get("emotion_state")
-                        if isinstance(after_values.get("emotion_state"), dict)
-                        else {}
-                    ).get("label")
-                    or "neutral"
+            try:
+                event_result = backend_session.invoke_event_round(
+                    run_config=run_config,
+                    event_payload=idle_payload,
+                    auto_resume_memory_approval=_AUTO_RESUME_MEMORY_APPROVAL,
+                    reject_reason="idle_no_manual_tooling",
                 )
-                _speak_text_realtime(
-                    text=final_text,
-                    emotion_label=emotion_label,
-                    enabled=tts_enabled,
-                    ref_audio=tts_ref_audio,
-                )
-            else:
-                print("\nAmadeus> （这轮她选择先不主动开口。）")
+            except Exception as e:
+                if _is_transient_runtime_error(e):
+                    print("\n[idle][warn] 本轮 idle 事件触发时网络连接中断。稍后再试就行。")
+                    continue
+                raise
+            idle_response = backend_api.build_event_round_response(
+                state_values=event_result.values,
+                final_text=event_result.final_text,
+                meta={"event_kind": "idle", "idle_minutes": idle_minutes},
+            ).payload
+            _print_event_round_payload(
+                header_label="idle",
+                header_value=f"minutes={idle_minutes}",
+                payload=idle_response,
+                tts_enabled=tts_enabled,
+                tts_ref_audio=tts_ref_audio,
+            )
             last_conversation_touch_ts = int(time.time())
             continue
 
@@ -1475,13 +1050,13 @@ def main():
                 print("用法：/correct key=value [| reason]")
                 continue
 
-            old = memory_store.get_profile().get(k)
+            preview = memory_admin.prepare_profile_correction(k, v, reason=reason)
             print("\n[memory correction]")
-            print("- key=" + str(k))
-            print("- old=" + json.dumps(old, ensure_ascii=False))
-            print("- new=" + json.dumps(v, ensure_ascii=False))
-            if reason:
-                print("- reason=" + reason)
+            print("- key=" + str(preview.key))
+            print("- old=" + json.dumps(preview.old_value, ensure_ascii=False))
+            print("- new=" + json.dumps(preview.new_value, ensure_ascii=False))
+            if preview.reason:
+                print("- reason=" + preview.reason)
 
             ans = input("  确认覆盖并写入 meta? (y/N) > ").strip().lower()
             if ans != "y":
@@ -1489,19 +1064,8 @@ def main():
                 continue
 
             try:
-                memory_store.set_profile(k, v)
-                memory_store.set_profile_meta(
-                    k,
-                    {
-                        "source": "user_correction",
-                        "old_value": old,
-                        "new_value": v,
-                        "reason": reason,
-                        "corrected_at": int(time.time()),
-                        "confirmed_by": "user",
-                    },
-                )
-                print(f"已纠正 profile.{k}")
+                memory_admin.apply_profile_correction(preview, confirmed_by="user")
+                print(f"已纠正 profile.{preview.key}")
             except Exception as e:
                 print("写入失败：" + str(e))
             continue
@@ -1519,49 +1083,29 @@ def main():
             if not k:
                 print("用法：/undo key [| reason]")
                 continue
-            if not reason:
-                reason = "user requested undo"
-
-            meta = (memory_store.get_profile_meta() or {}).get(k)
-            if not isinstance(meta, dict):
-                print("未找到该 key 的 meta，无法自动撤销。")
-                continue
-            if ("old_value" not in meta) or ("new_value" not in meta):
-                print("meta 缺少 old_value/new_value，无法自动撤销。")
-                continue
-
-            cur = memory_store.get_profile().get(k)
-            if cur != meta.get("new_value"):
-                print("当前值与 meta.new_value 不一致，拒绝自动撤销（避免误操作）。")
-                print("- current=" + json.dumps(cur, ensure_ascii=False))
-                print("- meta.new_value=" + json.dumps(meta.get("new_value"), ensure_ascii=False))
+            try:
+                preview = memory_admin.prepare_undo_profile_correction(k, reason=reason)
+            except MemoryAdminError as exc:
+                print(str(exc))
+                if exc.details:
+                    if "current" in exc.details:
+                        print("- current=" + json.dumps(exc.details.get("current"), ensure_ascii=False))
+                    if "meta_new_value" in exc.details:
+                        print("- meta.new_value=" + json.dumps(exc.details.get("meta_new_value"), ensure_ascii=False))
                 continue
 
-            old_v = meta.get("old_value")
             print("\n[undo correction]")
-            print("- key=" + str(k))
-            print("- revert_to(old_value)=" + json.dumps(old_v, ensure_ascii=False))
-            print("- reason=" + reason)
+            print("- key=" + str(preview.key))
+            print("- revert_to(old_value)=" + json.dumps(preview.revert_to, ensure_ascii=False))
+            print("- reason=" + preview.reason)
             ans = input("  确认撤销? (y/N) > ").strip().lower()
             if ans != "y":
                 print("已取消")
                 continue
 
             try:
-                memory_store.set_profile(k, old_v)
-                memory_store.set_profile_meta(
-                    k,
-                    {
-                        "source": "undo_correction",
-                        "undone_at": int(time.time()),
-                        "reason": reason,
-                        "reverted_from": meta.get("new_value"),
-                        "reverted_to": old_v,
-                        "prev_meta": meta,
-                        "confirmed_by": "user",
-                    },
-                )
-                print(f"已撤销 profile.{k} 的上一次纠错")
+                memory_admin.apply_undo_profile_correction(preview, confirmed_by="user")
+                print(f"已撤销 profile.{preview.key} 的上一次纠错")
             except Exception as e:
                 print("撤销失败：" + str(e))
             continue
@@ -1573,8 +1117,12 @@ def main():
                 print("用法：/set key=value")
                 continue
             k, v = kv.split("=", 1)
-            memory_store.set_profile(k.strip(), v.strip())
-            print(f"已写入 profile.{k.strip()}")
+            try:
+                normalized_key = memory_admin.set_profile_value(k.strip(), v.strip())
+            except MemoryAdminError as exc:
+                print(str(exc))
+                continue
+            print(f"已写入 profile.{normalized_key}")
             continue
         if user.lower().startswith("/forget "):
             # /forget key （profile默认）
@@ -1582,11 +1130,15 @@ def main():
             if not k:
                 print("用法：/forget key")
                 continue
-            ok = memory_store.delete_profile(k)
+            try:
+                ok = memory_admin.delete_profile_key(k)
+            except MemoryAdminError as exc:
+                print(str(exc))
+                continue
             print("已删除" if ok else "未找到")
             continue
         if user.lower() == "/moments":
-            ms = list(reversed(memory_store.list_moments(limit=20)))
+            ms = memory_admin.list_moments(limit=20)
             for m in ms:
                 print(f"- #{m['id']} {m['summary']}")
             continue
@@ -1597,11 +1149,11 @@ def main():
             except Exception:
                 print("用法：/forget_moment <id>")
                 continue
-            ok = memory_store.delete_moment(mid)
+            ok = memory_admin.delete_moment(mid)
             print("已删除" if ok else "未找到")
             continue
         if user.lower() == "/reflections":
-            rs = list(reversed(memory_store.list_reflections(limit=20)))
+            rs = memory_admin.list_reflections(limit=20)
             for r in rs:
                 print(f"- @{r['id']}({r.get('importance')}) {r['text']}")
             continue
@@ -1612,7 +1164,7 @@ def main():
             except Exception:
                 print("用法：/forget_reflection <id>")
                 continue
-            ok = memory_store.delete_reflection(rid)
+            ok = memory_admin.delete_reflection(rid)
             print("已删除" if ok else "未找到")
             continue
         if user.lower().startswith("/reflect"):
@@ -1624,165 +1176,38 @@ def main():
                     n = int(parts[1])
                 except Exception:
                     n = 20
-            n = max(5, min(200, n))
-
-            recent = list(reversed(memory_store.list_moments(limit=n)))
-            if not recent:
-                print("\n没有 moments，无法生成反思。")
-                continue
-
-            llm = build_chat_model(temperature=0.2)
-
-            prompt = (
-                "你是记忆反思器(reflection generator)。给定一组按时间排序的 moments，请总结出 1~6 条‘长期规律/稳定结论’。\n"
-                "要求：\n"
-                "- 反思应尽量稳定：偏好、禁忌、沟通方式、关系边界、长期目标等；不要总结一次性事件细节。\n"
-                "- 每条反思尽量短（10~40字），可作为长期记忆注入。\n"
-                "- 给出 derived_from：支撑该反思的 moment id 列表（1~10个）。\n"
-                "- 给出 importance：0~1。越重要越高。\n"
-                "- 只输出严格 JSON 数组，不要任何多余文字。\n"
-                "输出格式：[{\"text\": str, \"derived_from\": [int,...], \"importance\": 0~1}, ...]\n"
-                f"moments：{json.dumps([{ 'id': m['id'], 'summary': m['summary'] } for m in recent], ensure_ascii=False)}\n"
-            )
-
-            raw = llm.invoke([SystemMessage(content=prompt)])
-            data = None
-            for attempt in (1, 2):
-                try:
-                    data = json.loads(getattr(raw, "content", "") or "")
-                    break
-                except Exception:
-                    if attempt == 1:
-                        raw = llm.invoke(
-                            [
-                                SystemMessage(
-                                    content=prompt
-                                    + "\n【重试】只输出 JSON 数组，不得包含 Markdown 代码块/解释文字。"
-                                )
-                            ]
-                        )
-                        continue
-                    data = None
-
-            if not isinstance(data, list) or not data:
-                print("\n反思生成失败（未得到合法 JSON 数组）。")
+            try:
+                proposals = memory_admin.generate_reflection_proposals(moment_limit=n)
+            except MemoryAdminError as exc:
+                print("\n" + str(exc))
                 continue
 
             print("\n[reflect proposals]")
             wrote = 0
-            for it in data[:6]:
-                if not isinstance(it, dict):
-                    continue
-                text = str(it.get("text") or "").strip()
-                if not text:
-                    continue
-                derived_from = it.get("derived_from") or []
-                importance = it.get("importance")
+            for proposal in proposals:
                 print(
                     "- text="
-                    + text
+                    + proposal.text
                     + "\n  derived_from="
-                    + json.dumps(derived_from, ensure_ascii=False)
+                    + json.dumps(proposal.derived_from, ensure_ascii=False)
                     + " importance="
-                    + str(importance)
+                    + str(proposal.importance)
                 )
                 ans = input("  写入这条 reflection? (y/N) > ").strip().lower()
                 if ans != "y":
                     continue
+                write_rule = input("  同时写入 profile.user_model_rules? (y/N) > ").strip().lower() == "y"
                 try:
-                    rid = memory_store.add_reflection(text=text, derived_from=derived_from, importance=importance)
+                    memory_admin.write_reflection(proposal, write_user_model_rule=write_rule)
                     wrote += 1
                 except Exception as e:
                     print("  写入失败：" + str(e))
                     continue
 
-                # 可选：写回 profile.user_model_rules，形成 L3 -> L1 的闭环
-                ans2 = input("  同时写入 profile.user_model_rules? (y/N) > ").strip().lower()
-                if ans2 == "y":
-                    try:
-                        rule = {
-                            "text": text,
-                            "importance": importance,
-                            "derived_from": derived_from,
-                            "reflection_id": rid,
-                            "created_at": int(time.time()),
-                        }
-                        old = memory_store.get_profile().get("user_model_rules")
-                        merged = []
-                        if isinstance(old, list):
-                            merged = [*old]
-                        merged.append(rule)
-                        # 轻量去重：按 text 去重
-                        seen = set()
-                        uniq = []
-                        for it2 in merged:
-                            t2 = str((it2 or {}).get("text") if isinstance(it2, dict) else it2).strip()
-                            if not t2 or t2 in seen:
-                                continue
-                            seen.add(t2)
-                            uniq.append(it2)
-                        memory_store.set_profile("user_model_rules", uniq[:50])
-                        memory_store.set_profile_meta(
-                            "user_model_rules",
-                            {
-                                "source": "reflect_batch",
-                                "last_confirmed_at": int(time.time()),
-                                "note": "derived from reflections",
-                            },
-                        )
-                    except Exception as e:
-                        print("  写回 profile 失败：" + str(e))
-
             print(f"\n已写入 {wrote} 条 reflections。")
             continue
 
-        run_config = config
-        if pending_checkpoint_id:
-            run_config = {
-                "configurable": {
-                    "thread_id": config["configurable"]["thread_id"],
-                    "user_id": config["configurable"].get("user_id"),
-                    "checkpoint_id": pending_checkpoint_id,
-                }
-            }
-            # 只对下一次生效，避免一直从同一个checkpoint反复分叉
-            pending_checkpoint_id = None
-
-        def _invoke_stream(payload, cfg, on_text=None):
-            """基于 LangGraph streaming 的最小流式输出：只流式打印 call_model 节点产出的 AIMessageChunk。
-
-            同时提供 on_text 回调：每个 token chunk 到来时回调，便于做“边生成边TTS”。
-            """
-            last_values = None
-            buf = ""
-            for mode, chunk in graph.stream(payload, config=cfg, stream_mode=["messages", "values"]):
-                if mode == "values":
-                    last_values = chunk
-                    continue
-                if mode != "messages":
-                    continue
-
-                msg, meta = chunk
-                if (meta or {}).get("langgraph_node") != "call_model":
-                    continue
-
-                # 只打印 token chunk，避免最终完整消息重复输出
-                if not type(msg).__name__.endswith("Chunk"):
-                    continue
-                text = getattr(msg, "content", "") or ""
-                if not text:
-                    continue
-
-                buf += text
-                if callable(on_text):
-                    try:
-                        on_text(text)
-                    except Exception:
-                        pass
-
-            # Console output is rendered from the final message only.
-            # This avoids showing draft + rewritten text mixed together.
-            return last_values or {}, False, buf
+        run_config, pending_checkpoint_id = backend_session.build_run_config(pending_checkpoint_id)
 
         # 按官方示例：使用 DashScope Realtime，把文本 append_text 给服务端，服务端流式返回 audio.delta。
         tts_out_dir = (get_settings().data_dir / "tts_out")
@@ -1791,12 +1216,7 @@ def main():
         rt = None
         emotion_label = "neutral"
         try:
-            cur = graph.get_state(
-                {"configurable": {"thread_id": run_config["configurable"]["thread_id"]}}
-            )
-            vals = getattr(cur, "values", {}) if cur is not None else {}
-            if isinstance(vals, dict) and isinstance(vals.get("emotion_state"), dict):
-                emotion_label = str((vals.get("emotion_state") or {}).get("label") or "neutral")
+            emotion_label = backend_session.emotion_label(config=run_config, default="neutral")
         except Exception:
             emotion_label = "neutral"
         tts_profile = emotion_to_tts_profile(emotion_label)
@@ -1828,16 +1248,18 @@ def main():
         # 这里如果按 token 粒度“毫秒级狂发”，容易导致服务端来不及产出音频或连接不稳定。
         try:
             if pending_checkpoint_id is None:
-                _apply_implicit_idle_maturation(
-                    graph=graph,
+                backend_session.apply_implicit_idle_maturation(
                     run_config=run_config,
                     last_conversation_touch_ts=last_conversation_touch_ts,
+                    trigger_minutes=_implicit_idle_trigger_minutes(),
                 )
-            out, streamed, streamed_text = _invoke_stream(
+            stream_result = backend_session.invoke_stream(
                 {"messages": [{"role": "user", "content": user}]},
-                cfg=run_config,
+                config=run_config,
                 on_text=None,
             )
+            out = stream_result.values
+            streamed_text = stream_result.streamed_text
         except Exception as e:
             if _is_transient_runtime_error(e):
                 print("\n[network][warn] 远端模型连接中断，本轮未完成。请直接重试刚才那条输入。")
@@ -1845,112 +1267,55 @@ def main():
             raise
 
         # 工具调用 HITL：一个回合里可能出现多次 interrupt（例如：先审批记忆写入，再审批对话工具）
-        while out.get("__interrupt__"):
-            intr = out["__interrupt__"][0]
-            payload = getattr(intr, "value", None)
-            if payload is None and isinstance(intr, dict):
-                payload = intr.get("value")
-            payload = payload or {}
-            if payload.get("kind") != "tool_approval":
-                break
-
-            tool_calls = payload.get("tool_calls", [])
-            payload_source = str(payload.get("source") or "").strip().lower()
-            if isinstance(payload, dict) and _should_auto_resume_memory_approval(payload):
-                decisions = [{"action": "approve"} for _ in tool_calls] if isinstance(tool_calls, list) else []
-                out, streamed, streamed_text = _invoke_stream(
-                    Command(resume={"decisions": decisions}),
-                    cfg={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+        approval_request = stream_result.approval_request
+        while approval_request is not None:
+            tool_calls = approval_request.tool_calls
+            payload = approval_request.payload
+            payload_source = approval_request.source
+            if _AUTO_RESUME_MEMORY_APPROVAL(payload):
+                decisions = auto_approve_decisions(tool_calls)
+                stream_result = backend_session.resume_stream(
+                    decisions,
+                    config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
                     on_text=None,
                 )
+                out = stream_result.values
+                streamed_text = stream_result.streamed_text
+                approval_request = stream_result.approval_request
                 continue
-            show_approval_logs = not (bool(HIDE_TOOL_APPROVAL_LOGS) and payload_source == "memory")
-            # 防线：避免一次 interrupt 里出现过多调用导致刷屏/误批。
-            max_calls = int(TOOL_CALLS_MAX)
-            if max_calls <= 0:
-                max_calls = 12
-            if isinstance(tool_calls, list) and len(tool_calls) > max_calls:
-                if show_approval_logs:
-                    print(f"\n[warn] tool_calls too many ({len(tool_calls)}), only showing first {max_calls}")
-                tool_calls = tool_calls[:max_calls]
+            approval_batch = summarize_tool_approval_request(
+                source=payload_source,
+                tool_calls=tool_calls,
+                hide_memory_logs=bool(HIDE_TOOL_APPROVAL_LOGS),
+                max_calls=TOOL_CALLS_MAX,
+                toolset_upgrade_ttl_s=TOOLSET_UPGRADE_TTL_S,
+            )
             decisions = []
-            if show_approval_logs:
+            if approval_batch.show_logs:
+                if approval_batch.hidden_tool_call_count > 0:
+                    print(
+                        f"\n[warn] tool_calls too many ({approval_batch.total_tool_call_count}), "
+                        f"only showing first {len(approval_batch.visible_tool_calls)}"
+                    )
                 print("\n[需要审批的工具调用]")
 
-            risky_profile_keys = {
-                "nickname",
-                "timezone",
-                "likes",
-                "dislikes",
-                "persona_rules",
-                "user_model_rules",
-            }
-
-            for tc in tool_calls:
-                name = str(tc.get("name") or "")
-                args = tc.get("args") or {}
-
-                # 更可读的审批信息：把证据链(meta)单独打印出来
-                if show_approval_logs:
-                    print("- tool=" + str(name))
-                if name == "request_toolset_upgrade" and isinstance(args, dict):
-                    try:
-                        req_tools = args.get("requested_tools")
-                        rsn = args.get("reason")
-                        if isinstance(req_tools, list):
-                            if show_approval_logs:
-                                print("  requested_tools=" + json.dumps(req_tools, ensure_ascii=False))
-                        if isinstance(rsn, str) and rsn.strip():
-                            if show_approval_logs:
-                                print("  reason=" + rsn.strip())
-                        if show_approval_logs:
-                            print(
-                                "  note=approve 将临时解锁上述工具，预计有效期约 "
-                                + str(int(TOOLSET_UPGRADE_TTL_S))
-                                + "s"
-                            )
-                    except Exception:
-                        pass
-                try:
-                    if isinstance(args, dict) and isinstance(args.get("meta"), dict):
-                        meta = args.get("meta") or {}
-                        meta_preview = {
-                            "source_text": meta.get("source_text"),
-                            "confidence": meta.get("confidence"),
-                            "extracted_at": meta.get("extracted_at"),
-                            "confirmed_by": meta.get("confirmed_by"),
-                        }
-                        # 避免 meta 过长刷屏
-                        if isinstance(meta_preview.get("source_text"), str) and len(meta_preview["source_text"]) > 200:
-                            meta_preview["source_text"] = meta_preview["source_text"][:200] + "..."
-                        if show_approval_logs:
-                            print("  meta=" + json.dumps(meta_preview, ensure_ascii=False))
-                except Exception:
-                    pass
-                if show_approval_logs:
-                    print("  args=" + json.dumps(args, ensure_ascii=False))
+            for preview in approval_batch.visible_tool_calls:
+                if approval_batch.show_logs:
+                    print("- tool=" + preview.name)
+                    if preview.requested_tools:
+                        print("  requested_tools=" + json.dumps(preview.requested_tools, ensure_ascii=False))
+                    if preview.reason:
+                        print("  reason=" + preview.reason)
+                    if preview.note:
+                        print("  note=" + preview.note)
+                    if preview.meta_preview:
+                        print("  meta=" + json.dumps(preview.meta_preview, ensure_ascii=False))
+                    print("  args=" + json.dumps(preview.args, ensure_ascii=False))
 
                 action = input("  选择 a=approve / e=edit / r=reject > ").strip().lower() or "r"
 
-                # 记忆写入二次确认：
-                # - 仅针对 memory 提案（source=memory）
-                # - set_profile：高风险字段 or overwrite 才二次确认
-                # - correct_profile：纠错/覆盖写本身就高风险，默认一律二次确认
-                need_second_confirm = False
-                try:
-                    if payload_source == "memory" and name in {"set_profile", "correct_profile", "undo_profile_correction"} and isinstance(args, dict):
-                        k = str(args.get("key") or "").strip()
-                        if name in {"correct_profile", "undo_profile_correction"}:
-                            need_second_confirm = True
-                        else:
-                            mode = str(args.get("mode") or "merge").strip().lower()
-                            if (k in risky_profile_keys) or (mode == "overwrite"):
-                                need_second_confirm = True
-                except Exception:
-                    need_second_confirm = False
-
                 if action == "a":
-                    if need_second_confirm:
+                    if preview.needs_second_confirmation:
                         ans2 = input("  二次确认：输入 y 才会写入长期记忆 > ").strip().lower()
                         if ans2 != "y":
                             decisions.append({"action": "reject", "reason": "second confirm failed"})
@@ -1964,52 +1329,41 @@ def main():
                         print("  JSON 解析失败，按 reject 处理")
                         decisions.append({"action": "reject", "reason": "bad json"})
                         continue
-                    # edit 也可能涉及高风险覆盖，仍要求二次确认（以 new_args 为准）
-                    try:
-                        if payload_source == "memory" and name in {"set_profile", "correct_profile", "undo_profile_correction"} and isinstance(new_args, dict):
-                            k = str(new_args.get("key") or "").strip()
-                            need_second = False
-                            if name in {"correct_profile", "undo_profile_correction"}:
-                                need_second = True
-                            else:
-                                mode = str(new_args.get("mode") or "merge").strip().lower()
-                                if (k in risky_profile_keys) or (mode == "overwrite"):
-                                    need_second = True
-                            if need_second:
-                                ans2 = input("  二次确认(edit)：输入 y 才会写入长期记忆 > ").strip().lower()
-                                if ans2 != "y":
-                                    decisions.append({"action": "reject", "reason": "second confirm failed"})
-                                    continue
-                    except Exception:
-                        pass
+                    if needs_second_confirmation(payload_source, preview.name, new_args):
+                        ans2 = input("  二次确认(edit)：输入 y 才会写入长期记忆 > ").strip().lower()
+                        if ans2 != "y":
+                            decisions.append({"action": "reject", "reason": "second confirm failed"})
+                            continue
                     decisions.append({"action": "edit", "args": new_args})
                 else:
                     reason = input("  reject 原因(可空) > ").strip() or "rejected"
                     decisions.append({"action": "reject", "reason": reason})
 
-            out, streamed, streamed_text = _invoke_stream(
-                Command(resume={"decisions": decisions}),
-                cfg={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+            if approval_batch.hidden_tool_call_count > 0:
+                decisions.extend(
+                    {"action": "reject", "reason": "tool_calls_clipped"}
+                    for _ in range(approval_batch.hidden_tool_call_count)
+                )
+
+            stream_result = backend_session.resume_stream(
+                decisions,
+                config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
                 on_text=None,
             )
+            out = stream_result.values
+            streamed_text = stream_result.streamed_text
+            approval_request = stream_result.approval_request
 
-        # out["messages"] 是完整消息列表，最后一条是刚生成的 AIMessage/ToolMessage
-        final_text = ""
-        try:
-            msgs = out.get("messages") if isinstance(out, dict) else None
-            if isinstance(msgs, list) and msgs:
-                last_msg = msgs[-1]
-                final_text = str(getattr(last_msg, "content", "") or "")
-        except Exception:
-            final_text = ""
+        turn_response = backend_api.build_turn_response(
+            state_values=out,
+            streamed_text=streamed_text,
+        ).payload
+        final_text = str(turn_response.get("final_text") or "").strip()
+        emotion_label = str(turn_response.get("emotion_label") or emotion_label or "neutral").strip() or "neutral"
 
-        if (not final_text.strip()) and streamed:
-            final_text = (streamed_text or "").strip()
-
-        if not streamed:
-            print(f"\nAmadeus> {final_text}")
-        if _cli_show_turn_summary_enabled() and isinstance(out, dict):
-            turn_summary = _build_event_evolution_summary(memory_store, out)
+        print(f"\nAmadeus> {final_text}")
+        if _cli_show_turn_summary_enabled():
+            turn_summary = turn_response.get("turn_summary", {})
             _print_event_evolution_summary(turn_summary, detailed=False, label="TURN_EVOLUTION")
 
         # TTS 收尾：必须等“工具审批/执行结束后的最终回复”出来再 finish，否则有工具调用时会没声音。
@@ -2054,6 +1408,8 @@ def main():
 
         # 记忆写入已统一通过工具调用 + interrupt 审批执行，这里不再在 CLI 直接写库。
         last_conversation_touch_ts = int(time.time())
+
+    runtime_bundle.close()
 
 
 if __name__ == "__main__":

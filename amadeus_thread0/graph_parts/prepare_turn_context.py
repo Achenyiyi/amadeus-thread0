@@ -34,6 +34,8 @@ from .persona_runtime import (
 from .postprocess import _clean_utf8_text, _needs_structured_answer, _response_style_hint
 from .relational_carryover import (
     _apply_agenda_lifecycle_residue_to_runtime_state,
+    _apply_retrieved_behavior_trace_bridge,
+    _hydrate_retrieved_agenda_lifecycle_residue,
     _recent_interaction_carryover,
     _seeded_interaction_carryover_from_state,
 )
@@ -44,7 +46,7 @@ from .relational_runtime import (
     _worldline_focus,
 )
 from .retrieval import _empty_retrieved_context, _retrieve_context
-from .semantic_narrative import _semantic_narrative_profile
+from .semantic_narrative import _prefer_semantic_narrative_profile, _semantic_narrative_profile
 from .state import ThreadState
 from .turn_events import (
     _append_recent_events,
@@ -171,6 +173,10 @@ def _prepare_turn_context(
 
     external_probe_mode = _is_external_probe_context(persona_core=persona_core, counterpart_profile=profile)
     retrieved = _empty_retrieved_context(store) if external_probe_mode else _retrieve_context(effective_user_text or user_text, store)
+    if not agenda_lifecycle_residue:
+        agenda_lifecycle_residue = _hydrate_retrieved_agenda_lifecycle_residue(
+            retrieved=retrieved if isinstance(retrieved, dict) else {},
+        )
     retrieved_relationship = (
         retrieved.get("relationship") if isinstance(retrieved.get("relationship"), dict) else store.get_relationship()
     )
@@ -265,17 +271,16 @@ def _prepare_turn_context(
         user_text=effective_user_text or user_text,
         current_event=appraisal_event_context,
     )
-    prior_semantic_narrative_profile = (
+    prior_semantic_narrative_profile = _prefer_semantic_narrative_profile(
         state.get("semantic_narrative_profile")
         if isinstance(state.get("semantic_narrative_profile"), dict)
-        else semantic_narrative_profile_for_appraisal
+        else None,
+        semantic_narrative_profile_for_appraisal,
     )
     appraisal_interaction_carryover = _recent_interaction_carryover(
         prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
         prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
-        prior_agenda_lifecycle_residue=state.get("agenda_lifecycle_residue")
-        if isinstance(state.get("agenda_lifecycle_residue"), dict)
-        else {},
+        prior_agenda_lifecycle_residue=agenda_lifecycle_residue,
         prior_counterpart_assessment=state.get("counterpart_assessment")
         if isinstance(state.get("counterpart_assessment"), dict)
         else {},
@@ -300,6 +305,11 @@ def _prepare_turn_context(
             current_event=appraisal_event_context,
             response_style_hint=response_style_hint,
         )
+    appraisal_event_context, appraisal_interaction_carryover = _apply_retrieved_behavior_trace_bridge(
+        retrieved=retrieved if isinstance(retrieved, dict) else {},
+        current_event=appraisal_event_context if isinstance(appraisal_event_context, dict) else {},
+        interaction_carryover=appraisal_interaction_carryover if isinstance(appraisal_interaction_carryover, dict) else {},
+    )
 
     appraisal_input_text = effective_user_text or user_text
     appraisal = _invoke_turn_appraisal(
@@ -357,9 +367,7 @@ def _prepare_turn_context(
     interaction_carryover = _recent_interaction_carryover(
         prior_current_event=prior_current_event if isinstance(prior_current_event, dict) else {},
         prior_behavior_action=prior_behavior_action if isinstance(prior_behavior_action, dict) else {},
-        prior_agenda_lifecycle_residue=state.get("agenda_lifecycle_residue")
-        if isinstance(state.get("agenda_lifecycle_residue"), dict)
-        else {},
+        prior_agenda_lifecycle_residue=agenda_lifecycle_residue,
         prior_counterpart_assessment=state.get("counterpart_assessment")
         if isinstance(state.get("counterpart_assessment"), dict)
         else {},
@@ -384,6 +392,11 @@ def _prepare_turn_context(
             current_event=current_event,
             response_style_hint=response_style_hint,
         )
+    current_event, interaction_carryover = _apply_retrieved_behavior_trace_bridge(
+        retrieved=retrieved if isinstance(retrieved, dict) else {},
+        current_event=current_event if isinstance(current_event, dict) else {},
+        interaction_carryover=interaction_carryover if isinstance(interaction_carryover, dict) else {},
+    )
     recent_events = _append_recent_events(_sanitize_obj(state.get("recent_events")), current_event, limit=6)
 
     return {

@@ -97,6 +97,7 @@ def evolve_turn_state(
     behavior_action = build_behavior_action(
         current_event=current_event,
         response_style_hint=response_style_hint,
+        appraisal=appraisal,
         science_mode=science_mode,
         emotion_state=emotion_state,
         bond_state=bond_state,
