@@ -971,6 +971,18 @@ class WorldModelResidueTests(unittest.TestCase):
                     "dominant_primary_motive": "gentle_recontact",
                     "dominant_motive_tension": "self_rhythm_vs_contact",
                     "goal_frame_examples": ["先从自己的节奏里回头，留一个不压迫对方的小开口。"],
+                    "dominant_counterpart_stance": "open",
+                    "dominant_counterpart_scene": "care_bid",
+                    "counterpart_respect_level": 0.74,
+                    "counterpart_reciprocity": 0.70,
+                    "counterpart_boundary_pressure": 0.08,
+                    "counterpart_reliability_read": 0.78,
+                    "counterpart_dominant_scene_signal": "care",
+                    "counterpart_openness_drive": 0.76,
+                    "counterpart_guarded_drive": 0.18,
+                    "counterpart_guard_margin": -0.58,
+                    "counterpart_support_count": 2,
+                    "counterpart_support_mass": 1.4,
                     "anchor_text": "红莉栖不会在每次回应前都把自己的内部节奏清零。",
                     "prompt_anchor_text": "你不会在每次回应前都把自己的内部节奏清零。",
                     "anchor_strength": 0.74,
@@ -987,9 +999,19 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(rhythm.get("primary_motive"), "gentle_recontact")
         self.assertEqual(rhythm.get("motive_tension"), "self_rhythm_vs_contact")
         self.assertIn("自己的节奏", " ".join(rhythm.get("goal_frame_examples") or []))
+        counterpart_snapshot = profile.get("counterpart_snapshot") if isinstance(profile.get("counterpart_snapshot"), dict) else {}
+        rhythm_counterpart = counterpart_snapshot.get("rhythm_style") if isinstance(counterpart_snapshot.get("rhythm_style"), dict) else {}
+        self.assertEqual(rhythm_counterpart.get("counterpart_stance"), "open")
+        self.assertEqual(rhythm_counterpart.get("counterpart_scene"), "care_bid")
+        self.assertEqual(
+            str(((rhythm_counterpart.get("counterpart_profile") or {}) if isinstance(rhythm_counterpart.get("counterpart_profile"), dict) else {}).get("dominant_scene_signal") or ""),
+            "care",
+        )
         top = (profile.get("top_narratives") or [])[0]
         self.assertEqual(top.get("primary_motive"), "gentle_recontact")
         self.assertEqual(top.get("motive_tension"), "self_rhythm_vs_contact")
+        top_counterpart = top.get("counterpart_snapshot") if isinstance(top.get("counterpart_snapshot"), dict) else {}
+        self.assertEqual(top_counterpart.get("counterpart_scene"), "care_bid")
 
     def test_semantic_narrative_profile_surfaces_long_term_identity_layer(self):
         profile = _semantic_narrative_profile(
@@ -1089,10 +1111,106 @@ class WorldModelResidueTests(unittest.TestCase):
         sedimentation = profile.get("sedimentation_snapshot") if isinstance(profile.get("sedimentation_snapshot"), dict) else {}
         self.assertGreater(float(sedimentation.get("selfhood_style", 0.0) or 0.0), 0.50)
         self.assertGreaterEqual(int(profile.get("long_term_axis_count") or 0), 2)
+        continuity_axes = profile.get("continuity_axes") if isinstance(profile.get("continuity_axes"), list) else []
+        self.assertIn("selfhood_style", [str(item.get("category") or "") for item in continuity_axes])
+        self.assertIn("rhythm_style", [str(item.get("category") or "") for item in continuity_axes])
         long_term = profile.get("long_term_self_narratives") if isinstance(profile.get("long_term_self_narratives"), list) else []
         self.assertIn("sedimentation_score", long_term[0])
         self.assertIn("support_span_s", long_term[0])
         self.assertIn("identity_strength", long_term[0])
+
+    def test_semantic_narrative_profile_dedupes_long_term_self_narratives_by_category(self):
+        profile = _semantic_narrative_profile(
+            [
+                {
+                    "category": "rhythm_style",
+                    "text": "她会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                    "stability": 0.82,
+                    "support_count": 5,
+                    "sedimentation_score": 0.80,
+                    "persistence_score": 0.85,
+                    "residue_score": 0.78,
+                    "integration_score": 0.80,
+                    "support_span_s": 9 * 24 * 3600,
+                    "reactivation_hits": 3,
+                    "reactivation_cadence_score": 0.66,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "identity_ready": True,
+                    "identity_strength": 0.86,
+                    "identity_text": "她会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                    "identity_prompt_text": "你会把自己的节奏延续到下一轮开口前，不会每次都把自己清零。",
+                },
+                {
+                    "category": "rhythm_style",
+                    "text": "她不会因为重新开口就把刚才的内部节奏全部抹掉。",
+                    "stability": 0.78,
+                    "support_count": 4,
+                    "sedimentation_score": 0.74,
+                    "persistence_score": 0.80,
+                    "residue_score": 0.72,
+                    "integration_score": 0.74,
+                    "support_span_s": 7 * 24 * 3600,
+                    "reactivation_hits": 2,
+                    "reactivation_cadence_score": 0.58,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "identity_ready": True,
+                    "identity_strength": 0.78,
+                    "identity_text": "她不会因为重新开口就把刚才的内部节奏全部抹掉。",
+                    "identity_prompt_text": "你不会因为重新开口就把刚才的内部节奏全部抹掉。",
+                },
+                {
+                    "category": "selfhood_style",
+                    "text": "她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。",
+                    "stability": 0.80,
+                    "support_count": 4,
+                    "sedimentation_score": 0.77,
+                    "persistence_score": 0.82,
+                    "residue_score": 0.74,
+                    "integration_score": 0.76,
+                    "support_span_s": 8 * 24 * 3600,
+                    "reactivation_hits": 2,
+                    "reactivation_cadence_score": 0.62,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "long_term",
+                    "identity_ready": True,
+                    "identity_strength": 0.81,
+                    "identity_text": "她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。",
+                    "identity_prompt_text": "你会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。",
+                },
+                {
+                    "category": "presence_style",
+                    "text": "上一轮留下的在场感会继续影响她下一次靠近，不会每次都从零开始。",
+                    "stability": 0.76,
+                    "support_count": 4,
+                    "sedimentation_score": 0.74,
+                    "persistence_score": 0.78,
+                    "residue_score": 0.70,
+                    "integration_score": 0.72,
+                    "support_span_s": 6 * 24 * 3600,
+                    "reactivation_hits": 2,
+                    "reactivation_cadence_score": 0.60,
+                    "last_supported_at": 1_900,
+                    "horizon_tag": "consolidating",
+                },
+            ],
+            user_text="你刚才是先顺着自己的节奏想了想，然后再回头看我吗？",
+            current_event={
+                "kind": "user_utterance",
+                "response_style_hint": "relationship",
+                "created_at": 2_000,
+            },
+        )
+        long_term = profile.get("long_term_self_narratives") if isinstance(profile.get("long_term_self_narratives"), list) else []
+        categories = [str(item.get("category") or "") for item in long_term]
+        self.assertEqual(len(categories), len(set(categories)))
+        self.assertIn("rhythm_style", categories)
+        self.assertIn("selfhood_style", categories)
+        continuity_axes = profile.get("continuity_axes") if isinstance(profile.get("continuity_axes"), list) else []
+        axis_categories = [str(item.get("category") or "") for item in continuity_axes]
+        self.assertEqual(axis_categories[0], "rhythm_style")
+        self.assertIn("presence_style", axis_categories)
 
     def test_semantic_narrative_profile_uses_support_quality_to_bias_continuity_and_identity(self):
         base_item = {
@@ -2540,6 +2658,102 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_counterpart_history_can_promote_friend_anchor_to_warming(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。",
+                        "affinity_score": 0.12,
+                        "trust_score": 0.08,
+                        "derived": False,
+                    }
+                )
+                for summary in (
+                    "这次互动里明显愿意接近，也不是在敷衍应付。",
+                    "能感觉到对方认真接住了前面的熟悉感，不只是礼貌回应。",
+                    "这次不只是顺着说话，更像真的愿意把关系往前接。 ",
+                ):
+                    store.add_counterpart_assessment_history(
+                        summary=summary,
+                        stance="open",
+                        scene="care_bid",
+                        respect_level=0.82,
+                        reciprocity=0.78,
+                        boundary_pressure=0.08,
+                        reliability_read=0.80,
+                        primary_motive="companionship",
+                        assessment_profile={
+                            "openness_drive": 0.78,
+                            "guarded_drive": 0.18,
+                            "guard_margin": -0.60,
+                            "dominant_scene_signal": "care",
+                            "scene_strengths": {
+                                "care": 0.82,
+                                "repair": 0.26,
+                                "friction": 0.08,
+                                "selfhood": 0.10,
+                                "busy": 0.24,
+                            },
+                        },
+                    )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "warming")
+                self.assertGreater(float(relationship.get("affinity_score") or 0.0), 0.24)
+                self.assertGreater(float(relationship.get("trust_score") or 0.0), 0.18)
+            finally:
+                store.close()
+
+    def test_guarded_low_reliability_counterpart_history_depresses_trust_more_than_affinity(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                store.set_relationship(
+                    {
+                        "stage": "friend",
+                        "notes": "并不是从零开始的陌生状态，更像带着旧日熟悉感重新接上线。",
+                        "affinity_score": 0.12,
+                        "trust_score": 0.10,
+                        "derived": False,
+                    }
+                )
+                for summary in (
+                    "不算直接推开，但可靠感还是没完全立住。",
+                    "表面上没有闹僵，可是互相接得住的感觉还不够稳。",
+                    "不是强硬设防，不过这次还是更像先收着，没有把信任交出来。",
+                ):
+                    store.add_counterpart_assessment_history(
+                        summary=summary,
+                        stance="guarded",
+                        scene="busy_not_disrespectful",
+                        respect_level=0.55,
+                        reciprocity=0.52,
+                        boundary_pressure=0.18,
+                        reliability_read=0.24,
+                        primary_motive="preserve_self_rhythm",
+                        assessment_profile={
+                            "openness_drive": 0.34,
+                            "guarded_drive": 0.58,
+                            "guard_margin": 0.24,
+                            "dominant_scene_signal": "busy",
+                            "scene_strengths": {
+                                "care": 0.12,
+                                "repair": 0.10,
+                                "friction": 0.24,
+                                "selfhood": 0.18,
+                                "busy": 0.68,
+                            },
+                        },
+                    )
+                relationship = store.get_relationship()
+                self.assertEqual(str(relationship.get("stage") or ""), "friend")
+                self.assertLess(float(relationship.get("trust_score") or 0.0), 0.08)
+                self.assertLess(float(relationship.get("trust_score") or 0.0), float(relationship.get("affinity_score") or 0.0))
+            finally:
+                store.close()
+
     def test_repeated_negative_history_can_pull_warming_relationship_back_down(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -2586,6 +2800,34 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("内部节奏", compact_hint)
         self.assertIn("环境回声", appraisal_hint)
         self.assertIn("内部节奏", appraisal_hint)
+
+    def test_compact_semantic_hint_prefers_strongest_axes_over_fixed_order(self):
+        profile = {
+            "presence_carry": 0.47,
+            "ambient_attunement": 0.45,
+            "rhythm_continuity": 0.84,
+            "selfhood_integrity": 0.80,
+            "commitment_carry": 0.77,
+            "continuity_axes": [
+                {"category": "rhythm_style", "score": 0.84},
+                {"category": "selfhood_style", "score": 0.80},
+                {"category": "commitment_style", "score": 0.77},
+                {"category": "presence_style", "score": 0.47},
+                {"category": "ambient_style", "score": 0.45},
+            ],
+            "summary_lines": [
+                "她会把自己的内部节奏延续到下一轮，不会每次回应都把自己清零。",
+                "她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。",
+                "认真说过的约定会继续挂在心上，不会被当成随口一句。",
+                "周围环境的细小变化会继续留在她的感知里，并自然带进开口方式。",
+            ],
+            "top_narratives": [],
+        }
+        compact_hint = _compact_semantic_narrative_hint(profile)
+        self.assertIn("内部节奏", compact_hint)
+        self.assertIn("平等关系", compact_hint)
+        self.assertIn("约定", compact_hint)
+        self.assertNotIn("周围环境", compact_hint)
 
     def test_subjective_runtime_hint_mentions_own_rhythm_from_long_term_profile(self):
         hint = _subjective_runtime_state_hint(
@@ -4785,6 +5027,66 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(carryover.get("source_action_target") or ""), "hold_own_rhythm")
         self.assertEqual(str(carryover.get("attention_target") or ""), "self_then_counterpart")
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.35)
+
+    def test_recent_interaction_carryover_backfills_from_persisted_proactive_history(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才先去忙自己的事情了吗？",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            proactive_continuity_history=[
+                {
+                    "content": {
+                        "summary": "她把那一下想靠近的窗口先按住，继续顺着自己的节奏走了一会儿。",
+                        "kind": "held",
+                        "trace_family": "own_rhythm",
+                        "source_event_kind": "agenda_lifecycle:held",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "own_rhythm",
+                        "hold_count": 2,
+                        "carryover_strength": 0.44,
+                        "recontact_cooldown": 0.18,
+                        "presence_residue": 0.22,
+                        "ambient_resonance": 0.10,
+                        "self_activity_momentum": 0.68,
+                        "own_rhythm_bias": 0.72,
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先把窗口按住，不急着立刻往前推。",
+                    }
+                }
+            ],
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才先去忙自己的事情了吗？",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我这边也刚刚缓过来一点。",
+                    "created_at": 118,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "现在又想回来接着和你说话。",
+            },
+            response_style_hint="natural",
+            world_model_state={},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(carryover.get("source_event_kind") or ""), "agenda_lifecycle:held")
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "own_rhythm")
+        self.assertEqual(str(carryover.get("source_action_target") or ""), "hold_own_rhythm")
+        self.assertEqual(str(carryover.get("source_primary_motive") or ""), "preserve_self_rhythm")
+        self.assertIn("persisted_proactive_history", carryover.get("source_tags") or [])
+        self.assertIn("自己的节奏", str(carryover.get("note") or ""))
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.45)
 
     def test_recent_interaction_carryover_backfills_lineage_driven_own_rhythm_without_persistence(self):
         carryover = _recent_interaction_carryover(

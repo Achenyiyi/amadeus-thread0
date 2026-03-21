@@ -280,6 +280,7 @@ export interface AssistantTurnPayload {
   turn_summary: EvolutionSummary;
   behavior_action: BehaviorActionPayload;
   behavior_plan: BehaviorPlanPayload;
+  interaction_carryover: JsonRecord;
   reconsolidation_snapshot: JsonRecord;
   turn_appraisal: JsonRecord;
   claim_links: ClaimLink[];
@@ -292,6 +293,7 @@ export interface EventRoundPayload {
   emotion_label: string;
   behavior_action: BehaviorActionPayload;
   behavior_plan: BehaviorPlanPayload;
+  interaction_carryover: JsonRecord;
   reconsolidation_snapshot: JsonRecord;
   current_event: JsonRecord;
   turn_appraisal: JsonRecord;
@@ -329,6 +331,10 @@ export interface WorldlineViewPayload {
   commitments: JsonRecord[];
   conflict_repair: JsonRecord[];
   unresolved_tensions: JsonRecord[];
+  counterpart_assessment_history: JsonRecord[];
+  counterpart_assessment_preview: JsonRecord[];
+  proactive_continuity_history: JsonRecord[];
+  proactive_continuity_preview: JsonRecord[];
   semantic_self_narratives: JsonRecord[];
   revision_traces: JsonRecord[];
 }
@@ -337,6 +343,10 @@ export interface BondViewPayload {
   relationship_state: JsonRecord;
   bond_state: JsonRecord;
   relationship_timeline: JsonRecord[];
+  counterpart_assessment_history: JsonRecord[];
+  counterpart_assessment_preview: JsonRecord[];
+  proactive_continuity_history: JsonRecord[];
+  proactive_continuity_preview: JsonRecord[];
   conflict_repair: JsonRecord[];
 }
 

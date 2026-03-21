@@ -144,6 +144,8 @@ def _derive_behavior_motive(
     event_kind: str,
     interaction_mode: str,
     action_target: str,
+    deferred_action_family: str,
+    carryover_mode: str,
     selfhood_scene: str,
     approach_style: str,
     counterpart_stance: str,
@@ -159,10 +161,13 @@ def _derive_behavior_motive(
     effective_own_rhythm_load: float,
     narrative_tension: float,
     narrative_repair: float,
+    continuity_depth: float,
+    commitment_carry: float,
 ) -> dict[str, str]:
     motive = "maintain_natural_contact"
     tension = "none"
     goal_frame = "先自然接住这轮互动。"
+    continuity_active = continuity_depth >= 0.56 or commitment_carry >= 0.58
 
     if action_target == "protect_relationship_boundary" or (
         approach_style == "guarded" and boundary_pressure >= 0.48
@@ -193,6 +198,34 @@ def _derive_behavior_motive(
             motive = "gentle_recontact"
             tension = "space_vs_contact"
             goal_frame = "先把靠近的冲动压轻一点，等更自然的时机再接上。"
+    elif event_kind == "user_utterance" and action_target == "respond_now" and continuity_active:
+        if carryover_mode == "shared_window":
+            motive = "open_shared_window"
+            tension = "space_vs_contact" if counterpart_stance != "open" or boundary_pressure > 0.22 else "none"
+            goal_frame = "先把前面还开着的共同窗口接上，不替对方把后半段决定掉。"
+        elif carryover_mode == "task_window":
+            motive = "honor_continuity"
+            tension = "task_vs_companionship"
+            goal_frame = "先把前面挂着的事情自然接上，不把这轮重置成新的任务流。"
+        elif carryover_mode == "life_window":
+            motive = "honor_continuity"
+            tension = (
+                "self_rhythm_vs_contact"
+                if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44
+                else "space_vs_contact"
+                if counterpart_stance != "open"
+                else "none"
+            )
+            goal_frame = "先把前面那点生活上的惦记自然接回来，不把这轮重置成普通寒暄。"
+    elif (
+        event_kind == "time_idle"
+        and action_target == "reach_out_now"
+        and deferred_action_family == "light_checkin"
+        and continuity_active
+    ):
+        motive = "honor_continuity"
+        tension = "self_rhythm_vs_contact" if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44 else "none"
+        goal_frame = "先把前面没散掉的惦记接上，而不是为了刷存在感才冒头。"
     elif interaction_mode == "self_activity_reopen" or action_target == "offer_small_opening":
         motive = "gentle_recontact"
         tension = "self_rhythm_vs_contact"
@@ -334,6 +367,7 @@ def _behavior_action_from_state(
         _clamp01(motive_vector.get("shared_window_pull"), 0.0),
     )
     semantic_evidence = _semantic_behavior_evidence(semantic_narrative_profile)
+    continuity_depth = _clamp01(semantic_evidence.get("continuity_depth"), 0.0)
     semantic_contact_confidence = _clamp01(
         (behavior_policy or {}).get("semantic_contact_confidence"),
         _clamp01(semantic_evidence.get("contact_confidence"), 0.0),
@@ -1518,6 +1552,26 @@ def _behavior_action_from_state(
         if followup_intent == "active":
             followup_intent = "soft"
         narrative_notes.append("修复过的事还会留痕，不会瞬间清零")
+    if (
+        event_kind == "user_utterance"
+        and repair_context_active
+        and narrative_repair >= 0.50
+        and interaction_mode in {"steady_reply", "companion_reply"}
+        and action_target == "respond_now"
+    ):
+        interaction_mode = "low_pressure_support"
+        action_target = "low_pressure_hold"
+        attention_target = "counterpart_state"
+        if nonverbal_signal in {"steady_presence", "small_notice", "brief_notice", "memory_tilt"}:
+            nonverbal_signal = "quiet_notice"
+        initiative_shape = "hold"
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        elif counterpart_stance == "guarded":
+            disclosure_posture = "guarded"
+        if followup_intent == "active":
+            followup_intent = "soft"
+        narrative_notes.append("修复还在进行时，这轮会先低压接住，而不是装作已经回到没事的日常")
     if narrative_tension >= 0.48 and interaction_mode in {"relationship_sensitive", "shared_memory", "companion_reply"}:
         if disclosure_posture == "open":
             disclosure_posture = "measured"
@@ -1575,10 +1629,23 @@ def _behavior_action_from_state(
     if semantic_memory_echo >= 0.56 and event_kind == "user_utterance" and interaction_mode in {"companion_reply", "brief_presence"}:
         narrative_notes.append("长期叙事里的熟悉感会把这轮语气往自然生活面拉近一点")
 
+    # Keep final mode semantics aligned with late state-driven action promotion.
+    # When boundary residue upgrades the turn into a boundary-protection action,
+    # downstream surfaces should not still read it as a generic steady reply.
+    if action_target == "protect_relationship_boundary" and interaction_mode != "relationship_sensitive":
+        interaction_mode = "relationship_sensitive"
+        attention_target = "relationship_boundary"
+        if nonverbal_signal in {"steady_presence", "brief_notice", "small_notice", "quiet_notice"}:
+            nonverbal_signal = "measured_pause"
+        initiative_shape = "boundary"
+        disclosure_posture = "guarded" if disclosure_posture == "open" else disclosure_posture
+
     motive_state = _derive_behavior_motive(
         event_kind=event_kind,
         interaction_mode=interaction_mode,
         action_target=action_target,
+        deferred_action_family=deferred_action_family,
+        carryover_mode=effective_carryover_mode,
         selfhood_scene=selfhood_scene,
         approach_style=approach_style,
         counterpart_stance=counterpart_stance,
@@ -1594,6 +1661,8 @@ def _behavior_action_from_state(
         effective_own_rhythm_load=effective_own_rhythm_load,
         narrative_tension=narrative_tension,
         narrative_repair=narrative_repair,
+        continuity_depth=continuity_depth,
+        commitment_carry=narrative_commitment,
     )
     primary_motive = str(motive_state.get("primary_motive") or "").strip()
     motive_tension = str(motive_state.get("motive_tension") or "").strip() or "none"
@@ -1662,6 +1731,8 @@ def _behavior_action_from_state(
         note_parts.append("先贴着眼前问题，再接情绪")
     elif interaction_mode == "selfhood_reflection":
         note_parts.append("先把自己的判断和位置说清")
+    elif interaction_mode == "relationship_sensitive":
+        note_parts.append("先把边界和关系位置说清")
     elif interaction_mode == "self_activity_hold":
         note_parts.append("先维持自己的节奏，不急着回到对方身边")
     elif interaction_mode == "self_activity_reopen":

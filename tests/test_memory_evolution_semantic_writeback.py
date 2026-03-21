@@ -83,6 +83,63 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_record_behavior_consequence_prefers_frozen_behavior_action_over_live_action(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_behavior_consequence(
+                    store,
+                    current_event={
+                        "kind": "time_idle",
+                        "trigger_family": "life_window",
+                    },
+                    behavior_action={
+                        "action_target": "hold_own_rhythm",
+                        "interaction_mode": "self_activity_hold",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "stale live action should not win",
+                    },
+                    reconsolidation_snapshot={
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "contact_without_pressure",
+                        "goal_frame": "顺着之前留下的惦记等更自然的时候再接回来。",
+                        "behavior_action": {
+                            "action_target": "wait_and_recheck",
+                            "interaction_mode": "steady_reply",
+                            "primary_motive": "honor_continuity",
+                            "motive_tension": "contact_without_pressure",
+                            "goal_frame": "顺着之前留下的惦记等更自然的时候再接回来。",
+                            "timing_window_min": 30,
+                        },
+                    },
+                    source="test:frozen_behavior_action_priority",
+                    confidence=0.9,
+                )
+                self.assertTrue(wrote)
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=10)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_consequence"
+                ]
+                self.assertEqual(len(traces), 1)
+                trace = traces[0]
+                self.assertEqual(
+                    str(trace.get("target_id") or trace.get("content", {}).get("target_id") or ""),
+                    "defer_recontact",
+                )
+                self.assertIn(
+                    "生活上的惦记先轻轻压住",
+                    str(trace.get("after_summary") or trace.get("content", {}).get("after_summary") or ""),
+                )
+                self.assertEqual(
+                    str(trace.get("primary_motive") or trace.get("content", {}).get("primary_motive") or ""),
+                    "honor_continuity",
+                )
+            finally:
+                store.close()
+
     def test_record_agenda_lifecycle_consequence_dedupes_semantic_category_traces(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -92,8 +149,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                         "kind": "held",
                         "carryover_mode": "quiet_recontact",
                         "carryover_strength": 0.42,
+                        "hold_count": 2,
                         "own_rhythm_bias": 0.10,
                     },
+                    "reconsolidation_snapshot": None,
                     "source": "test:agenda_lifecycle_dedup",
                     "confidence": 0.88,
                 }
@@ -117,6 +176,293 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                     ],
                 )
                 self.assertEqual(len(semantic), 3)
+                proactive = store.list_proactive_continuity_history(limit=10)
+                self.assertEqual(len(proactive), 1)
+                self.assertEqual(
+                    str(proactive[0].get("kind") or proactive[0].get("content", {}).get("kind") or ""),
+                    "held",
+                )
+                self.assertEqual(
+                    str(proactive[0].get("carryover_mode") or proactive[0].get("content", {}).get("carryover_mode") or ""),
+                    "quiet_recontact",
+                )
+            finally:
+                store.close()
+
+    def test_record_agenda_lifecycle_consequence_prefers_frozen_reconsolidation_snapshot(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_consequence(
+                    store,
+                    agenda_lifecycle_residue={
+                        "kind": "promoted",
+                        "note": "stale residue should not win",
+                        "carryover_mode": "quiet_recontact",
+                        "carryover_strength": 0.81,
+                        "hold_count": 4,
+                    },
+                    reconsolidation_snapshot={
+                        "agenda_lifecycle_consequence": {
+                            "kind": "released_to_self_activity",
+                            "summary": "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+                            "source_event_kind": "self_activity_state",
+                            "trigger_family": "life_window",
+                            "relationship_weather": "stable",
+                            "carryover_mode": "own_rhythm",
+                            "carryover_strength": 0.53,
+                            "hold_count": 2,
+                            "recontact_cooldown": 0.47,
+                            "presence_residue": 0.33,
+                            "ambient_resonance": 0.24,
+                            "self_activity_momentum": 0.58,
+                            "own_rhythm_bias": 0.61,
+                            "counterpart_scene_bias": "busy_not_disrespectful",
+                            "primary_motive": "preserve_self_rhythm",
+                            "motive_tension": "self_rhythm_vs_contact",
+                            "goal_frame": "先把自己的节奏走稳，再看那点窗口之后要不要接回来。",
+                        }
+                    },
+                    source="test:agenda_lifecycle_frozen_snapshot",
+                    confidence=0.91,
+                )
+                self.assertTrue(wrote)
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=10)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "agenda_lifecycle"
+                ]
+                self.assertEqual(len(traces), 1)
+                trace = traces[0]
+                self.assertEqual(
+                    str(trace.get("after_summary") or trace.get("content", {}).get("after_summary") or ""),
+                    "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+                )
+                self.assertEqual(
+                    str(trace.get("target_id") or trace.get("content", {}).get("target_id") or ""),
+                    "released_to_self_activity",
+                )
+
+                proactive = store.list_proactive_continuity_history(limit=10)
+                self.assertEqual(len(proactive), 1)
+                record = proactive[0]
+                self.assertEqual(
+                    str(record.get("kind") or record.get("content", {}).get("kind") or ""),
+                    "released_to_self_activity",
+                )
+                self.assertEqual(
+                    str(record.get("trace_family") or record.get("content", {}).get("trace_family") or ""),
+                    "own_rhythm_busy_window",
+                )
+                self.assertEqual(
+                    str(record.get("counterpart_scene_bias") or record.get("content", {}).get("counterpart_scene_bias") or ""),
+                    "busy_not_disrespectful",
+                )
+                self.assertEqual(
+                    str(record.get("primary_motive") or record.get("content", {}).get("primary_motive") or ""),
+                    "preserve_self_rhythm",
+                )
+            finally:
+                store.close()
+
+    def test_record_semantic_self_evidence_prefers_frozen_reconsolidation_semantics(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_semantic_self_evidence(
+                    store,
+                    user_text="刚才那阵风过去之后，我还是能感觉到你就在这儿。",
+                    appraisal={
+                        "used": True,
+                        "interaction_frame": "relationship",
+                        "signals": {"memory_salient": True},
+                        "salience": {
+                            "relationship": 0.46,
+                            "companionship": 0.54,
+                            "selfhood": 0.10,
+                        },
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={"trust": 0.66, "closeness": 0.64, "hurt": 0.02},
+                    current_event={
+                        "kind": "user_utterance",
+                        "tags": ["ambient", "ambient_echo"],
+                        "primary_motive": "stale_event_motive",
+                        "motive_tension": "stale_event_tension",
+                        "goal_frame": "stale event frame",
+                    },
+                    world_model_state={
+                        "presence_residue": 0.64,
+                        "ambient_resonance": 0.60,
+                        "self_activity_momentum": 0.74,
+                    },
+                    behavior_action={},
+                    reconsolidation_snapshot={
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                        "counterpart": {
+                            "stance": "open",
+                            "scene": "care_bid",
+                            "assessment_profile": {
+                                "openness_drive": 0.76,
+                                "guarded_drive": 0.18,
+                                "guard_margin": -0.58,
+                                "dominant_scene_signal": "care",
+                            },
+                        },
+                    },
+                    source="test:reconsolidation_semantics",
+                    allow_behavior_action_inference=True,
+                    allow_event_behavior_fallback=True,
+                )
+                self.assertTrue(wrote)
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=20)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
+                ]
+                self.assertTrue(traces)
+                self.assertTrue(all(str(item.get("primary_motive") or "") == "gentle_recontact" for item in traces))
+                self.assertTrue(all(str(item.get("motive_tension") or "") == "self_rhythm_vs_contact" for item in traces))
+                self.assertTrue(all(str(item.get("behavior_semantics_source") or "") == "reconsolidation_snapshot" for item in traces))
+                self.assertTrue(all(str(item.get("counterpart_stance") or "") == "open" for item in traces))
+                self.assertTrue(all(str(item.get("counterpart_scene") or "") == "care_bid" for item in traces))
+                self.assertTrue(all(str(item.get("counterpart_dominant_scene_signal") or "") == "care" for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_openness_drive") or 0.0) == 0.76 for item in traces))
+            finally:
+                store.close()
+
+    def test_record_behavior_plan_long_horizon_memory_uses_frozen_busy_counterpart_scene(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_behavior_trace_writeback(
+                    store,
+                    current_event={"kind": "self_activity_state", "tags": ["self_activity", "own_task"]},
+                    behavior_action={
+                        "action_target": "hold_own_rhythm",
+                        "interaction_mode": "self_activity_hold",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先把自己这边的节奏走完，再自然地把注意力转回来。",
+                    },
+                    behavior_plan={
+                        "kind": "self_activity_continue",
+                        "target": "self",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "先把自己这边的节奏走完，再自然地把注意力转回来。",
+                    },
+                    interaction_carryover=None,
+                    agenda_lifecycle_residue=None,
+                    reconsolidation_snapshot={
+                        "counterpart": {
+                            "stance": "open",
+                            "scene": "busy_not_disrespectful",
+                            "respect_level": 0.76,
+                            "reciprocity": 0.72,
+                            "boundary_pressure": 0.08,
+                            "reliability_read": 0.78,
+                        }
+                    },
+                    source="test:busy_counterpart_writeback",
+                    confidence=0.9,
+                )
+                self.assertTrue(wrote)
+                relationship = store.list_relationship_timeline(limit=5)
+                summaries = [
+                    str(item.get("summary") or item.get("content", {}).get("summary") or "")
+                    for item in relationship
+                ]
+                self.assertIn(
+                    "当对方当下更像忙着别的事时，她不会把沉默直接误判成冷淡；她会先收回自己的节奏，等更自然的时候再接回来。",
+                    summaries,
+                )
+            finally:
+                store.close()
+
+    def test_record_behavior_plan_long_horizon_memory_prefers_frozen_snapshot_over_live_plan(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_behavior_trace_writeback(
+                    store,
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={
+                        "action_target": "hold_own_rhythm",
+                        "interaction_mode": "self_activity_hold",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "stale live action should not win",
+                    },
+                    behavior_plan={
+                        "kind": "self_activity_continue",
+                        "target": "self",
+                        "trigger_family": "self_activity",
+                        "carryover_mode": "own_rhythm",
+                        "note": "stale live plan should not win",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "stale live plan should not win",
+                    },
+                    interaction_carryover=None,
+                    agenda_lifecycle_residue=None,
+                    reconsolidation_snapshot={
+                        "behavior_plan": {
+                            "kind": "deferred_checkin",
+                            "target": "care",
+                            "trigger_family": "observe",
+                            "carryover_mode": "life_window",
+                            "note": "final frozen plan should win",
+                            "primary_motive": "honor_continuity",
+                            "motive_tension": "contact_without_pressure",
+                            "goal_frame": "顺着之前留下的惦记自然接回来。",
+                        }
+                    },
+                    source="test:frozen_behavior_plan_priority",
+                    confidence=0.91,
+                )
+                self.assertTrue(wrote)
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=12)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_plan"
+                ]
+                self.assertEqual(len(traces), 1)
+                trace = traces[0]
+                self.assertEqual(str(trace.get("target_id") or trace.get("content", {}).get("target_id") or ""), "deferred_checkin")
+                self.assertEqual(
+                    str(trace.get("after_summary") or trace.get("content", {}).get("after_summary") or ""),
+                    "final frozen plan should win",
+                )
+
+                worldline = [
+                    item
+                    for item in store.list_worldline_events(limit=10)
+                    if "behavior_plan"
+                    in (
+                        (item.get("tags") if isinstance(item.get("tags"), list) else [])
+                        or ((item.get("content") or {}).get("tags") if isinstance(item.get("content"), dict) else [])
+                    )
+                ]
+                self.assertEqual(len(worldline), 1)
+                tags = worldline[0].get("tags") if isinstance(worldline[0].get("tags"), list) else worldline[0].get("content", {}).get("tags", [])
+                self.assertIn("deferred_checkin", tags)
+                self.assertIn("life_window", tags)
+                self.assertNotIn("own_rhythm", tags)
+
+                relationship = store.list_relationship_timeline(limit=5)
+                summaries = [
+                    str(item.get("summary") or item.get("content", {}).get("summary") or "")
+                    for item in relationship
+                ]
+                self.assertIn(
+                    "这段关系里的靠近不需要每次都当场说完；她会把一部分惦记留到之后再自然接回来。",
+                    summaries,
+                )
             finally:
                 store.close()
 
@@ -154,17 +500,33 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
             lifecycle["kind"] = "expired"
             return False
 
-        def _fake_record_behavior_plan_long_horizon_memory(_store, *, behavior_plan, source, confidence):
+        def _fake_record_behavior_plan_long_horizon_memory(_store, *, behavior_plan, reconsolidation_snapshot=None, source, confidence):
             seen["plan_kind"] = str(behavior_plan.get("kind") or "")
             return False
 
-        def _fake_record_retrieved_continuity_reactivation(_store, *, interaction_carryover, behavior_action, behavior_plan, source, confidence):
+        def _fake_record_retrieved_continuity_reactivation(
+            _store,
+            *,
+            interaction_carryover,
+            behavior_action,
+            behavior_plan,
+            reconsolidation_snapshot=None,
+            source,
+            confidence,
+        ):
             seen["carryover_mode"] = str(interaction_carryover.get("carryover_mode") or "")
             seen["action_target"] = str(behavior_action.get("action_target") or "")
             seen["reactivation_plan_kind"] = str(behavior_plan.get("kind") or "")
             return False
 
-        def _fake_record_agenda_lifecycle_consequence(_store, *, agenda_lifecycle_residue, source, confidence):
+        def _fake_record_agenda_lifecycle_consequence(
+            _store,
+            *,
+            agenda_lifecycle_residue,
+            reconsolidation_snapshot=None,
+            source,
+            confidence,
+        ):
             seen["lifecycle_kind"] = str(agenda_lifecycle_residue.get("kind") or "")
             return False
 
@@ -200,6 +562,177 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertEqual(seen["carryover_mode"], "life_window")
                 self.assertEqual(seen["action_target"], "wait_and_recheck")
                 self.assertEqual(seen["lifecycle_kind"], "held")
+            finally:
+                store.close()
+
+    def test_record_behavior_trace_writeback_prefers_frozen_reactivation_inputs(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_behavior_trace_writeback(
+                    store,
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={
+                        "action_target": "hold_own_rhythm",
+                        "interaction_mode": "self_activity_hold",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "stale action should not win",
+                    },
+                    behavior_plan={
+                        "kind": "self_activity_continue",
+                        "trigger_family": "self_activity",
+                        "carryover_mode": "own_rhythm",
+                        "note": "stale plan should not win",
+                    },
+                    interaction_carryover={
+                        "source": "retrieved_behavior_plan",
+                        "strength": 0.61,
+                        "carryover_mode": "own_rhythm",
+                        "relationship_weather": "guarded_residue",
+                        "note": "stale carryover should not win",
+                        "source_tags": [
+                            "plan_kind:self_activity_continue",
+                            "trigger_family:self_activity",
+                        ],
+                    },
+                    agenda_lifecycle_residue={},
+                    reconsolidation_snapshot={
+                        "behavior_mode": "steady_reply",
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "contact_without_pressure",
+                        "goal_frame": "顺着之前留下的惦记自然接回来。",
+                        "behavior_action": {
+                            "action_target": "wait_and_recheck",
+                            "interaction_mode": "steady_reply",
+                            "primary_motive": "honor_continuity",
+                            "motive_tension": "contact_without_pressure",
+                            "goal_frame": "顺着之前留下的惦记自然接回来。",
+                        },
+                        "behavior_plan": {
+                            "kind": "deferred_checkin",
+                            "trigger_family": "observe",
+                            "carryover_mode": "life_window",
+                            "note": "final frozen carryover path",
+                            "primary_motive": "honor_continuity",
+                            "motive_tension": "contact_without_pressure",
+                            "goal_frame": "顺着之前留下的惦记自然接回来。",
+                        },
+                        "interaction_carryover": {
+                            "source": "retrieved_behavior_plan",
+                            "strength": 0.44,
+                            "carryover_mode": "life_window",
+                            "relationship_weather": "warm_residue",
+                            "note": "final frozen carryover path",
+                            "source_tags": [
+                                "plan_kind:deferred_checkin",
+                                "trigger_family:observe",
+                            ],
+                        },
+                    },
+                    source="test:reactivation_frozen_snapshot",
+                    confidence=0.92,
+                )
+                self.assertTrue(wrote)
+
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=12)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "behavior_reactivation"
+                ]
+                self.assertEqual(len(traces), 1)
+                trace = traces[0]
+                self.assertEqual(str(trace.get("target_id") or trace.get("content", {}).get("target_id") or ""), "deferred_checkin")
+                self.assertEqual(str(trace.get("carryover_mode") or trace.get("content", {}).get("carryover_mode") or ""), "life_window")
+                self.assertEqual(str(trace.get("current_plan_kind") or trace.get("content", {}).get("current_plan_kind") or ""), "deferred_checkin")
+                self.assertEqual(str(trace.get("current_action_target") or trace.get("content", {}).get("current_action_target") or ""), "wait_and_recheck")
+                self.assertEqual(str(trace.get("current_interaction_mode") or trace.get("content", {}).get("current_interaction_mode") or ""), "steady_reply")
+                self.assertEqual(str(trace.get("source_note") or trace.get("content", {}).get("source_note") or ""), "final frozen carryover path")
+                self.assertEqual(str(trace.get("primary_motive") or trace.get("content", {}).get("primary_motive") or ""), "honor_continuity")
+                self.assertEqual(
+                    str(trace.get("goal_frame") or trace.get("content", {}).get("goal_frame") or ""),
+                    "顺着之前留下的惦记自然接回来。",
+                )
+
+                worldline = [
+                    item
+                    for item in store.list_worldline_events(limit=10)
+                    if "retrieved_reactivation"
+                    in (
+                        (item.get("tags") if isinstance(item.get("tags"), list) else [])
+                        or ((item.get("content") or {}).get("tags") if isinstance(item.get("content"), dict) else [])
+                    )
+                ]
+                self.assertEqual(len(worldline), 1)
+                tags = worldline[0].get("tags") if isinstance(worldline[0].get("tags"), list) else worldline[0].get("content", {}).get("tags", [])
+                self.assertIn("life_window", tags)
+                self.assertIn("deferred_checkin", tags)
+                self.assertNotIn("own_rhythm", tags)
+            finally:
+                store.close()
+
+    def test_record_behavior_trace_writeback_persists_counterpart_assessment_history_from_frozen_snapshot(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                kwargs = {
+                    "current_event": {"kind": "user_utterance"},
+                    "behavior_action": {
+                        "interaction_mode": "self_activity_reopen",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "顺着余温轻轻回头。",
+                    },
+                    "behavior_plan": {},
+                    "interaction_carryover": {},
+                    "agenda_lifecycle_residue": {},
+                    "reconsolidation_snapshot": {
+                        "event_kind": "user_utterance",
+                        "interaction_frame": "relationship",
+                        "primary_motive": "gentle_recontact",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "goal_frame": "顺着余温轻轻回头。",
+                        "counterpart": {
+                            "stance": "open",
+                            "scene": "care_bid",
+                            "respect_level": 0.76,
+                            "reciprocity": 0.72,
+                            "boundary_pressure": 0.08,
+                            "reliability_read": 0.80,
+                            "assessment_profile": {
+                                "openness_drive": 0.78,
+                                "guarded_drive": 0.16,
+                                "guard_margin": -0.62,
+                                "dominant_scene_signal": "care",
+                                "scene_strengths": {"care": 0.84, "repair": 0.18, "busy": 0.22},
+                            },
+                        },
+                    },
+                    "source": "test:counterpart_history",
+                    "confidence": 0.9,
+                }
+                self.assertTrue(_record_behavior_trace_writeback(store, **kwargs))
+                self.assertFalse(_record_behavior_trace_writeback(store, **kwargs))
+
+                history = store.list_counterpart_assessment_history(limit=10)
+                self.assertEqual(len(history), 1)
+                record = history[0]
+                self.assertEqual(str(record.get("scene") or record.get("content", {}).get("scene") or ""), "care_bid")
+                self.assertEqual(str(record.get("stance") or record.get("content", {}).get("stance") or ""), "open")
+                self.assertEqual(
+                    str(record.get("primary_motive") or record.get("content", {}).get("primary_motive") or ""),
+                    "gentle_recontact",
+                )
+                profile = record.get("assessment_profile")
+                if not isinstance(profile, dict):
+                    profile = record.get("content", {}).get("assessment_profile")
+                self.assertIsInstance(profile, dict)
+                self.assertEqual(str(profile.get("dominant_scene_signal") or ""), "care")
+                self.assertEqual(float(profile.get("openness_drive") or 0.0), 0.78)
+                self.assertIn(
+                    "认真靠近",
+                    str(record.get("summary") or record.get("content", {}).get("summary") or ""),
+                )
             finally:
                 store.close()
 
@@ -789,6 +1322,22 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                         "motive_tension": "self_rhythm_vs_contact",
                         "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
                     },
+                    reconsolidation_snapshot={
+                        "counterpart": {
+                            "stance": "open",
+                            "scene": "care_bid",
+                            "respect_level": 0.74,
+                            "reciprocity": 0.70,
+                            "boundary_pressure": 0.08,
+                            "reliability_read": 0.78,
+                            "assessment_profile": {
+                                "openness_drive": 0.76,
+                                "guarded_drive": 0.18,
+                                "guard_margin": -0.58,
+                                "dominant_scene_signal": "care",
+                            },
+                        }
+                    },
                     source="test:trusted",
                     allow_event_behavior_fallback=False,
                 )
@@ -822,6 +1371,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertEqual(str(presence.get("dominant_primary_motive") or ""), "gentle_recontact")
                 self.assertEqual(str(presence.get("dominant_motive_tension") or ""), "self_rhythm_vs_contact")
                 self.assertIn("轻轻回头", " ".join(str(item) for item in (presence.get("goal_frame_examples") or [])))
+                self.assertEqual(str(presence.get("dominant_counterpart_stance") or ""), "open")
+                self.assertEqual(str(presence.get("dominant_counterpart_scene") or ""), "care_bid")
+                self.assertEqual(str(presence.get("counterpart_dominant_scene_signal") or ""), "care")
+                self.assertEqual(float(presence.get("counterpart_openness_drive") or 0.0), 0.76)
             finally:
                 store.close()
 

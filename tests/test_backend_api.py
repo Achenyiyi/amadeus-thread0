@@ -59,11 +59,14 @@ class FakeBackendSession:
         values = state_values if isinstance(state_values, dict) else {}
         recon = values.get("reconsolidation_snapshot") if isinstance(values.get("reconsolidation_snapshot"), dict) else {}
         consequence = recon.get("behavior_consequence") if isinstance(recon.get("behavior_consequence"), dict) else {}
+        counterpart = recon.get("counterpart") if isinstance(recon.get("counterpart"), dict) else {}
         return {
             "relationship": {"stage": "warming"},
             "current_turn": {
                 "recon_event_kind": str(recon.get("event_kind") or "").strip(),
                 "recon_interaction_frame": str(recon.get("interaction_frame") or "").strip(),
+                "counterpart_stance": str(counterpart.get("stance") or "").strip(),
+                "counterpart_scene": str(counterpart.get("scene") or "").strip(),
                 "behavior_consequence_kind": str(consequence.get("kind") or "").strip(),
             },
         }
@@ -242,6 +245,14 @@ class BackendApiTests(unittest.TestCase):
                 "reconsolidation_snapshot": {
                     "event_kind": "user_utterance",
                     "interaction_frame": "relationship",
+                    "counterpart": {
+                        "stance": "watchful",
+                        "scene": "repair_attempt",
+                        "respect_level": 0.58,
+                        "reciprocity": 0.54,
+                        "boundary_pressure": 0.31,
+                        "reliability_read": 0.57,
+                    },
                     "behavior_consequence": {"kind": "leave_small_opening"},
                 },
                 "current_event": {"kind": "idle"},
@@ -281,6 +292,8 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(turn_response.payload["sources"][0]["id"], 9)
             self.assertEqual(turn_response.payload["reconsolidation_snapshot"]["event_kind"], "user_utterance")
             self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["recon_event_kind"], "user_utterance")
+            self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["counterpart_stance"], "watchful")
+            self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["counterpart_scene"], "repair_attempt")
             self.assertEqual(turn_response.payload["pending_utterance_fragment"], "unfinished thought")
             self.assertEqual(session.last_extract_args, (state_values, "ignored"))
             self.assertIs(session.last_summary_state, state_values)
@@ -342,6 +355,77 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["behavior_plan"]["legacy_hint"], "keep-me")
             self.assertEqual(turn_response.payload["behavior_plan"]["legacy_hint"], "keep-me")
             mock_derive.assert_not_called()
+
+    def test_turn_and_event_responses_prefer_frozen_reconsolidation_behavior_action(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "behavior_action": {
+                    "action_target": "hold_own_rhythm",
+                    "interaction_mode": "self_activity_hold",
+                    "primary_motive": "preserve_self_rhythm",
+                    "motive_tension": "self_rhythm_vs_contact",
+                    "goal_frame": "stale live action should not win",
+                },
+                "behavior_plan": {
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "trigger_family": "self_activity",
+                },
+                "interaction_carryover": {
+                    "source": "live",
+                    "strength": 0.14,
+                    "carryover_mode": "fading_residue",
+                    "relationship_weather": "thin_residue",
+                },
+                "reconsolidation_snapshot": {
+                    "behavior_action": {
+                        "action_target": "wait_and_recheck",
+                        "interaction_mode": "deferred_watch",
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "contact_without_pressure",
+                        "goal_frame": "顺着前面的惦记等更自然的时候再接回来。",
+                        "deferred_action_family": "life_window",
+                        "timing_window_min": 30,
+                        "relationship_weather": "warm_residue",
+                    },
+                    "behavior_plan": {
+                        "kind": "deferred_checkin",
+                        "target": "counterpart",
+                        "trigger_family": "observe",
+                        "scheduled_after_min": 30,
+                    },
+                    "interaction_carryover": {
+                        "source": "reconsolidation",
+                        "strength": 0.53,
+                        "carryover_mode": "own_rhythm",
+                        "relationship_weather": "warm_residue",
+                        "note": "final carryover should win",
+                    },
+                },
+                "current_event": {"kind": "self_activity_state", "event_frame": "idle continuation", "tags": []},
+                "world_model_state": {"presence_residue": 0.42},
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我在。",
+            )
+            turn_response = api.build_turn_response(
+                state_values=state_values,
+                streamed_text="ignored",
+            )
+
+            self.assertEqual(event_response.payload["behavior_action"]["action_target"], "wait_and_recheck")
+            self.assertEqual(turn_response.payload["behavior_action"]["interaction_mode"], "deferred_watch")
+            self.assertEqual(event_response.payload["behavior_action"]["timing_window_min"], 30)
+            self.assertEqual(turn_response.payload["behavior_plan"]["kind"], "deferred_checkin")
+            self.assertEqual(event_response.payload["interaction_carryover"]["source"], "reconsolidation")
+            self.assertEqual(turn_response.payload["interaction_carryover"]["carryover_mode"], "own_rhythm")
+            self.assertEqual(turn_response.payload["interaction_carryover"]["strength"], 0.53)
 
 
 if __name__ == "__main__":

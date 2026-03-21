@@ -653,12 +653,12 @@ def _generation_profile(
         max_tokens = 280 if continuation_mode else 224
     elif hint == "selfhood":
         if exploratory:
-            temperature = 0.34 + 0.16 * reply_bias + 0.06 * max(approach, trust)
-            top_p = 0.88 + 0.04 * max(approach, trust)
+            temperature = 0.32 + 0.14 * reply_bias + 0.05 * max(approach, trust)
+            top_p = 0.84 + 0.03 * max(approach, trust)
         else:
-            temperature = 0.22 + 0.08 * reply_bias
-            top_p = 0.78 + 0.08 * max(approach, trust)
-        max_tokens = 216 if exploratory else 160
+            temperature = 0.20 + 0.07 * reply_bias
+            top_p = 0.76 + 0.06 * max(approach, trust)
+        max_tokens = 200 if exploratory else 148
     else:
         if exploratory:
             temperature = 0.32 + 0.16 * max(reply_bias, warmth) + 0.04 * approach
@@ -724,52 +724,52 @@ def _generation_profile(
     if hurt > 0.45 and trust < 0.48 and event_kind != "user_utterance":
         max_tokens = _cap_tokens(max_tokens, 160)
     if focused_user_turn:
-        max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 152)
-        top_p = min(top_p, 0.82 if exploratory else 0.78)
+        max_tokens = _cap_tokens(max_tokens, 168 if exploratory else 136)
+        top_p = min(top_p, 0.80 if exploratory else 0.76)
         if own_rhythm_load >= 0.64 or attention_target in {"own_task", "self_then_counterpart"}:
-            temperature = min(temperature, 0.28 if exploratory else 0.22)
+            temperature = min(temperature, 0.26 if exploratory else 0.20)
     elif semantic_own_rhythm_turn:
-        max_tokens = _cap_tokens(max_tokens, 168 if exploratory else 148)
-        top_p = min(top_p, 0.82 if exploratory else 0.78)
-        temperature = min(temperature, 0.28 if exploratory else 0.22)
+        max_tokens = _cap_tokens(max_tokens, 156 if exploratory else 132)
+        top_p = min(top_p, 0.80 if exploratory else 0.76)
+        temperature = min(temperature, 0.26 if exploratory else 0.20)
     elif background_window_turn:
-        max_tokens = _cap_tokens(max_tokens, 208 if exploratory else 176)
-        top_p = min(top_p, 0.84 if exploratory else 0.80)
+        max_tokens = _cap_tokens(max_tokens, 192 if exploratory else 164)
+        top_p = min(top_p, 0.82 if exploratory else 0.78)
     elif life_window_turn:
-        max_tokens = _cap_tokens(max_tokens, 224 if exploratory else 192)
-        top_p = min(top_p, 0.86 if exploratory else 0.82)
+        max_tokens = _cap_tokens(max_tokens, 208 if exploratory else 180)
+        top_p = min(top_p, 0.84 if exploratory else 0.80)
     if relational_weather_turn:
         if relationship_weather == "guarded_residue":
-            max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 148)
-            temperature = min(temperature, 0.26 if exploratory else 0.22)
-            top_p = min(top_p, 0.82 if exploratory else 0.78)
+            max_tokens = _cap_tokens(max_tokens, 152 if exploratory else 128)
+            temperature = min(temperature, 0.24 if exploratory else 0.20)
+            top_p = min(top_p, 0.80 if exploratory else 0.76)
         elif relationship_weather == "repair_residue":
-            max_tokens = _cap_tokens(max_tokens, 192 if exploratory else 164)
-            temperature = min(temperature, 0.28 if exploratory else 0.24)
-            top_p = min(top_p, 0.84 if exploratory else 0.80)
+            max_tokens = _cap_tokens(max_tokens, 164 if exploratory else 136)
+            temperature = min(temperature, 0.26 if exploratory else 0.22)
+            top_p = min(top_p, 0.80 if exploratory else 0.78)
         elif relationship_weather == "warm_residue":
-            max_tokens = _cap_tokens(max_tokens, 200 if exploratory else 176)
-            top_p = min(top_p, 0.86 if exploratory else 0.82)
+            max_tokens = _cap_tokens(max_tokens, 184 if exploratory else 160)
+            top_p = min(top_p, 0.82 if exploratory else 0.80)
     if brief_presence_turn:
         max_tokens = _cap_tokens(max_tokens, 112 if exploratory else 96)
         temperature = min(temperature, 0.24 if exploratory else 0.22)
         top_p = min(top_p, 0.80 if exploratory else 0.78)
     if busy_scene_turn:
-        max_tokens = _cap_tokens(max_tokens, 184 if exploratory else 156)
-        temperature = min(temperature, 0.28 if exploratory else 0.22)
-        top_p = min(top_p, 0.84 if exploratory else 0.80)
-    if repair_scene_turn:
-        max_tokens = _cap_tokens(max_tokens, 188 if exploratory else 156)
-        temperature = min(temperature, 0.28 if exploratory else 0.22)
+        max_tokens = _cap_tokens(max_tokens, 168 if exploratory else 144)
+        temperature = min(temperature, 0.26 if exploratory else 0.20)
         top_p = min(top_p, 0.82 if exploratory else 0.78)
-    if care_scene_turn:
-        max_tokens = _cap_tokens(max_tokens, 204 if exploratory else 172)
-        temperature = min(temperature, 0.30 if exploratory else 0.24)
-        top_p = min(top_p, 0.86 if exploratory else 0.80)
-    if friction_scene_turn:
-        max_tokens = _cap_tokens(max_tokens, 176 if exploratory else 144)
+    if repair_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 156 if exploratory else 132)
         temperature = min(temperature, 0.26 if exploratory else 0.20)
         top_p = min(top_p, 0.80 if exploratory else 0.76)
+    if care_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 192 if exploratory else 164)
+        temperature = min(temperature, 0.28 if exploratory else 0.22)
+        top_p = min(top_p, 0.84 if exploratory else 0.80)
+    if friction_scene_turn:
+        max_tokens = _cap_tokens(max_tokens, 160 if exploratory else 132)
+        temperature = min(temperature, 0.24 if exploratory else 0.18)
+        top_p = min(top_p, 0.78 if exploratory else 0.74)
     if low_followup_turn and not science_mode:
         max_tokens = _cap_tokens(max_tokens, 160 if exploratory else 136)
         top_p = min(top_p, 0.80)

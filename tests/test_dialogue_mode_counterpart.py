@@ -784,6 +784,126 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertLess(int(continued.get("recheck_min") or 999), int(baseline.get("recheck_min") or 999))
         self.assertGreater(float(continued.get("continuity_bonus") or 0.0), float(baseline.get("continuity_bonus") or 0.0))
 
+    def test_shared_window_profile_uses_long_term_support_confidence_without_explicit_motive_snapshot(self):
+        baseline = _counterpart_window_profile(
+            family="shared",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={},
+            interaction_carryover={
+                "carryover_mode": "shared_window",
+                "strength": 0.40,
+                "source_turn_gap": 1,
+            },
+            current_event=self.shared_window_due_event,
+            prior_counterpart_assessment={"stance": "open", "boundary_pressure": 0.14},
+        )
+        infused = _counterpart_window_profile(
+            family="shared",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.62,
+            closeness=0.64,
+            hurt=0.04,
+            safety_need=0.16,
+            initiative=0.44,
+            proactive_checkin_readiness=0.50,
+            semantic_narrative_profile={
+                "continuity_depth": 0.76,
+                "identity_gravity": 0.68,
+                "lineage_gravity": 0.74,
+                "long_term_axis_count": 3,
+                "bond_depth": 0.70,
+                "commitment_carry": 0.74,
+                "support_mass_snapshot": {
+                    "bond_style": 0.78,
+                    "presence_style": 0.72,
+                    "commitment_style": 0.80,
+                    "repair_style": 0.66,
+                },
+                "support_quality_snapshot": {
+                    "bond_style": 0.76,
+                    "presence_style": 0.74,
+                    "commitment_style": 0.82,
+                    "repair_style": 0.68,
+                },
+            },
+            interaction_carryover={
+                "carryover_mode": "shared_window",
+                "strength": 0.40,
+                "source_turn_gap": 1,
+            },
+            current_event=self.shared_window_due_event,
+            prior_counterpart_assessment={"stance": "open", "boundary_pressure": 0.14},
+        )
+        self.assertGreater(float(infused.get("maturity") or 0.0), float(baseline.get("maturity") or 0.0))
+        self.assertLess(float(infused.get("required_maturity") or 1.0), float(baseline.get("required_maturity") or 1.0))
+        self.assertLess(int(infused.get("recheck_min") or 999), int(baseline.get("recheck_min") or 999))
+        self.assertGreater(float(infused.get("continuity_bonus") or 0.0), float(baseline.get("continuity_bonus") or 0.0))
+
+    def test_life_window_profile_uses_long_term_selfhood_support_to_hold_own_rhythm(self):
+        baseline = _counterpart_window_profile(
+            family="life",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.60,
+            closeness=0.62,
+            hurt=0.03,
+            safety_need=0.18,
+            initiative=0.44,
+            proactive_checkin_readiness=0.48,
+            semantic_narrative_profile={},
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.54,
+                "source_turn_gap": 1,
+            },
+            current_event=self.life_window_due_event,
+            prior_counterpart_assessment={"stance": "open", "boundary_pressure": 0.16},
+        )
+        anchored = _counterpart_window_profile(
+            family="life",
+            counterpart_assessment=self.open_counterpart,
+            trust=0.60,
+            closeness=0.62,
+            hurt=0.03,
+            safety_need=0.18,
+            initiative=0.44,
+            proactive_checkin_readiness=0.48,
+            semantic_narrative_profile={
+                "continuity_depth": 0.74,
+                "identity_gravity": 0.82,
+                "lineage_gravity": 0.76,
+                "long_term_axis_count": 3,
+                "selfhood_integrity": 0.78,
+                "agency_drive": 0.76,
+                "rhythm_continuity": 0.80,
+                "support_mass_snapshot": {
+                    "selfhood_style": 0.82,
+                    "agency_style": 0.84,
+                    "rhythm_style": 0.86,
+                },
+                "support_quality_snapshot": {
+                    "selfhood_style": 0.78,
+                    "agency_style": 0.82,
+                    "rhythm_style": 0.84,
+                },
+            },
+            interaction_carryover={
+                "carryover_mode": "own_rhythm",
+                "strength": 0.54,
+                "source_turn_gap": 1,
+            },
+            current_event=self.life_window_due_event,
+            prior_counterpart_assessment={"stance": "open", "boundary_pressure": 0.16},
+        )
+        self.assertLess(float(anchored.get("continuity_bonus") or 0.0), float(baseline.get("continuity_bonus") or 0.0))
+        self.assertGreater(float(anchored.get("required_maturity") or 0.0), float(baseline.get("required_maturity") or 0.0))
+        self.assertGreater(int(anchored.get("recheck_min") or 0), int(baseline.get("recheck_min") or 0))
+
     def test_user_turn_shared_window_carryover_keeps_window_open_without_overpushing(self):
         policy = dict(self.behavior_policy)
         policy["initiative"] = 0.40
@@ -2269,6 +2389,80 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertGreaterEqual(float(snapshot.get("affinity_score") or 0.0), 0.10)
         self.assertGreaterEqual(float(snapshot.get("trust_score") or 0.0), 0.08)
         self.assertIn("熟悉感", str(snapshot.get("notes") or ""))
+
+    def test_relationship_runtime_snapshot_uses_positive_counterpart_read_to_warm_state(self):
+        snapshot = _relationship_runtime_snapshot(
+            relationship={"stage": "friend", "notes": "", "affinity_score": 0.0, "trust_score": 0.0, "derived": True},
+            bond_state={
+                "trust": 0.528,
+                "closeness": 0.534,
+                "hurt": 0.02,
+                "irritation": 0.01,
+            },
+            world_model_state={
+                "relationship_maturity": 0.12,
+                "bond_depth": 0.08,
+                "repair_load": 0.04,
+                "tension_load": 0.01,
+                "boundary_load": 0.04,
+            },
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "care_bid",
+                "respect_level": 0.82,
+                "reciprocity": 0.78,
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.80,
+                "assessment_profile": {
+                    "openness_drive": 0.78,
+                    "guarded_drive": 0.18,
+                    "guard_margin": -0.60,
+                    "dominant_scene_signal": "care",
+                    "scene_strengths": {"care": 0.82, "repair": 0.26, "friction": 0.08, "selfhood": 0.10, "busy": 0.24},
+                },
+            },
+        )
+        self.assertEqual(str(snapshot.get("stage") or ""), "warming")
+        self.assertGreaterEqual(float(snapshot.get("trust_score") or 0.0), 0.07)
+        self.assertGreaterEqual(float(snapshot.get("affinity_score") or 0.0), 0.06)
+        self.assertIn("尊重和配合感", str(snapshot.get("notes") or ""))
+
+    def test_relationship_runtime_snapshot_keeps_low_reliability_read_from_looking_too_warm(self):
+        snapshot = _relationship_runtime_snapshot(
+            relationship={"stage": "friend", "notes": "", "affinity_score": 0.0, "trust_score": 0.0, "derived": True},
+            bond_state={
+                "trust": 0.52,
+                "closeness": 0.53,
+                "hurt": 0.02,
+                "irritation": 0.01,
+            },
+            world_model_state={
+                "relationship_maturity": 0.12,
+                "bond_depth": 0.08,
+                "repair_load": 0.02,
+                "tension_load": 0.02,
+                "boundary_load": 0.12,
+            },
+            counterpart_assessment={
+                "stance": "guarded",
+                "scene": "busy_not_disrespectful",
+                "respect_level": 0.55,
+                "reciprocity": 0.52,
+                "boundary_pressure": 0.18,
+                "reliability_read": 0.24,
+                "assessment_profile": {
+                    "openness_drive": 0.34,
+                    "guarded_drive": 0.58,
+                    "guard_margin": 0.24,
+                    "dominant_scene_signal": "busy",
+                    "scene_strengths": {"care": 0.12, "repair": 0.10, "friction": 0.24, "selfhood": 0.18, "busy": 0.68},
+                },
+            },
+        )
+        self.assertEqual(str(snapshot.get("stage") or ""), "friend")
+        self.assertLessEqual(float(snapshot.get("trust_score") or 0.0), 0.04)
+        self.assertLess(float(snapshot.get("trust_score") or 0.0), float(snapshot.get("affinity_score") or 0.0))
+        self.assertIn("可靠感", str(snapshot.get("notes") or ""))
 
     def test_prefer_refreshed_relationship_state_uses_memory_refresh_after_negative_shift(self):
         current = {

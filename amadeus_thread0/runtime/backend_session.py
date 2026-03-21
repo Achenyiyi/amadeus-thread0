@@ -8,8 +8,13 @@ from langgraph.types import Command
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
 from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state
 from ..memory_store import MemoryStore
-from ..utils.cli_views import build_behavior_queue_cli_summary, build_evolution_cli_summary
-from .final_state import resolve_behavior_payloads, resolve_behavior_queue
+from ..utils.cli_views import (
+    build_behavior_queue_cli_summary,
+    build_counterpart_assessment_cli_summary,
+    build_evolution_cli_summary,
+    build_proactive_continuity_cli_summary,
+)
+from .final_state import resolve_behavior_payloads, resolve_behavior_queue, resolve_interaction_carryover
 
 
 def _coerce_values(snapshot: Any) -> dict[str, Any]:
@@ -23,8 +28,35 @@ def _thread_id_from_config(config: dict[str, Any] | None, fallback: str) -> str:
     return thread_id or fallback
 
 
+def _normalized_graph_config(
+    config: dict[str, Any] | None,
+    *,
+    fallback_thread_id: str,
+    fallback_user_id: str | None = None,
+) -> dict[str, Any]:
+    normalized = dict(config) if isinstance(config, dict) else {}
+    configurable = dict(normalized.get("configurable") or {}) if isinstance(normalized.get("configurable"), dict) else {}
+    thread_id = str(configurable.get("thread_id") or fallback_thread_id).strip()
+    configurable["thread_id"] = thread_id or fallback_thread_id
+    if not str(configurable.get("user_id") or "").strip() and str(fallback_user_id or "").strip():
+        configurable["user_id"] = str(fallback_user_id).strip()
+    normalized["configurable"] = configurable
+    return normalized
+
+
 def _message_content(message: Any) -> str:
     return str(getattr(message, "content", "") or "").strip()
+
+
+def _state_final_text(values: dict[str, Any] | None) -> str:
+    data = values if isinstance(values, dict) else {}
+    final_text = str(data.get("final_text") or "").strip()
+    if final_text:
+        return final_text
+    msgs = data.get("messages")
+    if isinstance(msgs, list) and msgs:
+        return _message_content(msgs[-1])
+    return ""
 
 
 def _payload_value(interrupt_payload: Any) -> dict[str, Any]:
@@ -98,9 +130,12 @@ class BackendSession:
         return self.config(), pending_checkpoint_id
 
     def get_state_values(self, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        cfg = config or self.config()
-        thread_id = _thread_id_from_config(cfg, self.thread_id)
-        return _coerce_values(self.graph.get_state({"configurable": {"thread_id": thread_id}}))
+        cfg = _normalized_graph_config(
+            config or self.config(),
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
+        return _coerce_values(self.graph.get_state(cfg))
 
     def emotion_label(self, *, config: dict[str, Any] | None = None, default: str = "neutral") -> str:
         vals = self.get_state_values(config=config)
@@ -128,7 +163,11 @@ class BackendSession:
         if elapsed_minutes < int(trigger_minutes):
             return False
 
-        cfg = {"configurable": {"thread_id": _thread_id_from_config(run_config, self.thread_id)}}
+        cfg = _normalized_graph_config(
+            run_config,
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
         current_values = self.get_state_values(config=cfg)
         if not isinstance(current_values, dict):
             return False
@@ -149,7 +188,11 @@ class BackendSession:
         created_at: int | None = None,
         extra_tags: list[str] | None = None,
     ) -> dict[str, dict[str, Any]]:
-        cfg = {"configurable": {"thread_id": _thread_id_from_config(run_config, self.thread_id)}}
+        cfg = _normalized_graph_config(
+            run_config,
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
         current_values = self.get_state_values(config=cfg)
         event_override = build_implicit_idle_event_override(
             current_values if isinstance(current_values, dict) else {},
@@ -213,10 +256,9 @@ class BackendSession:
         *,
         streamed_text: str = "",
     ) -> str:
-        data = values if isinstance(values, dict) else {}
-        msgs = data.get("messages")
-        if isinstance(msgs, list) and msgs:
-            return _message_content(msgs[-1])
+        final_text = _state_final_text(values)
+        if final_text:
+            return final_text
         return str(streamed_text or "").strip()
 
     def invoke_event_round(
@@ -240,24 +282,40 @@ class BackendSession:
                 decisions = [{"action": "reject", "reason": reject_reason} for _ in approval_request.tool_calls]
             out = self.graph.invoke(
                 Command(resume={"decisions": decisions}),
-                config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+                config=_normalized_graph_config(
+                    run_config,
+                    fallback_thread_id=self.thread_id,
+                    fallback_user_id=self.user_id,
+                ),
             )
             approval_request = _approval_request_from_output(out)
 
         after_values = self.get_state_values(config=run_config)
-        after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
-        final_text = ""
-        if len(after_messages) > before_len and after_messages:
-            final_text = _message_content(after_messages[-1])
+        final_text = str(after_values.get("final_text") or "").strip()
+        if not final_text:
+            after_messages = after_values.get("messages") if isinstance(after_values.get("messages"), list) else []
+            final_text = ""
+            if len(after_messages) > before_len and after_messages:
+                final_text = _message_content(after_messages[-1])
         return EventRoundResult(values=after_values, final_text=final_text)
 
     def build_evolution_summary(self, *, state_values: dict[str, Any] | None = None) -> dict[str, Any]:
         vals = state_values if isinstance(state_values, dict) else self.get_state_values()
+        reconsolidation_snapshot = (
+            vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {}
+        )
         behavior_action, behavior_plan = resolve_behavior_payloads(
             behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
             behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
             current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
             world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+        )
+        interaction_carryover = resolve_interaction_carryover(
+            interaction_carryover=vals.get("interaction_carryover")
+            if isinstance(vals.get("interaction_carryover"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
         )
         behavior_queue = resolve_behavior_queue(
             behavior_queue=vals.get("behavior_queue"),
@@ -277,14 +335,10 @@ class BackendSession:
             behavior_action=behavior_action,
             behavior_plan=behavior_plan,
             behavior_queue=behavior_queue,
-            interaction_carryover=vals.get("interaction_carryover")
-            if isinstance(vals.get("interaction_carryover"), dict)
-            else {},
+            interaction_carryover=interaction_carryover,
             current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
             worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
-            reconsolidation_snapshot=vals.get("reconsolidation_snapshot")
-            if isinstance(vals.get("reconsolidation_snapshot"), dict)
-            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
             agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue")
             if isinstance(vals.get("agenda_lifecycle_residue"), dict)
             else {},
@@ -293,12 +347,18 @@ class BackendSession:
     def worldline_view(self) -> dict[str, Any]:
         snap = self.memory_store.snapshot()
         vals = self.get_state_values()
+        counterpart_history = snap.get("counterpart_assessment_history", [])
+        proactive_history = snap.get("proactive_continuity_history", [])
         return {
             "worldline_summary": self.build_evolution_summary(state_values=vals),
             "worldline_events": snap.get("worldline_events", []),
             "commitments": snap.get("commitments", []),
             "conflict_repair": snap.get("conflict_repair", []),
             "unresolved_tensions": snap.get("unresolved_tensions", []),
+            "counterpart_assessment_history": counterpart_history,
+            "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
+            "proactive_continuity_history": proactive_history,
+            "proactive_continuity_preview": build_proactive_continuity_cli_summary(proactive_history, limit=5),
             "semantic_self_narratives": snap.get("semantic_self_narratives", []),
             "revision_traces": snap.get("revision_traces", []),
         }
@@ -308,10 +368,16 @@ class BackendSession:
         runtime_relationship = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else {}
         persisted_relationship = self.memory_store.get_relationship()
         relationship_state = _prefer_refreshed_relationship_state(runtime_relationship, persisted_relationship)
+        counterpart_history = list(reversed(self.memory_store.list_counterpart_assessment_history(limit=30)))
+        proactive_history = list(reversed(self.memory_store.list_proactive_continuity_history(limit=30)))
         return {
             "relationship_state": relationship_state,
             "bond_state": vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
             "relationship_timeline": list(reversed(self.memory_store.list_relationship_timeline(limit=30))),
+            "counterpart_assessment_history": counterpart_history,
+            "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
+            "proactive_continuity_history": proactive_history,
+            "proactive_continuity_preview": build_proactive_continuity_cli_summary(proactive_history, limit=5),
             "conflict_repair": list(reversed(self.memory_store.list_conflict_repairs(limit=30))),
         }
 
@@ -324,6 +390,9 @@ class BackendSession:
 
     def persona_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
+        reconsolidation_snapshot = (
+            vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {}
+        )
         queue_vals = resolve_behavior_queue(
             behavior_queue=vals.get("behavior_queue"),
             behavior_agenda=vals.get("behavior_agenda"),
@@ -331,8 +400,15 @@ class BackendSession:
         behavior_action, behavior_plan = resolve_behavior_payloads(
             behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
             behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
             current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
             world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
+        )
+        interaction_carryover = resolve_interaction_carryover(
+            interaction_carryover=vals.get("interaction_carryover")
+            if isinstance(vals.get("interaction_carryover"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
         )
         return {
             "evolution_summary": self.build_evolution_summary(state_values=vals),
@@ -348,15 +424,11 @@ class BackendSession:
             else {},
             "world_model_state": vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
             "evolution_state": vals.get("evolution_state") if isinstance(vals.get("evolution_state"), dict) else {},
-            "reconsolidation_snapshot": vals.get("reconsolidation_snapshot")
-            if isinstance(vals.get("reconsolidation_snapshot"), dict)
-            else {},
+            "reconsolidation_snapshot": reconsolidation_snapshot,
             "turn_appraisal": vals.get("turn_appraisal") if isinstance(vals.get("turn_appraisal"), dict) else {},
             "behavior_policy": vals.get("behavior_policy") if isinstance(vals.get("behavior_policy"), dict) else {},
             "behavior_action": behavior_action,
-            "interaction_carryover": vals.get("interaction_carryover")
-            if isinstance(vals.get("interaction_carryover"), dict)
-            else {},
+            "interaction_carryover": interaction_carryover,
             "agenda_lifecycle_residue": vals.get("agenda_lifecycle_residue")
             if isinstance(vals.get("agenda_lifecycle_residue"), dict)
             else {},
@@ -374,9 +446,13 @@ class BackendSession:
         return vals.get("turn_appraisal") if isinstance(vals.get("turn_appraisal"), dict) else {}
 
     def current_checkpoint_view(self, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        cfg = config or self.config()
+        cfg = _normalized_graph_config(
+            config or self.config(),
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
         thread_id = _thread_id_from_config(cfg, self.thread_id)
-        snapshot = self.graph.get_state({"configurable": {"thread_id": thread_id}})
+        snapshot = self.graph.get_state(cfg)
         snapshot_cfg = getattr(snapshot, "config", {}) if snapshot is not None else {}
         checkpoint_id = None
         if isinstance(snapshot_cfg, dict):
@@ -389,13 +465,17 @@ class BackendSession:
         limit: int = 10,
         config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        cfg = config or self.config()
+        cfg = _normalized_graph_config(
+            config or self.config(),
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
         thread_id = _thread_id_from_config(cfg, self.thread_id)
         try:
             capped_limit = max(1, int(limit))
         except Exception:
             capped_limit = 10
-        history_rows = list(self.graph.get_state_history({"configurable": {"thread_id": thread_id}}))
+        history_rows = list(self.graph.get_state_history(cfg))
         rows: list[dict[str, Any]] = []
         for snapshot in history_rows[:capped_limit]:
             snapshot_cfg = getattr(snapshot, "config", {}) if snapshot is not None else {}

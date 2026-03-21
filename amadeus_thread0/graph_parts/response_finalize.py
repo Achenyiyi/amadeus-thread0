@@ -397,6 +397,12 @@ def _finalize_text_response(
                     natural_dialog_rewrite_applied = True
                     alignment_reasons.extend(natural_dialog_rewrite_notes)
 
+    aligned = _sanitize_final_answer(
+        aligned,
+        user_text,
+        current_event=current_event,
+        behavior_action=behavior_action,
+    )
     aligned = _ensure_response_structure(aligned, user_text)
     claims = [] if bool(ABLATE_CLAIM_ATTRIBUTION) else build_claim_attribution(aligned, evidence_pack)
     ext_tools = set(state.get("last_external_tools") or [])
@@ -433,6 +439,7 @@ def _finalize_text_response(
     }
     return {
         "messages": [final_msg],
+        "final_text": aligned,
         "ooc_detector": {
             "draft_risk": draft_risk,
             "draft_gap": draft_gap,

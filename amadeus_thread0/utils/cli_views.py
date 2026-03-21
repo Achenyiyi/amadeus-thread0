@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..graph_parts.relational_runtime import _counterpart_assessment_profile
+
 
 def _metric(value: Any, default: float = 0.0) -> float:
     try:
@@ -265,6 +267,178 @@ def render_behavior_queue_cli_text(queue: Any, *, limit: int = 3) -> str:
     return "\n".join(lines)
 
 
+def build_counterpart_assessment_cli_summary(history: Any, *, limit: int = 5) -> list[dict[str, Any]]:
+    if not isinstance(history, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content") if isinstance(item.get("content"), dict) else {}
+        summary = str(content.get("summary") or item.get("summary") or "").strip()
+        stance = str(content.get("stance") or item.get("stance") or "").strip().lower()
+        scene = str(content.get("scene") or item.get("scene") or "").strip().lower()
+        if not any((summary, stance, scene)):
+            continue
+        row = {
+            "id": _int_metric(item.get("id"), 0),
+            "summary": summary,
+            "stance": stance,
+            "scene": scene,
+            "respect_level": _metric(content.get("respect_level", item.get("respect_level")), 0.5),
+            "reciprocity": _metric(content.get("reciprocity", item.get("reciprocity")), 0.5),
+            "boundary_pressure": _metric(content.get("boundary_pressure", item.get("boundary_pressure")), 0.1),
+            "reliability_read": _metric(content.get("reliability_read", item.get("reliability_read")), 0.5),
+            "event_kind": str(content.get("event_kind") or item.get("event_kind") or "").strip(),
+            "interaction_frame": str(content.get("interaction_frame") or item.get("interaction_frame") or "").strip(),
+            "primary_motive": str(content.get("primary_motive") or item.get("primary_motive") or "").strip(),
+            "motive_tension": str(content.get("motive_tension") or item.get("motive_tension") or "").strip(),
+            "goal_frame": str(content.get("goal_frame") or item.get("goal_frame") or "").strip(),
+        }
+        profile = _counterpart_assessment_profile({**row, "assessment_profile": content.get("assessment_profile") or item.get("assessment_profile")})
+        if profile:
+            row["assessment_profile"] = profile
+        out.append(row)
+    capped = max(1, int(limit))
+    return out[-capped:]
+
+
+def render_counterpart_assessment_cli_text(history: Any, *, limit: int = 5) -> str:
+    rows = build_counterpart_assessment_cli_summary(history, limit=limit)
+    if not rows:
+        return "- (empty)"
+    lines: list[str] = []
+    for row in rows:
+        header = (
+            f"- #{row['id']} {row['stance'] or '-'}"
+            + (f"/{row['scene']}" if row.get("scene") else "")
+            + f" respect={_metric(row.get('respect_level'), 0.5):.2f}"
+            + f" reciprocity={_metric(row.get('reciprocity'), 0.5):.2f}"
+            + f" pressure={_metric(row.get('boundary_pressure'), 0.1):.2f}"
+            + f" reliability={_metric(row.get('reliability_read'), 0.5):.2f}"
+        )
+        if row.get("event_kind"):
+            header += f" event={row['event_kind']}"
+        if row.get("interaction_frame"):
+            header += f" frame={row['interaction_frame']}"
+        lines.append(header)
+        if row.get("summary"):
+            lines.append(f"  {row['summary']}")
+        profile = row.get("assessment_profile") if isinstance(row.get("assessment_profile"), dict) else {}
+        if profile:
+            scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
+            dominant = str(profile.get("dominant_scene_signal") or "").strip()
+            dominant_score = _metric(scene_strengths.get(dominant), 0.0) if dominant else 0.0
+            lines.append(
+                "  read="
+                + (f"{dominant}:{dominant_score:.2f} " if dominant else "")
+                + f"open={_metric(profile.get('openness_drive'), 0.0):.2f} "
+                + f"guard={_metric(profile.get('guarded_drive'), 0.0):.2f} "
+                + f"margin={_metric(profile.get('guard_margin'), 0.0):.2f}"
+            )
+        motive_bits = [str(row.get("primary_motive") or "").strip(), str(row.get("motive_tension") or "").strip()]
+        motive_bits = [bit for bit in motive_bits if bit]
+        if motive_bits or row.get("goal_frame"):
+            detail = ""
+            if motive_bits:
+                detail += "  motive=" + " / ".join(motive_bits)
+            if row.get("goal_frame"):
+                detail += (" | " if detail else "  ") + f"goal={row['goal_frame']}"
+            lines.append(detail)
+    return "\n".join(lines)
+
+
+def build_proactive_continuity_cli_summary(history: Any, *, limit: int = 5) -> list[dict[str, Any]]:
+    if not isinstance(history, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content") if isinstance(item.get("content"), dict) else {}
+        summary = str(content.get("summary") or item.get("summary") or "").strip()
+        kind = str(content.get("kind") or item.get("kind") or "").strip().lower()
+        trace_family = str(content.get("trace_family") or item.get("trace_family") or "").strip().lower()
+        carryover_mode = str(content.get("carryover_mode") or item.get("carryover_mode") or "").strip().lower()
+        if not any((summary, kind, trace_family, carryover_mode)):
+            continue
+        out.append(
+            {
+                "id": _int_metric(item.get("id"), 0),
+                "summary": summary,
+                "kind": kind,
+                "trace_family": trace_family,
+                "source_event_kind": str(content.get("source_event_kind") or item.get("source_event_kind") or "").strip().lower(),
+                "trigger_family": str(content.get("trigger_family") or item.get("trigger_family") or "").strip().lower(),
+                "carryover_mode": carryover_mode,
+                "relationship_weather": str(content.get("relationship_weather") or item.get("relationship_weather") or "").strip().lower(),
+                "counterpart_scene_bias": str(content.get("counterpart_scene_bias") or item.get("counterpart_scene_bias") or "").strip().lower(),
+                "hold_count": _int_metric(content.get("hold_count", item.get("hold_count")), 0),
+                "carryover_strength": _metric(content.get("carryover_strength", item.get("carryover_strength")), 0.0),
+                "recontact_cooldown": _metric(content.get("recontact_cooldown", item.get("recontact_cooldown")), 0.0),
+                "presence_residue": _metric(content.get("presence_residue", item.get("presence_residue")), 0.0),
+                "ambient_resonance": _metric(content.get("ambient_resonance", item.get("ambient_resonance")), 0.0),
+                "self_activity_momentum": _metric(content.get("self_activity_momentum", item.get("self_activity_momentum")), 0.0),
+                "own_rhythm_bias": _metric(content.get("own_rhythm_bias", item.get("own_rhythm_bias")), 0.0),
+                "primary_motive": str(content.get("primary_motive") or item.get("primary_motive") or "").strip(),
+                "motive_tension": str(content.get("motive_tension") or item.get("motive_tension") or "").strip(),
+                "goal_frame": str(content.get("goal_frame") or item.get("goal_frame") or "").strip(),
+            }
+        )
+    capped = max(1, int(limit))
+    return out[-capped:]
+
+
+def render_proactive_continuity_cli_text(history: Any, *, limit: int = 5) -> str:
+    rows = build_proactive_continuity_cli_summary(history, limit=limit)
+    if not rows:
+        return "- (empty)"
+    lines: list[str] = []
+    for row in rows:
+        header = f"- #{row['id']} {row['trace_family'] or '-'}"
+        if row.get("kind"):
+            header += f"/{row['kind']}"
+        header += (
+            f" carry={row['carryover_mode'] or '-'}:{_metric(row.get('carryover_strength'), 0.0):.2f}"
+            + f" hold={_int_metric(row.get('hold_count'), 0)}"
+            + f" own={_metric(row.get('own_rhythm_bias'), 0.0):.2f}"
+            + f" self={_metric(row.get('self_activity_momentum'), 0.0):.2f}"
+        )
+        if row.get("trigger_family"):
+            header += f" trigger={row['trigger_family']}"
+        if row.get("source_event_kind"):
+            header += f" event={row['source_event_kind']}"
+        lines.append(header)
+        detail = (
+            f"  residue={_metric(row.get('presence_residue'), 0.0):.2f}/"
+            + f"{_metric(row.get('ambient_resonance'), 0.0):.2f}"
+            + f" cooldown={_metric(row.get('recontact_cooldown'), 0.0):.2f}"
+        )
+        if row.get("relationship_weather"):
+            detail += f" weather={row['relationship_weather']}"
+        if row.get("counterpart_scene_bias"):
+            detail += f" scene={row['counterpart_scene_bias']}"
+        lines.append(detail)
+        if row.get("summary"):
+            lines.append(f"  {row['summary']}")
+        motive_bits = [str(row.get("primary_motive") or "").strip(), str(row.get("motive_tension") or "").strip()]
+        motive_bits = [bit for bit in motive_bits if bit]
+        if motive_bits or row.get("goal_frame"):
+            extra = ""
+            if motive_bits:
+                extra += "  motive=" + " / ".join(motive_bits)
+            if row.get("goal_frame"):
+                extra += (" | " if extra else "  ") + f"goal={row['goal_frame']}"
+            lines.append(extra)
+    return "\n".join(lines)
+
+
+def _frozen_counterpart_snapshot(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    recon = dict(reconsolidation_snapshot or {})
+    counterpart = recon.get("counterpart")
+    return dict(counterpart) if isinstance(counterpart, dict) else {}
+
+
 def build_evolution_cli_summary(
     *,
     relationship: dict[str, Any] | None = None,
@@ -294,6 +468,7 @@ def build_evolution_cli_summary(
     current_event = dict(current_event or {})
     recon = dict(reconsolidation_snapshot or {})
     agenda_lifecycle = dict(agenda_lifecycle_residue or {})
+    frozen_counterpart = _frozen_counterpart_snapshot(recon)
     recon_consequence = (
         dict(recon.get("behavior_consequence"))
         if isinstance(recon.get("behavior_consequence"), dict)
@@ -358,8 +533,14 @@ def build_evolution_cli_summary(
             "trust": _metric(bond.get("trust"), 0.0),
             "closeness": _metric(bond.get("closeness"), 0.0),
             "hurt": _metric(bond.get("hurt"), 0.0),
-            "counterpart_stance": str(counterpart.get("stance") or "").strip(),
-            "counterpart_scene": str(counterpart.get("scene") or "").strip(),
+            "counterpart_summary": str((frozen_counterpart or counterpart).get("summary") or "").strip(),
+            "counterpart_stance": str((frozen_counterpart or counterpart).get("stance") or "").strip(),
+            "counterpart_scene": str((frozen_counterpart or counterpart).get("scene") or "").strip(),
+            "counterpart_respect_level": _metric((frozen_counterpart or counterpart).get("respect_level"), 0.5),
+            "counterpart_reciprocity": _metric((frozen_counterpart or counterpart).get("reciprocity"), 0.5),
+            "counterpart_boundary_pressure": _metric((frozen_counterpart or counterpart).get("boundary_pressure"), 0.1),
+            "counterpart_reliability_read": _metric((frozen_counterpart or counterpart).get("reliability_read"), 0.5),
+            "counterpart_profile": _counterpart_assessment_profile(frozen_counterpart or counterpart),
             "behavior_mode": str(behavior.get("interaction_mode") or "").strip(),
             "action_target": str(behavior.get("action_target") or "").strip(),
             "primary_motive": str(behavior.get("primary_motive") or "").strip(),
@@ -433,6 +614,12 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     stance = str(current_turn.get("counterpart_stance") or "").strip()
     if stance:
         parts.append(f"stance={stance}")
+    counterpart_profile = current_turn.get("counterpart_profile") if isinstance(current_turn.get("counterpart_profile"), dict) else {}
+    if counterpart_profile:
+        dominant = str(counterpart_profile.get("dominant_scene_signal") or "").strip()
+        scene_strengths = counterpart_profile.get("scene_strengths") if isinstance(counterpart_profile.get("scene_strengths"), dict) else {}
+        if dominant:
+            parts.append(f"read={dominant}:{_metric(scene_strengths.get(dominant), 0.0):.3f}")
     opening_window = summary.get("opening_window") if isinstance(summary.get("opening_window"), dict) else {}
     if opening_window:
         profile_type = str(opening_window.get("profile_type") or "").strip()

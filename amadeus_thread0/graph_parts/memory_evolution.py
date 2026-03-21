@@ -22,6 +22,7 @@ from .postprocess import (
     _looks_like_light_smalltalk,
     _selfhood_preference_scene_from_text,
 )
+from .relational_runtime import _counterpart_assessment_profile, _counterpart_assessment_summary
 from .retrieval import _query_overlap_score, _record_value, _tension_salience
 from .semantic_narrative import (
     _semantic_identity_bonus,
@@ -182,6 +183,272 @@ def _behavior_motive_snapshot_source(
     if saw_action and saw_non_action:
         return "mixed_behavior_semantics"
     return ""
+
+
+def _reconsolidation_behavior_semantics(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, str]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    interaction_mode = str(recon.get("behavior_mode") or "").strip().lower()
+    primary_motive = str(recon.get("primary_motive") or "").strip().lower()
+    motive_tension = str(recon.get("motive_tension") or "").strip().lower()
+    goal_frame = str(recon.get("goal_frame") or "").strip()
+    if not any((interaction_mode, primary_motive, motive_tension, goal_frame)):
+        return {}
+    return {
+        "interaction_mode": interaction_mode,
+        "primary_motive": primary_motive,
+        "motive_tension": motive_tension,
+        "goal_frame": goal_frame[:220],
+    }
+
+
+def _reconsolidation_behavior_action_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    action = recon.get("behavior_action")
+    if not isinstance(action, dict):
+        return {}
+    snapshot = {
+        "interaction_mode": str(action.get("interaction_mode") or "").strip().lower(),
+        "action_target": str(action.get("action_target") or "").strip().lower(),
+        "channel": str(action.get("channel") or "").strip().lower(),
+        "approach_style": str(action.get("approach_style") or "").strip().lower(),
+        "followup_intent": str(action.get("followup_intent") or "").strip().lower(),
+        "deferred_action_family": str(action.get("deferred_action_family") or "").strip().lower(),
+        "relationship_weather": str(action.get("relationship_weather") or "").strip().lower(),
+        "attention_target": str(action.get("attention_target") or "").strip().lower(),
+        "nonverbal_signal": str(action.get("nonverbal_signal") or "").strip().lower(),
+        "primary_motive": str(action.get("primary_motive") or "").strip().lower(),
+        "motive_tension": str(action.get("motive_tension") or "").strip().lower(),
+        "goal_frame": str(action.get("goal_frame") or "").strip()[:220],
+        "timing_window_min": max(0, int(action.get("timing_window_min") or 0)),
+    }
+    if any(
+        (
+            snapshot["interaction_mode"],
+            snapshot["action_target"],
+            snapshot["channel"],
+            snapshot["approach_style"],
+            snapshot["followup_intent"],
+            snapshot["deferred_action_family"],
+            snapshot["relationship_weather"],
+            snapshot["attention_target"],
+            snapshot["nonverbal_signal"],
+            snapshot["primary_motive"],
+            snapshot["motive_tension"],
+            snapshot["goal_frame"],
+            snapshot["timing_window_min"] > 0,
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _reconsolidation_counterpart_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    counterpart = recon.get("counterpart")
+    if not isinstance(counterpart, dict):
+        return {}
+    snapshot = {
+        "stance": str(counterpart.get("stance") or "").strip().lower(),
+        "scene": str(counterpart.get("scene") or "").strip().lower(),
+        "respect_level": _clamp01(counterpart.get("respect_level"), 0.5),
+        "reciprocity": _clamp01(counterpart.get("reciprocity"), 0.5),
+        "boundary_pressure": _clamp01(counterpart.get("boundary_pressure"), 0.1),
+        "reliability_read": _clamp01(counterpart.get("reliability_read"), 0.5),
+    }
+    profile = _counterpart_assessment_profile(counterpart)
+    if profile:
+        snapshot["assessment_profile"] = profile
+    return snapshot if any(snapshot.values()) else {}
+
+
+def _reconsolidation_agenda_lifecycle_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    consequence = recon.get("agenda_lifecycle_consequence")
+    if not isinstance(consequence, dict):
+        return {}
+    snapshot = dict(consequence)
+    return snapshot if str(snapshot.get("kind") or "").strip() else {}
+
+
+def _reconsolidation_behavior_plan_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    plan = recon.get("behavior_plan")
+    if not isinstance(plan, dict):
+        return {}
+    snapshot = {
+        "kind": str(plan.get("kind") or "").strip().lower(),
+        "target": str(plan.get("target") or "").strip().lower(),
+        "trigger_family": str(plan.get("trigger_family") or "").strip().lower(),
+        "carryover_mode": str(plan.get("carryover_mode") or "").strip().lower(),
+        "note": str(plan.get("note") or "").strip()[:220],
+        "primary_motive": str(plan.get("primary_motive") or "").strip().lower(),
+        "motive_tension": str(plan.get("motive_tension") or "").strip().lower(),
+        "goal_frame": str(plan.get("goal_frame") or "").strip()[:220],
+        "scheduled_after_min": max(0, int(plan.get("scheduled_after_min") or 0)),
+        "allow_interrupt": bool(plan.get("allow_interrupt", True)),
+        "carryover_strength": _clamp01(plan.get("carryover_strength"), 0.0),
+        "presence_residue": _clamp01(plan.get("presence_residue"), 0.0),
+        "ambient_resonance": _clamp01(plan.get("ambient_resonance"), 0.0),
+        "self_activity_momentum": _clamp01(plan.get("self_activity_momentum"), 0.0),
+    }
+    if any(
+        (
+            snapshot["kind"],
+            snapshot["target"],
+            snapshot["trigger_family"],
+            snapshot["carryover_mode"],
+            snapshot["note"],
+            snapshot["primary_motive"],
+            snapshot["motive_tension"],
+            snapshot["goal_frame"],
+            snapshot["scheduled_after_min"] > 0,
+            snapshot["carryover_strength"] > 0.0,
+            snapshot["presence_residue"] > 0.0,
+            snapshot["ambient_resonance"] > 0.0,
+            snapshot["self_activity_momentum"] > 0.0,
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _reconsolidation_interaction_carryover_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    carryover = recon.get("interaction_carryover")
+    if not isinstance(carryover, dict):
+        return {}
+    source_tags = [
+        str(item).strip().lower()
+        for item in (carryover.get("source_tags") if isinstance(carryover.get("source_tags"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    snapshot = {
+        "source": str(carryover.get("source") or "").strip().lower(),
+        "strength": _clamp01(carryover.get("strength"), 0.0),
+        "carryover_mode": str(carryover.get("carryover_mode") or "").strip().lower(),
+        "relationship_weather": str(carryover.get("relationship_weather") or "").strip().lower(),
+        "note": str(carryover.get("note") or "").strip()[:220],
+        "source_tags": source_tags,
+    }
+    if any(
+        (
+            snapshot["source"],
+            snapshot["carryover_mode"],
+            snapshot["relationship_weather"],
+            snapshot["note"],
+            snapshot["strength"] > 0.0,
+            bool(snapshot["source_tags"]),
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _behavior_consequence_snapshot(
+    *,
+    reconsolidation_snapshot: dict[str, Any] | None,
+    current_event: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    consequence = recon.get("behavior_consequence")
+    if isinstance(consequence, dict) and str(consequence.get("kind") or "").strip():
+        return dict(consequence)
+    return derive_behavior_consequence(
+        current_event=current_event,
+        behavior_action=behavior_action,
+        allow_event_behavior_fallback=False,
+    )
+
+
+def _normalized_counterpart_assessment_record(item: dict[str, Any] | None) -> dict[str, Any]:
+    row = item if isinstance(item, dict) else {}
+    content = row.get("content") if isinstance(row.get("content"), dict) else {}
+    stance = str(content.get("stance") or row.get("stance") or "").strip().lower()
+    scene = str(content.get("scene") or row.get("scene") or "").strip().lower()
+    try:
+        respect_level = float(content.get("respect_level", row.get("respect_level", 0.5)) or 0.5)
+    except Exception:
+        respect_level = 0.5
+    try:
+        reciprocity = float(content.get("reciprocity", row.get("reciprocity", 0.5)) or 0.5)
+    except Exception:
+        reciprocity = 0.5
+    try:
+        boundary_pressure = float(content.get("boundary_pressure", row.get("boundary_pressure", 0.1)) or 0.1)
+    except Exception:
+        boundary_pressure = 0.1
+    try:
+        reliability_read = float(content.get("reliability_read", row.get("reliability_read", 0.5)) or 0.5)
+    except Exception:
+        reliability_read = 0.5
+    normalized = {
+        "summary": str(content.get("summary") or row.get("summary") or "").strip(),
+        "stance": stance,
+        "scene": scene,
+        "respect_level": _clamp01(respect_level, 0.5),
+        "reciprocity": _clamp01(reciprocity, 0.5),
+        "boundary_pressure": _clamp01(boundary_pressure, 0.1),
+        "reliability_read": _clamp01(reliability_read, 0.5),
+    }
+    profile = _counterpart_assessment_profile({**normalized, "assessment_profile": content.get("assessment_profile") or row.get("assessment_profile")})
+    if profile:
+        normalized["assessment_profile"] = profile
+    return normalized
+
+
+def _counterpart_assessment_has_signal(assessment: dict[str, Any] | None) -> bool:
+    item = dict(assessment or {})
+    stance = str(item.get("stance") or "").strip().lower()
+    scene = str(item.get("scene") or "").strip().lower()
+    respect_level = _clamp01(item.get("respect_level"), 0.5)
+    reciprocity = _clamp01(item.get("reciprocity"), 0.5)
+    boundary_pressure = _clamp01(item.get("boundary_pressure"), 0.1)
+    reliability_read = _clamp01(item.get("reliability_read"), 0.5)
+    return bool(
+        stance
+        or scene
+        or abs(respect_level - 0.5) >= 0.08
+        or abs(reciprocity - 0.5) >= 0.08
+        or boundary_pressure >= 0.18
+        or abs(reliability_read - 0.5) >= 0.08
+    )
+
+
+def _counterpart_assessment_shift_score(
+    current: dict[str, Any] | None,
+    prior: dict[str, Any] | None,
+) -> float:
+    curr = dict(current or {})
+    prev = dict(prior or {})
+    if not curr:
+        return 0.0
+    score = 0.0
+    stance = str(curr.get("stance") or "").strip().lower()
+    prior_stance = str(prev.get("stance") or "").strip().lower()
+    scene = str(curr.get("scene") or "").strip().lower()
+    prior_scene = str(prev.get("scene") or "").strip().lower()
+    if stance and stance != prior_stance:
+        score += 0.20
+    if scene and scene != prior_scene:
+        score += 0.24
+    score += abs(_clamp01(curr.get("respect_level"), 0.5) - _clamp01(prev.get("respect_level"), 0.5))
+    score += abs(_clamp01(curr.get("reciprocity"), 0.5) - _clamp01(prev.get("reciprocity"), 0.5))
+    score += abs(_clamp01(curr.get("boundary_pressure"), 0.1) - _clamp01(prev.get("boundary_pressure"), 0.1))
+    score += abs(_clamp01(curr.get("reliability_read"), 0.5) - _clamp01(prev.get("reliability_read"), 0.5))
+    return score
 
 
 def _looks_like_shared_future_commitment(text: str) -> bool:
@@ -813,12 +1080,26 @@ def _refresh_semantic_self_narratives(
         tension_counts: dict[str, float] = {}
         motive_order: dict[str, int] = {}
         tension_order: dict[str, int] = {}
+        stance_counts: dict[str, float] = {}
+        scene_counts: dict[str, float] = {}
+        signal_counts: dict[str, float] = {}
         goal_frames: list[tuple[float, int, str]] = []
         seen_goal_frames: set[str] = set()
         support_count = 0
         support_mass = 0.0
         confidence_mass = 0.0
         fresh_mass = 0.0
+        counterpart_support_count = 0
+        counterpart_support_mass = 0.0
+        counterpart_confidence_mass = 0.0
+        counterpart_fresh_mass = 0.0
+        respect_weight = 0.0
+        reciprocity_weight = 0.0
+        pressure_weight = 0.0
+        reliability_weight = 0.0
+        openness_weight = 0.0
+        guarded_weight = 0.0
+        guard_margin_weight = 0.0
         for idx, item in enumerate(items):
             if _semantic_evidence_has_trusted_behavior_semantics(item):
                 primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
@@ -852,16 +1133,66 @@ def _refresh_semantic_self_narratives(
                     seen_goal_frames.add(norm_goal)
                     goal_frames.append((weight, idx, norm_goal))
 
+            stance = str(_record_value(item, "counterpart_stance", "") or "").strip().lower()
+            scene = str(_record_value(item, "counterpart_scene", "") or "").strip().lower()
+            dominant_signal = str(_record_value(item, "counterpart_dominant_scene_signal", "") or "").strip().lower()
+            respect = _clamp01(_record_value(item, "counterpart_respect_level", 0.5), 0.5)
+            reciprocity = _clamp01(_record_value(item, "counterpart_reciprocity", 0.5), 0.5)
+            pressure = _clamp01(_record_value(item, "counterpart_boundary_pressure", 0.1), 0.1)
+            reliability = _clamp01(_record_value(item, "counterpart_reliability_read", 0.5), 0.5)
+            openness_drive = _clamp01(_record_value(item, "counterpart_openness_drive", 0.0), 0.0)
+            guarded_drive = _clamp01(_record_value(item, "counterpart_guarded_drive", 0.0), 0.0)
+            try:
+                guard_margin = max(-1.0, min(1.0, float(_record_value(item, "counterpart_guard_margin", 0.0) or 0.0)))
+            except Exception:
+                guard_margin = 0.0
+            counterpart_has_signal = bool(
+                stance
+                or scene
+                or dominant_signal
+                or abs(respect - 0.5) >= 0.08
+                or abs(reciprocity - 0.5) >= 0.08
+                or pressure >= 0.18
+                or abs(reliability - 0.5) >= 0.08
+                or openness_drive > 0.0
+                or guarded_drive > 0.0
+                or abs(guard_margin) > 0.0
+            )
+            if counterpart_has_signal:
+                counterpart_support_count += 1
+                counterpart_support_mass += weight
+                counterpart_confidence_mass += confidence * weight
+                if is_fresh:
+                    counterpart_fresh_mass += weight
+                if stance:
+                    stance_counts[stance] = stance_counts.get(stance, 0.0) + weight
+                if scene:
+                    scene_counts[scene] = scene_counts.get(scene, 0.0) + weight
+                if dominant_signal:
+                    signal_counts[dominant_signal] = signal_counts.get(dominant_signal, 0.0) + weight
+                respect_weight += weight * respect
+                reciprocity_weight += weight * reciprocity
+                pressure_weight += weight * pressure
+                reliability_weight += weight * reliability
+                openness_weight += weight * openness_drive
+                guarded_weight += weight * guarded_drive
+                guard_margin_weight += weight * guard_margin
+
         def _pick_dominant(counts: dict[str, float], order: dict[str, int]) -> str:
             if not counts:
                 return ""
             return max(counts.items(), key=lambda kv: (kv[1], -order.get(kv[0], 10_000), kv[0]))[0]
 
+        def _pick_weighted_label(counts: dict[str, float]) -> str:
+            if not counts:
+                return ""
+            return max(counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
+
         dominant_primary_motive = _pick_dominant(motive_counts, motive_order)
         dominant_motive_tension = _pick_dominant(tension_counts, tension_order)
         signature_parts = [part for part in [dominant_primary_motive, dominant_motive_tension] if part]
         goal_frames.sort(key=lambda item: (-item[0], item[1], item[2]))
-        return {
+        out = {
             "dominant_primary_motive": dominant_primary_motive,
             "dominant_motive_tension": dominant_motive_tension,
             "goal_frame_examples": [item[2] for item in goal_frames[:2]],
@@ -871,6 +1202,34 @@ def _refresh_semantic_self_narratives(
             "motive_fresh_ratio": round(_clamp01(fresh_mass / max(support_mass, 1e-6), 0.0), 3) if support_mass > 0.0 else 0.0,
             "motive_signature": ":".join(signature_parts),
         }
+        if counterpart_support_mass > 0.0:
+            dominant_scene = _pick_weighted_label(scene_counts)
+            dominant_signal = _pick_weighted_label(signal_counts) or dominant_scene
+            out["counterpart_snapshot"] = {
+                "counterpart_stance": _pick_weighted_label(stance_counts),
+                "counterpart_scene": dominant_scene,
+                "counterpart_respect_level": round(respect_weight / counterpart_support_mass, 3),
+                "counterpart_reciprocity": round(reciprocity_weight / counterpart_support_mass, 3),
+                "counterpart_boundary_pressure": round(pressure_weight / counterpart_support_mass, 3),
+                "counterpart_reliability_read": round(reliability_weight / counterpart_support_mass, 3),
+                "counterpart_profile": {
+                    "openness_drive": round(openness_weight / counterpart_support_mass, 3),
+                    "guarded_drive": round(guarded_weight / counterpart_support_mass, 3),
+                    "guard_margin": round(guard_margin_weight / counterpart_support_mass, 3),
+                    "dominant_scene_signal": dominant_signal,
+                },
+                "counterpart_support_count": counterpart_support_count,
+                "counterpart_support_mass": round(counterpart_support_mass, 3),
+                "counterpart_confidence_avg": round(
+                    _clamp01(counterpart_confidence_mass / max(counterpart_support_mass, 1e-6), 0.0),
+                    3,
+                ),
+                "counterpart_fresh_ratio": round(
+                    _clamp01(counterpart_fresh_mass / max(counterpart_support_mass, 1e-6), 0.0),
+                    3,
+                ),
+            }
+        return out
 
     self_rhythm_worldline_sources = _worldline_support_items(
         categories={"self_rhythm"},
@@ -1264,6 +1623,31 @@ def _refresh_semantic_self_narratives(
             if part
         ]
         current["motive_signature"] = ":".join(signature_parts)
+        counterpart_snapshot = current.get("counterpart_snapshot") if isinstance(current.get("counterpart_snapshot"), dict) else {}
+        if counterpart_snapshot:
+            counterpart_snapshot = dict(counterpart_snapshot)
+            counterpart_snapshot["counterpart_stance"] = str(counterpart_snapshot.get("counterpart_stance") or "").strip()
+            counterpart_snapshot["counterpart_scene"] = str(counterpart_snapshot.get("counterpart_scene") or "").strip()
+            profile = counterpart_snapshot.get("counterpart_profile") if isinstance(counterpart_snapshot.get("counterpart_profile"), dict) else {}
+            try:
+                guard_margin = max(-1.0, min(1.0, float(profile.get("guard_margin", 0.0) or 0.0)))
+            except Exception:
+                guard_margin = 0.0
+            counterpart_snapshot["counterpart_profile"] = {
+                "openness_drive": round(_clamp01(profile.get("openness_drive"), 0.0), 3),
+                "guarded_drive": round(_clamp01(profile.get("guarded_drive"), 0.0), 3),
+                "guard_margin": round(guard_margin, 3),
+                "dominant_scene_signal": str(profile.get("dominant_scene_signal") or "").strip(),
+            }
+            counterpart_snapshot["counterpart_respect_level"] = round(_clamp01(counterpart_snapshot.get("counterpart_respect_level"), 0.5), 3)
+            counterpart_snapshot["counterpart_reciprocity"] = round(_clamp01(counterpart_snapshot.get("counterpart_reciprocity"), 0.5), 3)
+            counterpart_snapshot["counterpart_boundary_pressure"] = round(_clamp01(counterpart_snapshot.get("counterpart_boundary_pressure"), 0.1), 3)
+            counterpart_snapshot["counterpart_reliability_read"] = round(_clamp01(counterpart_snapshot.get("counterpart_reliability_read"), 0.5), 3)
+            counterpart_snapshot["counterpart_support_count"] = max(0, int(counterpart_snapshot.get("counterpart_support_count") or 0))
+            counterpart_snapshot["counterpart_support_mass"] = round(float(counterpart_snapshot.get("counterpart_support_mass") or 0.0), 3)
+            counterpart_snapshot["counterpart_confidence_avg"] = round(_clamp01(counterpart_snapshot.get("counterpart_confidence_avg"), 0.0), 3)
+            counterpart_snapshot["counterpart_fresh_ratio"] = round(_clamp01(counterpart_snapshot.get("counterpart_fresh_ratio"), 0.0), 3)
+            current["counterpart_snapshot"] = counterpart_snapshot
         return current
 
     def _dormant_narrative_text(category: str, prev_text: str) -> str:
@@ -1595,6 +1979,8 @@ def _refresh_semantic_self_narratives(
         motive_state = _narrative_motive_state(category)
         motive_support_count = max(0, int(motive_state.get("motive_support_count") or 0))
         motive_signature = str(motive_state.get("motive_signature") or "").strip()
+        counterpart_state = motive_state.get("counterpart_snapshot") if isinstance(motive_state.get("counterpart_snapshot"), dict) else {}
+        counterpart_profile_state = counterpart_state.get("counterpart_profile") if isinstance(counterpart_state.get("counterpart_profile"), dict) else {}
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
         prev_refresh = max(0, int(_record_value(prev or {}, "refresh_count", 0) or 0))
         prev_consolidation = max(0, int(_record_value(prev or {}, "consolidation_count", 0) or 0))
@@ -1964,6 +2350,20 @@ def _refresh_semantic_self_narratives(
             "motive_confidence_avg": round(_clamp01(float(motive_state.get("motive_confidence_avg") or 0.0), 0.0), 3),
             "motive_fresh_ratio": round(_clamp01(float(motive_state.get("motive_fresh_ratio") or 0.0), 0.0), 3),
             "motive_signature": motive_signature,
+            "dominant_counterpart_stance": str(counterpart_state.get("counterpart_stance") or "").strip(),
+            "dominant_counterpart_scene": str(counterpart_state.get("counterpart_scene") or "").strip(),
+            "counterpart_respect_level": round(float(counterpart_state.get("counterpart_respect_level") or 0.0), 3),
+            "counterpart_reciprocity": round(float(counterpart_state.get("counterpart_reciprocity") or 0.0), 3),
+            "counterpart_boundary_pressure": round(float(counterpart_state.get("counterpart_boundary_pressure") or 0.0), 3),
+            "counterpart_reliability_read": round(float(counterpart_state.get("counterpart_reliability_read") or 0.0), 3),
+            "counterpart_dominant_scene_signal": str(counterpart_profile_state.get("dominant_scene_signal") or "").strip(),
+            "counterpart_openness_drive": round(float(counterpart_profile_state.get("openness_drive") or 0.0), 3),
+            "counterpart_guarded_drive": round(float(counterpart_profile_state.get("guarded_drive") or 0.0), 3),
+            "counterpart_guard_margin": round(float(counterpart_profile_state.get("guard_margin") or 0.0), 3),
+            "counterpart_support_count": max(0, int(counterpart_state.get("counterpart_support_count") or 0)),
+            "counterpart_support_mass": round(float(counterpart_state.get("counterpart_support_mass") or 0.0), 3),
+            "counterpart_confidence_avg": round(_clamp01(float(counterpart_state.get("counterpart_confidence_avg") or 0.0), 0.0), 3),
+            "counterpart_fresh_ratio": round(_clamp01(float(counterpart_state.get("counterpart_fresh_ratio") or 0.0), 0.0), 3),
             "frame_signature": frame_signature,
             "frame_changed": frame_changed,
             "frame_revision_count": frame_revision_count,
@@ -2376,13 +2776,20 @@ def _record_behavior_consequence(
     *,
     current_event: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
 ) -> bool:
-    consequence = derive_behavior_consequence(
+    behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
+    frozen_behavior_action = _reconsolidation_behavior_action_snapshot(reconsolidation_snapshot)
+    effective_behavior_action = frozen_behavior_action or (
+        behavior_action if isinstance(behavior_action, dict) else {}
+    )
+    counterpart = _reconsolidation_counterpart_snapshot(reconsolidation_snapshot)
+    consequence = _behavior_consequence_snapshot(
+        reconsolidation_snapshot=reconsolidation_snapshot,
         current_event=current_event,
-        behavior_action=behavior_action,
-        allow_event_behavior_fallback=False,
+        behavior_action=effective_behavior_action,
     )
     kind = str(consequence.get("kind") or "").strip()
     summary = str(consequence.get("summary") or "").strip()
@@ -2393,9 +2800,21 @@ def _record_behavior_consequence(
         "consequence_kind": kind,
         "relationship_effect": str(consequence.get("relationship_effect") or "").strip(),
         "self_effect": str(consequence.get("self_effect") or "").strip(),
-        "primary_motive": str((behavior_action or {}).get("primary_motive") or "").strip(),
-        "motive_tension": str((behavior_action or {}).get("motive_tension") or "").strip(),
-        "goal_frame": str((behavior_action or {}).get("goal_frame") or "").strip()[:220],
+        "primary_motive": str(
+            behavior_semantics.get("primary_motive")
+            or effective_behavior_action.get("primary_motive")
+            or ""
+        ).strip(),
+        "motive_tension": str(
+            behavior_semantics.get("motive_tension")
+            or effective_behavior_action.get("motive_tension")
+            or ""
+        ).strip(),
+        "goal_frame": str(
+            behavior_semantics.get("goal_frame")
+            or effective_behavior_action.get("goal_frame")
+            or ""
+        ).strip()[:220],
         "trigger_family": str(consequence.get("trigger_family") or "").strip(),
         "relationship_weather": str(consequence.get("relationship_weather") or "").strip(),
         "carryover_mode": str(consequence.get("carryover_mode") or "").strip(),
@@ -2404,6 +2823,13 @@ def _record_behavior_consequence(
         "delayed": bool(consequence.get("delayed")),
         "stale_window": bool(consequence.get("stale_window")),
     }
+    if counterpart:
+        metadata["counterpart_stance"] = str(counterpart.get("stance") or "").strip()
+        metadata["counterpart_scene"] = str(counterpart.get("scene") or "").strip()
+        metadata["counterpart_respect_level"] = float(counterpart.get("respect_level") or 0.0)
+        metadata["counterpart_reciprocity"] = float(counterpart.get("reciprocity") or 0.0)
+        metadata["counterpart_boundary_pressure"] = float(counterpart.get("boundary_pressure") or 0.0)
+        metadata["counterpart_reliability_read"] = float(counterpart.get("reliability_read") or 0.0)
     recent = [
         item
         for item in store.list_revision_traces(limit=20)
@@ -2440,10 +2866,13 @@ def _record_behavior_plan_long_horizon_memory(
     store: MemoryStore,
     *,
     behavior_plan: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
 ) -> bool:
-    plan = dict(behavior_plan or {})
+    frozen_plan = _reconsolidation_behavior_plan_snapshot(reconsolidation_snapshot)
+    plan = frozen_plan or (dict(behavior_plan or {}) if isinstance(behavior_plan, dict) else {})
+    counterpart = _reconsolidation_counterpart_snapshot(reconsolidation_snapshot)
     kind = str(plan.get("kind") or "").strip().lower()
     if not kind or kind in {
         "none",
@@ -2556,6 +2985,10 @@ def _record_behavior_plan_long_horizon_memory(
     else:
         return False
 
+    counterpart_scene = str(counterpart.get("scene") or "").strip().lower()
+    if counterpart_scene == "busy_not_disrespectful" and kind in {"deferred_checkin", "self_activity_continue"}:
+        relationship_summary = "当对方当下更像忙着别的事时，她不会把沉默直接误判成冷淡；她会先收回自己的节奏，等更自然的时候再接回来。"
+
     metadata = {
         "plan_kind": kind,
         "plan_target": target,
@@ -2571,6 +3004,13 @@ def _record_behavior_plan_long_horizon_memory(
         "ambient_resonance": ambient_resonance,
         "self_activity_momentum": self_activity_momentum,
     }
+    if counterpart:
+        metadata["counterpart_stance"] = str(counterpart.get("stance") or "").strip()
+        metadata["counterpart_scene"] = str(counterpart.get("scene") or "").strip()
+        metadata["counterpart_respect_level"] = float(counterpart.get("respect_level") or 0.0)
+        metadata["counterpart_reciprocity"] = float(counterpart.get("reciprocity") or 0.0)
+        metadata["counterpart_boundary_pressure"] = float(counterpart.get("boundary_pressure") or 0.0)
+        metadata["counterpart_reliability_read"] = float(counterpart.get("reliability_read") or 0.0)
 
     recent_plan = [
         item
@@ -2664,10 +3104,15 @@ def _record_retrieved_continuity_reactivation(
     interaction_carryover: dict[str, Any] | None,
     behavior_action: dict[str, Any] | None,
     behavior_plan: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
 ) -> bool:
-    carryover = interaction_carryover if isinstance(interaction_carryover, dict) else {}
+    frozen_carryover = _reconsolidation_interaction_carryover_snapshot(reconsolidation_snapshot)
+    frozen_plan = _reconsolidation_behavior_plan_snapshot(reconsolidation_snapshot)
+    frozen_behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
+    frozen_behavior_action = _reconsolidation_behavior_action_snapshot(reconsolidation_snapshot)
+    carryover = frozen_carryover or (interaction_carryover if isinstance(interaction_carryover, dict) else {})
     if str(carryover.get("source") or "").strip().lower() != "retrieved_behavior_plan":
         return False
 
@@ -2676,10 +3121,14 @@ def _record_retrieved_continuity_reactivation(
     if not carryover_mode or carryover_strength < 0.18:
         return False
 
-    action = behavior_action if isinstance(behavior_action, dict) else {}
-    plan = behavior_plan if isinstance(behavior_plan, dict) else {}
+    action = frozen_behavior_action or (behavior_action if isinstance(behavior_action, dict) else {})
+    plan = frozen_plan or (behavior_plan if isinstance(behavior_plan, dict) else {})
     action_target = str(action.get("action_target") or "").strip().lower()
-    interaction_mode = str(action.get("interaction_mode") or "").strip().lower()
+    interaction_mode = str(
+        frozen_behavior_semantics.get("interaction_mode")
+        or action.get("interaction_mode")
+        or ""
+    ).strip().lower()
     plan_kind = str(plan.get("kind") or "").strip().lower()
     if not action_target and not plan_kind and not interaction_mode:
         return False
@@ -2688,9 +3137,24 @@ def _record_retrieved_continuity_reactivation(
     source_trigger_family = _carryover_source_tag_value(carryover, "trigger_family")
     relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
     source_note = str(carryover.get("note") or "").strip()
-    primary_motive = str(action.get("primary_motive") or plan.get("primary_motive") or "").strip().lower()
-    motive_tension = str(action.get("motive_tension") or plan.get("motive_tension") or "").strip().lower()
-    goal_frame = str(action.get("goal_frame") or plan.get("goal_frame") or "").strip()[:220]
+    primary_motive = str(
+        frozen_behavior_semantics.get("primary_motive")
+        or action.get("primary_motive")
+        or plan.get("primary_motive")
+        or ""
+    ).strip().lower()
+    motive_tension = str(
+        frozen_behavior_semantics.get("motive_tension")
+        or action.get("motive_tension")
+        or plan.get("motive_tension")
+        or ""
+    ).strip().lower()
+    goal_frame = str(
+        frozen_behavior_semantics.get("goal_frame")
+        or action.get("goal_frame")
+        or plan.get("goal_frame")
+        or ""
+    ).strip()[:220]
 
     alignment_specs = {
         "self_activity_continue": {
@@ -2915,6 +3379,7 @@ def _record_behavior_trace_writeback(
     behavior_plan: dict[str, Any] | None,
     interaction_carryover: dict[str, Any] | None,
     agenda_lifecycle_residue: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
 ) -> bool:
@@ -2929,6 +3394,7 @@ def _record_behavior_trace_writeback(
         store,
         current_event=event_snapshot,
         behavior_action=action_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
         source=source,
         confidence=confidence,
     )
@@ -2938,6 +3404,7 @@ def _record_behavior_trace_writeback(
     behavior_plan_written = _record_behavior_plan_long_horizon_memory(
         store,
         behavior_plan=plan_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
         source=source,
         confidence=confidence,
     )
@@ -2949,6 +3416,7 @@ def _record_behavior_trace_writeback(
         interaction_carryover=carryover_snapshot,
         behavior_action=action_snapshot,
         behavior_plan=plan_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
         source=source,
         confidence=confidence,
     )
@@ -2958,10 +3426,22 @@ def _record_behavior_trace_writeback(
     lifecycle_written = _record_agenda_lifecycle_consequence(
         store,
         agenda_lifecycle_residue=lifecycle_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
         source=source,
         confidence=confidence,
     )
     if lifecycle_written:
+        wrote = True
+
+    counterpart_written = _record_counterpart_assessment_long_horizon_memory(
+        store,
+        current_event=event_snapshot,
+        behavior_action=action_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if counterpart_written:
         wrote = True
 
     return wrote
@@ -3095,10 +3575,11 @@ def _record_agenda_lifecycle_consequence(
     store: MemoryStore,
     *,
     agenda_lifecycle_residue: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
 ) -> bool:
-    consequence = derive_agenda_lifecycle_consequence(
+    consequence = _reconsolidation_agenda_lifecycle_snapshot(reconsolidation_snapshot) or derive_agenda_lifecycle_consequence(
         agenda_lifecycle_residue=agenda_lifecycle_residue,
     )
     kind = str(consequence.get("kind") or "").strip()
@@ -3162,6 +3643,75 @@ def _record_agenda_lifecycle_consequence(
     return wrote
 
 
+def _record_counterpart_assessment_long_horizon_memory(
+    store: MemoryStore,
+    *,
+    current_event: dict[str, Any] | None,
+    behavior_action: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None,
+    source: str,
+    confidence: float,
+) -> bool:
+    assessment = _reconsolidation_counterpart_snapshot(reconsolidation_snapshot)
+    if not _counterpart_assessment_has_signal(assessment):
+        return False
+
+    summary = _counterpart_assessment_summary(assessment, counterpart_name=CANON_COUNTERPART_NAME).strip()
+    if not summary:
+        return False
+
+    recent = store.list_counterpart_assessment_history(limit=12)
+    latest = _normalized_counterpart_assessment_record(recent[0]) if recent else {}
+    shift_score = _counterpart_assessment_shift_score(assessment, latest)
+    if latest:
+        latest_summary = str(latest.get("summary") or "").strip()
+        same_stance = str(assessment.get("stance") or "").strip().lower() == str(latest.get("stance") or "").strip().lower()
+        same_scene = str(assessment.get("scene") or "").strip().lower() == str(latest.get("scene") or "").strip().lower()
+        summary_overlap = _query_overlap_score(summary, latest_summary)
+        if same_stance and same_scene and shift_score < 0.12 and summary_overlap >= 0.66:
+            return False
+        if shift_score < 0.10 and _recent_summary_overlap(recent, summary, threshold=0.90):
+            return False
+
+    frozen_behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
+    frozen_behavior_action = _reconsolidation_behavior_action_snapshot(reconsolidation_snapshot)
+    effective_behavior_action = frozen_behavior_action or (
+        behavior_action if isinstance(behavior_action, dict) else {}
+    )
+    if frozen_behavior_semantics:
+        primary_motive = str(frozen_behavior_semantics.get("primary_motive") or "").strip().lower()
+        motive_tension = str(frozen_behavior_semantics.get("motive_tension") or "").strip().lower()
+        goal_frame = str(frozen_behavior_semantics.get("goal_frame") or "").strip()
+    else:
+        primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
+            behavior_action=effective_behavior_action,
+            current_event=current_event,
+            allow_event_behavior_fallback=False,
+        )
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    event = current_event if isinstance(current_event, dict) else {}
+    event_kind = str(recon.get("event_kind") or event.get("kind") or "").strip().lower()
+    interaction_frame = str(recon.get("interaction_frame") or "").strip().lower()
+
+    store.add_counterpart_assessment_history(
+        summary=summary,
+        stance=str(assessment.get("stance") or "").strip().lower(),
+        scene=str(assessment.get("scene") or "").strip().lower(),
+        respect_level=float(assessment.get("respect_level") or 0.5),
+        reciprocity=float(assessment.get("reciprocity") or 0.5),
+        boundary_pressure=float(assessment.get("boundary_pressure") or 0.1),
+        reliability_read=float(assessment.get("reliability_read") or 0.5),
+        event_kind=event_kind,
+        interaction_frame=interaction_frame,
+        primary_motive=primary_motive,
+        motive_tension=motive_tension,
+        goal_frame=goal_frame[:220],
+        assessment_profile=assessment.get("assessment_profile") if isinstance(assessment.get("assessment_profile"), dict) else None,
+        confidence=max(0.72, confidence),
+    )
+    return True
+
+
 def _record_agenda_lifecycle_long_horizon_memory(
     store: MemoryStore,
     *,
@@ -3206,6 +3756,71 @@ def _record_agenda_lifecycle_long_horizon_memory(
         return False
 
     wrote = False
+    trace_family = ""
+    if own_rhythm_memory and busy_not_disrespectful:
+        trace_family = "own_rhythm_busy_window"
+    elif own_rhythm_memory:
+        trace_family = "own_rhythm"
+    elif continuity_memory:
+        trace_family = "continuity_recontact"
+    elif busy_not_disrespectful:
+        trace_family = "busy_window_read"
+
+    normalized_current = {
+        "summary": str(item.get("summary") or "").strip(),
+        "kind": kind,
+        "trace_family": trace_family,
+        "trigger_family": trigger_family,
+        "carryover_mode": carryover_mode,
+        "hold_count": hold_count,
+        "carryover_strength": carryover_strength,
+        "recontact_cooldown": _clamp01(item.get("recontact_cooldown"), 0.0),
+        "presence_residue": _clamp01(item.get("presence_residue"), 0.0),
+        "ambient_resonance": _clamp01(item.get("ambient_resonance"), 0.0),
+        "self_activity_momentum": self_activity_momentum,
+        "own_rhythm_bias": own_rhythm_bias,
+    }
+    recent_history = store.list_proactive_continuity_history(limit=12)
+    latest_history = _normalized_proactive_continuity_record(recent_history[0]) if recent_history else {}
+    history_shift = _proactive_continuity_shift_score(normalized_current, latest_history)
+    if latest_history:
+        same_kind = normalized_current["kind"] == str(latest_history.get("kind") or "").strip().lower()
+        same_family = normalized_current["trace_family"] == str(latest_history.get("trace_family") or "").strip().lower()
+        same_trigger = normalized_current["trigger_family"] == str(latest_history.get("trigger_family") or "").strip().lower()
+        same_carry = normalized_current["carryover_mode"] == str(latest_history.get("carryover_mode") or "").strip().lower()
+        history_overlap = _query_overlap_score(
+            normalized_current["summary"],
+            str(latest_history.get("summary") or "").strip(),
+        )
+        if same_kind and same_family and same_trigger and same_carry and history_shift < 0.12 and history_overlap >= 0.66:
+            normalized_current = {}
+        elif history_shift < 0.10 and _recent_summary_overlap(recent_history, normalized_current["summary"], threshold=0.90):
+            normalized_current = {}
+
+    if normalized_current:
+        store.add_proactive_continuity_history(
+            summary=normalized_current["summary"],
+            kind=kind,
+            trace_family=trace_family,
+            source_event_kind=str(item.get("source_event_kind") or "").strip().lower(),
+            trigger_family=trigger_family,
+            carryover_mode=carryover_mode,
+            relationship_weather=str(item.get("relationship_weather") or "").strip().lower(),
+            counterpart_scene_bias=counterpart_scene_bias,
+            hold_count=hold_count,
+            carryover_strength=carryover_strength,
+            recontact_cooldown=normalized_current["recontact_cooldown"],
+            presence_residue=normalized_current["presence_residue"],
+            ambient_resonance=normalized_current["ambient_resonance"],
+            self_activity_momentum=self_activity_momentum,
+            own_rhythm_bias=own_rhythm_bias,
+            primary_motive=str(item.get("primary_motive") or "").strip().lower(),
+            motive_tension=str(item.get("motive_tension") or "").strip().lower(),
+            goal_frame=str(item.get("goal_frame") or "").strip()[:220],
+            confidence=max(0.72, confidence),
+        )
+        wrote = True
+
     worldline_summary = ""
     worldline_category = ""
     worldline_tags: list[str] = []
@@ -3292,6 +3907,60 @@ def _record_agenda_lifecycle_long_horizon_memory(
     return wrote
 
 
+def _normalized_proactive_continuity_record(item: dict[str, Any] | None) -> dict[str, Any]:
+    row = item if isinstance(item, dict) else {}
+    content = row.get("content") if isinstance(row.get("content"), dict) else {}
+
+    def _pick(key: str, default: Any = "") -> Any:
+        if key in content:
+            return content.get(key)
+        return row.get(key, default)
+
+    summary = str(_pick("summary") or "").strip()
+    if not summary:
+        return {}
+    return {
+        "summary": summary,
+        "kind": str(_pick("kind") or "").strip().lower(),
+        "trace_family": str(_pick("trace_family") or "").strip().lower(),
+        "trigger_family": str(_pick("trigger_family") or "").strip().lower(),
+        "carryover_mode": str(_pick("carryover_mode") or "").strip().lower(),
+        "hold_count": max(0, _int_like(_pick("hold_count"), 0)),
+        "carryover_strength": _clamp01(_pick("carryover_strength"), 0.0),
+        "recontact_cooldown": _clamp01(_pick("recontact_cooldown"), 0.0),
+        "presence_residue": _clamp01(_pick("presence_residue"), 0.0),
+        "ambient_resonance": _clamp01(_pick("ambient_resonance"), 0.0),
+        "self_activity_momentum": _clamp01(_pick("self_activity_momentum"), 0.0),
+        "own_rhythm_bias": _clamp01(_pick("own_rhythm_bias"), 0.0),
+    }
+
+
+def _proactive_continuity_shift_score(current: dict[str, Any], previous: dict[str, Any]) -> float:
+    if not current or not previous:
+        return 1.0
+    numeric_diffs = [
+        abs(float(current.get("carryover_strength") or 0.0) - float(previous.get("carryover_strength") or 0.0)),
+        abs(float(current.get("recontact_cooldown") or 0.0) - float(previous.get("recontact_cooldown") or 0.0)),
+        abs(float(current.get("presence_residue") or 0.0) - float(previous.get("presence_residue") or 0.0)),
+        abs(float(current.get("ambient_resonance") or 0.0) - float(previous.get("ambient_resonance") or 0.0)),
+        abs(float(current.get("self_activity_momentum") or 0.0) - float(previous.get("self_activity_momentum") or 0.0)),
+        abs(float(current.get("own_rhythm_bias") or 0.0) - float(previous.get("own_rhythm_bias") or 0.0)),
+        abs(min(3, int(current.get("hold_count") or 0)) - min(3, int(previous.get("hold_count") or 0))) / 3.0,
+    ]
+    categorical_penalty = 0.0
+    for key in ("kind", "trace_family", "trigger_family", "carryover_mode"):
+        if str(current.get(key) or "").strip().lower() != str(previous.get(key) or "").strip().lower():
+            categorical_penalty += 0.18
+    return min(1.0, sum(numeric_diffs) / max(1, len(numeric_diffs)) + categorical_penalty)
+
+
+def _int_like(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
 def _record_semantic_self_evidence(
     store: MemoryStore,
     *,
@@ -3304,21 +3973,42 @@ def _record_semantic_self_evidence(
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     allow_behavior_action_inference: bool = True,
     allow_event_behavior_fallback: bool = True,
 ) -> bool:
-    evidence_behavior_action = behavior_action if allow_behavior_action_inference else None
+    frozen_behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
+    frozen_counterpart = _reconsolidation_counterpart_snapshot(reconsolidation_snapshot)
+    snapshot_behavior_action = (
+        {
+            "primary_motive": frozen_behavior_semantics.get("primary_motive", ""),
+            "motive_tension": frozen_behavior_semantics.get("motive_tension", ""),
+            "goal_frame": frozen_behavior_semantics.get("goal_frame", ""),
+        }
+        if frozen_behavior_semantics
+        else {}
+    )
+    evidence_behavior_action = None
+    if allow_behavior_action_inference:
+        if snapshot_behavior_action:
+            evidence_behavior_action = snapshot_behavior_action
+        elif isinstance(behavior_action, dict):
+            evidence_behavior_action = behavior_action
     if allow_behavior_action_inference:
         primary_motive, motive_tension, goal_frame = _behavior_motive_snapshot(
             behavior_action=evidence_behavior_action,
             current_event=current_event,
-            allow_event_behavior_fallback=allow_event_behavior_fallback,
+            allow_event_behavior_fallback=allow_event_behavior_fallback and not bool(snapshot_behavior_action),
         )
-        behavior_semantics_source = _behavior_motive_snapshot_source(
-            behavior_action=evidence_behavior_action,
-            current_event=current_event,
-            allow_event_behavior_fallback=allow_event_behavior_fallback,
+        behavior_semantics_source = (
+            "reconsolidation_snapshot"
+            if snapshot_behavior_action
+            else _behavior_motive_snapshot_source(
+                behavior_action=evidence_behavior_action,
+                current_event=current_event,
+                allow_event_behavior_fallback=allow_event_behavior_fallback,
+            )
         )
     else:
         primary_motive, motive_tension, goal_frame = "", "", ""
@@ -3334,7 +4024,7 @@ def _record_semantic_self_evidence(
         world_model_state=world_model_state,
         behavior_action=evidence_behavior_action,
         allow_behavior_action_inference=allow_behavior_action_inference,
-        allow_event_behavior_fallback=allow_event_behavior_fallback,
+        allow_event_behavior_fallback=allow_event_behavior_fallback and not bool(snapshot_behavior_action),
     )
     if not records:
         return False
@@ -3357,6 +4047,25 @@ def _record_semantic_self_evidence(
             trace_metadata["goal_frame"] = goal_frame[:220]
         if behavior_semantics_source:
             trace_metadata["behavior_semantics_source"] = behavior_semantics_source
+        if frozen_counterpart:
+            trace_metadata["counterpart_stance"] = str(frozen_counterpart.get("stance") or "").strip()
+            trace_metadata["counterpart_scene"] = str(frozen_counterpart.get("scene") or "").strip()
+            trace_metadata["counterpart_respect_level"] = float(frozen_counterpart.get("respect_level") or 0.0)
+            trace_metadata["counterpart_reciprocity"] = float(frozen_counterpart.get("reciprocity") or 0.0)
+            trace_metadata["counterpart_boundary_pressure"] = float(frozen_counterpart.get("boundary_pressure") or 0.0)
+            trace_metadata["counterpart_reliability_read"] = float(frozen_counterpart.get("reliability_read") or 0.0)
+            frozen_counterpart_profile = (
+                frozen_counterpart.get("assessment_profile")
+                if isinstance(frozen_counterpart.get("assessment_profile"), dict)
+                else {}
+            )
+            if frozen_counterpart_profile:
+                trace_metadata["counterpart_openness_drive"] = float(frozen_counterpart_profile.get("openness_drive") or 0.0)
+                trace_metadata["counterpart_guarded_drive"] = float(frozen_counterpart_profile.get("guarded_drive") or 0.0)
+                trace_metadata["counterpart_guard_margin"] = float(frozen_counterpart_profile.get("guard_margin") or 0.0)
+                trace_metadata["counterpart_dominant_scene_signal"] = str(
+                    frozen_counterpart_profile.get("dominant_scene_signal") or ""
+                ).strip()
         store.add_revision_trace(
             namespace="semantic_self_evidence",
             target_id=category,

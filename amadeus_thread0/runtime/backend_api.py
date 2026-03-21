@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..utils.runtime_audit import audit_runtime_layout
-from .final_state import resolve_behavior_payloads
+from .final_state import resolve_behavior_payloads, resolve_interaction_carryover
 from .thread_runtime import list_threads
 
 
@@ -31,8 +31,17 @@ def _resolved_behavior_payloads(values: dict[str, Any] | None) -> tuple[dict[str
     return resolve_behavior_payloads(
         behavior_action=_dict_or_empty(data.get("behavior_action")),
         behavior_plan=_dict_or_empty(data.get("behavior_plan")),
+        reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
         current_event=_dict_or_empty(data.get("current_event")),
         world_model_state=_dict_or_empty(data.get("world_model_state")),
+    )
+
+
+def _resolved_interaction_carryover(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    return resolve_interaction_carryover(
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
     )
 
 
@@ -192,11 +201,13 @@ class BackendAPI:
     ) -> BackendApiEnvelope:
         values = state_values if isinstance(state_values, dict) else {}
         behavior_action, behavior_plan = _resolved_behavior_payloads(values)
+        interaction_carryover = _resolved_interaction_carryover(values)
         payload = {
             "final_text": str(final_text or "").strip(),
             "emotion_label": _emotion_label_from_state(values),
             "behavior_action": behavior_action,
             "behavior_plan": behavior_plan,
+            "interaction_carryover": interaction_carryover,
             "reconsolidation_snapshot": _dict_or_empty(values.get("reconsolidation_snapshot")),
             "current_event": _dict_or_empty(values.get("current_event")),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
@@ -214,12 +225,14 @@ class BackendAPI:
         values = state_values if isinstance(state_values, dict) else {}
         final_text = self.backend_session.extract_final_text(values, streamed_text=streamed_text)
         behavior_action, behavior_plan = _resolved_behavior_payloads(values)
+        interaction_carryover = _resolved_interaction_carryover(values)
         payload = {
             "final_text": final_text,
             "emotion_label": _emotion_label_from_state(values),
             "turn_summary": self.backend_session.build_evolution_summary(state_values=values),
             "behavior_action": behavior_action,
             "behavior_plan": behavior_plan,
+            "interaction_carryover": interaction_carryover,
             "reconsolidation_snapshot": _dict_or_empty(values.get("reconsolidation_snapshot")),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
             "claim_links": _list_or_empty(values.get("claim_links")),

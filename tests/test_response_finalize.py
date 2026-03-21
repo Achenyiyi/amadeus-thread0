@@ -111,6 +111,87 @@ class ResponseFinalizeTests(unittest.TestCase):
         self.assertEqual(state.get("semantic_narrative_profile"), mutated_profile)
         self.assertEqual(str((result.get("messages") or [None])[0].content or ""), "我刚刚在想一点别的事。")
 
+    def test_finalize_text_response_re_sanitizes_after_natural_rewrite(self):
+        state = {
+            "science_mode": False,
+            "semantic_narrative_profile": {},
+            "interaction_carryover": {},
+            "counterpart_assessment": {"scene": "repair_attempt"},
+            "world_model_state": {},
+            "evidence_pack": [],
+            "last_external_tools": [],
+        }
+        sanitize_inputs: list[str] = []
+
+        def _sanitize(text, *_args, **_kwargs):
+            sanitize_inputs.append(str(text))
+            if text == "rewritten-with-meta":
+                return "sanitized-final"
+            return str(text)
+
+        with patch("amadeus_thread0.graph_parts.response_finalize._producer_surface_issues", return_value=[]):
+            with patch("amadeus_thread0.graph_parts.response_finalize._sanitize_final_answer", side_effect=_sanitize):
+                with patch("amadeus_thread0.graph_parts.response_finalize._ooc_risk", return_value=(0.0, [])):
+                    with patch("amadeus_thread0.graph_parts.response_finalize._persona_gap", return_value=(0.0, [])):
+                        with patch(
+                            "amadeus_thread0.graph_parts.response_finalize._dialogue_issues_with_recent_repeat",
+                            side_effect=[["wording_meta_detour"], ["wording_meta_detour"], []],
+                        ):
+                            with patch(
+                                "amadeus_thread0.graph_parts.response_finalize._effective_natural_dialog_target_flags",
+                                return_value=["wording_meta_detour"],
+                            ):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.response_finalize._natural_dialog_rewrite_notes_for",
+                                    return_value=["rewrite-needed"],
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.response_finalize._should_run_natural_dialog_rewrite",
+                                        return_value=True,
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.response_finalize._rewrite_natural_dialog_answer",
+                                            return_value="rewritten-with-meta",
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.response_finalize._dialogue_surface_issues",
+                                                return_value=[],
+                                            ):
+                                                with patch(
+                                                    "amadeus_thread0.graph_parts.response_finalize._ensure_response_structure",
+                                                    side_effect=lambda text, *_args, **_kwargs: text,
+                                                ):
+                                                    with patch(
+                                                        "amadeus_thread0.graph_parts.response_finalize.build_claim_attribution",
+                                                        return_value=[],
+                                                    ):
+                                                        with patch(
+                                                            "amadeus_thread0.graph_parts.response_finalize._canon_guard",
+                                                            return_value={"ok": True},
+                                                        ):
+                                                            result = _finalize_text_response(
+                                                                state=state,
+                                                                store=object(),
+                                                                user_text="你要是还别扭就别硬装大度，照你现在的状态回我就好。",
+                                                                raw_draft_text="draft",
+                                                                current_event={"kind": "user_utterance"},
+                                                                behavior_action={"interaction_mode": "relationship_sensitive"},
+                                                                response_style_hint="relationship",
+                                                                continuation_mode=False,
+                                                                light_free_dialog=False,
+                                                                previous_assistant_text="",
+                                                                chosen_generation_profile={},
+                                                                generation_runtime_mode="default",
+                                                                generation_repetition_pressure=0.0,
+                                                                generation_recent_reply_max_similarity=0.0,
+                                                                generation_recent_reply_avg_similarity=0.0,
+                                                                generation_recent_reply_opener_repeat_ratio=0.0,
+                                                                generation_recent_reply_sample_size=0,
+                                                            )
+
+        self.assertIn("rewritten-with-meta", sanitize_inputs)
+        self.assertEqual(str((result.get("messages") or [None])[0].content or ""), "sanitized-final")
+
 
 if __name__ == "__main__":
     unittest.main()
