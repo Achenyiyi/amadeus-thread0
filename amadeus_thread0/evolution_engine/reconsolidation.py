@@ -16,6 +16,152 @@ def _normalized_event_tags(current_event: dict[str, Any] | None) -> set[str]:
     }
 
 
+def _compact_counterpart_snapshot(counterpart_assessment: dict[str, Any] | None) -> dict[str, Any]:
+    assessment = dict(counterpart_assessment or {})
+    stance = str(assessment.get("stance") or "").strip()
+    scene = str(assessment.get("scene") or "").strip()
+    snapshot = {
+        "stance": stance,
+        "scene": scene,
+        "respect_level": clamp01(assessment.get("respect_level"), 0.5),
+        "reciprocity": clamp01(assessment.get("reciprocity"), 0.5),
+        "boundary_pressure": clamp01(assessment.get("boundary_pressure"), 0.1),
+        "reliability_read": clamp01(assessment.get("reliability_read"), 0.5),
+    }
+    profile = assessment.get("assessment_profile") if isinstance(assessment.get("assessment_profile"), dict) else {}
+    if profile:
+        raw_scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
+        snapshot["assessment_profile"] = {
+            "openness_drive": clamp01(profile.get("openness_drive"), 0.0),
+            "guarded_drive": clamp01(profile.get("guarded_drive"), 0.0),
+            "guard_margin": max(-1.0, min(1.0, float(profile.get("guard_margin", 0.0) or 0.0))),
+            "dominant_scene_signal": str(profile.get("dominant_scene_signal") or "").strip().lower(),
+            "scene_strengths": {
+                "care": clamp01(raw_scene_strengths.get("care"), 0.0),
+                "repair": clamp01(raw_scene_strengths.get("repair"), 0.0),
+                "friction": clamp01(raw_scene_strengths.get("friction"), 0.0),
+                "selfhood": clamp01(raw_scene_strengths.get("selfhood"), 0.0),
+                "busy": clamp01(raw_scene_strengths.get("busy"), 0.0),
+            },
+        }
+    if stance or scene:
+        return snapshot
+    numeric_signal = (
+        abs(snapshot["respect_level"] - 0.5)
+        + abs(snapshot["reciprocity"] - 0.5)
+        + abs(snapshot["boundary_pressure"] - 0.1)
+        + abs(snapshot["reliability_read"] - 0.5)
+    )
+    profile_signal = snapshot.get("assessment_profile") if isinstance(snapshot.get("assessment_profile"), dict) else {}
+    return snapshot if numeric_signal > 0.0 or profile_signal else {}
+
+
+def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dict[str, Any]:
+    plan = dict(behavior_plan or {})
+    snapshot = {
+        "kind": str(plan.get("kind") or "").strip().lower(),
+        "target": str(plan.get("target") or "").strip().lower(),
+        "trigger_family": str(plan.get("trigger_family") or "").strip().lower(),
+        "carryover_mode": str(plan.get("carryover_mode") or "").strip().lower(),
+        "note": str(plan.get("note") or "").strip()[:220],
+        "primary_motive": str(plan.get("primary_motive") or "").strip().lower(),
+        "motive_tension": str(plan.get("motive_tension") or "").strip().lower(),
+        "goal_frame": str(plan.get("goal_frame") or "").strip()[:220],
+        "scheduled_after_min": max(0, int(plan.get("scheduled_after_min") or 0)),
+        "allow_interrupt": bool(plan.get("allow_interrupt", True)),
+        "carryover_strength": clamp01(plan.get("carryover_strength"), 0.0),
+        "presence_residue": clamp01(plan.get("presence_residue"), 0.0),
+        "ambient_resonance": clamp01(plan.get("ambient_resonance"), 0.0),
+        "self_activity_momentum": clamp01(plan.get("self_activity_momentum"), 0.0),
+    }
+    if any(
+        (
+            snapshot["kind"],
+            snapshot["target"],
+            snapshot["trigger_family"],
+            snapshot["carryover_mode"],
+            snapshot["note"],
+            snapshot["primary_motive"],
+            snapshot["motive_tension"],
+            snapshot["goal_frame"],
+            snapshot["scheduled_after_min"] > 0,
+            snapshot["carryover_strength"] > 0.0,
+            snapshot["presence_residue"] > 0.0,
+            snapshot["ambient_resonance"] > 0.0,
+            snapshot["self_activity_momentum"] > 0.0,
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) -> dict[str, Any]:
+    action = dict(behavior_action or {})
+    snapshot = {
+        "interaction_mode": str(action.get("interaction_mode") or "").strip().lower(),
+        "action_target": str(action.get("action_target") or "").strip().lower(),
+        "channel": str(action.get("channel") or "").strip().lower(),
+        "approach_style": str(action.get("approach_style") or "").strip().lower(),
+        "followup_intent": str(action.get("followup_intent") or "").strip().lower(),
+        "deferred_action_family": str(action.get("deferred_action_family") or "").strip().lower(),
+        "relationship_weather": str(action.get("relationship_weather") or "").strip().lower(),
+        "attention_target": str(action.get("attention_target") or "").strip().lower(),
+        "nonverbal_signal": str(action.get("nonverbal_signal") or "").strip().lower(),
+        "primary_motive": str(action.get("primary_motive") or "").strip().lower(),
+        "motive_tension": str(action.get("motive_tension") or "").strip().lower(),
+        "goal_frame": str(action.get("goal_frame") or "").strip()[:220],
+        "timing_window_min": max(0, int(action.get("timing_window_min") or 0)),
+    }
+    if any(
+        (
+            snapshot["interaction_mode"],
+            snapshot["action_target"],
+            snapshot["channel"],
+            snapshot["approach_style"],
+            snapshot["followup_intent"],
+            snapshot["deferred_action_family"],
+            snapshot["relationship_weather"],
+            snapshot["attention_target"],
+            snapshot["nonverbal_signal"],
+            snapshot["primary_motive"],
+            snapshot["motive_tension"],
+            snapshot["goal_frame"],
+            snapshot["timing_window_min"] > 0,
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any] | None) -> dict[str, Any]:
+    carryover = dict(interaction_carryover or {})
+    source_tags = [
+        str(item).strip().lower()
+        for item in (carryover.get("source_tags") if isinstance(carryover.get("source_tags"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    snapshot = {
+        "source": str(carryover.get("source") or "").strip().lower(),
+        "strength": clamp01(carryover.get("strength"), 0.0),
+        "carryover_mode": str(carryover.get("carryover_mode") or "").strip().lower(),
+        "relationship_weather": str(carryover.get("relationship_weather") or "").strip().lower(),
+        "note": str(carryover.get("note") or "").strip()[:220],
+        "source_tags": source_tags,
+    }
+    if any(
+        (
+            snapshot["source"],
+            snapshot["carryover_mode"],
+            snapshot["relationship_weather"],
+            snapshot["note"],
+            snapshot["strength"] > 0.0,
+            bool(snapshot["source_tags"]),
+        )
+    ):
+        return snapshot
+    return {}
+
+
 def derive_behavior_consequence(
     *,
     current_event: dict[str, Any] | None,
@@ -295,11 +441,17 @@ def build_reconsolidation_snapshot(
     latent_state: dict[str, Any] | None,
     emotion_state: dict[str, Any] | None,
     bond_state: dict[str, Any] | None,
+    counterpart_assessment: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    behavior_plan: dict[str, Any] | None = None,
+    interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
     behavior = behavior_action if isinstance(behavior_action, dict) else {}
+    behavior_action_snapshot = _compact_behavior_action_snapshot(behavior)
+    behavior_plan_snapshot = _compact_behavior_plan_snapshot(behavior_plan)
+    carryover_snapshot = _compact_interaction_carryover_snapshot(interaction_carryover)
     behavior_consequence = derive_behavior_consequence(
         current_event=event,
         behavior_action=behavior,
@@ -314,16 +466,20 @@ def build_reconsolidation_snapshot(
     latent = dict(latent_state or {})
     emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
+    counterpart = _compact_counterpart_snapshot(counterpart_assessment)
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
     lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
     return {
         "event_kind": str(event.get("kind") or "user_utterance"),
         "interaction_frame": str(app.get("interaction_frame") or ""),
         "selfhood_scene": str(app.get("selfhood_scene") or ""),
-        "behavior_mode": str(behavior.get("interaction_mode") or ""),
-        "primary_motive": str(behavior.get("primary_motive") or ""),
-        "motive_tension": str(behavior.get("motive_tension") or ""),
-        "goal_frame": str(behavior.get("goal_frame") or "")[:220],
+        "behavior_mode": str(behavior_action_snapshot.get("interaction_mode") or ""),
+        "primary_motive": str(behavior_action_snapshot.get("primary_motive") or ""),
+        "motive_tension": str(behavior_action_snapshot.get("motive_tension") or ""),
+        "goal_frame": str(behavior_action_snapshot.get("goal_frame") or "")[:220],
+        "behavior_action": behavior_action_snapshot,
+        "behavior_plan": behavior_plan_snapshot,
+        "interaction_carryover": carryover_snapshot,
         "behavior_consequence": behavior_consequence,
         "agenda_lifecycle_consequence": agenda_lifecycle_consequence,
         "salience": dict(salience),
@@ -381,4 +537,5 @@ def build_reconsolidation_snapshot(
         "bond_trust": clamp01(bond.get("trust"), 0.5),
         "bond_closeness": clamp01(bond.get("closeness"), 0.5),
         "bond_hurt": clamp01(bond.get("hurt"), 0.0),
+        "counterpart": counterpart,
     }

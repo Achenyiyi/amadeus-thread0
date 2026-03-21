@@ -210,6 +210,15 @@ def _prepare_turn_context(
         if isinstance(retrieved, dict):
             retrieved = {**retrieved, "relationship": relationship}
     worldline_focus = [] if external_probe_mode else _worldline_focus(store)
+    proactive_continuity_history: list[dict[str, Any]] = []
+    proactive_history_reader = getattr(store, "list_proactive_continuity_history", None)
+    if callable(proactive_history_reader):
+        try:
+            proactive_history_items = proactive_history_reader(limit=12)
+        except Exception:
+            proactive_history_items = []
+        if isinstance(proactive_history_items, list):
+            proactive_continuity_history = proactive_history_items
 
     seed_emotion_state = _prefer_explicit_state_dict(
         state,
@@ -284,6 +293,7 @@ def _prepare_turn_context(
         prior_counterpart_assessment=state.get("counterpart_assessment")
         if isinstance(state.get("counterpart_assessment"), dict)
         else {},
+        proactive_continuity_history=proactive_continuity_history,
         recent_events=state.get("recent_events"),
         current_event=appraisal_event_context,
         response_style_hint=response_style_hint,
@@ -371,6 +381,7 @@ def _prepare_turn_context(
         prior_counterpart_assessment=state.get("counterpart_assessment")
         if isinstance(state.get("counterpart_assessment"), dict)
         else {},
+        proactive_continuity_history=proactive_continuity_history,
         recent_events=state.get("recent_events"),
         current_event=current_event,
         response_style_hint=response_style_hint,

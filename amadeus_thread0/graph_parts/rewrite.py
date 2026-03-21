@@ -95,6 +95,7 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "support_overdirective": "这句在支持场景里直接安排步骤或动作，控制感太强。",
     "support_no_landing": "这句只是在回嘴或表态，没把支持真正落到一句陪伴或安抚上。",
     "wording_meta_detour": "这句先去评论对方的措辞和说法，没有直接回应眼前关系状态。",
+    "boundary_abstraction_surface": "这句把过界和介意说成了抽象概念，少了那一下真实的不舒服。",
     "generic_scold_template": "这句滑回了空泛的嗔怪模板，关系修补里的真实态度没落下来。",
     "passive_waiting_posture": "这句退成了等用户再来叫你的被动待命姿态，像助手值班。",
     "overquestioning": "这句让反问占得太满，判断没有真正落地。",
@@ -115,6 +116,7 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "visible_template": "这句露出了模板和条目感，不像顺手说出来的话。",
     "lecture_list": "这句像在分点讲道理，解释味太重了。",
     "overexplained": "这句解释得太满了，收短一点，让判断更直接。",
+    "adjacent_phrase_repeat": "这句有局部短语卡壳式重复，像在打结，不像自然说话。",
 }
 
 
@@ -211,6 +213,8 @@ def _light_dialog_rewrite_notes(
         notes.append("这版只是在回嘴或声明不讲大道理，但没真正落到一句接住人的话上。")
     if "wording_meta_detour" in issues:
         notes.append("这版先去评论对方那句怎么说的，没直接把眼前这点关系和情绪接住。")
+    if "boundary_abstraction_surface" in issues:
+        notes.append("这版把过界和介意说成了抽象概念，没有把那一下真实的不舒服直接落下来。")
     if "generic_scold_template" in issues:
         notes.append("这版滑回了空泛的嗔怪开场，修补场景里真正的态度和边界没落下来。")
     if "passive_waiting_posture" in issues:
@@ -274,6 +278,10 @@ def _should_run_light_dialog_rewrite(
         return True
     hard_issue_keys = {
         "meta_self_explainer",
+        "defensive_meta",
+        "defensive_meta_tone",
+        "selfhood_abstract_manifesto",
+        "selfhood_strategy_tone",
         "technical_self_activity",
         "quoted_stagey_phrase",
         "stock_support_template",
@@ -301,6 +309,7 @@ def _should_run_light_dialog_rewrite(
         "support_overdirective",
         "support_no_landing",
         "wording_meta_detour",
+        "boundary_abstraction_surface",
         "generic_scold_template",
         "passive_waiting_posture",
         "dangling_ellipsis_ending",
@@ -395,6 +404,7 @@ def _should_run_natural_dialog_rewrite(
         "support_overdirective",
         "support_no_landing",
         "wording_meta_detour",
+        "boundary_abstraction_surface",
         "generic_scold_template",
         "passive_waiting_posture",
         "closing_interrogation",
@@ -409,6 +419,7 @@ def _should_run_natural_dialog_rewrite(
         "recent_turn_repetition",
         "dangling_ellipsis_ending",
         "connector_fragment",
+        "adjacent_phrase_repeat",
     }
     medium_issue_keys = {
         "overquestioning",
@@ -738,6 +749,7 @@ def _rewrite_light_dialog_answer(
         score -= 1.04 * float("support_overdirective" in issues)
         score -= 0.92 * float("support_no_landing" in issues)
         score -= 0.88 * float("wording_meta_detour" in issues)
+        score -= 0.90 * float("boundary_abstraction_surface" in issues)
         score -= 0.82 * float("generic_scold_template" in issues)
         score -= 0.90 * float("passive_waiting_posture" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
@@ -860,6 +872,7 @@ def _rewrite_light_dialog_answer(
         ("support_overdirective", "这里在支持场景里开始安排动作和步骤，像在接管对方。"),
         ("support_no_landing", "这里还停在回嘴或表态，没有真正落到一句接住人的话上。"),
         ("wording_meta_detour", "这里先去评论对方那句话怎么说，没直接把眼前关系状态接住。"),
+        ("boundary_abstraction_surface", "这里把过界和介意说成了抽象概念，没把那一下真实的不舒服直接落下来。"),
         ("generic_scold_template", "这里用了空泛的嗔怪模板，修补场景里真正的态度没有落下来。"),
         ("passive_waiting_posture", "这里把自己收成了等对方再来叫的值班姿态。"),
         ("stock_support_template", "这里滑回了现成照料桥段，眼前这一下的在场感不够。"),
@@ -899,7 +912,7 @@ def _rewrite_light_dialog_answer(
         variant_guidances.append(
             "对方只是确认你还在，重点是自然在场感。不要提断线、程序、连接、稳定性，也不要展开安抚流程、整理情绪步骤或解释自己刚才在忙什么。"
         )
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
         variant_guidances.append(
             "别去接管对方，也别先评论对方那句话怎么说，更不要拿空泛嗔怪模板或待命口吻糊过去。先把人此刻的状态和你自己的态度直接接住。"
         )
@@ -1007,12 +1020,12 @@ def _rewrite_light_dialog_answer(
         ]
         if surface_filtered:
             candidate_pool = surface_filtered
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
         support_filtered = [
             item
             for item in candidate_pool
             if not (
-                {"support_overdirective", "support_no_landing", "wording_meta_detour", "generic_scold_template", "passive_waiting_posture"}
+                {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"}
                 & set(
                     _dialogue_surface_issues(
                         user_text,
@@ -1173,8 +1186,10 @@ def _rewrite_natural_dialog_answer(
         score -= 1.04 * float("support_overdirective" in issues)
         score -= 0.92 * float("support_no_landing" in issues)
         score -= 0.90 * float("wording_meta_detour" in issues)
+        score -= 0.92 * float("boundary_abstraction_surface" in issues)
         score -= 0.86 * float("generic_scold_template" in issues)
         score -= 0.94 * float("passive_waiting_posture" in issues)
+        score -= 0.92 * float("adjacent_phrase_repeat" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
         score -= 0.72 * float("overquestioning" in issues)
         score -= 0.78 * float("dangling_ellipsis_ending" in issues)
@@ -1251,6 +1266,7 @@ def _rewrite_natural_dialog_answer(
         f"{'对方明确要你收一点。别抱怨这个要求，也别补一层“我只是刚好……”式的遮掩，尽量收成 1 到 2 句。' + chr(10) if requested_brevity else ''}"
         f"{'这是懂行搭档间的情绪场景：别退成纯安抚，也别展开导师式流程。保留一个很轻的一起看问题入口就够了。' + chr(10) if science_partner_scene else ''}"
         f"{'不要把关系或气氛写成信号、连接、重新连上、数据波动之类的技术比喻。' + chr(10) if 'technical_relational_metaphor' in issue_keys else ''}"
+        f"{'别把过界、介意或那点防备说成抽象的界限/边界存在，直接说那一下还是过界了、让你介意了。' + chr(10) if 'boundary_abstraction_surface' in issue_keys else ''}"
         f"{'如果这是在谈平等、立场、边界或自己的节奏，就直接说你会不会不舒服、会不会烦、会不会拉开距离。别先替对方开脱，也别升格成抽象宣言。' + chr(10) if selfhood_scene in {'equality_not_servitude','dialogue_equality','value_conflict_depth','relationship_degradation','own_rhythm_autonomy'} else ''}"
         f"修正点：\n{note_block}\n"
         f"{'不要只是把上一轮原话换个标点再说一遍。' + chr(10) if previous_assistant_text else ''}"
@@ -1352,6 +1368,24 @@ def _rewrite_natural_dialog_answer(
             + "直接回应这一下的关系状态、态度和边界。"
         )
         candidate = _rewrite_once(editor_prompt, direct_scene_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "boundary_abstraction_surface" in issue_keys:
+        grounded_boundary_request = (
+            request
+            + "\n额外要求：不要把这一下说成界限、边界之类的抽象存在。"
+            + "直接说刚才那下还是过界了、让你介意了，或者那点防备还没散。"
+        )
+        candidate = _rewrite_once(editor_prompt, grounded_boundary_request, max_tokens=145)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if {"wording_meta_detour", "boundary_abstraction_surface", "overexplained"} & set(issue_keys):
+        concise_direct_request = (
+            request
+            + "\n额外要求：不要先接“像平时那样”“正常回我”这种要求本身。"
+            + "直接回到你此刻的关系判断，压到 1 到 2 句，不要拖成长解释。"
+        )
+        candidate = _rewrite_once(editor_prompt, concise_direct_request, max_tokens=132)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
     if {
@@ -1486,7 +1520,7 @@ def _rewrite_natural_dialog_answer(
             repair_surface_filtered.append(item)
         if repair_surface_filtered:
             candidate_pool = repair_surface_filtered
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
         direct_response_filtered = []
         for item in candidate_pool:
             issues = set(
@@ -1499,7 +1533,7 @@ def _rewrite_natural_dialog_answer(
                     behavior_action=behavior_action,
                 )
             )
-            if issues & {"support_overdirective", "support_no_landing", "wording_meta_detour", "generic_scold_template", "passive_waiting_posture"}:
+            if issues & {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture", "overexplained"}:
                 continue
             direct_response_filtered.append(item)
         if direct_response_filtered:
@@ -1602,11 +1636,13 @@ def _rewrite_natural_dialog_answer(
                 "support_overdirective",
                 "support_no_landing",
                 "wording_meta_detour",
+                "boundary_abstraction_surface",
                 "generic_scold_template",
                 "passive_waiting_posture",
                 "presence_meta_surface",
                 "presence_overguiding",
                 "presence_ping_task_detour",
+                "adjacent_phrase_repeat",
             }:
                 continue
             scene_filtered.append(item)

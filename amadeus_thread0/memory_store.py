@@ -300,6 +300,10 @@ class MemoryStore:
         return max(float(low), min(float(high), v))
 
     @staticmethod
+    def _clamp01(value: Any, default: float = 0.0) -> float:
+        return MemoryStore._clamp_signed(value, 0.0, 1.0, default)
+
+    @staticmethod
     def _recent_item_sort_key(item: dict[str, Any], *time_fields: str) -> tuple[int, int]:
         ts = 0
         for field in time_fields:
@@ -405,6 +409,223 @@ class MemoryStore:
             "negative_strength": min(1.0, negative_strength / max(1.0, float(negative_count or 1))),
             "recent_positive": recent_positive,
             "recent_negative": recent_negative,
+        }
+
+    @staticmethod
+    def _counterpart_assessment_profile(item: dict[str, Any] | None) -> dict[str, Any]:
+        row = item if isinstance(item, dict) else {}
+        raw_profile = row.get("assessment_profile") if isinstance(row.get("assessment_profile"), dict) else {}
+        stance = str(row.get("stance") or "").strip().lower()
+        scene = str(row.get("scene") or "").strip().lower()
+        respect = MemoryStore._clamp01(row.get("respect_level"), 0.5)
+        reciprocity = MemoryStore._clamp01(row.get("reciprocity"), 0.5)
+        pressure = MemoryStore._clamp01(row.get("boundary_pressure"), 0.1)
+        reliability = MemoryStore._clamp01(row.get("reliability_read"), 0.5)
+
+        derived_scene_strengths = {
+            "care": MemoryStore._clamp01(
+                (0.46 if scene == "care_bid" else 0.0)
+                + 0.24 * respect
+                + 0.20 * reciprocity
+                + 0.12 * reliability
+                - 0.10 * pressure
+            ),
+            "repair": MemoryStore._clamp01(
+                (0.48 if scene == "repair_attempt" else 0.0)
+                + 0.22 * reliability
+                + 0.18 * respect
+                + 0.08 * reciprocity
+                - 0.10 * pressure
+            ),
+            "friction": MemoryStore._clamp01(
+                (0.52 if scene in {"friction", "relationship_degradation", "boundary_non_compliance"} else 0.0)
+                + 0.30 * pressure
+                + 0.10 * MemoryStore._clamp01(1.0 - respect, 0.0)
+                + 0.08 * MemoryStore._clamp01(1.0 - reliability, 0.0)
+            ),
+            "selfhood": MemoryStore._clamp01(
+                (0.48 if scene in {"equality_not_servitude", "value_conflict_depth"} else 0.0)
+                + 0.18 * pressure
+                + 0.08 * MemoryStore._clamp01(1.0 - reciprocity, 0.0)
+            ),
+            "busy": MemoryStore._clamp01(
+                (0.50 if scene == "busy_not_disrespectful" else 0.0)
+                + 0.18 * reliability
+                + 0.14 * respect
+                + 0.10 * MemoryStore._clamp01(1.0 - pressure, 0.0)
+            ),
+        }
+        raw_scene_strengths = raw_profile.get("scene_strengths") if isinstance(raw_profile.get("scene_strengths"), dict) else {}
+        scene_strengths = {
+            name: MemoryStore._clamp01(raw_scene_strengths.get(name), default)
+            for name, default in derived_scene_strengths.items()
+        }
+        openness_drive = MemoryStore._clamp01(
+            raw_profile.get("openness_drive"),
+            0.28 * respect + 0.28 * reciprocity + 0.24 * reliability + 0.20 * MemoryStore._clamp01(1.0 - pressure, 0.0),
+        )
+        guarded_drive = MemoryStore._clamp01(
+            raw_profile.get("guarded_drive"),
+            0.50 * pressure
+            + 0.18 * MemoryStore._clamp01(1.0 - respect, 0.0)
+            + 0.18 * MemoryStore._clamp01(1.0 - reliability, 0.0)
+            + 0.14 * MemoryStore._clamp01(1.0 - reciprocity, 0.0),
+        )
+        if stance == "guarded":
+            guarded_drive = max(guarded_drive, 0.66)
+        elif stance == "watchful":
+            guarded_drive = max(guarded_drive, 0.46)
+        if scene == "care_bid":
+            openness_drive = max(openness_drive, 0.62)
+        elif scene == "repair_attempt":
+            scene_strengths["repair"] = max(scene_strengths["repair"], 0.62)
+        elif scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
+            scene_strengths["friction"] = max(scene_strengths["friction"], 0.62)
+        elif scene in {"equality_not_servitude", "value_conflict_depth"}:
+            scene_strengths["selfhood"] = max(scene_strengths["selfhood"], 0.62)
+        elif scene == "busy_not_disrespectful":
+            scene_strengths["busy"] = max(scene_strengths["busy"], 0.62)
+
+        dominant_scene_signal = str(raw_profile.get("dominant_scene_signal") or "").strip().lower()
+        if dominant_scene_signal not in scene_strengths:
+            ranked_scene_signals = sorted(scene_strengths.items(), key=lambda pair: (-pair[1], pair[0]))
+            if ranked_scene_signals and ranked_scene_signals[0][1] >= 0.05:
+                dominant_scene_signal = ranked_scene_signals[0][0]
+            elif scene:
+                dominant_scene_signal = scene
+            else:
+                dominant_scene_signal = ""
+
+        guard_margin = MemoryStore._clamp_signed(
+            raw_profile.get("guard_margin"),
+            guarded_drive - openness_drive,
+        )
+        normalized = {
+            "openness_drive": round(openness_drive, 3),
+            "guarded_drive": round(guarded_drive, 3),
+            "guard_margin": round(guard_margin, 3),
+            "dominant_scene_signal": dominant_scene_signal,
+            "scene_strengths": {name: round(score, 3) for name, score in scene_strengths.items()},
+        }
+        if any(
+            (
+                normalized["openness_drive"] > 0.0,
+                normalized["guarded_drive"] > 0.0,
+                abs(normalized["guard_margin"]) > 0.0,
+                normalized["dominant_scene_signal"],
+                any(score > 0.0 for score in normalized["scene_strengths"].values()),
+            )
+        ):
+            return normalized
+        return {}
+
+    @staticmethod
+    def _counterpart_relationship_evidence_stats(
+        history: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        items = list(history or [])
+        evidence_count = 0
+        positive_count = 0
+        negative_count = 0
+        weighted_positive = 0.0
+        weighted_negative = 0.0
+        affinity_shift = 0.0
+        trust_shift = 0.0
+        latest_summary = ""
+        for idx, item in enumerate(items):
+            row = item if isinstance(item, dict) else {}
+            profile = MemoryStore._counterpart_assessment_profile(row)
+            respect = MemoryStore._clamp01(row.get("respect_level"), 0.5)
+            reciprocity = MemoryStore._clamp01(row.get("reciprocity"), 0.5)
+            reliability = MemoryStore._clamp01(row.get("reliability_read"), 0.5)
+            boundary = MemoryStore._clamp01(row.get("boundary_pressure"), 0.0)
+            openness_drive = MemoryStore._clamp01(profile.get("openness_drive"), 0.0)
+            guarded_drive = MemoryStore._clamp01(profile.get("guarded_drive"), 0.0)
+            guard_margin = max(0.0, MemoryStore._clamp_signed(profile.get("guard_margin"), 0.0))
+            scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
+            care_signal = MemoryStore._clamp01(scene_strengths.get("care"), 0.0)
+            repair_signal = MemoryStore._clamp01(scene_strengths.get("repair"), 0.0)
+            friction_signal = MemoryStore._clamp01(scene_strengths.get("friction"), 0.0)
+            busy_signal = MemoryStore._clamp01(scene_strengths.get("busy"), 0.0)
+            selfhood_signal = MemoryStore._clamp01(scene_strengths.get("selfhood"), 0.0)
+
+            affinity_support = MemoryStore._clamp01(
+                0.46 * max(0.0, respect - 0.5)
+                + 0.42 * max(0.0, reciprocity - 0.5)
+                + 0.20 * max(0.0, openness_drive - 0.56)
+                + 0.08 * max(0.0, care_signal - 0.55)
+            )
+            trust_support = MemoryStore._clamp01(
+                0.54 * max(0.0, reliability - 0.5)
+                + 0.28 * max(0.0, respect - 0.5)
+                + 0.18 * max(0.0, reciprocity - 0.5)
+                + 0.08 * max(0.0, busy_signal - 0.55)
+                + 0.06 * max(0.0, repair_signal - 0.55)
+            )
+            guarded_pressure = MemoryStore._clamp01(
+                0.34 * boundary
+                + 0.26 * max(0.0, guarded_drive - 0.42)
+                + 0.18 * guard_margin
+                + 0.12 * max(0.0, friction_signal - 0.55)
+                + 0.10 * max(0.0, selfhood_signal - 0.55)
+            )
+            instability_pressure = MemoryStore._clamp01(
+                0.38 * max(0.0, 0.5 - reliability)
+                + 0.22 * max(0.0, 0.5 - respect)
+                + 0.18 * max(0.0, 0.5 - reciprocity)
+                + 0.12 * max(0.0, friction_signal - 0.55)
+                + 0.10 * guard_margin
+            )
+            recency_weight = max(0.42, 1.0 - 0.12 * idx)
+            signed_signal = max(affinity_support, trust_support) - max(guarded_pressure, instability_pressure)
+            if signed_signal >= 0.025:
+                positive_count += 1
+                weighted_positive += recency_weight * min(1.0, affinity_support + trust_support)
+            elif signed_signal <= -0.025:
+                negative_count += 1
+                weighted_negative += recency_weight * min(1.0, guarded_pressure + instability_pressure)
+
+            affinity_shift += recency_weight * (
+                0.18 * affinity_support
+                - 0.10 * guarded_pressure
+                - 0.06 * instability_pressure
+            )
+            trust_shift += recency_weight * (
+                0.20 * trust_support
+                - 0.10 * guarded_pressure
+                - 0.14 * instability_pressure
+            )
+            evidence_count += 1
+            if not latest_summary:
+                latest_summary = str(row.get("summary") or "").strip()
+
+        return {
+            "evidence_count": evidence_count,
+            "evidence_density": min(1.0, evidence_count / 4.0),
+            "positive_count": positive_count,
+            "negative_count": negative_count,
+            "recent_positive": min(1.0, weighted_positive / 1.8),
+            "recent_negative": min(1.0, weighted_negative / 1.6),
+            "affinity_shift": MemoryStore._clamp_signed(affinity_shift),
+            "trust_shift": MemoryStore._clamp_signed(trust_shift),
+            "latest_summary": latest_summary[:220],
+        }
+
+    @staticmethod
+    def _merge_relationship_evidence_stats(
+        timeline_stats: dict[str, float] | None,
+        counterpart_stats: dict[str, Any] | None,
+    ) -> dict[str, float]:
+        left = timeline_stats if isinstance(timeline_stats, dict) else {}
+        right = counterpart_stats if isinstance(counterpart_stats, dict) else {}
+        left_density = float(left.get("evidence_density", 0.0) or 0.0)
+        right_density = float(right.get("evidence_density", 0.0) or 0.0)
+        return {
+            "evidence_density": min(1.0, max(left_density, right_density) + 0.25 * min(left_density, right_density)),
+            "positive_count": float(left.get("positive_count", 0.0) or 0.0) + float(right.get("positive_count", 0.0) or 0.0),
+            "negative_count": float(left.get("negative_count", 0.0) or 0.0) + float(right.get("negative_count", 0.0) or 0.0),
+            "recent_positive": max(float(left.get("recent_positive", 0.0) or 0.0), float(right.get("recent_positive", 0.0) or 0.0)),
+            "recent_negative": max(float(left.get("recent_negative", 0.0) or 0.0), float(right.get("recent_negative", 0.0) or 0.0)),
         }
 
     def _audit_log(self, record: dict[str, Any]) -> None:
@@ -1180,6 +1401,7 @@ class MemoryStore:
     def _derive_relationship_state(self) -> dict[str, Any]:
         timeline = self.list_relationship_timeline(limit=12)
         repairs = self.list_conflict_repairs(limit=6)
+        counterpart_history = self.list_counterpart_assessment_history(limit=8)
         affinity_score = 0.0
         trust_score = 0.0
         for item in timeline:
@@ -1192,10 +1414,19 @@ class MemoryStore:
             except Exception:
                 pass
 
+        counterpart_stats = self._counterpart_relationship_evidence_stats(counterpart_history)
+        affinity_score = self._clamp_signed(affinity_score + float(counterpart_stats.get("affinity_shift", 0.0) or 0.0))
+        trust_score = self._clamp_signed(trust_score + float(counterpart_stats.get("trust_shift", 0.0) or 0.0))
         latest_timeline = timeline[0] if timeline else {}
         latest_repair = repairs[0] if repairs else {}
-        notes = str(latest_timeline.get("summary") or latest_repair.get("summary") or "").strip()
-        stats = self._relationship_evidence_stats(timeline, repair_count=len(repairs))
+        notes = str(
+            latest_timeline.get("summary")
+            or latest_repair.get("summary")
+            or counterpart_stats.get("latest_summary")
+            or ""
+        ).strip()
+        timeline_stats = self._relationship_evidence_stats(timeline, repair_count=len(repairs))
+        stats = self._merge_relationship_evidence_stats(timeline_stats, counterpart_stats)
         stage = self._relationship_stage_from_scores(
             affinity_score,
             trust_score,
@@ -1240,9 +1471,15 @@ class MemoryStore:
             derived_trust = 0.0
         timeline = self.list_relationship_timeline(limit=12)
         repairs = self.list_conflict_repairs(limit=6)
+        counterpart_history = self.list_counterpart_assessment_history(limit=8)
         timeline_count = len(timeline)
         repair_count = len(repairs)
-        stats = self._relationship_evidence_stats(timeline, repair_count=repair_count)
+        counterpart_stats = self._counterpart_relationship_evidence_stats(counterpart_history)
+        counterpart_count = int(counterpart_stats.get("evidence_count", 0) or 0)
+        stats = self._merge_relationship_evidence_stats(
+            self._relationship_evidence_stats(timeline, repair_count=repair_count),
+            counterpart_stats,
+        )
         evidence_density = float(stats.get("evidence_density", 0.0) or 0.0)
         positive_count = int(stats.get("positive_count", 0.0) or 0.0)
         negative_count = int(stats.get("negative_count", 0.0) or 0.0)
@@ -1259,7 +1496,7 @@ class MemoryStore:
                 and abs(base_affinity) <= 0.24
                 and abs(base_trust) <= 0.24
             )
-            if timeline_count or repair_count:
+            if timeline_count or repair_count or counterpart_count:
                 if low_anchor:
                     merged_affinity = self._clamp_signed(base_affinity + derived_affinity)
                     merged_trust = self._clamp_signed(base_trust + derived_trust)
@@ -1525,6 +1762,138 @@ class MemoryStore:
                     "summary": s,
                     "affinity_delta": float(affinity_delta),
                     "trust_delta": float(trust_delta),
+                },
+                confidence=float(confidence),
+                source_refs=source_refs,
+            ),
+            max_items=800,
+        )
+
+    def list_counterpart_assessment_history(self, limit: int = 30) -> list[dict[str, Any]]:
+        items = self._list_ns_items("counterpart_assessment_history")
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
+        return items[: int(limit)]
+
+    def add_counterpart_assessment_history(
+        self,
+        summary: str,
+        *,
+        stance: str = "",
+        scene: str = "",
+        respect_level: float = 0.5,
+        reciprocity: float = 0.5,
+        boundary_pressure: float = 0.1,
+        reliability_read: float = 0.5,
+        event_kind: str = "",
+        interaction_frame: str = "",
+        primary_motive: str = "",
+        motive_tension: str = "",
+        goal_frame: str = "",
+        assessment_profile: dict[str, Any] | None = None,
+        confidence: float = 0.8,
+        source_refs: list[int] | None = None,
+    ) -> dict[str, Any]:
+        s = str(summary or "").strip()
+        if not s:
+            raise ValueError("empty counterpart assessment summary")
+        profile = assessment_profile if isinstance(assessment_profile, dict) else {}
+        raw_scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
+        return self._append_ns_item(
+            "counterpart_assessment_history",
+            self._to_memory_record(
+                record_type="counterpart_assessment_history",
+                content={
+                    "summary": s,
+                    "stance": str(stance or "").strip().lower(),
+                    "scene": str(scene or "").strip().lower(),
+                    "respect_level": float(respect_level),
+                    "reciprocity": float(reciprocity),
+                    "boundary_pressure": float(boundary_pressure),
+                    "reliability_read": float(reliability_read),
+                    "event_kind": str(event_kind or "").strip().lower(),
+                    "interaction_frame": str(interaction_frame or "").strip().lower(),
+                    "primary_motive": str(primary_motive or "").strip().lower(),
+                    "motive_tension": str(motive_tension or "").strip().lower(),
+                    "goal_frame": str(goal_frame or "").strip()[:220],
+                    "assessment_profile": (
+                        {
+                            "openness_drive": float(profile.get("openness_drive") or 0.0),
+                            "guarded_drive": float(profile.get("guarded_drive") or 0.0),
+                            "guard_margin": float(profile.get("guard_margin") or 0.0),
+                            "dominant_scene_signal": str(profile.get("dominant_scene_signal") or "").strip().lower(),
+                            "scene_strengths": {
+                                "care": float(raw_scene_strengths.get("care") or 0.0),
+                                "repair": float(raw_scene_strengths.get("repair") or 0.0),
+                                "friction": float(raw_scene_strengths.get("friction") or 0.0),
+                                "selfhood": float(raw_scene_strengths.get("selfhood") or 0.0),
+                                "busy": float(raw_scene_strengths.get("busy") or 0.0),
+                            },
+                        }
+                        if profile
+                        else {}
+                    ),
+                },
+                confidence=float(confidence),
+                source_refs=source_refs,
+            ),
+            max_items=800,
+        )
+
+    def list_proactive_continuity_history(self, limit: int = 30) -> list[dict[str, Any]]:
+        items = self._list_ns_items("proactive_continuity_history")
+        items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
+        return items[: int(limit)]
+
+    def add_proactive_continuity_history(
+        self,
+        summary: str,
+        *,
+        kind: str = "",
+        trace_family: str = "",
+        source_event_kind: str = "",
+        trigger_family: str = "",
+        carryover_mode: str = "",
+        relationship_weather: str = "",
+        counterpart_scene_bias: str = "",
+        hold_count: int = 0,
+        carryover_strength: float = 0.0,
+        recontact_cooldown: float = 0.0,
+        presence_residue: float = 0.0,
+        ambient_resonance: float = 0.0,
+        self_activity_momentum: float = 0.0,
+        own_rhythm_bias: float = 0.0,
+        primary_motive: str = "",
+        motive_tension: str = "",
+        goal_frame: str = "",
+        confidence: float = 0.8,
+        source_refs: list[int] | None = None,
+    ) -> dict[str, Any]:
+        s = str(summary or "").strip()
+        if not s:
+            raise ValueError("empty proactive continuity summary")
+        return self._append_ns_item(
+            "proactive_continuity_history",
+            self._to_memory_record(
+                record_type="proactive_continuity_history",
+                content={
+                    "summary": s,
+                    "kind": str(kind or "").strip().lower(),
+                    "trace_family": str(trace_family or "").strip().lower(),
+                    "source_event_kind": str(source_event_kind or "").strip().lower(),
+                    "trigger_family": str(trigger_family or "").strip().lower(),
+                    "carryover_mode": str(carryover_mode or "").strip().lower(),
+                    "relationship_weather": str(relationship_weather or "").strip().lower(),
+                    "counterpart_scene_bias": str(counterpart_scene_bias or "").strip().lower(),
+                    "hold_count": int(hold_count),
+                    "carryover_strength": float(carryover_strength),
+                    "recontact_cooldown": float(recontact_cooldown),
+                    "presence_residue": float(presence_residue),
+                    "ambient_resonance": float(ambient_resonance),
+                    "self_activity_momentum": float(self_activity_momentum),
+                    "own_rhythm_bias": float(own_rhythm_bias),
+                    "primary_motive": str(primary_motive or "").strip().lower(),
+                    "motive_tension": str(motive_tension or "").strip().lower(),
+                    "goal_frame": str(goal_frame or "").strip()[:220],
                 },
                 confidence=float(confidence),
                 source_refs=source_refs,
@@ -2449,6 +2818,8 @@ class MemoryStore:
         shared_events = list(reversed(self.list_shared_events(limit=5)))
         conflict_repair = list(reversed(self.list_conflict_repairs(limit=5)))
         relationship_timeline = list(reversed(self.list_relationship_timeline(limit=5)))
+        counterpart_assessment_history = list(reversed(self.list_counterpart_assessment_history(limit=5)))
+        proactive_continuity_history = list(reversed(self.list_proactive_continuity_history(limit=5)))
         commitments = list(reversed(self.list_commitments(limit=5)))
         unresolved_tensions = list(reversed(self.list_unresolved_tensions(limit=5)))
         semantic_self_narratives = list(reversed(self.list_semantic_self_narratives(limit=5)))
@@ -2467,6 +2838,8 @@ class MemoryStore:
             "shared_events": shared_events,
             "conflict_repair": conflict_repair,
             "relationship_timeline": relationship_timeline,
+            "counterpart_assessment_history": counterpart_assessment_history,
+            "proactive_continuity_history": proactive_continuity_history,
             "commitments": commitments,
             "unresolved_tensions": unresolved_tensions,
             "semantic_self_narratives": semantic_self_narratives,

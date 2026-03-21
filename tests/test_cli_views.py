@@ -2,9 +2,13 @@ import unittest
 
 from amadeus_thread0.cli_views import (
     build_behavior_queue_cli_summary,
+    build_counterpart_assessment_cli_summary,
     build_evolution_cli_summary,
+    build_proactive_continuity_cli_summary,
     build_evolution_summary_line,
+    render_counterpart_assessment_cli_text,
     render_behavior_queue_cli_text,
+    render_proactive_continuity_cli_text,
 )
 from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
 
@@ -140,6 +144,14 @@ class CliViewsTests(unittest.TestCase):
             latent_state={"self_coherence": 0.74, "agency_pressure": 0.42, "reflection_drive": 0.46, "expression_freedom": 0.68},
             emotion_state={"label": "neutral"},
             bond_state={"trust": 0.66, "closeness": 0.64, "hurt": 0.02},
+            counterpart_assessment={
+                "stance": "watchful",
+                "scene": "repair_attempt",
+                "respect_level": 0.62,
+                "reciprocity": 0.58,
+                "boundary_pressure": 0.28,
+                "reliability_read": 0.6,
+            },
             behavior_action={
                 "interaction_mode": "self_activity_reopen",
                 "primary_motive": "gentle_recontact",
@@ -178,6 +190,10 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual((semantic.get("lineage_snapshot") or {}).get("rhythm_style"), 0.76)
         self.assertEqual(snapshot.get("behavior_mode"), "self_activity_reopen")
         self.assertEqual(snapshot.get("primary_motive"), "gentle_recontact")
+        counterpart = snapshot.get("counterpart") if isinstance(snapshot.get("counterpart"), dict) else {}
+        self.assertEqual(counterpart.get("stance"), "watchful")
+        self.assertEqual(counterpart.get("scene"), "repair_attempt")
+        self.assertEqual(counterpart.get("boundary_pressure"), 0.28)
 
     def test_reconsolidation_snapshot_does_not_fall_back_to_stale_event_behavior_fields(self):
         snapshot = build_reconsolidation_snapshot(
@@ -203,6 +219,55 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(snapshot.get("motive_tension"), "")
         self.assertEqual(snapshot.get("goal_frame"), "")
         self.assertEqual(snapshot.get("behavior_consequence"), {})
+
+    def test_reconsolidation_snapshot_compacts_behavior_plan_and_interaction_carryover(self):
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"used": True, "interaction_frame": "relationship"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={},
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.6, "closeness": 0.6, "hurt": 0.0},
+            behavior_action={
+                "interaction_mode": "steady_reply",
+                "primary_motive": "honor_continuity",
+                "motive_tension": "contact_without_pressure",
+                "goal_frame": "顺着之前留下的惦记自然接回来。",
+            },
+            behavior_plan={
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "observe",
+                "carryover_mode": "life_window",
+                "note": "final frozen carryover path",
+                "primary_motive": "honor_continuity",
+                "motive_tension": "contact_without_pressure",
+                "goal_frame": "顺着之前留下的惦记自然接回来。",
+            },
+            interaction_carryover={
+                "source": "retrieved_behavior_plan",
+                "strength": 0.44,
+                "carryover_mode": "life_window",
+                "relationship_weather": "warm_residue",
+                "note": "final frozen carryover path",
+                "source_tags": ["plan_kind:deferred_checkin", "trigger_family:observe"],
+            },
+            agenda_lifecycle_residue={},
+        )
+        behavior_plan = snapshot.get("behavior_plan") if isinstance(snapshot.get("behavior_plan"), dict) else {}
+        interaction_carryover = snapshot.get("interaction_carryover") if isinstance(snapshot.get("interaction_carryover"), dict) else {}
+        self.assertEqual(behavior_plan.get("kind"), "deferred_checkin")
+        self.assertEqual(behavior_plan.get("trigger_family"), "observe")
+        self.assertEqual(behavior_plan.get("carryover_mode"), "life_window")
+        self.assertEqual(behavior_plan.get("primary_motive"), "honor_continuity")
+        self.assertEqual(interaction_carryover.get("source"), "retrieved_behavior_plan")
+        self.assertEqual(interaction_carryover.get("carryover_mode"), "life_window")
+        self.assertEqual(interaction_carryover.get("relationship_weather"), "warm_residue")
+        self.assertEqual(
+            interaction_carryover.get("source_tags"),
+            ["plan_kind:deferred_checkin", "trigger_family:observe"],
+        )
 
     def test_build_evolution_summary_line_is_compact_and_informative(self):
         summary = build_evolution_cli_summary(
@@ -257,6 +322,110 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("holds=2", line)
         self.assertIn("cool=0.520", line)
         self.assertIn("bond=0.640", line)
+
+    def test_build_evolution_cli_summary_prefers_frozen_counterpart_snapshot_over_runtime_copy(self):
+        summary = build_evolution_cli_summary(
+            counterpart_assessment={"stance": "open", "scene": "care_bid"},
+            behavior_action={"interaction_mode": "self_activity_reopen"},
+            reconsolidation_snapshot={
+                "counterpart": {
+                    "stance": "guarded",
+                    "scene": "relationship_degradation",
+                    "respect_level": 0.38,
+                    "reciprocity": 0.34,
+                    "boundary_pressure": 0.52,
+                    "reliability_read": 0.42,
+                    "assessment_profile": {
+                        "openness_drive": 0.28,
+                        "guarded_drive": 0.71,
+                        "guard_margin": 0.43,
+                        "dominant_scene_signal": "friction",
+                        "scene_strengths": {"friction": 0.79, "care": 0.12},
+                    },
+                }
+            },
+        )
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("counterpart_stance"), "guarded")
+        self.assertEqual(current_turn.get("counterpart_scene"), "relationship_degradation")
+        self.assertEqual(current_turn.get("counterpart_boundary_pressure"), 0.52)
+        self.assertEqual(current_turn.get("counterpart_reliability_read"), 0.42)
+        counterpart_profile = current_turn.get("counterpart_profile") if isinstance(current_turn.get("counterpart_profile"), dict) else {}
+        self.assertEqual(counterpart_profile.get("dominant_scene_signal"), "friction")
+        self.assertEqual(counterpart_profile.get("guarded_drive"), 0.71)
+
+    def test_counterpart_assessment_cli_render_surfaces_recent_history(self):
+        history = [
+            {
+                "id": 3,
+                "summary": "你会把冈部伦太郎这次开口当成一次真实靠近，而不是流程化回应。",
+                "stance": "open",
+                "scene": "care_bid",
+                "respect_level": 0.74,
+                "reciprocity": 0.70,
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.78,
+                "event_kind": "user_utterance",
+                "interaction_frame": "relationship",
+                "primary_motive": "gentle_recontact",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "顺着余温轻轻回头。",
+                "assessment_profile": {
+                    "openness_drive": 0.76,
+                    "guarded_drive": 0.18,
+                    "guard_margin": -0.58,
+                    "dominant_scene_signal": "care",
+                    "scene_strengths": {"care": 0.82, "repair": 0.18, "busy": 0.22},
+                },
+            }
+        ]
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        self.assertEqual(summary[0]["scene"], "care_bid")
+        self.assertEqual(summary[0]["respect_level"], 0.74)
+        profile = summary[0].get("assessment_profile") if isinstance(summary[0].get("assessment_profile"), dict) else {}
+        self.assertEqual(profile.get("dominant_scene_signal"), "care")
+        self.assertEqual(profile.get("openness_drive"), 0.76)
+
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("#3 open/care_bid", rendered)
+        self.assertIn("respect=0.74", rendered)
+        self.assertIn("read=care:0.82 open=0.76 guard=0.18 margin=-0.58", rendered)
+        self.assertIn("motive=gentle_recontact / self_rhythm_vs_contact", rendered)
+        self.assertIn("goal=顺着余温轻轻回头。", rendered)
+
+    def test_build_proactive_continuity_cli_summary_and_render(self):
+        history = [
+            {
+                "id": 4,
+                "summary": "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+                "kind": "released_to_self_activity",
+                "trace_family": "own_rhythm_busy_window",
+                "source_event_kind": "scheduled_life_due",
+                "trigger_family": "life_window",
+                "carryover_mode": "own_rhythm",
+                "relationship_weather": "warm_residue",
+                "counterpart_scene_bias": "busy_not_disrespectful",
+                "hold_count": 2,
+                "carryover_strength": 0.53,
+                "recontact_cooldown": 0.47,
+                "presence_residue": 0.33,
+                "ambient_resonance": 0.24,
+                "self_activity_momentum": 0.58,
+                "own_rhythm_bias": 0.61,
+                "primary_motive": "preserve_self_rhythm",
+                "motive_tension": "self_rhythm_vs_contact",
+                "goal_frame": "先让这段窗口自然过去，把注意力收回自己的节奏。",
+            }
+        ]
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        self.assertEqual(summary[0]["trace_family"], "own_rhythm_busy_window")
+        self.assertEqual(summary[0]["carryover_mode"], "own_rhythm")
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        self.assertIn("#4 own_rhythm_busy_window/released_to_self_activity", rendered)
+        self.assertIn("carry=own_rhythm:0.53", rendered)
+        self.assertIn("scene=busy_not_disrespectful", rendered)
+        self.assertIn("motive=preserve_self_rhythm / self_rhythm_vs_contact", rendered)
 
     def test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue(self):
         summary = build_evolution_cli_summary(

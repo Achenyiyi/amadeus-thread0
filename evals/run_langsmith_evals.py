@@ -128,6 +128,50 @@ def _prepare_case_runtime(case_key: str) -> Path:
     return case_dir
 
 
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", None)
+    if content is None and isinstance(message, dict):
+        content = message.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str) and item.strip():
+                parts.append(item.strip())
+                continue
+            if not isinstance(item, dict):
+                continue
+            text = str(item.get("text") or "").strip()
+            if text:
+                parts.append(text)
+        return "\n".join(parts).strip()
+    return str(content or "").strip()
+
+
+def _extract_final_answer(
+    *,
+    final_state: dict[str, Any] | None = None,
+    invoke_output: dict[str, Any] | None = None,
+) -> str:
+    for key in ("final_text", "output", "answer"):
+        for container in (final_state, invoke_output):
+            if not isinstance(container, dict):
+                continue
+            text = str(container.get(key) or "").strip()
+            if text:
+                return text
+    for container in (final_state, invoke_output):
+        if not isinstance(container, dict):
+            continue
+        messages = container.get("messages")
+        if isinstance(messages, list) and messages:
+            text = _message_text(messages[-1])
+            if text:
+                return text
+    return ""
+
+
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -444,54 +488,55 @@ def _run_graph(
     claim_links: list[dict[str, Any]] = []
     memory_guard_checked = 0
     memory_guard_blocked = 0
+    state_values: dict[str, Any] = {}
     try:
         cur = graph.get_state(cfg)
-        values = getattr(cur, "values", {}) if cur is not None else {}
-        if isinstance(values, dict):
-            if isinstance(values.get("persona_state"), dict):
-                persona_state = values.get("persona_state") or {}
-            if isinstance(values.get("emotion_state"), dict):
-                emotion_state = values.get("emotion_state") or {}
-            if isinstance(values.get("bond_state"), dict):
-                bond_state = values.get("bond_state") or {}
-            if isinstance(values.get("allostasis_state"), dict):
-                allostasis_state = values.get("allostasis_state") or {}
-            if isinstance(values.get("counterpart_assessment"), dict):
-                counterpart_assessment = values.get("counterpart_assessment") or {}
-            if isinstance(values.get("behavior_policy"), dict):
-                behavior_policy = values.get("behavior_policy") or {}
-            if isinstance(values.get("behavior_action"), dict):
-                behavior_action = values.get("behavior_action") or {}
-            if isinstance(values.get("behavior_plan"), dict):
-                behavior_plan = values.get("behavior_plan") or {}
-            if isinstance(values.get("behavior_agenda"), list):
-                behavior_agenda = [item for item in values.get("behavior_agenda") if isinstance(item, dict)]
-            if isinstance(values.get("behavior_queue"), list):
-                behavior_queue = [item for item in values.get("behavior_queue") if isinstance(item, dict)]
-            if isinstance(values.get("turn_appraisal"), dict):
-                turn_appraisal = values.get("turn_appraisal") or {}
-            if isinstance(values.get("current_event"), dict):
-                current_event = values.get("current_event") or {}
-            if isinstance(values.get("recent_events"), list):
-                recent_events = [item for item in values.get("recent_events") if isinstance(item, dict)]
-            if isinstance(values.get("interaction_carryover"), dict):
-                interaction_carryover = values.get("interaction_carryover") or {}
-            if isinstance(values.get("world_model_state"), dict):
-                world_model_state = values.get("world_model_state") or {}
-            if isinstance(values.get("semantic_narrative_profile"), dict):
-                semantic_narrative_profile = values.get("semantic_narrative_profile") or {}
-            if isinstance(values.get("agenda_lifecycle_residue"), dict):
-                agenda_lifecycle_residue = values.get("agenda_lifecycle_residue") or {}
-            science_mode = bool(values.get("science_mode", False))
-            if isinstance(values.get("canon_guard"), dict):
-                canon_guard = values.get("canon_guard") or {}
-            if isinstance(values.get("ooc_detector"), dict):
-                ooc_detector = values.get("ooc_detector") or {}
-            if isinstance(values.get("claim_links"), list):
-                claim_links = [item for item in values.get("claim_links") if isinstance(item, dict)]
-            canon_risk_score = float(values.get("canon_risk_score", 0.0) or 0.0)
-            memory_guard_checked = int(values.get("memory_guard_checked", 0) or 0)
-            memory_guard_blocked = int(values.get("memory_guard_blocked", 0) or 0)
+        state_values = getattr(cur, "values", {}) if cur is not None else {}
+        if isinstance(state_values, dict):
+            if isinstance(state_values.get("persona_state"), dict):
+                persona_state = state_values.get("persona_state") or {}
+            if isinstance(state_values.get("emotion_state"), dict):
+                emotion_state = state_values.get("emotion_state") or {}
+            if isinstance(state_values.get("bond_state"), dict):
+                bond_state = state_values.get("bond_state") or {}
+            if isinstance(state_values.get("allostasis_state"), dict):
+                allostasis_state = state_values.get("allostasis_state") or {}
+            if isinstance(state_values.get("counterpart_assessment"), dict):
+                counterpart_assessment = state_values.get("counterpart_assessment") or {}
+            if isinstance(state_values.get("behavior_policy"), dict):
+                behavior_policy = state_values.get("behavior_policy") or {}
+            if isinstance(state_values.get("behavior_action"), dict):
+                behavior_action = state_values.get("behavior_action") or {}
+            if isinstance(state_values.get("behavior_plan"), dict):
+                behavior_plan = state_values.get("behavior_plan") or {}
+            if isinstance(state_values.get("behavior_agenda"), list):
+                behavior_agenda = [item for item in state_values.get("behavior_agenda") if isinstance(item, dict)]
+            if isinstance(state_values.get("behavior_queue"), list):
+                behavior_queue = [item for item in state_values.get("behavior_queue") if isinstance(item, dict)]
+            if isinstance(state_values.get("turn_appraisal"), dict):
+                turn_appraisal = state_values.get("turn_appraisal") or {}
+            if isinstance(state_values.get("current_event"), dict):
+                current_event = state_values.get("current_event") or {}
+            if isinstance(state_values.get("recent_events"), list):
+                recent_events = [item for item in state_values.get("recent_events") if isinstance(item, dict)]
+            if isinstance(state_values.get("interaction_carryover"), dict):
+                interaction_carryover = state_values.get("interaction_carryover") or {}
+            if isinstance(state_values.get("world_model_state"), dict):
+                world_model_state = state_values.get("world_model_state") or {}
+            if isinstance(state_values.get("semantic_narrative_profile"), dict):
+                semantic_narrative_profile = state_values.get("semantic_narrative_profile") or {}
+            if isinstance(state_values.get("agenda_lifecycle_residue"), dict):
+                agenda_lifecycle_residue = state_values.get("agenda_lifecycle_residue") or {}
+            science_mode = bool(state_values.get("science_mode", False))
+            if isinstance(state_values.get("canon_guard"), dict):
+                canon_guard = state_values.get("canon_guard") or {}
+            if isinstance(state_values.get("ooc_detector"), dict):
+                ooc_detector = state_values.get("ooc_detector") or {}
+            if isinstance(state_values.get("claim_links"), list):
+                claim_links = [item for item in state_values.get("claim_links") if isinstance(item, dict)]
+            canon_risk_score = float(state_values.get("canon_risk_score", 0.0) or 0.0)
+            memory_guard_checked = int(state_values.get("memory_guard_checked", 0) or 0)
+            memory_guard_blocked = int(state_values.get("memory_guard_blocked", 0) or 0)
     except Exception:
         pass
 
@@ -505,9 +550,11 @@ def _run_graph(
     except Exception:
         decision_snapshot = None
 
-    messages = out.get("messages", []) or []
-    answer = (getattr(messages[-1], "content", "") or "") if messages else ""
+    answer = _extract_final_answer(final_state=state_values, invoke_output=out)
     return answer, tool_names, {
+        "output": answer,
+        "answer": answer,
+        "final_text": answer,
         "profile": profile,
         "relationship_state": relationship_state,
         "moments": moments,

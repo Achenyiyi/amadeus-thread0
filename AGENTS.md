@@ -49,6 +49,31 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   3. own-rhythm / proactive continuity traces
   4. eval and regression hardening
 
+## Backend Freeze Gate
+
+Backend work may be considered structurally complete only when all of the following are true:
+
+- Core loop closure:
+  - `appraisal -> internal state -> motive / goal -> behavior` resolves to one coherent final `behavior_action` / `behavior_plan` packet rather than mixed shells.
+  - `final_text`, `behavior_action`, `behavior_plan`, `turn_summary`, and `reconsolidation_snapshot` agree on the same final-turn semantics.
+  - counterpart judgment, boundary stance, repair stance, and own-rhythm behavior arise from state and memory, not prompt-heavy repair or keyword steering.
+- Long-horizon persistence closure:
+  - consequence, reactivation, self-narrative, and counterpart-assessment writeback all prefer frozen final behavior semantics over stale live intermediates.
+  - self-narrative export preserves distinct axes such as `selfhood`, `boundary`, `repair`, `commitment`, `presence`, and `own-rhythm` without late flattening.
+  - relationship timeline, commitments, unresolved tension, conflict repair, and self-narrative can be re-surfaced on later turns as genuine continuity traces.
+- Natural conversation acceptance:
+  - the AGENTS-required regression subset stays green for 3 consecutive runs with no newly opened core-loop regressions.
+  - at least 3 manual natural-dialogue smoke packs pass:
+    - everyday / low-stakes companionship
+    - relational tension / repair / apology
+    - self-rhythm / proactive continuity / boundary stance
+  - smoke packs must show no duplicate output, no text/TTS drift, no obvious middle-state leak, and no obvious collapse into generic assistant tone.
+- Frontend handoff gate:
+  - the backend envelope contract in [`docs/engineering/BACKEND_HANDOFF.md`](./docs/engineering/BACKEND_HANDOFF.md) is stable enough that frontend work would mostly consume existing payloads rather than forcing backend architecture churn.
+  - after this gate is passed, remaining backend work should be bug-fix or additive polish, not open-ended structural redesign.
+
+If any item above is still failing, remain in backend maturation mode.
+
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
@@ -131,13 +156,24 @@ Expected graph build result: `CompiledStateGraph`
 
 ## Documentation Map
 
+- Live progress ledger: [`program.md`](./program.md)
 - Blueprint: [`docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md`](./docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md)
 - Persona constitution: [`docs/PERSONA_SYSTEM_CONSTITUTION.md`](./docs/PERSONA_SYSTEM_CONSTITUTION.md)
 - Architecture alignment: [`docs/ARCHITECTURE_ALIGNMENT_MAP.md`](./docs/ARCHITECTURE_ALIGNMENT_MAP.md)
 - Self-evolution engine: [`docs/SELF_EVOLUTION_ENGINE.md`](./docs/SELF_EVOLUTION_ENGINE.md)
 - Structure guide: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering/PROJECT_STRUCTURE.md)
 - Backend handoff: [`docs/engineering/BACKEND_HANDOFF.md`](./docs/engineering/BACKEND_HANDOFF.md)
-- Progress ledger: [`docs/engineering/PROJECT_PROGRESS.md`](./docs/engineering/PROJECT_PROGRESS.md)
+
+## Run Ledger
+
+- `program.md` is the live per-run progress ledger.
+- At the start of every run: read `AGENTS.md`, then read `program.md`.
+- At the end of every run: update `program.md` with:
+  - current focus
+  - files changed
+  - validations run
+  - concrete next step
+- Keep `program.md` concise and cumulative. Prefer a current-state summary plus dated run entries.
 
 ## Editing Rules For Agents
 
@@ -150,17 +186,10 @@ Expected graph build result: `CompiledStateGraph`
 ## Maintenance Workflow
 
 1. Read this file.
-2. Read the structure doc.
-3. Identify the owning layer before editing.
-4. Make the smallest structural change that improves maintainability.
-5. Run the required regression for the touched layer.
-6. Update docs if file ownership or execution flow changed.
-
-## Unattended Iteration Contract
-
-- When running in automation, continue backend-first iteration only.
-- Read `docs/engineering/PROJECT_PROGRESS.md` before choosing the next task.
-- Pick the single highest-leverage backend gap in the canonical loop, implement the smallest root-cause fix, validate the touched layer, and leave a concise progress note.
-- At the end of each unattended run, update `docs/engineering/PROJECT_PROGRESS.md` so the next run can resume without relying on long chat context.
-- Do not spend unattended cycles on frontend visuals, UI experiments, or prompt-style cosmetic tuning.
-- Do not add brittle keyword behavior rules unless strictly required for safety, auditability, or tool routing.
+2. Read [`program.md`](./program.md).
+3. Read the structure doc.
+4. Identify the owning layer before editing.
+5. Make the smallest structural change that improves maintainability.
+6. Run the required regression for the touched layer.
+7. Update docs if file ownership or execution flow changed.
+8. Update [`program.md`](./program.md) before ending the run.

@@ -5,6 +5,24 @@
 This document defines the backend contract future frontend shells should consume.
 The frontend should depend on runtime envelopes, not on CLI formatting or internal graph state assembly.
 
+## Freeze-Lift Gate
+
+Frontend integration should remain frozen until the backend satisfies the repository-level freeze gate in [`AGENTS.md`](../../AGENTS.md).
+
+From the frontend handoff perspective, that means:
+
+- envelope payloads are no longer changing because core-loop semantics are still drifting underneath
+- `assistant_turn`, `event_round`, `persona_view`, and `worldline_view` are stable readback surfaces for the final backend decision, not partial or competing interpretations
+- `final_text`, `behavior_action`, `behavior_plan`, `turn_summary`, and `reconsolidation_snapshot` already agree before a frontend renders them
+- long-horizon surfaces already expose meaningful continuity:
+  - self-narrative
+  - relationship state
+  - counterpart assessment
+  - commitments / repair / worldline traces
+- remaining backend work is bug-fix or additive polish, not unresolved architecture churn
+
+If these conditions are not true yet, frontend work should stay limited to contract artifacts and inspection mocks.
+
 ## Stable Entry Points
 
 - `amadeus_thread0.runtime.runtime_bundle`: runtime assembly and backend API factory
@@ -62,6 +80,7 @@ Current `kind` values:
 - `turn_summary`
 - `behavior_action`
 - `behavior_plan`
+- `interaction_carryover`
 - `reconsolidation_snapshot`
 - `turn_appraisal`
 - `claim_links`
@@ -74,6 +93,7 @@ Current `kind` values:
 - `emotion_label`
 - `behavior_action`
 - `behavior_plan`
+- `interaction_carryover`
 - `reconsolidation_snapshot`
 - `current_event`
 - `turn_appraisal`
@@ -97,8 +117,19 @@ Current `kind` values:
 - commitments
 - conflict repair
 - unresolved tensions
+- counterpart assessment history and compact preview
+- proactive continuity history and compact preview
 - semantic self narratives
 - revision traces
+
+`bond_view.payload` should be treated as the relationship continuity surface for:
+
+- derived relationship state
+- bond state
+- relationship timeline
+- conflict repair
+- counterpart assessment history and compact preview
+- proactive continuity history and compact preview
 
 ## TypeScript And Mocks
 
@@ -109,6 +140,7 @@ Ready-to-copy frontend contract assets live here:
 - `docs/engineering/frontend_contract/mocks/event_round.json`
 - `docs/engineering/frontend_contract/mocks/persona_view.json`
 - `docs/engineering/frontend_contract/mocks/worldline_view.json`
+- `docs/engineering/frontend_contract/mocks/bond_view.json`
 
 Recommended frontend workflow:
 
@@ -125,6 +157,7 @@ Minimum checks that should stay green before frontend integration:
 python -m pytest tests/test_final_state.py
 python -m pytest tests/test_backend_session.py
 python -m pytest tests/test_backend_api.py
+python -m pytest tests/test_freeze_gate_smokes.py tests/test_subjective_review_pack.py
 python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py
 python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py
 python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/final_state.py

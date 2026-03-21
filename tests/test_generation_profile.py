@@ -180,8 +180,8 @@ class GenerationProfileRhythmTests(unittest.TestCase):
                 "user_text": "如果我们以后聊到价值观完全相反的地方，你会顺着我说，还是会坚持你自己的想法？",
             }
         )
-        self.assertLessEqual(int(regression_profile.get("max_tokens") or 999), 160)
-        self.assertLessEqual(int(exploratory_profile.get("max_tokens") or 999), 216)
+        self.assertLessEqual(int(regression_profile.get("max_tokens") or 999), 148)
+        self.assertLessEqual(int(exploratory_profile.get("max_tokens") or 999), 200)
         self.assertIsNotNone(regression_profile.get("temperature"))
         self.assertIsNotNone(exploratory_profile.get("top_p"))
 
@@ -216,8 +216,8 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         )
         self.assertIsNone(baseline.get("max_tokens"))
         self.assertIsNone(baseline.get("temperature"))
-        self.assertLessEqual(int(profile.get("max_tokens") or 999), 148)
-        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 132)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.76)
         self.assertIsNotNone(profile.get("temperature"))
 
     def test_guarded_relationship_weather_keeps_sampling_measured(self):
@@ -241,9 +241,9 @@ class GenerationProfileRhythmTests(unittest.TestCase):
                 },
             }
         )
-        self.assertLessEqual(int(profile.get("max_tokens") or 999), 148)
-        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.22)
-        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 132)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.20)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.76)
         self.assertIsNotNone(profile.get("frequency_penalty"))
 
     def test_warm_and_repair_relationship_weather_keep_nondefault_sampling(self):
@@ -285,6 +285,7 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         )
         self.assertIsNotNone(warm_profile.get("temperature"))
         self.assertIsNotNone(repair_profile.get("temperature"))
+        self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), 144)
         self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), int(warm_profile.get("max_tokens") or 0))
         self.assertGreaterEqual(float(warm_profile.get("top_p") or 0.0), float(repair_profile.get("top_p") or 1.0))
 
@@ -303,9 +304,9 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         )
         self.assertIsNone(baseline.get("max_tokens"))
         self.assertIsNotNone(profile.get("max_tokens"))
-        self.assertLessEqual(int(profile.get("max_tokens") or 999), 156)
-        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.22)
-        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.80)
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 144)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.20)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.78)
 
     def test_repair_attempt_scene_stays_tighter_than_care_bid(self):
         repair_profile = _generation_profile(
@@ -347,6 +348,7 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         )
         self.assertIsNotNone(repair_profile.get("temperature"))
         self.assertIsNotNone(care_profile.get("temperature"))
+        self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), 140)
         self.assertLessEqual(int(repair_profile.get("max_tokens") or 999), int(care_profile.get("max_tokens") or 0))
         self.assertLessEqual(float(repair_profile.get("top_p") or 1.0), float(care_profile.get("top_p") or 0.0))
         self.assertLessEqual(float(repair_profile.get("temperature") or 1.0), float(care_profile.get("temperature") or 0.0))
@@ -371,9 +373,9 @@ class GenerationProfileRhythmTests(unittest.TestCase):
                 },
             }
         )
-        self.assertLessEqual(int(profile.get("max_tokens") or 999), 144)
-        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.20)
-        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.76)
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 132)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.18)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.74)
         self.assertIsNotNone(profile.get("frequency_penalty"))
 
 

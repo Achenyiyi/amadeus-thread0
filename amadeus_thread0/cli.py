@@ -43,7 +43,12 @@ from .config import (
     TOOLSET_UPGRADE_TTL_S,
     USER_FACING_MODE,
 )
-from .utils.cli_views import build_evolution_summary_line, render_behavior_queue_cli_text
+from .utils.cli_views import (
+    build_evolution_summary_line,
+    render_behavior_queue_cli_text,
+    render_counterpart_assessment_cli_text,
+    render_proactive_continuity_cli_text,
+)
 from .runtime.memory_admin import MemoryAdminError
 from .runtime.modeling import runtime_model_summary
 from .runtime.runtime_bundle import RuntimeBundle
@@ -603,6 +608,8 @@ def main():
             print("\n[COMMITMENTS]\n" + json.dumps(worldline_view.get("commitments", []), ensure_ascii=False, indent=2))
             print("\n[CONFLICT_REPAIR]\n" + json.dumps(worldline_view.get("conflict_repair", []), ensure_ascii=False, indent=2))
             print("\n[UNRESOLVED_TENSIONS]\n" + json.dumps(worldline_view.get("unresolved_tensions", []), ensure_ascii=False, indent=2))
+            print("\n[PROACTIVE_CONTINUITY_HISTORY]")
+            print(render_proactive_continuity_cli_text(worldline_view.get("proactive_continuity_history", []), limit=8))
             print(
                 "\n[SEMANTIC_SELF_NARRATIVES]\n"
                 + json.dumps(worldline_view.get("semantic_self_narratives", []), ensure_ascii=False, indent=2)
@@ -628,6 +635,10 @@ def main():
                 print("- (empty)")
             for it in repairs:
                 print(f"- #{it.get('id')} {it.get('summary')}")
+            print("\n[COUNTERPART_ASSESSMENT_HISTORY]")
+            print(render_counterpart_assessment_cli_text(bond_view.get("counterpart_assessment_history", []), limit=8))
+            print("\n[PROACTIVE_CONTINUITY_HISTORY]")
+            print(render_proactive_continuity_cli_text(bond_view.get("proactive_continuity_history", []), limit=8))
             continue
         if user.lower() == "/sources":
             sources_view = backend_api.sources().payload
@@ -1276,7 +1287,7 @@ def main():
                 decisions = auto_approve_decisions(tool_calls)
                 stream_result = backend_session.resume_stream(
                     decisions,
-                    config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+                    config=run_config,
                     on_text=None,
                 )
                 out = stream_result.values
@@ -1347,7 +1358,7 @@ def main():
 
             stream_result = backend_session.resume_stream(
                 decisions,
-                config={"configurable": {"thread_id": run_config["configurable"]["thread_id"]}},
+                config=run_config,
                 on_text=None,
             )
             out = stream_result.values

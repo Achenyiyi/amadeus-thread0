@@ -969,12 +969,234 @@ def _long_horizon_interaction_carryover(
         "created_at": _now_ts(),
     }
 
+
+def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -> dict[str, Any]:
+    row = item if isinstance(item, dict) else {}
+    content = row.get("content") if isinstance(row.get("content"), dict) else {}
+
+    def _pick(key: str, default: Any = "") -> Any:
+        if key in content:
+            return content.get(key)
+        return row.get(key, default)
+
+    summary = str(_pick("summary") or "").strip()
+    if not summary:
+        return {}
+    return {
+        "summary": summary,
+        "kind": str(_pick("kind") or "").strip().lower(),
+        "trace_family": str(_pick("trace_family") or "").strip().lower(),
+        "source_event_kind": str(_pick("source_event_kind") or "").strip().lower(),
+        "trigger_family": str(_pick("trigger_family") or "").strip().lower(),
+        "carryover_mode": str(_pick("carryover_mode") or "").strip().lower(),
+        "relationship_weather": str(_pick("relationship_weather") or "").strip().lower(),
+        "counterpart_scene_bias": str(_pick("counterpart_scene_bias") or "").strip().lower(),
+        "hold_count": max(0, int(_pick("hold_count") or 0)),
+        "carryover_strength": _clamp01(_pick("carryover_strength"), 0.0),
+        "recontact_cooldown": _clamp01(_pick("recontact_cooldown"), 0.0),
+        "presence_residue": _clamp01(_pick("presence_residue"), 0.0),
+        "ambient_resonance": _clamp01(_pick("ambient_resonance"), 0.0),
+        "self_activity_momentum": _clamp01(_pick("self_activity_momentum"), 0.0),
+        "own_rhythm_bias": _clamp01(_pick("own_rhythm_bias"), 0.0),
+        "primary_motive": str(_pick("primary_motive") or "").strip().lower(),
+        "motive_tension": str(_pick("motive_tension") or "").strip().lower(),
+        "goal_frame": str(_pick("goal_frame") or "").strip(),
+    }
+
+
+def _proactive_continuity_history_carryover(
+    proactive_continuity_history: Any,
+    *,
+    current_event: dict[str, Any] | None,
+    response_style_hint: str,
+) -> InteractionCarryoverPayload:
+    current = dict(current_event or {})
+    current_kind = str(current.get("kind") or "user_utterance").strip().lower()
+    if current_kind != "user_utterance" or not isinstance(proactive_continuity_history, list):
+        return {}
+
+    hint = str(response_style_hint or "").strip().lower() or "natural"
+    mode_defaults: dict[str, tuple[str, str, str, str, str, str]] = {
+        "own_rhythm": (
+            "agenda_lifecycle",
+            "hold_own_rhythm",
+            "preserve_self_rhythm",
+            "self_rhythm_vs_contact",
+            "self_then_counterpart",
+            "thought_glance",
+        ),
+        "quiet_recontact": (
+            "agenda_lifecycle",
+            "wait_and_recheck",
+            "gentle_recontact",
+            "space_vs_contact",
+            "counterpart_state",
+            "quiet_glance",
+        ),
+        "small_opening": (
+            "continuity_recontact",
+            "offer_small_opening",
+            "gentle_recontact",
+            "space_vs_contact",
+            "self_then_counterpart",
+            "thought_glance",
+        ),
+        "brief_presence": (
+            "continuity_recontact",
+            "confirm_presence",
+            "confirm_connection",
+            "space_vs_contact",
+            "counterpart_state",
+            "brief_notice",
+        ),
+        "shared_window": (
+            "shared_activity_offer",
+            "offer_shared_activity",
+            "shared_presence",
+            "timing_vs_contact",
+            "shared_window",
+            "nudge_presence",
+        ),
+        "task_window": (
+            "scheduled_life_nudge",
+            "light_work_nudge",
+            "shared_task_progress",
+            "task_vs_timing",
+            "shared_task",
+            "focus_glance",
+        ),
+        "life_window": (
+            "scheduled_life_nudge",
+            "light_life_nudge",
+            "gentle_recontact",
+            "space_vs_contact",
+            "counterpart_state",
+            "quiet_glance",
+        ),
+    }
+    min_strength = {
+        "own_rhythm": 0.24,
+        "quiet_recontact": 0.20,
+        "small_opening": 0.20,
+        "brief_presence": 0.18,
+        "shared_window": 0.22,
+        "task_window": 0.22,
+        "life_window": 0.20,
+    }
+
+    for raw_item in proactive_continuity_history:
+        item = _normalized_proactive_continuity_history_item(raw_item)
+        if not item:
+            continue
+        carryover_mode = str(item.get("carryover_mode") or "").strip().lower()
+        defaults = mode_defaults.get(carryover_mode)
+        if defaults is None:
+            continue
+
+        (
+            source_behavior_mode,
+            source_action_target,
+            default_primary_motive,
+            default_motive_tension,
+            attention_target,
+            nonverbal_signal,
+        ) = defaults
+        carryover_strength = _clamp01(item.get("carryover_strength"), 0.0)
+        own_rhythm_bias = _clamp01(item.get("own_rhythm_bias"), 0.0)
+        self_activity_momentum = _clamp01(item.get("self_activity_momentum"), 0.0)
+        presence_residue = _clamp01(item.get("presence_residue"), 0.0)
+        ambient_resonance = _clamp01(item.get("ambient_resonance"), 0.0)
+        recontact_cooldown = _clamp01(item.get("recontact_cooldown"), 0.0)
+        hold_count = max(0, int(item.get("hold_count") or 0))
+        trace_family = str(item.get("trace_family") or "").strip().lower()
+        counterpart_scene_bias = str(item.get("counterpart_scene_bias") or "").strip().lower()
+
+        strength = carryover_strength
+        if carryover_mode == "own_rhythm":
+            strength = max(
+                strength,
+                0.74 * own_rhythm_bias,
+                0.72 * self_activity_momentum,
+                0.16 + 0.08 * min(3, hold_count),
+            )
+        elif carryover_mode == "quiet_recontact":
+            strength = max(
+                strength,
+                0.18 + 0.16 * (1.0 - recontact_cooldown),
+                0.62 * presence_residue,
+            )
+        elif carryover_mode == "small_opening":
+            strength = max(
+                strength,
+                0.64 * presence_residue,
+                0.58 * self_activity_momentum,
+                0.20 + 0.06 * min(3, hold_count),
+            )
+        elif carryover_mode == "brief_presence":
+            strength = max(strength, 0.66 * presence_residue, 0.44 * ambient_resonance)
+        else:
+            strength = max(strength, 0.52 * presence_residue, 0.44 * ambient_resonance)
+
+        if trace_family == "continuity_recontact":
+            strength = max(strength, 0.22 + 0.18 * max(carryover_strength, presence_residue))
+        if counterpart_scene_bias == "busy_not_disrespectful":
+            strength = max(strength, 0.24 + 0.16 * max(carryover_strength, presence_residue))
+
+        if hint == "structured":
+            strength *= 0.35
+        elif hint in {"memory_recall", "relationship"}:
+            strength *= 0.65
+        strength = _clamp01(strength, 0.0)
+        if strength < float(min_strength.get(carryover_mode, 0.18)):
+            continue
+
+        relationship_weather = str(item.get("relationship_weather") or "").strip().lower()
+        if not relationship_weather and counterpart_scene_bias == "busy_not_disrespectful" and carryover_mode != "own_rhythm":
+            relationship_weather = "warm_residue"
+
+        source_tags = [
+            tag
+            for tag in dict.fromkeys(
+                [
+                    "persisted_proactive_history",
+                    trace_family,
+                    str(item.get("trigger_family") or "").strip().lower(),
+                    str(item.get("kind") or "").strip().lower(),
+                    carryover_mode,
+                    counterpart_scene_bias,
+                ]
+            )
+            if tag
+        ]
+        return {
+            "source_event_kind": str(item.get("source_event_kind") or "").strip().lower()
+            or f"proactive_continuity:{str(item.get('kind') or '').strip().lower() or carryover_mode}",
+            "source_behavior_mode": source_behavior_mode,
+            "source_action_target": source_action_target,
+            "source_primary_motive": str(item.get("primary_motive") or "").strip().lower() or default_primary_motive,
+            "source_motive_tension": str(item.get("motive_tension") or "").strip().lower() or default_motive_tension,
+            "source_goal_frame": str(item.get("goal_frame") or "").strip()[:220],
+            "source_text": str(item.get("summary") or "").strip()[:180],
+            "source_tags": source_tags[:6],
+            "carryover_mode": carryover_mode,
+            "strength": round(strength, 3),
+            "relationship_weather": relationship_weather,
+            "idle_minutes": 0,
+            "source_turn_gap": 0,
+            "attention_target": attention_target,
+            "nonverbal_signal": nonverbal_signal,
+            "note": str(item.get("summary") or "").strip(),
+            "created_at": _now_ts(),
+        }
+    return {}
+
 def _recent_interaction_carryover(
     *,
     prior_current_event: dict[str, Any] | None,
     prior_behavior_action: dict[str, Any] | None,
     prior_agenda_lifecycle_residue: dict[str, Any] | None = None,
     prior_counterpart_assessment: dict[str, Any] | None = None,
+    proactive_continuity_history: Any = None,
     recent_events: Any,
     current_event: dict[str, Any] | None,
     response_style_hint: str,
@@ -1006,6 +1228,11 @@ def _recent_interaction_carryover(
         current_event=current_event,
         response_style_hint=response_style_hint,
     )
+    proactive_history_fallback = _proactive_continuity_history_carryover(
+        proactive_continuity_history,
+        current_event=current_event,
+        response_style_hint=response_style_hint,
+    )
     source_from_history = False
     user_turn_gap = 0
     if source_kind == "user_utterance" or not source_kind:
@@ -1013,6 +1240,7 @@ def _recent_interaction_carryover(
         source_from_history = bool(source_event and source_kind)
     if not source_event or not source_kind or source_kind == "user_utterance":
         combined = _prefer_relational_carryover(long_horizon_fallback, relational_fallback)
+        combined = _prefer_relational_carryover(proactive_history_fallback, combined)
         return _prefer_relational_carryover(agenda_fallback, combined)
 
     prior_action = {} if source_from_history else prior_action
@@ -1124,6 +1352,7 @@ def _recent_interaction_carryover(
 
     if not carryover_mode:
         combined = _prefer_relational_carryover(long_horizon_fallback, relational_fallback)
+        combined = _prefer_relational_carryover(proactive_history_fallback, combined)
         return _prefer_relational_carryover(agenda_fallback, combined)
 
     if source_from_history and user_turn_gap > 0:

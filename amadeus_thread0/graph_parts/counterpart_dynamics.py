@@ -10,7 +10,7 @@ from .postprocess import (
     _wants_brief_presence,
     _wants_presence_reassurance,
 )
-from .relational_runtime import _counterpart_assessment_summary
+from .relational_runtime import _counterpart_assessment_profile, _counterpart_assessment_summary
 from .turn_events import _now_ts
 
 CARE_KEYWORDS = {"谢谢", "辛苦", "关心", "陪我", "晚安", "早安"}
@@ -27,6 +27,123 @@ def _clamp01(value: Any, default: float = 0.0) -> float:
     except Exception:
         v = float(default)
     return max(0.0, min(1.0, v))
+
+
+def _semantic_snapshot_level(snapshot: dict[str, Any] | None, categories: tuple[str, ...]) -> float:
+    if not isinstance(snapshot, dict) or not categories:
+        return 0.0
+    return _clamp01(max(_clamp01(snapshot.get(category), 0.0) for category in categories), 0.0)
+
+
+def _semantic_contested_pressure(contested_categories: set[str], categories: tuple[str, ...], confidence: float) -> float:
+    if not categories:
+        return 0.0
+    hit_ratio = sum(1.0 for category in categories if category in contested_categories) / float(len(categories))
+    if hit_ratio <= 0.0:
+        return 0.0
+    return _clamp01(0.72 * hit_ratio + 0.28 * max(0.0, 1.0 - _clamp01(confidence, 0.0)), 0.0)
+
+
+def _window_semantic_evidence(semantic_narrative_profile: dict[str, Any] | None) -> dict[str, float]:
+    narrative = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
+    support_mass_snapshot = (
+        narrative.get("support_mass_snapshot") if isinstance(narrative.get("support_mass_snapshot"), dict) else {}
+    )
+    support_quality_snapshot = (
+        narrative.get("support_quality_snapshot")
+        if isinstance(narrative.get("support_quality_snapshot"), dict)
+        else {}
+    )
+    contested_categories = {
+        str(item).strip()
+        for item in (
+            narrative.get("contested_categories")
+            if isinstance(narrative.get("contested_categories"), list)
+            else []
+        )
+        if str(item or "").strip()
+    }
+    continuity_depth = _clamp01(narrative.get("continuity_depth"), 0.0)
+    identity_gravity = _clamp01(narrative.get("identity_gravity"), 0.0)
+    lineage_gravity = _clamp01(narrative.get("lineage_gravity"), 0.0)
+    bond_depth = _clamp01(narrative.get("bond_depth"), 0.0)
+    commitment_carry = _clamp01(narrative.get("commitment_carry"), 0.0)
+    selfhood_integrity = _clamp01(narrative.get("selfhood_integrity"), 0.0)
+    agency_drive = _clamp01(narrative.get("agency_drive"), 0.0)
+    rhythm_continuity = _clamp01(narrative.get("rhythm_continuity"), 0.0)
+
+    contact_categories = ("bond_style", "presence_style", "commitment_style", "repair_style")
+    boundary_categories = ("boundary_style", "selfhood_style")
+    selfhood_categories = ("selfhood_style", "agency_style", "rhythm_style")
+    agency_categories = ("agency_style", "rhythm_style", "selfhood_style")
+
+    def support_confidence(categories: tuple[str, ...]) -> float:
+        mass = _semantic_snapshot_level(support_mass_snapshot, categories)
+        quality = _semantic_snapshot_level(support_quality_snapshot, categories)
+        return _clamp01(0.64 * quality + 0.36 * mass, 0.0)
+
+    contact_support = support_confidence(contact_categories)
+    boundary_support = support_confidence(boundary_categories)
+    selfhood_support = support_confidence(selfhood_categories)
+    agency_support = support_confidence(agency_categories)
+
+    contact_confidence = _clamp01(
+        0.60 * contact_support
+        + 0.18 * continuity_depth
+        + 0.10 * bond_depth
+        + 0.08 * commitment_carry
+        + 0.04 * lineage_gravity,
+        0.0,
+    )
+    boundary_confidence = _clamp01(
+        0.58 * boundary_support + 0.24 * identity_gravity + 0.18 * continuity_depth,
+        0.0,
+    )
+    selfhood_confidence = _clamp01(
+        0.52 * selfhood_support
+        + 0.24 * identity_gravity
+        + 0.14 * continuity_depth
+        + 0.10 * selfhood_integrity,
+        0.0,
+    )
+    agency_confidence = _clamp01(
+        0.50 * agency_support
+        + 0.22 * identity_gravity
+        + 0.14 * continuity_depth
+        + 0.08 * agency_drive
+        + 0.06 * rhythm_continuity,
+        0.0,
+    )
+    rhythm_confidence = _clamp01(
+        0.42 * agency_support
+        + 0.20 * selfhood_support
+        + 0.16 * identity_gravity
+        + 0.10 * continuity_depth
+        + 0.12 * rhythm_continuity,
+        0.0,
+    )
+    return {
+        "contact_confidence": round(contact_confidence, 3),
+        "boundary_confidence": round(boundary_confidence, 3),
+        "selfhood_confidence": round(selfhood_confidence, 3),
+        "agency_confidence": round(agency_confidence, 3),
+        "rhythm_confidence": round(rhythm_confidence, 3),
+        "contested_contact_pressure": round(
+            _semantic_contested_pressure(contested_categories, contact_categories, contact_confidence),
+            3,
+        ),
+        "contested_boundary_pressure": round(
+            _semantic_contested_pressure(contested_categories, boundary_categories, boundary_confidence),
+            3,
+        ),
+        "contested_selfhood_pressure": round(
+            _semantic_contested_pressure(contested_categories, selfhood_categories, selfhood_confidence),
+            3,
+        ),
+        "continuity_depth": round(continuity_depth, 3),
+        "identity_gravity": round(identity_gravity, 3),
+        "lineage_gravity": round(lineage_gravity, 3),
+    }
 
 
 def _semantic_counterpart_motive_bias(semantic_narrative_profile: dict[str, Any] | None) -> dict[str, Any]:
@@ -115,6 +232,7 @@ def _counterpart_window_profile(
 ) -> dict[str, Any]:
     assessment = counterpart_assessment if isinstance(counterpart_assessment, dict) else {}
     narrative = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
+    semantic_evidence = _window_semantic_evidence(narrative)
     carryover = interaction_carryover if isinstance(interaction_carryover, dict) else {}
     event = current_event if isinstance(current_event, dict) else {}
     prior = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
@@ -130,6 +248,17 @@ def _counterpart_window_profile(
     history = _clamp01(narrative.get("history_weight"), 0.0)
     repair = _clamp01(narrative.get("repair_residue"), 0.0)
     tension = _clamp01(narrative.get("tension_residue"), 0.0)
+    identity_gravity = _clamp01(semantic_evidence.get("identity_gravity"), 0.0)
+    lineage_gravity = _clamp01(semantic_evidence.get("lineage_gravity"), 0.0)
+    continuity_depth = _clamp01(semantic_evidence.get("continuity_depth"), 0.0)
+    contact_confidence = _clamp01(semantic_evidence.get("contact_confidence"), 0.0)
+    selfhood_confidence = _clamp01(semantic_evidence.get("selfhood_confidence"), 0.0)
+    agency_confidence = _clamp01(semantic_evidence.get("agency_confidence"), 0.0)
+    rhythm_confidence = _clamp01(semantic_evidence.get("rhythm_confidence"), 0.0)
+    contested_contact_pressure = _clamp01(semantic_evidence.get("contested_contact_pressure"), 0.0)
+    contested_boundary_pressure = _clamp01(semantic_evidence.get("contested_boundary_pressure"), 0.0)
+    contested_selfhood_pressure = _clamp01(semantic_evidence.get("contested_selfhood_pressure"), 0.0)
+    long_term_axis_ratio = _clamp01(float(max(0, int(narrative.get("long_term_axis_count") or 0))) / 3.0, 0.0)
     motive_vector = _semantic_counterpart_motive_bias(narrative)
     motive_boundary = _clamp01(motive_vector.get("boundary_pull"), 0.0)
     motive_self_rhythm = _clamp01(motive_vector.get("self_rhythm_pull"), 0.0)
@@ -155,6 +284,25 @@ def _counterpart_window_profile(
     own_rhythm_load = max(
         event_self_activity_momentum,
         effective_carryover_strength if effective_carryover_mode == "own_rhythm" else 0.45 * effective_carryover_strength if effective_carryover_mode == "small_opening" else 0.0,
+    )
+    stable_contact_support = _clamp01(
+        (
+            0.56 * contact_confidence
+            + 0.22 * lineage_gravity
+            + 0.12 * identity_gravity
+            + 0.10 * long_term_axis_ratio
+        )
+        * max(0.42, 1.0 - 0.46 * contested_contact_pressure - 0.18 * contested_boundary_pressure),
+        0.0,
+    )
+    own_rhythm_identity_hold = _clamp01(
+        (
+            0.40 * selfhood_confidence
+            + 0.36 * agency_confidence
+            + 0.24 * rhythm_confidence
+        )
+        * max(0.42, 1.0 - 0.42 * contested_selfhood_pressure - 0.18 * contested_boundary_pressure),
+        0.0,
     )
     event_tags = {
         str(tag).strip().lower()
@@ -204,6 +352,8 @@ def _counterpart_window_profile(
     if family_key == "shared":
         continuity_bonus += 0.10 * commitment + 0.08 * bond + 0.05 * history + 0.04 * repair
         continuity_bonus += 0.08 * motive_continuity + 0.06 * motive_shared_window + 0.04 * motive_memory + 0.03 * motive_support
+        continuity_bonus += 0.06 * stable_contact_support
+        continuity_discount += 0.02 * stable_contact_support
         if effective_carryover_mode == "shared_window":
             continuity_bonus += effective_carryover_strength * (0.24 if source_turn_gap <= 0 else 0.20 if source_turn_gap == 1 else 0.16)
             continuity_discount += 0.02 + 0.06 * effective_carryover_strength
@@ -223,6 +373,8 @@ def _counterpart_window_profile(
     elif family_key == "work":
         continuity_bonus += 0.12 * commitment + 0.06 * history + 0.05 * repair
         continuity_bonus += 0.06 * motive_continuity + 0.08 * motive_memory + 0.02 * motive_support
+        continuity_bonus += 0.05 * stable_contact_support
+        continuity_discount += 0.018 * stable_contact_support
         if effective_carryover_mode == "task_window":
             continuity_bonus += effective_carryover_strength * (0.26 if source_turn_gap <= 0 else 0.22 if source_turn_gap == 1 else 0.18)
             continuity_discount += 0.02 + 0.05 * effective_carryover_strength
@@ -242,6 +394,8 @@ def _counterpart_window_profile(
     else:
         continuity_bonus += 0.08 * commitment + 0.04 * bond + 0.06 * history + 0.03 * repair
         continuity_bonus += 0.08 * motive_continuity + 0.06 * motive_support + 0.04 * motive_memory + 0.03 * motive_shared_window
+        continuity_bonus += 0.04 * stable_contact_support
+        continuity_discount += 0.016 * stable_contact_support
         if effective_carryover_mode == "life_window":
             continuity_bonus += effective_carryover_strength * (0.18 if source_turn_gap <= 1 else 0.14)
             continuity_discount += 0.02 + 0.04 * effective_carryover_strength
@@ -266,6 +420,10 @@ def _counterpart_window_profile(
             continuity_bonus -= 0.03 * min(1.0, tension)
 
     continuity_bonus -= 0.08 * motive_boundary
+    if effective_carryover_mode in {"own_rhythm", "small_opening"}:
+        continuity_bonus -= 0.04 * own_rhythm_identity_hold
+    elif own_rhythm_load >= 0.48:
+        continuity_bonus -= 0.02 * max(0.0, own_rhythm_identity_hold - 0.52)
 
     if stance == "guarded" or prior_stance == "guarded":
         continuity_bonus *= 0.72
@@ -299,6 +457,10 @@ def _counterpart_window_profile(
     required_maturity -= 0.04 * motive_support
     required_maturity -= 0.04 * motive_shared_window
     required_maturity -= 0.06 * max(0.0, recontact_echo - 0.24)
+    if effective_carryover_mode in {"own_rhythm", "small_opening"}:
+        required_maturity += 0.08 * own_rhythm_identity_hold
+    elif own_rhythm_load >= 0.48:
+        required_maturity += 0.04 * max(0.0, own_rhythm_identity_hold - 0.52)
     if effective_carryover_mode == "small_opening":
         required_maturity -= 0.03
     required_maturity = _clamp01(required_maturity - continuity_discount)
@@ -314,6 +476,11 @@ def _counterpart_window_profile(
     recheck_min += int(round(6 * max(0.0, motive_self_rhythm - 0.30)))
     recheck_min -= int(round(4 * max(0.0, recontact_echo - 0.26)))
     recheck_min -= int(round(4 * motive_continuity + 3 * motive_support + 3 * motive_shared_window))
+    recheck_min -= int(round(4 * stable_contact_support))
+    if effective_carryover_mode in {"own_rhythm", "small_opening"}:
+        recheck_min += int(round(4 * own_rhythm_identity_hold))
+    elif own_rhythm_load >= 0.48:
+        recheck_min += int(round(2 * max(0.0, own_rhythm_identity_hold - 0.52)))
     recheck_min = max(10, recheck_min + continuity_recheck_delta)
 
     return {
@@ -1216,6 +1383,20 @@ def _counterpart_assessment_next(
     ):
         scene = prev_scene
 
+    scene_strengths = {
+        "repair": repair_scene_strength,
+        "care": care_scene_strength,
+        "friction": friction_scene_strength,
+        "selfhood": selfhood_scene_strength,
+        "busy": 1.0 if scene == "busy_not_disrespectful" else 0.0,
+    }
+    dominant_scene_signal = ""
+    ranked_scene_signals = sorted(scene_strengths.items(), key=lambda item: (-item[1], item[0]))
+    if ranked_scene_signals and ranked_scene_signals[0][1] >= 0.05:
+        dominant_scene_signal = ranked_scene_signals[0][0]
+    elif scene:
+        dominant_scene_signal = scene
+
     out = {
         "respect_level": respect_level,
         "reciprocity": reciprocity_level,
@@ -1225,5 +1406,17 @@ def _counterpart_assessment_next(
         "scene": scene,
         "updated_at": _now_ts(),
     }
+    out["assessment_profile"] = _counterpart_assessment_profile(
+        {
+            **out,
+            "assessment_profile": {
+                "openness_drive": openness_drive,
+                "guarded_drive": guarded_drive,
+                "guard_margin": guard_margin,
+                "dominant_scene_signal": dominant_scene_signal,
+                "scene_strengths": scene_strengths,
+            },
+        }
+    )
     out["summary"] = _counterpart_assessment_summary(out, counterpart_name=counterpart_name)
     return out

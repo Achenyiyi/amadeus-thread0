@@ -126,6 +126,97 @@ class EvalRunnerControlTests(unittest.TestCase):
         self.assertEqual(outputs["semantic_narrative_profile"]["repair_residue"], 0.54)
         self.assertEqual(outputs["agenda_lifecycle_residue"]["kind"], "held")
 
+    def test_run_graph_prefers_finalized_state_message_over_invoke_output(self) -> None:
+        run_dir = Path(self.id().replace(".", "_"))
+        run_dir = Path.cwd() / "tests" / "_tmp" / run_dir
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        class _StubGraph:
+            def update_state(self, cfg: dict[str, object], state: dict[str, object], as_node: str | None = None) -> None:
+                return None
+
+            def invoke(self, payload: dict[str, object], config: dict[str, object] | None = None) -> dict[str, object]:
+                return {"messages": [SimpleNamespace(content="stale-answer")]}
+
+            def get_state(self, cfg: dict[str, object]) -> SimpleNamespace:
+                return SimpleNamespace(
+                    values={
+                        "final_text": "finalized-answer",
+                        "messages": [SimpleNamespace(content="stale-answer")],
+                        "behavior_action": {"interaction_mode": "relationship_sensitive"},
+                    }
+                )
+
+        class _StubStore:
+            def __init__(self, *_args: object, **_kwargs: object) -> None:
+                pass
+
+            def get_profile(self) -> dict[str, object]:
+                return {}
+
+            def get_relationship(self) -> dict[str, object]:
+                return {}
+
+            def list_moments(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_skills(self) -> list[dict[str, object]]:
+                return []
+
+            def list_worldline_events(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_relationship_timeline(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_conflict_repairs(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_commitments(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_unresolved_tensions(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_semantic_self_narratives(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_revision_traces(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_source_refs(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def list_memory_quarantine(self, limit: int = 80) -> list[dict[str, object]]:
+                return []
+
+            def close(self) -> None:
+                return None
+
+        with (
+            patch("evals.run_langsmith_evals._prepare_case_runtime", return_value=run_dir),
+            patch("evals.run_langsmith_evals.reset_runtime_caches", return_value=None),
+            patch("evals.run_langsmith_evals.reset_tool_runtime_caches", return_value=None),
+            patch("evals.run_langsmith_evals.build_graph", return_value=_StubGraph()),
+            patch(
+                "evals.run_langsmith_evals.get_settings",
+                return_value=SimpleNamespace(memory_db_path=run_dir / "memories.sqlite", data_dir=run_dir),
+            ),
+            patch("evals.run_langsmith_evals.MemoryStore", _StubStore),
+            patch("evals.run_langsmith_evals._tool_names_from_audit", return_value=[]),
+        ):
+            answer, _tools, outputs = _run_graph(
+                ["hi"],
+                thread_id="stub-thread",
+                case_key="stub-case",
+                reset_case_runtime=True,
+            )
+
+        self.assertEqual(answer, "finalized-answer")
+        self.assertEqual(outputs["output"], "finalized-answer")
+        self.assertEqual(outputs["answer"], "finalized-answer")
+        self.assertEqual(outputs["final_text"], "finalized-answer")
+
     def test_example_case_ref_strips_run_specific_hex_segment(self) -> None:
         case_ref = _example_case_ref(
             {"thread_id": "natural-long-c14d065c-selfhood-carry-0"},

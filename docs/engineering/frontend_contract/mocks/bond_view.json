@@ -1,0 +1,135 @@
+{
+  "schema_version": "backend.v1",
+  "generated_at": 1710000004,
+  "kind": "bond_view",
+  "thread_id": "thread-demo",
+  "payload": {
+    "relationship_state": {
+      "stage": "warming",
+      "affinity_score": 0.72,
+      "trust_score": 0.74,
+      "notes": "Stable mutual trust is forming.",
+      "derived": true
+    },
+    "bond_state": {
+      "trust": 0.68,
+      "closeness": 0.66,
+      "hurt": 0.04
+    },
+    "relationship_timeline": [
+      {
+        "id": 7,
+        "summary": "Trust rose after a late-night conversation.",
+        "affinity_delta": 0.1,
+        "trust_delta": 0.2
+      }
+    ],
+    "counterpart_assessment_history": [
+      {
+        "id": 10,
+        "summary": "You read that Okabe is actually trying to come closer, not just saying something polite.",
+        "stance": "open",
+        "scene": "care_bid",
+        "respect_level": 0.76,
+        "reciprocity": 0.72,
+        "boundary_pressure": 0.08,
+        "reliability_read": 0.8,
+        "event_kind": "user_utterance",
+        "interaction_frame": "relationship",
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "assessment_profile": {
+          "dominant_scene_signal": "care_bid",
+          "openness_drive": 0.74,
+          "guarded_drive": 0.18,
+          "guard_margin": 0.12,
+          "scene_strengths": {
+            "care_bid": 0.81,
+            "boundary_test": 0.09
+          }
+        }
+      }
+    ],
+    "counterpart_assessment_preview": [
+      {
+        "id": 10,
+        "summary": "You read that Okabe is actually trying to come closer, not just saying something polite.",
+        "stance": "open",
+        "scene": "care_bid",
+        "respect_level": 0.76,
+        "reciprocity": 0.72,
+        "boundary_pressure": 0.08,
+        "reliability_read": 0.8,
+        "event_kind": "user_utterance",
+        "interaction_frame": "relationship",
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "assessment_profile": {
+          "dominant_scene_signal": "care_bid",
+          "openness_drive": 0.74,
+          "guarded_drive": 0.18,
+          "guard_margin": 0.12,
+          "scene_strengths": {
+            "care_bid": 0.81,
+            "boundary_test": 0.09
+          }
+        }
+      }
+    ],
+    "proactive_continuity_history": [
+      {
+        "id": 11,
+        "summary": "The pending window was not forced forward. Attention settled back into her own rhythm first.",
+        "kind": "released_to_self_activity",
+        "trace_family": "own_rhythm_busy_window",
+        "source_event_kind": "scheduled_life_due",
+        "trigger_family": "life_window",
+        "carryover_mode": "own_rhythm",
+        "relationship_weather": "warm_residue",
+        "counterpart_scene_bias": "busy_not_disrespectful",
+        "hold_count": 2,
+        "carryover_strength": 0.53,
+        "recontact_cooldown": 0.47,
+        "presence_residue": 0.33,
+        "ambient_resonance": 0.24,
+        "self_activity_momentum": 0.58,
+        "own_rhythm_bias": 0.61,
+        "primary_motive": "preserve_self_rhythm",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Let the window pass naturally first and return attention to her own rhythm."
+      }
+    ],
+    "proactive_continuity_preview": [
+      {
+        "id": 11,
+        "summary": "The pending window was not forced forward. Attention settled back into her own rhythm first.",
+        "kind": "released_to_self_activity",
+        "trace_family": "own_rhythm_busy_window",
+        "source_event_kind": "scheduled_life_due",
+        "trigger_family": "life_window",
+        "carryover_mode": "own_rhythm",
+        "relationship_weather": "warm_residue",
+        "counterpart_scene_bias": "busy_not_disrespectful",
+        "hold_count": 2,
+        "carryover_strength": 0.53,
+        "recontact_cooldown": 0.47,
+        "presence_residue": 0.33,
+        "ambient_resonance": 0.24,
+        "self_activity_momentum": 0.58,
+        "own_rhythm_bias": 0.61,
+        "primary_motive": "preserve_self_rhythm",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Let the window pass naturally first and return attention to her own rhythm."
+      }
+    ],
+    "conflict_repair": [
+      {
+        "id": 8,
+        "summary": "A small misunderstanding was repaired after she explained herself."
+      }
+    ]
+  },
+  "meta": {}
+}

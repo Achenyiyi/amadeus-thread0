@@ -232,6 +232,11 @@
       "carryover_strength": 0.57,
       "relationship_weather": "warm_residue"
     },
+    "interaction_carryover": {
+      "carryover_mode": "own_rhythm",
+      "strength": 0.57,
+      "relationship_weather": "warm_residue"
+    },
     "reconsolidation_snapshot": {
       "event_kind": "user_utterance",
       "interaction_frame": "relationship",

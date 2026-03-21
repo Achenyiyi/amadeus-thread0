@@ -301,6 +301,117 @@ class PrepareTurnContextTests(unittest.TestCase):
         self.assertEqual(semantic_calls[0], fresh_profile)
         self.assertEqual(semantic_calls[1], fresh_profile)
 
+    def test_prepare_turn_context_passes_proactive_continuity_history_into_carryover(self):
+        profile = {
+            "counterpart_id": "okabe_rintaro",
+            "name": "冈部伦太郎",
+            "short_name": "冈部",
+            "aliases": ["冈部伦太郎", "冈部"],
+        }
+        persona_core = {
+            "character_id": "kurisu_amadeus",
+            "display_name": "Amadeus 牧濑红莉栖",
+            "role_brief": "",
+            "identity_axioms": [],
+            "value_floor": [],
+            "evolution_contract": {},
+            "strict_canon": True,
+        }
+        relationship = {
+            "stage": "friend",
+            "notes": "",
+            "affinity_score": 0.0,
+            "trust_score": 0.0,
+            "derived": True,
+        }
+        store = Mock()
+        store.get_relationship.return_value = relationship
+        store.set_relationship.return_value = None
+        proactive_history = [
+            {
+                "content": {
+                    "summary": "她把窗口先按住，继续顺着自己的节奏走了一会儿。",
+                    "kind": "held",
+                    "trace_family": "own_rhythm",
+                    "carryover_mode": "own_rhythm",
+                }
+            }
+        ]
+        store.list_proactive_continuity_history.return_value = proactive_history
+        carryover_calls: list[object] = []
+
+        def _capture_recent_interaction_carryover(**kwargs):
+            carryover_calls.append(kwargs.get("proactive_continuity_history"))
+            return {}
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._active_counterpart_profile", return_value=(profile, {}))
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._active_persona_core", return_value=(persona_core, {}))
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._messages", return_value=[]))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._normalize_event_override", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.derive_pending_fragment", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.derive_pending_user_goal", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.has_active_continuation", return_value=False))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.continuation_seed_text", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._compact_thread_if_needed", return_value=None))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._science_mode_from_context", return_value=False))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._response_style_hint", return_value="natural"))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._is_external_probe_context", return_value=False))
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._retrieve_context", return_value=_retrieved_trace_payload())
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._relationship_runtime_snapshot", return_value=relationship)
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._relationship_has_meaningful_signal", return_value=True)
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._canon_okabe_recontact_baseline", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._worldline_focus", return_value=[]))
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._appraisal_event_context",
+                    return_value={"kind": "user_utterance", "event_frame": "dialogue", "tags": []},
+                )
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._semantic_narrative_profile", return_value={})
+            )
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._recent_interaction_carryover",
+                    side_effect=_capture_recent_interaction_carryover,
+                )
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._seeded_interaction_carryover_from_state", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._invoke_turn_appraisal", return_value={}))
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._build_current_event",
+                    return_value={"kind": "user_utterance", "event_frame": "dialogue", "tags": []},
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._append_recent_events",
+                    side_effect=lambda recent, event, limit=6: [event],
+                )
+            )
+            _prepare_turn_context(
+                state={"semantic_narrative_profile": {}},
+                store=store,
+                turn_now_ts=123,
+            )
+
+        self.assertEqual(store.list_proactive_continuity_history.call_count, 1)
+        self.assertGreaterEqual(len(carryover_calls), 2)
+        self.assertEqual(carryover_calls[0], proactive_history)
+        self.assertEqual(carryover_calls[1], proactive_history)
+
     def test_prepare_turn_context_backfills_retrieved_behavior_trace_before_runtime(self):
         profile = {
             "counterpart_id": "okabe_rintaro",

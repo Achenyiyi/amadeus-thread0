@@ -216,6 +216,7 @@ class AgendaLifecycleResiduePayload(TypedDict, total=False):
 
 class ThreadState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
+    final_text: str
     persona_core_override: dict[str, Any]
     counterpart_profile_override: dict[str, Any]
     persona_override_mode: str

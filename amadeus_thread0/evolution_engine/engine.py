@@ -116,6 +116,7 @@ def evolve_turn_state(
         latent_state=latent_state,
         emotion_state=emotion_state,
         bond_state=bond_state,
+        counterpart_assessment=counterpart_assessment,
         behavior_action=behavior_action,
         agenda_lifecycle_residue=agenda_lifecycle_residue,
     )

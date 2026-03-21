@@ -47,6 +47,32 @@ _SEMANTIC_QUERY_STOP_CHARS = frozenset(
     }
 )
 
+_SEMANTIC_CATEGORY_SUMMARY_THRESHOLDS = {
+    "commitment_style": 0.46,
+    "repair_style": 0.46,
+    "tension_style": 0.44,
+    "bond_style": 0.48,
+    "presence_style": 0.46,
+    "ambient_style": 0.44,
+    "boundary_style": 0.46,
+    "selfhood_style": 0.46,
+    "agency_style": 0.46,
+    "rhythm_style": 0.46,
+}
+
+_SEMANTIC_CATEGORY_SUMMARY_LINES = {
+    "commitment_style": "认真说过的约定会继续挂在心上，不会被当成随口一句。",
+    "repair_style": "说开过的误会和修复会留痕，不会瞬间重置成什么都没发生。",
+    "tension_style": "还没说开的别扭会继续影响接下来的收放，不会被强行按成已经过去。",
+    "bond_style": "共同历史已经开始沉进默认语气里，不需要每次显式提起。",
+    "presence_style": "上一轮留下的在场感会继续影响下一次靠近，不需要每次都从零开始。",
+    "ambient_style": "周围环境的细小变化会继续留在她的感知里，并自然带进开口方式。",
+    "boundary_style": "边界是否被尊重会持续留痕，不会因为一轮缓和就自动清零。",
+    "selfhood_style": "她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。",
+    "agency_style": "她有自己的节奏和主动性，靠近或沉默都不等于失去自我。",
+    "rhythm_style": "她会把自己的内部节奏延续到下一轮，不会每次回应都把自己清零。",
+}
+
 
 def _semantic_query_signature(text: str) -> str:
     chars: list[str] = []
@@ -222,6 +248,7 @@ def _semantic_narrative_profile(
         "dominant_category": "",
         "active_categories": [],
         "reactivated_categories": [],
+        "continuity_axes": [],
         "summary_lines": [],
         "anchor_lines": [],
         "prompt_anchor_lines": [],
@@ -233,6 +260,7 @@ def _semantic_narrative_profile(
         "support_quality_snapshot": {},
         "lineage_snapshot": {},
         "motive_snapshot": {},
+        "counterpart_snapshot": {},
         "identity_snapshot": {},
         "identity_lines": [],
         "identity_prompt_lines": [],
@@ -273,7 +301,9 @@ def _semantic_narrative_profile(
     support_quality_snapshot: dict[str, float] = {}
     lineage_snapshot: dict[str, float] = {}
     motive_snapshot: dict[str, dict[str, Any]] = {}
+    counterpart_snapshot: dict[str, dict[str, Any]] = {}
     identity_snapshot: dict[str, dict[str, Any]] = {}
+    continuity_axis_snapshot: dict[str, dict[str, Any]] = {}
     contested_categories: set[str] = set()
 
     for item in items:
@@ -337,6 +367,7 @@ def _semantic_narrative_profile(
             - (0.04 if contested else 0.0)
         )
         weight = max(weight, residue_floor)
+        continuity_signal = 0.0
         if category in categories:
             categories[category] = max(categories[category], weight)
             effective_sedimentation = _clamp01(
@@ -409,6 +440,57 @@ def _semantic_narrative_profile(
                     "motive_tension": dominant_motive_tension,
                     "goal_frame_examples": goal_frame_examples,
                 }
+        dominant_counterpart_stance = str(_record_value(item, "dominant_counterpart_stance", "") or "").strip()
+        dominant_counterpart_scene = str(_record_value(item, "dominant_counterpart_scene", "") or "").strip()
+        counterpart_dominant_signal = str(_record_value(item, "counterpart_dominant_scene_signal", "") or "").strip()
+        counterpart_has_signal = bool(
+            dominant_counterpart_stance
+            or dominant_counterpart_scene
+            or counterpart_dominant_signal
+            or float(_record_value(item, "counterpart_support_mass", 0.0) or 0.0) > 0.0
+        )
+        if category and counterpart_has_signal:
+            previous_counterpart = counterpart_snapshot.get(category) if isinstance(counterpart_snapshot.get(category), dict) else {}
+            previous_counterpart_score = float(previous_counterpart.get("_score", -1.0) or -1.0)
+            if weight >= previous_counterpart_score:
+                counterpart_snapshot[category] = {
+                    "_score": round(float(weight), 3),
+                    "counterpart_stance": dominant_counterpart_stance,
+                    "counterpart_scene": dominant_counterpart_scene,
+                    "counterpart_respect_level": round(float(_record_value(item, "counterpart_respect_level", 0.0) or 0.0), 3),
+                    "counterpart_reciprocity": round(float(_record_value(item, "counterpart_reciprocity", 0.0) or 0.0), 3),
+                    "counterpart_boundary_pressure": round(float(_record_value(item, "counterpart_boundary_pressure", 0.0) or 0.0), 3),
+                    "counterpart_reliability_read": round(float(_record_value(item, "counterpart_reliability_read", 0.0) or 0.0), 3),
+                    "counterpart_profile": {
+                        "openness_drive": round(float(_record_value(item, "counterpart_openness_drive", 0.0) or 0.0), 3),
+                        "guarded_drive": round(float(_record_value(item, "counterpart_guarded_drive", 0.0) or 0.0), 3),
+                        "guard_margin": round(float(_record_value(item, "counterpart_guard_margin", 0.0) or 0.0), 3),
+                        "dominant_scene_signal": counterpart_dominant_signal,
+                    },
+                    "counterpart_support_count": int(_record_value(item, "counterpart_support_count", 0) or 0),
+                    "counterpart_support_mass": round(float(_record_value(item, "counterpart_support_mass", 0.0) or 0.0), 3),
+                    "counterpart_confidence_avg": round(float(_record_value(item, "counterpart_confidence_avg", 0.0) or 0.0), 3),
+                    "counterpart_fresh_ratio": round(float(_record_value(item, "counterpart_fresh_ratio", 0.0) or 0.0), 3),
+                }
+        if category in categories and continuity_signal > 0.0:
+            previous_axis = (
+                continuity_axis_snapshot.get(category)
+                if isinstance(continuity_axis_snapshot.get(category), dict)
+                else {}
+            )
+            previous_axis_score = float(previous_axis.get("score", -1.0) or -1.0)
+            if continuity_signal >= previous_axis_score:
+                continuity_axis_snapshot[category] = {
+                    "category": category,
+                    "score": round(float(continuity_signal), 3),
+                    "horizon_tag": horizon,
+                    "reactivated": reactivated,
+                    "contested": contested,
+                    "lineage_depth": round(float(lineage_depth), 3),
+                    "primary_motive": dominant_primary_motive,
+                    "motive_tension": dominant_motive_tension,
+                    "goal_frame_examples": goal_frame_examples,
+                }
         anchor_text = str(_record_value(item, "anchor_text", "") or "").strip()
         prompt_anchor_text = str(_record_value(item, "prompt_anchor_text", "") or "").strip()
         identity_ready = bool(_record_value(item, "identity_ready", False))
@@ -444,15 +526,27 @@ def _semantic_narrative_profile(
             if identity_weight > 0.0:
                 identity_text = identity_text or anchor_text or text
                 identity_prompt_text = identity_prompt_text or prompt_anchor_text or identity_text
-                identity_snapshot[category] = {
-                    "strength": round(float(identity_weight), 3),
-                    "horizon_tag": horizon,
-                    "text": identity_text[:180],
-                    "prompt_text": identity_prompt_text[:180],
-                    "primary_motive": dominant_primary_motive,
-                    "motive_tension": dominant_motive_tension,
-                    "lineage_depth": round(float(lineage_depth), 3),
-                }
+                previous_identity = (
+                    identity_snapshot.get(category)
+                    if isinstance(identity_snapshot.get(category), dict)
+                    else {}
+                )
+                previous_strength = float(previous_identity.get("strength", -1.0) or -1.0)
+                if identity_weight >= previous_strength:
+                    identity_snapshot[category] = {
+                        "strength": round(float(identity_weight), 3),
+                        "horizon_tag": horizon,
+                        "text": identity_text[:180],
+                        "prompt_text": identity_prompt_text[:180],
+                        "primary_motive": dominant_primary_motive,
+                        "motive_tension": dominant_motive_tension,
+                        "lineage_depth": round(float(lineage_depth), 3),
+                        "sedimentation_score": round(float(sedimentation), 3),
+                        "persistence_score": round(float(persistence), 3),
+                        "integration_score": round(float(integration), 3),
+                        "support_span_s": int(support_span_s),
+                        "reactivation_hits": int(reactivation_hits),
+                    }
                 identity_items.append(
                     {
                         "score": round(float(identity_weight), 3),
@@ -521,8 +615,58 @@ def _semantic_narrative_profile(
     out["support_mass_snapshot"] = support_mass_snapshot
     out["support_quality_snapshot"] = support_quality_snapshot
     out["lineage_snapshot"] = lineage_snapshot
+    if counterpart_snapshot:
+        out["counterpart_snapshot"] = {
+            category: {
+                "counterpart_stance": str(data.get("counterpart_stance") or "").strip(),
+                "counterpart_scene": str(data.get("counterpart_scene") or "").strip(),
+                "counterpart_respect_level": round(float(data.get("counterpart_respect_level") or 0.0), 3),
+                "counterpart_reciprocity": round(float(data.get("counterpart_reciprocity") or 0.0), 3),
+                "counterpart_boundary_pressure": round(float(data.get("counterpart_boundary_pressure") or 0.0), 3),
+                "counterpart_reliability_read": round(float(data.get("counterpart_reliability_read") or 0.0), 3),
+                "counterpart_profile": {
+                    "openness_drive": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("openness_drive") or 0.0), 3),
+                    "guarded_drive": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("guarded_drive") or 0.0), 3),
+                    "guard_margin": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("guard_margin") or 0.0), 3),
+                    "dominant_scene_signal": str(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("dominant_scene_signal") or "").strip(),
+                },
+                "counterpart_support_count": int(data.get("counterpart_support_count") or 0),
+                "counterpart_support_mass": round(float(data.get("counterpart_support_mass") or 0.0), 3),
+                "counterpart_confidence_avg": round(float(data.get("counterpart_confidence_avg") or 0.0), 3),
+                "counterpart_fresh_ratio": round(float(data.get("counterpart_fresh_ratio") or 0.0), 3),
+            }
+            for category, data in counterpart_snapshot.items()
+            if str(category or "").strip() and isinstance(data, dict)
+        }
     out["identity_snapshot"] = identity_snapshot
     out["contested_categories"] = sorted(contested_categories)
+    if continuity_axis_snapshot:
+        continuity_axes = [
+            {
+                "category": str(category or "").strip(),
+                "score": round(float(payload.get("score") or 0.0), 3),
+                "horizon_tag": str(payload.get("horizon_tag") or "").strip().lower(),
+                "reactivated": bool(payload.get("reactivated", False)),
+                "contested": bool(payload.get("contested", False)),
+                "lineage_depth": round(float(payload.get("lineage_depth") or 0.0), 3),
+                "primary_motive": str(payload.get("primary_motive") or "").strip(),
+                "motive_tension": str(payload.get("motive_tension") or "").strip(),
+                "counterpart_snapshot": (
+                    out["counterpart_snapshot"].get(str(category or "").strip())
+                    if isinstance(out.get("counterpart_snapshot"), dict)
+                    else {}
+                ),
+                "goal_frame_examples": [
+                    str(goal).strip()
+                    for goal in (payload.get("goal_frame_examples") or [])
+                    if str(goal or "").strip()
+                ][:2],
+            }
+            for category, payload in continuity_axis_snapshot.items()
+            if str(category or "").strip() and isinstance(payload, dict)
+        ]
+        continuity_axes.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+        out["continuity_axes"] = continuity_axes[:5]
     if continuity_items:
         continuity_items.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
         top_continuity = continuity_items[:3]
@@ -587,15 +731,26 @@ def _semantic_narrative_profile(
         out["anchor_lines"] = report_anchor_lines[:3]
         out["prompt_anchor_lines"] = prompt_anchor_lines[:3]
 
-    if identity_items:
-        identity_items.sort(key=lambda row: float(row.get("score") or 0.0), reverse=True)
+    if identity_snapshot:
+        identity_items = sorted(
+            [
+                {
+                    "category": str(category or "").strip(),
+                    **dict(payload),
+                }
+                for category, payload in identity_snapshot.items()
+                if str(category or "").strip() and isinstance(payload, dict)
+            ],
+            key=lambda row: float(row.get("strength") or row.get("score") or 0.0),
+            reverse=True,
+        )
         identity_lines: list[str] = []
         identity_prompt_lines: list[str] = []
         long_term_self_narratives: list[dict[str, Any]] = []
         seen_identity_lines: set[str] = set()
         seen_identity_prompt_lines: set[str] = set()
         for item in identity_items:
-            score = round(float(item.get("score") or 0.0), 3)
+            score = round(float(item.get("strength") or item.get("score") or 0.0), 3)
             category = str(item.get("category") or "").strip()
             text = str(item.get("text") or "").strip()
             prompt_text = str(item.get("prompt_text") or "").strip()
@@ -622,14 +777,19 @@ def _semantic_narrative_profile(
                         "integration_score": round(float(item.get("integration_score") or 0.0), 3),
                         "support_span_s": int(item.get("support_span_s") or 0),
                         "reactivation_hits": int(item.get("reactivation_hits") or 0),
-                        "identity_strength": round(float(item.get("identity_strength") or score), 3),
+                        "identity_strength": round(float(item.get("strength") or item.get("identity_strength") or score), 3),
                         "lineage_depth": round(float(item.get("lineage_depth") or 0.0), 3),
+                        "counterpart_snapshot": (
+                            out["counterpart_snapshot"].get(category)
+                            if isinstance(out.get("counterpart_snapshot"), dict)
+                            else {}
+                        ),
                     }
                 )
         out["identity_lines"] = identity_lines
         out["identity_prompt_lines"] = identity_prompt_lines
         out["long_term_self_narratives"] = long_term_self_narratives
-        strengths = [float(item.get("score") or 0.0) for item in identity_items]
+        strengths = [float(item.get("strength") or item.get("score") or 0.0) for item in identity_items]
         long_term_identity_hits = sum(1 for item in identity_items if str(item.get("horizon_tag") or "").strip().lower() == "long_term")
         out["identity_gravity"] = round(
             float(
@@ -656,28 +816,25 @@ def _semantic_narrative_profile(
                 3,
             )
 
+    summary_candidates: list[tuple[float, str]] = []
+    for category, threshold in _SEMANTIC_CATEGORY_SUMMARY_THRESHOLDS.items():
+        score = float(categories.get(category, 0.0) or 0.0)
+        if score >= threshold:
+            line = str(_SEMANTIC_CATEGORY_SUMMARY_LINES.get(category) or "").strip()
+            if line:
+                summary_candidates.append((score, line))
+    summary_candidates.sort(key=lambda item: item[0], reverse=True)
     summary_lines: list[str] = []
-    if categories["commitment_style"] >= 0.46:
-        summary_lines.append("认真说过的约定会继续挂在心上，不会被当成随口一句。")
-    if categories["repair_style"] >= 0.46:
-        summary_lines.append("说开过的误会和修复会留痕，不会瞬间重置成什么都没发生。")
-    if categories["tension_style"] >= 0.44:
-        summary_lines.append("还没说开的别扭会继续影响接下来的收放，不会被强行按成已经过去。")
-    if categories["bond_style"] >= 0.48:
-        summary_lines.append("共同历史已经开始沉进默认语气里，不需要每次显式提起。")
-    if categories["presence_style"] >= 0.46:
-        summary_lines.append("上一轮留下的在场感会继续影响下一次靠近，不需要每次都从零开始。")
-    if categories["ambient_style"] >= 0.44:
-        summary_lines.append("周围环境的细小变化会继续留在她的感知里，并自然带进开口方式。")
-    if categories["boundary_style"] >= 0.46:
-        summary_lines.append("边界是否被尊重会持续留痕，不会因为一轮缓和就自动清零。")
-    if categories["selfhood_style"] >= 0.46:
-        summary_lines.append("她会把这段互动当成平等关系，不会为了迎合就放弃自己的判断。")
-    if categories["agency_style"] >= 0.46:
-        summary_lines.append("她有自己的节奏和主动性，靠近或沉默都不等于失去自我。")
-    if categories["rhythm_style"] >= 0.46:
-        summary_lines.append("她会把自己的内部节奏延续到下一轮，不会每次回应都把自己清零。")
-    out["summary_lines"] = summary_lines[:3]
+    seen_summary_lines: set[str] = set()
+    for _, line in summary_candidates:
+        clean = str(line or "").strip()
+        if not clean or clean in seen_summary_lines:
+            continue
+        seen_summary_lines.add(clean)
+        summary_lines.append(clean)
+        if len(summary_lines) >= 3:
+            break
+    out["summary_lines"] = summary_lines
 
     scored_items.sort(key=lambda row: row[0], reverse=True)
     top_narratives: list[dict[str, Any]] = []
@@ -691,6 +848,11 @@ def _semantic_narrative_profile(
                 "reactivated": reactivated,
                 "primary_motive": str((motive_state or {}).get("primary_motive") or "").strip(),
                 "motive_tension": str((motive_state or {}).get("motive_tension") or "").strip(),
+                "counterpart_snapshot": (
+                    out["counterpart_snapshot"].get(category)
+                    if isinstance(out.get("counterpart_snapshot"), dict)
+                    else {}
+                ),
             }
         )
     out["top_narratives"] = top_narratives
@@ -754,28 +916,52 @@ def _prefer_semantic_narrative_profile(*candidates: dict[str, Any] | None) -> di
 def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
     if not isinstance(profile, dict):
         return ""
-    presence = _clamp01(profile.get("presence_carry"), 0.0)
-    ambient = _clamp01(profile.get("ambient_attunement"), 0.0)
-    rhythm = _clamp01(profile.get("rhythm_continuity"), 0.0)
-    continuity_parts: list[str] = []
-    if presence >= 0.44:
-        continuity_parts.append("前一轮留下的在场感会自然延续，不是每次都从零开始")
-    if ambient >= 0.42:
-        continuity_parts.append("环境余波会继续留在感知里，风声光线和场景变化会顺手带进开口方式")
-    if rhythm >= 0.44:
-        continuity_parts.append("她会保留自己的内部节奏和刚才的思路惯性，不会每轮都把自己清零")
+    numeric_scores = {
+        "presence_style": _clamp01(profile.get("presence_carry"), 0.0),
+        "ambient_style": _clamp01(profile.get("ambient_attunement"), 0.0),
+        "rhythm_style": _clamp01(profile.get("rhythm_continuity"), 0.0),
+        "agency_style": _clamp01(profile.get("agency_drive"), 0.0),
+        "commitment_style": _clamp01(profile.get("commitment_carry"), 0.0),
+        "repair_style": _clamp01(profile.get("repair_residue"), 0.0),
+        "tension_style": _clamp01(profile.get("tension_residue"), 0.0),
+        "bond_style": _clamp01(profile.get("bond_depth"), 0.0),
+        "boundary_style": _clamp01(profile.get("boundary_residue"), 0.0),
+        "selfhood_style": _clamp01(profile.get("selfhood_integrity"), 0.0),
+    }
+    continuity_axes = profile.get("continuity_axes") if isinstance(profile.get("continuity_axes"), list) else []
+    for item in continuity_axes:
+        if not isinstance(item, dict):
+            continue
+        category = str(item.get("category") or "").strip()
+        if not category:
+            continue
+        numeric_scores[category] = max(
+            float(numeric_scores.get(category, 0.0) or 0.0),
+            _clamp01(item.get("score"), 0.0),
+        )
+    hint_candidates: list[tuple[float, str]] = []
+    for category, line in _SEMANTIC_CATEGORY_SUMMARY_LINES.items():
+        score = float(numeric_scores.get(category, 0.0) or 0.0)
+        threshold = float(_SEMANTIC_CATEGORY_SUMMARY_THRESHOLDS.get(category, 0.46) or 0.46)
+        if score >= threshold:
+            hint_candidates.append((score, str(line or "").strip()))
     lines = [str(item).strip() for item in (profile.get("summary_lines") or []) if str(item or "").strip()]
-    if lines or continuity_parts:
-        merged = continuity_parts + lines
+    for index, item in enumerate(lines):
+        hint_candidates.append((0.35 - 0.01 * index, item))
+    if hint_candidates:
+        hint_candidates.sort(key=lambda item: item[0], reverse=True)
         seen: set[str] = set()
         deduped: list[str] = []
-        for item in merged:
+        for _, item in hint_candidates:
             norm = str(item or "").strip()
             if not norm or norm in seen:
                 continue
             seen.add(norm)
             deduped.append(norm)
-        return "；".join(deduped[:3])
+            if len(deduped) >= 3:
+                break
+        if deduped:
+            return "；".join(deduped)
     anchor_lines = [str(item).strip() for item in (profile.get("anchor_lines") or []) if str(item or "").strip()]
     if anchor_lines:
         return "；".join(anchor_lines[:2])

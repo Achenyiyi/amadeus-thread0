@@ -610,6 +610,20 @@ def _prepare_turn_runtime(
         behavior_action,
         world_model_state=world_model_state,
     )
+    writeback_reconsolidation_snapshot = build_reconsolidation_snapshot(
+        current_event=current_event,
+        appraisal=appraisal,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+        latent_state=evolution_state,
+        emotion_state=emotion_state,
+        bond_state=bond_state,
+        counterpart_assessment=counterpart_assessment,
+        behavior_action=behavior_action,
+        behavior_plan=behavior_plan,
+        interaction_carryover=interaction_carryover,
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
+    )
     if not external_probe_mode and current_event_kind in {
         "user_utterance",
         "gesture_signal",
@@ -640,6 +654,7 @@ def _prepare_turn_runtime(
             behavior_plan=behavior_plan,
             interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
+            reconsolidation_snapshot=writeback_reconsolidation_snapshot,
             source="auto:passive_evolution",
             confidence=behavior_trace_confidence,
         )
@@ -654,6 +669,7 @@ def _prepare_turn_runtime(
             current_event=current_event,
             world_model_state=world_model_state,
             behavior_action=behavior_action,
+            reconsolidation_snapshot=writeback_reconsolidation_snapshot,
             source="auto:passive_evolution_final",
             allow_behavior_action_inference=True,
             allow_event_behavior_fallback=False,
@@ -665,17 +681,45 @@ def _prepare_turn_runtime(
                 persona_core=persona_core,
                 counterpart_profile=profile,
             )
+            # Re-read persisted memory surfaces so prompt/runtime state matches the final writeback.
+            refreshed_retrieved = _retrieve_context(effective_user_text or user_text, store)
             refreshed_semantic_narratives = list(store.list_semantic_self_narratives(limit=20))
-            if isinstance(retrieved, dict):
+            if isinstance(refreshed_retrieved, dict):
+                refreshed_relationship = (
+                    refreshed_retrieved.get("relationship")
+                    if isinstance(refreshed_retrieved.get("relationship"), dict)
+                    else store.get_relationship()
+                )
                 retrieved = {
-                    **retrieved,
+                    **refreshed_retrieved,
                     "semantic_self_narratives": refreshed_semantic_narratives,
                 }
+            else:
+                refreshed_relationship = store.get_relationship()
+                if isinstance(retrieved, dict):
+                    retrieved = {
+                        **retrieved,
+                        "semantic_self_narratives": refreshed_semantic_narratives,
+                    }
+            relationship_seed = _prefer_refreshed_relationship_state(relationship, refreshed_relationship)
+            worldline_focus = _worldline_focus(store)
             semantic_narrative_profile = _semantic_narrative_profile(
                 refreshed_semantic_narratives,
                 user_text=effective_user_text or user_text,
                 current_event=current_event,
             )
+            relationship = _relationship_runtime_snapshot(
+                relationship=relationship_seed,
+                bond_state=bond_state,
+                world_model_state=world_model_state,
+                counterpart_assessment=counterpart_assessment,
+                semantic_narrative_profile=semantic_narrative_profile,
+            )
+            if isinstance(retrieved, dict):
+                retrieved = {
+                    **retrieved,
+                    "relationship": relationship,
+                }
     reconsolidation_snapshot = build_reconsolidation_snapshot(
         current_event=current_event,
         appraisal=appraisal,
@@ -684,7 +728,10 @@ def _prepare_turn_runtime(
         latent_state=evolution_state,
         emotion_state=emotion_state,
         bond_state=bond_state,
+        counterpart_assessment=counterpart_assessment,
         behavior_action=behavior_action,
+        behavior_plan=behavior_plan,
+        interaction_carryover=interaction_carryover,
         agenda_lifecycle_residue=agenda_lifecycle_residue,
     )
     behavior_agenda = _merge_behavior_agenda(
