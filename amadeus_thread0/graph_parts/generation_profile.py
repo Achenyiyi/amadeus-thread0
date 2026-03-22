@@ -104,6 +104,26 @@ def _looks_like_daily_surface_scene(text: str, *, science_mode: bool = False) ->
         return True
     if _is_soft_presence_checkin_request(raw) or _wants_presence_reassurance(raw):
         return True
+    ambient_markers = {
+        "安静",
+        "静得",
+        "没什么动静",
+        "背景声",
+    }
+    ambient_feeling_markers = {
+        "发毛",
+        "发闷",
+        "绷着",
+        "不对劲",
+        "空了一截",
+        "胡思乱想",
+    }
+    if (
+        not science_mode
+        and _has_any_marker(raw, ambient_markers)
+        and _has_any_marker(raw, ambient_feeling_markers)
+    ):
+        return True
     return _is_nonrelational_support_request(raw, science_mode)
 
 
@@ -128,7 +148,10 @@ def _is_light_free_dialog_turn(
     if _wants_quick_judgment(text) or _needs_structured_answer(text, ""):
         return False
     playful_memory_banter = _is_playful_memory_request(text)
-    if _has_any_marker(text, SCIENCE_KEYWORDS | SELFHOOD_KEYWORDS):
+    daily_surface_scene = _looks_like_daily_surface_scene(text, science_mode=science_mode)
+    if _has_any_marker(text, SELFHOOD_KEYWORDS):
+        return False
+    if _has_any_marker(text, SCIENCE_KEYWORDS) and not daily_surface_scene:
         return False
     if _has_any_marker(text, MEMORY_RECALL_KEYWORDS) and not playful_memory_banter:
         return False
@@ -138,7 +161,7 @@ def _is_light_free_dialog_turn(
         return False
     if playful_memory_banter:
         return True
-    return _looks_like_daily_surface_scene(text, science_mode=science_mode)
+    return daily_surface_scene
 
 
 def _load_daily_surface_preference_corpus() -> list[dict[str, Any]]:
@@ -324,14 +347,23 @@ def _daily_surface_alignment_metrics(answer: str, *, profile: dict[str, Any] | N
             brevity_penalty = min(0.34, (0.42 - length_ratio) / 0.42 * 0.34)
         elif length_ratio < 0.56 and chosen_support < 0.80:
             brevity_penalty = min(0.12, (0.56 - length_ratio) / 0.14 * 0.12)
-    score = chosen_support - 0.82 * rejected_pull - brevity_penalty
+    case_name = str(prof.get("case_name") or "").strip()
+    surface_penalty = 0.0
+    if case_name in {"surface_ambient_quiet_okabe", "surface_daily_banter_okabe"}:
+        if re.search(r"(前兆|预兆|要出(?:什么)?大事|不祥|暴风雨前|阴谋)", text):
+            surface_penalty += 0.24
+    if case_name == "surface_ambient_quiet_okabe":
+        if re.search(r"(专心思考|好好享受这(?:片刻|份)?宁静|享受这(?:片刻|份)?宁静)", text):
+            surface_penalty += 0.20
+    score = chosen_support - 0.82 * rejected_pull - brevity_penalty - surface_penalty
     return {
         "used": True,
-        "case_name": str(prof.get("case_name") or "").strip(),
+        "case_name": case_name,
         "score": round(score, 4),
         "chosen_support": round(chosen_support, 4),
         "rejected_pull": round(rejected_pull, 4),
         "brevity_penalty": round(brevity_penalty, 4),
+        "surface_penalty": round(surface_penalty, 4),
         "length_ratio": round(length_ratio, 4),
     }
 
@@ -342,11 +374,14 @@ def _daily_surface_preference_lines(user_text: str, *, science_mode: bool = Fals
         return []
 
     top_focus = str(profile.get("focus") or "").strip()
+    case_name = str(profile.get("case_name") or "").strip()
     if not top_focus:
         return []
     focus_text = top_focus[:72].rstrip("。！？!?；;，, ")
     if not focus_text:
         return []
+    if case_name == "surface_ambient_quiet_okabe":
+        focus_text += "，先接住当下体感，不要把话题抬成前兆、预警或顺势说教"
     return [f"这类轻场景常见的自然落点是：{focus_text}。"]
 
 
@@ -540,6 +575,14 @@ def _generation_profile(
     )
     less_teacherly = _wants_less_teacherly_reply(user_text)
     deescalated_science = _is_nonrelational_science_stress(user_text, science_mode) and less_teacherly
+    daily_surface_profile = (
+        _daily_surface_profile(user_text, science_mode=science_mode)
+        if event_kind == "user_utterance" and not continuation_mode and not science_mode
+        else {}
+    )
+    daily_surface_case = str(daily_surface_profile.get("case_name") or "").strip()
+    daily_surface_score = float(daily_surface_profile.get("score") or 0.0)
+    strong_daily_surface_turn = bool(daily_surface_case) and daily_surface_score >= 0.94
     mode = str(runtime_mode or "").strip().lower()
     if mode not in {"experience", "regression"}:
         mode = "regression" if bool(EVAL_MODE) else "experience"
@@ -638,6 +681,7 @@ def _generation_profile(
         and not care_scene_turn
         and not friction_scene_turn
         and not low_followup_turn
+        and not strong_daily_surface_turn
         and not _wants_quick_judgment(user_text)
         and not _needs_structured_answer(user_text, "")
         and not deescalated_science
@@ -678,6 +722,15 @@ def _generation_profile(
         max_tokens = _cap_tokens(max_tokens, 128)
         temperature = min(temperature, 0.24 if exploratory else 0.22)
         top_p = min(top_p, 0.80)
+    if strong_daily_surface_turn:
+        if daily_surface_case == "surface_ambient_quiet_okabe":
+            max_tokens = _cap_tokens(max_tokens, 120 if exploratory else 104)
+            temperature = min(temperature, 0.22 if exploratory else 0.18)
+            top_p = min(top_p, 0.78 if exploratory else 0.74)
+        else:
+            max_tokens = _cap_tokens(max_tokens, 148 if exploratory else 128)
+            temperature = min(temperature, 0.26 if exploratory else 0.20)
+            top_p = min(top_p, 0.82 if exploratory else 0.78)
 
     if _wants_quick_judgment(user_text):
         max_tokens = _cap_tokens(max_tokens, 192)
@@ -854,6 +907,13 @@ def _generation_profile(
         temperature += (temp_phase - 0.5) * 2.0 * jitter
         top_p += (top_p_phase - 0.5) * min(0.05, max(0.01, jitter))
         presence_penalty += abs(temp_phase - 0.5) * 0.03
+    if strong_daily_surface_turn:
+        if daily_surface_case == "surface_ambient_quiet_okabe":
+            temperature = min(temperature, 0.22 if exploratory else 0.18)
+            top_p = min(top_p, 0.78 if exploratory else 0.74)
+        else:
+            temperature = min(temperature, 0.26 if exploratory else 0.20)
+            top_p = min(top_p, 0.82 if exploratory else 0.78)
 
     if default_sampling_candidate:
         temperature_out = None

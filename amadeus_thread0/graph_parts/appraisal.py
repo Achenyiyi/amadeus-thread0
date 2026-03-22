@@ -708,25 +708,59 @@ def _postprocess_appraisal_payload(
     emotion_label = str(out.get("emotion_label") or "").strip().lower()
     interaction_frame = str(out.get("interaction_frame") or "").strip().lower()
     selfhood_scene = str(out.get("selfhood_scene") or "").strip().lower()
-    companionship_salience = _clamp01(salience.get("companionship"), 0.0)
-    relationship_salience = _clamp01(salience.get("relationship"), 0.0)
-    selfhood_salience = _clamp01(salience.get("selfhood"), 0.0)
-    memory_salience = _clamp01(salience.get("memory"), 0.0)
-    task_salience = _clamp01(salience.get("task"), 0.0)
+    companionship_salience = 0.0
+    relationship_salience = 0.0
+    selfhood_salience = 0.0
+    memory_salience = 0.0
+    task_salience = 0.0
+    relational_salience = 0.0
+    warm_relational_turn = False
+
+    def _refresh_salience_projection(*, apply_frame_floor: bool = False) -> None:
+        nonlocal emotion_label
+        nonlocal interaction_frame
+        nonlocal selfhood_scene
+        nonlocal companionship_salience
+        nonlocal relationship_salience
+        nonlocal selfhood_salience
+        nonlocal memory_salience
+        nonlocal task_salience
+        nonlocal relational_salience
+        nonlocal warm_relational_turn
+
+        emotion_label = str(out.get("emotion_label") or "").strip().lower()
+        companionship_salience = _clamp01(salience.get("companionship"), 0.0)
+        relationship_salience = _clamp01(salience.get("relationship"), 0.0)
+        selfhood_salience = _clamp01(salience.get("selfhood"), 0.0)
+        memory_salience = _clamp01(salience.get("memory"), 0.0)
+        task_salience = _clamp01(salience.get("task"), 0.0)
+        if apply_frame_floor:
+            if interaction_frame == "selfhood":
+                selfhood_salience = max(selfhood_salience, 0.62)
+            elif interaction_frame == "relationship":
+                relationship_salience = max(relationship_salience, 0.60)
+            elif interaction_frame == "memory_recall":
+                memory_salience = max(memory_salience, 0.60)
+            elif interaction_frame == "companion":
+                companionship_salience = max(companionship_salience, 0.56)
+            elif interaction_frame in {"casual", "natural"} and task_salience <= 0.42 and not science_mode:
+                companionship_salience = max(companionship_salience, 0.56)
+        relational_salience = max(relationship_salience, companionship_salience)
+        warm_relational_turn = (
+            interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
+            and relational_salience >= 0.58
+            and selfhood_salience <= relational_salience + 0.08
+            and not bool(signals.get("conflict"))
+            and not bool(signals.get("withdrawal"))
+            and emotion_label not in {"hurt", "angry"}
+        )
+
     prev_hurt = _clamp01(prev_bond.get("hurt"), 0.0)
     text_selfhood_scene = _selfhood_preference_scene_from_text(text)
     explicit_hierarchy_pressure = _explicit_hierarchy_pressure(text)
     explicit_boundary_test = _explicit_boundary_test(text)
     explicit_repair_attempt = _explicit_repair_attempt(text)
-    relational_salience = max(relationship_salience, companionship_salience)
-    warm_relational_turn = (
-        interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
-        and relational_salience >= 0.58
-        and selfhood_salience <= relational_salience + 0.08
-        and not bool(signals.get("conflict"))
-        and not bool(signals.get("withdrawal"))
-        and emotion_label not in {"hurt", "angry"}
-    )
+    _refresh_salience_projection()
     tension_hold_turn = _has_any_marker(
         text,
         TENSION_KEYWORDS
@@ -866,6 +900,8 @@ def _postprocess_appraisal_payload(
         emotion["linger"] = max(1, min(4, int(emotion.get("linger", 0) or 0)))
         bond_delta["repair_confidence"] = max(_clamp_signed(bond_delta.get("repair_confidence"), -0.35, 0.35, 0.0), 0.06)
 
+    _refresh_salience_projection(apply_frame_floor=True)
+
     positive_relational_pull = max(
         relational_salience,
         memory_salience,
@@ -942,7 +978,46 @@ def _postprocess_appraisal_payload(
             allostasis_delta["autonomy_need"] = max(_clamp_signed(allostasis_delta.get("autonomy_need"), -0.35, 0.35, 0.0), 0.05)
         out["reason"] = "coercive_boundary_calibrated"
 
+    _refresh_salience_projection(apply_frame_floor=True)
+
+    implicit_soft_selfhood_scene = (
+        selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence", "own_rhythm_autonomy"}
+        and not text_selfhood_scene
+    )
+    implicit_relational_selfhood_scene = (
+        selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"}
+        and not text_selfhood_scene
+    )
+    companion_smalltalk_turn = (
+        implicit_relational_selfhood_scene
+        and interaction_frame in {"companion", "casual", "natural"}
+        and emotion_label in {"tease", "care", "neutral"}
+        and not bool(signals.get("conflict"))
+        and not bool(signals.get("withdrawal"))
+        and task_salience <= 0.42
+        and relational_salience >= 0.56
+    )
+    repair_or_guarded_relational_turn = (
+        implicit_relational_selfhood_scene
+        and interaction_frame in {"relationship", "companion", "memory_recall", "selfhood"}
+        and (
+            explicit_repair_attempt
+            or tension_hold_turn
+            or bool(signals.get("repair"))
+            or repair_residue_pressure >= 0.34
+            or guarded_residue_pressure >= 0.30
+        )
+        and relationship_salience >= max(0.50, companionship_salience - 0.04)
+    )
     if selfhood_scene in {"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence", "own_rhythm_autonomy"}:
+        if companion_smalltalk_turn:
+            selfhood_scene = ""
+            out["reason"] = "implicit_selfhood_reframed_to_companion"
+            if interaction_frame in {"casual", "natural"}:
+                interaction_frame = "companion"
+        elif repair_or_guarded_relational_turn:
+            selfhood_scene = ""
+            out["reason"] = "implicit_selfhood_reframed_to_relational"
         if (
             interaction_frame == "companion"
             and companionship_salience >= 0.72
@@ -956,7 +1031,9 @@ def _postprocess_appraisal_payload(
         elif warm_relational_turn and relational_salience >= max(0.62, selfhood_salience):
             selfhood_scene = ""
 
-    if not selfhood_scene and interaction_frame == "selfhood" and warm_relational_turn:
+    if not selfhood_scene and interaction_frame == "selfhood" and (
+        warm_relational_turn or repair_or_guarded_relational_turn or companion_smalltalk_turn
+    ):
         if relationship_salience >= max(companionship_salience, memory_salience):
             interaction_frame = "relationship"
         elif memory_salience >= companionship_salience:

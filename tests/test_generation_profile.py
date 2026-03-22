@@ -1,6 +1,59 @@
 import unittest
 
-from amadeus_thread0.graph_parts.generation_profile import _generation_profile
+from amadeus_thread0.graph_parts.generation_profile import (
+    _daily_surface_preference_lines,
+    _daily_surface_profile,
+    _generation_profile,
+    _is_light_free_dialog_turn,
+)
+
+
+class DailySurfaceProfileSelectionTests(unittest.TestCase):
+    def test_daily_surface_profile_hits_ambient_first_turn_cases(self):
+        expectations = {
+            "你那边怎么这么安静。别端着，正常吐槽我两句。": "surface_daily_banter_okabe",
+            "今天实验室居然安静得让人发毛。": "surface_ambient_quiet_okabe",
+        }
+        for text, case_name in expectations.items():
+            with self.subTest(text=text):
+                profile = _daily_surface_profile(text, science_mode=False)
+                self.assertEqual(str(profile.get("case_name") or ""), case_name)
+                self.assertGreaterEqual(float(profile.get("score") or 0.0), 0.9)
+
+    def test_daily_surface_preference_lines_for_ambient_first_turn_cases_stay_grounded(self):
+        ambient_lines = _daily_surface_preference_lines("今天实验室居然安静得让人发毛。", science_mode=False)
+        banter_lines = _daily_surface_preference_lines("你那边怎么这么安静。别端着，正常吐槽我两句。", science_mode=False)
+
+        self.assertTrue(ambient_lines)
+        self.assertTrue(banter_lines)
+        self.assertIn("安静", ambient_lines[0])
+        self.assertIn("吐槽", banter_lines[0])
+
+        for forbidden in ("记录", "数据", "报告", "异常", "暴风雨前", "阴谋"):
+            self.assertNotIn(forbidden, ambient_lines[0])
+            self.assertNotIn(forbidden, banter_lines[0])
+
+    def test_light_free_dialog_turn_allows_ambient_lab_smalltalk(self):
+        self.assertTrue(
+            _is_light_free_dialog_turn(
+                user_text="今天实验室居然安静得让人发毛。",
+                response_style_hint="companion",
+                science_mode=False,
+                continuation_mode=False,
+                current_event_kind="user_utterance",
+            )
+        )
+
+    def test_light_free_dialog_turn_still_blocks_actual_science_help(self):
+        self.assertFalse(
+            _is_light_free_dialog_turn(
+                user_text="实验又卡住了，帮我看看哪里不对。",
+                response_style_hint="companion",
+                science_mode=False,
+                continuation_mode=False,
+                current_event_kind="user_utterance",
+            )
+        )
 
 
 class GenerationProfileRhythmTests(unittest.TestCase):
@@ -163,6 +216,25 @@ class GenerationProfileRhythmTests(unittest.TestCase):
         self.assertIsNone(profile.get("top_p"))
         self.assertIsNone(profile.get("frequency_penalty"))
         self.assertIsNone(profile.get("presence_penalty"))
+
+    def test_strong_daily_surface_profile_uses_measured_sampling(self):
+        profile = _generation_profile(
+            **{
+                **self._base_kwargs(),
+                "runtime_mode": "experience",
+                "user_text": "今天实验室居然安静得让人发毛。",
+                "behavior_action": {
+                    "interaction_mode": "companion_reply",
+                    "task_focus": "balanced",
+                    "followup_intent": "soft",
+                    "attention_target": "counterpart_state",
+                },
+            }
+        )
+        self.assertLessEqual(int(profile.get("max_tokens") or 999), 136)
+        self.assertLessEqual(float(profile.get("temperature") or 1.0), 0.24)
+        self.assertLessEqual(float(profile.get("top_p") or 1.0), 0.80)
+        self.assertIsNotNone(profile.get("frequency_penalty"))
 
     def test_selfhood_turn_uses_tighter_generation_budget(self):
         regression_profile = _generation_profile(

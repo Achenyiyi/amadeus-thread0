@@ -11,7 +11,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-03-21`
+- Date: `2026-03-23`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, no frontend expansion yet
 - Mainline phase: `backend maturation`
 - Active backend focus:
@@ -19,11 +19,51 @@ This file is the live development ledger for `amadeus-thread0`.
   - `reconsolidation -> self-narrative -> counterpart assessment persistence`
   - `own-rhythm / proactive continuity traces`
 - Latest completed technical milestone:
+  - closed the remaining `repair_apology` residue trio from the previous manual-read pass without adding new persona scripts:
+    - `generic_scold_template` coverage now has an explicit regression for the `你这种小心翼翼的样子` authored-scold variant seen in `casual_repair_user`
+    - `repair_authored_softener` now has focused regressions for the `把话说到这份上了 / 保留“完全原谅”的权利` connective branch seen in `repair_residue_okabe`
+    - `repair_underresolved_brief` is now locked by direct detect/sanitize regressions on compact repair answers such as `介意。当然介意。`
+  - refreshed repair smoke after those targeted root-fix regressions stays green: `evals/reports/freeze-gate-smokes-20260323-012039-repair-brief-authored-rootfix-v1.{json,md}`
+  - closed the `repair_punitive_tail` inline-coldwar replacement bug at the real root: the sanitize path no longer leaks literal `\1`, and the inline punitive-tail rewrite now strips residual dash/comma shells through an explicit replacement function instead of brittle backreference text
+  - extended repair surface coverage without adding new persona scripts:
+    - `repair_authored_softener` now also catches `既然你都挑明了 / 既然你是认真的 / 把话撂这儿` class connective tissue in repair followups
+    - `idle_task_reframe` now also applies to repair-followup turns, catching `后续数据整理好给我看 / 共犯的义务` class taskified landings
+  - refreshed repair smoke after those fixes is structurally green again: `evals/reports/freeze-gate-smokes-20260323-004418-repair-authored-task-tail-rootfix-v1.{json,md}`
+  - closed the remaining `repair_everyday_user` scorekeeping-tail gap without adding persona scripts: repair-sensitive surface diagnosis now distinguishes `记账回刺` tails such as `先说好 / 毫不客气地吐槽回去`, routes them through rewrite filtering plus sanitize fallback, and keeps the fix scoped to postprocess/rewrite quality control
+  - refreshed repair smoke after that fix stays green: `evals/reports/freeze-gate-smokes-20260322-114234-repair-scorekeeping-tail-rootfix-v1.{json,md}`
+  - the latest current-code freeze-gate sweep is green across all three required packs on one baseline:
+    - `evals/reports/freeze-gate-smokes-20260322-051158-everyday-banter-rootfix-v2.{json,md}`
+    - `evals/reports/freeze-gate-smokes-20260322-051452-repair-apology-post-banter-v2.{json,md}`
+    - `evals/reports/freeze-gate-smokes-20260322-051807-self-rhythm-post-banter-v2.{json,md}`
+  - fixed the remaining `daily_banter_okabe` naturalness hole: the system was already matching `surface_daily_banter_okabe`, but good banter rewrites were being rejected because a single natural snapback question was being over-penalized as `overquestioning`; low-pressure banter invitations now allow one rhetorical opener with a real landing
+  - refreshed `everyday` smoke after that fix keeps the pack green while the banter answer no longer falls back to `整理数据 / 温情戏码` task-explainer residue
+  - fixed the `own_rhythm_okabe` machine-self leak: autonomy scenes now treat `只是个随叫随到的程序` as `selfhood_meta_proof`, and selfhood scenes also flag `记忆和判断里 / 归类为对象` class classifier-language as `meta_self_explainer`
+  - refreshed `self_rhythm_boundary` smoke after that fix stays green and removes the earlier `但不想见你。/ 记忆和判断里 / 归类对象` style machine-explainer output: `evals/reports/freeze-gate-smokes-20260322-053037-self-rhythm-ownrhythm-humanize-v4.{json,md}`
+  - fixed the real root cause behind ambient first-turn drift: `_is_light_free_dialog_turn()` had been blocking `实验室` ambient smalltalk too early via `SCIENCE_KEYWORDS`, so the first turn never entered the `daily_surface` light-dialog path even though `_looks_like_daily_surface_scene()` already recognized it as ordinary companionship
+  - `surface_ambient_quiet_okabe` now reaches the intended light-dialog branch in real runtime, receives case-aware preference guidance, tighter generation caps, and rewrite fallback with curated positive candidates when the first draft drifts away from grounded present-tense atmosphere
+  - refreshed real-model everyday smoke artifact after the gate fix is green and the `idle_chat_okabe` first turn no longer falls back to `前兆 / 警报 / 整理数据` style drift: `evals/reports/freeze-gate-smokes-20260322-043610-ambient-firstturn-rootfix-v5.{json,md}`
+  - upstream persona runtime now treats ambient lab-setting mentions as ordinary companionship unless the user also shows explicit work/problem-solving intent, so `实验室` no longer falsely flips the turn into `science_partner`
+  - everyday idle-chat surface diagnostics now explicitly catch two remaining drift families that were slipping past rewrite:
+    - `ambient smalltalk -> task push / lab-status report` such as `整理记录 / 数据起伏 / 异常 / 新理论`
+    - `ambient smalltalk -> foreboding/stagey lab framing` such as `阴谋的味道 / 没警报 / 不祥预感 / 暴风雨前 / 中二演出 / 死寂`
+  - the refreshed real-model everyday smoke artifact remains green after the upstream science-mode fix plus the new idle-chat root-cause surface coverage: `evals/reports/freeze-gate-smokes-20260322-033125-idle-chat-surface-rootcause-v1.{json,md}`
+  - ambient idle-chat postprocess now distinguishes `environment smalltalk with lab nouns` from true science-task turns, so everyday chat such as `今天实验室居然安静得让人发毛` no longer skips daily-surface cleanup just because the user utterance contains `实验`
+  - daily-surface sanitization now covers three previously observed real-model ambient drift families in the same existing cleanup path:
+    - `仪器 / 风扇 / 电流声 / 数据流 / 组织正在暗中逼近`
+    - `Deadline / 停机 / 电源总闸 / 数据不可靠`
+    - `风扇转速 / 低噪环境 / 误差来源 / 阴谋论`
+  - new real-model everyday smoke artifact after the ambient-smalltalk cleanup passes remains green: `evals/reports/freeze-gate-smokes-20260322-001616-daily-surface-postprocess-ambient-v3.{json,md}`
+  - appraisal postprocess now refreshes live salience projections before downstream reframe checks and applies frame-aligned salience floors for stabilized routing, closing the `interaction_frame=relationship + scalar salience -> stale selfhood_scene` misroute that was still pushing repair / guarded scenes into `selfhood_reflection`
+  - direct real-model repro on `repair_scene_okabe` now lands on `turn_appraisal.selfhood_scene=""` plus `behavior_action.interaction_mode="relationship_sensitive"` instead of the earlier reflective selfhood detour
+  - the latest combined real-model freeze-gate artifact remains green after the appraisal root-cause fix: `evals/reports/freeze-gate-smokes-20260321-223657-4a3ee302.{json,md}`
   - graph/runtime/eval now share an explicit `final_text` contract instead of inferring final replies from `messages[-1]`, closing the stale-message leak that could make smoke reports and CLI output diverge from finalized response semantics
   - repair-scene surface gating now also applies to `selfhood_reflection` turns, so postprocess can still catch `wording_meta_detour` / `boundary_abstraction_surface` / technicalized repair phrasing even when the behavior layer routes the turn through a more reflective interaction mode
   - focused real-model recheck on `guarded_everyday_user` now returns a single finalized repair reply without the previous `既然你都这么说了` / `完美宽容` / `输出-评测错位` style artifacts that were leaking through the old path
   - postprocess `idle_task_reframe` is now fully wired into final-answer sanitization instead of stopping at detection, and it now covers both direct task detours (`报告 / 数据 / 问卷调查`) and casual-chat science drift (`学术答辩 / 后台跑数据 / 时间跳跃`)
   - guarded repair cleanup now also normalizes `安全距离 / 缓一缓了一下 / 你所谓的“回来”` class residue into grounded relational wording
+  - dense relational surface softening now trims a small set of still-passing but演示不够利落的抽象话面，例如 `行为模式 / 最大的槽点 / 完美的道歉 / 还没完全修好 / 对话效率更高`
+  - repair / guarded scenes now also catch `世界线收束 / 时间跳跃 / 因果律 / 模型失真 / 数据噪声` class leakage through the existing `support_scene_drift` and `technical_relational_metaphor` path, with final-answer cleanup routed through those existing issue classes
+  - the latest combined real-model freeze-gate artifact remains green after the extra surface pass: `evals/reports/freeze-gate-smokes-20260321-211505-2f67177a.{json,md}`
   - the latest combined real-model freeze-gate artifact is green again: `evals/reports/freeze-gate-smokes-20260321-200258-7d562271.{json,md}`
   - final-turn writeback now uses a frozen reconsolidation snapshot instead of relying on later-mutating runtime state
   - frozen motive / goal / counterpart snapshot is passed into behavior-trace writeback and semantic-self evidence writeback
@@ -43,15 +83,50 @@ This file is the live development ledger for `amadeus-thread0`.
   - backend freeze-gate smoke runner is now in place and structurally catches duplicate output, final-text mismatch, prompt/middle-state leakage, generic assistant tone, and obvious daily-surface drift
   - the three required natural-dialogue smoke packs now pass on the real model path in a single combined report: `evals/reports/freeze-gate-smokes-20260321-150221-c2af8a53.{json,md}`
 - Current risks / open questions:
+  - `repair_apology` is green again after the latest focused pass, but broader lived-naturalness polish still remains outside those three exact residue families; the next useful read should return to broader `everyday / guarded / self-rhythm` manual transcript texture rather than keep drilling the same repair cases
+  - the punitive / scorekeeping tail is gone from `repair_everyday_user`, but the refreshed answer can still read slightly authored through phrases like `不过既然你都这么直白地说了` / `别想太多`; the next repair pass should target this softer “written” residue rather than hard failure classes
+  - first-turn ambient companionship is now routing through the correct branch and no longer leaking the earlier `前兆 / 警报 / 任务化` family, but everyday banter still has room to sound less “designed for evaluation” and more like fully natural Kurisu/Okabe low-stakes sparring
+  - self-rhythm / autonomy scenes are structurally correct again, and the latest first-turn `own_rhythm_okabe` no longer falls back to `屏蔽掉 / 小黑屋` style threat-like boundary wording; the remaining gap is broader “lived naturalness” polish rather than that concrete hardline leak
+  - even after the ambient-smalltalk cleanup pass, first-turn `idle_chat_okabe` style outputs can still mutate into new dramatic-but-not-technical variants (`高能反应前的蓄力` / `异常波动` / `零噪音状态`), so the remaining gap is now mostly broader everyday smalltalk naturalness rather than the earlier lab-tech drift family
   - continue auditing any remaining persistence paths that still derive long-term memory from non-frozen runtime inputs
   - keep expanding own-rhythm / proactive continuity behavior without falling back to prompt-heavy repair
-  - latest freeze-gate smoke is green again, but transcript review still shows some passed cases are rhetorically dense and may still want manual polish before declaring the backend fully freeze-closed
+  - the biggest guarded / repair misroute was in appraisal stabilization and is now closed; remaining transcript issues should be treated as genuine behavior-quality or surface-quality work, not stale appraisal carry
+  - next transcript review should focus on whether guarded-residue phrasing still needs upstream behavior refinement now that the implicit selfhood route bug is gone
 - Immediate next step:
-  - use the fresh `freeze-gate-smokes-20260321-200258-7d562271` artifact for manual transcript signoff, then decide whether the next turn should target final surface-density polish in a few passed cases or return to the next backend mainline lane beyond freeze-gate cleanup
+  - move off the now-closed `repair_apology` residue trio and resume broader backend-maturation transcript review, prioritizing whichever of `everyday_companionship`, guarded relational residue, or `self_rhythm_boundary` now shows the highest remaining “designed for eval” texture in manual reads
 
 ## Validation Baseline
 
 - Latest targeted regression status:
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py amadeus_thread0\graph_parts\rewrite.py tests\test_daily_surface_gating.py`: pass
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_underresolved_brief or repair_authored_softener or generic_scold_template" -q`: pass
+  - AGENTS graph subset rerun after repair brief/authored follow-up coverage: pass
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-brief-authored-rootfix-v1`: pass
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py amadeus_thread0\graph_parts\rewrite.py tests\test_daily_surface_gating.py`: pass
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py tests\test_daily_surface_gating.py`: pass
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_punitive_tail or repair_teacherly_punitive_tail or repair_coldwar_punitive_tail or repair_wont_let_you_pass_tail" -q`: pass
+  - AGENTS graph subset rerun after punitive-tail inline root fix: pass
+  - `evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-punitive-inline-rootfix-v1`: pass
+  - `python -m pytest tests/test_daily_surface_gating.py -k "picked_up_intro or serious_intro or idle_task_reframe_in_repair_followup" -q`: pass
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_authored_softener or idle_task_reframe" -q`: pass
+  - AGENTS graph subset rerun after repair-authored/task-tail root fix: pass
+  - `evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-authored-task-tail-rootfix-v1`: pass
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_scorekeeping_tail or repair_punitive_tail or prefers_repair_candidate_without_scorekeeping_tail or softens_repair_scorekeeping_tail" -q`: pass
+  - AGENTS graph subset rerun after repair scorekeeping-tail fix: pass
+  - `evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-scorekeeping-tail-rootfix-v1`: pass
+  - `tests/test_persona_runtime.py tests/test_prepare_turn_context.py`: pass
+  - `tests/test_daily_surface_gating.py`: pass
+  - AGENTS graph subset rerun after ambient-idle-chat root-cause + surface follow-up: pass
+  - `evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180 --run-tag idle-chat-surface-rootcause-v1`: pass
+  - `tests/test_daily_surface_gating.py`: pass
+  - AGENTS graph subset rerun after ambient idle-chat cleanup: pass
+  - `evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180`: pass (`daily-surface-postprocess-ambient-v3`)
+  - `tests/test_appraisal_calibration.py tests/test_behavior_runtime_alignment.py`: pass
+  - AGENTS graph subset rerun after appraisal projection fix: pass
+  - `evals/run_freeze_gate_smokes.py --case-timeout-s 180`: pass (`4a3ee302`)
+  - `tests/test_daily_surface_gating.py`: pass
+  - AGENTS graph subset rerun after dense-surface and repair-drift cleanup: pass
+  - `evals/run_freeze_gate_smokes.py --case-timeout-s 180`: pass (`2f67177a`)
   - `tests/test_daily_surface_gating.py`: pass
   - AGENTS graph subset rerun after latest postprocess cleanup: pass
   - `evals/run_freeze_gate_smokes.py --case-timeout-s 180`: pass
@@ -74,6 +149,29 @@ This file is the live development ledger for `amadeus-thread0`.
   - AGENTS targeted suite subset: pass
   - frontend contract mock JSON audit: pass
 - Latest recorded result:
+  - `freeze-gate-smokes repair_apology overall_status=passed` (`repair-brief-authored-rootfix-v1`)
+  - `15 passed, 288 deselected`
+  - `513 passed, 26 subtests passed`
+  - `freeze-gate-smokes repair_apology overall_status=passed` (`repair-scorekeeping-tail-rootfix-v1`)
+  - `5 passed, 288 deselected`
+  - `503 passed, 26 subtests passed`
+  - `freeze-gate-smokes repair_apology overall_status=passed` (`repair-punitive-inline-rootfix-v1`)
+  - `5 passed, 293 deselected`
+  - `20 passed, 278 deselected`
+  - `508 passed, 26 subtests passed`
+  - `freeze-gate-smokes repair_apology overall_status=passed` (`repair-authored-task-tail-rootfix-v1`)
+  - `489 passed, 26 subtests passed`
+  - `freeze-gate-smokes everyday_companionship overall_status=passed` (`idle-chat-surface-rootcause-v1`)
+  - `461 passed, 24 subtests passed`
+  - `17 passed`
+  - `freeze-gate-smokes everyday_companionship overall_status=passed` (`daily-surface-postprocess-ambient-v3`)
+  - `453 passed, 24 subtests passed`
+  - `248 passed, 24 subtests passed`
+  - `freeze-gate-smokes overall_status=passed` (`4a3ee302`)
+  - `35 passed`
+  - `449 passed, 24 subtests passed`
+  - `freeze-gate-smokes overall_status=passed` (`2f67177a`)
+  - `244 passed, 24 subtests passed`
   - `freeze-gate-smokes overall_status=passed` (`7d562271`)
   - `443 passed, 24 subtests passed`
   - `238 passed, 24 subtests passed`
@@ -103,6 +201,271 @@ This file is the live development ledger for `amadeus-thread0`.
   - `mock-json-ok`
 
 ## Run Log
+
+### 2026-03-23 - Run 09
+
+- Scope:
+  - finish the previous repair-scene residue pass by locking the newly added `repair_underresolved_brief` path with real regressions
+  - validate the `这份上了 / 完全原谅的权利 / 你这种小心翼翼的样子` repair variants against the actual smoke pack before moving back to broader naturalness work
+- Files changed:
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - added focused detection regressions for:
+    - the `generic_scold_template` authored-scold variant seen in `casual_repair_user`
+    - the `repair_authored_softener` `这份上了 / 完全原谅的权利` branch seen in `repair_residue_okabe`
+    - the compact `repair_underresolved_brief` branch seen in `repair_scene_okabe`
+  - added focused sanitize regressions for:
+    - the `repair_authored_softener` `完全原谅的权利` cleanup landing
+    - the `repair_underresolved_brief` cleanup landing that preserves lingering介意 while reopening the channel
+  - reran the direct three-case local repro to confirm the new issue coverage now fires on the intended root-residue families before full validation
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py amadeus_thread0\graph_parts\rewrite.py tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_underresolved_brief or repair_authored_softener or generic_scold_template" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-brief-authored-rootfix-v1`
+- Result:
+  - the previously open `repair_apology` residue trio is now covered by focused regressions and the full repair smoke is green again: `evals/reports/freeze-gate-smokes-20260323-012039-repair-brief-authored-rootfix-v1.{json,md}`
+  - AGENTS graph subset stayed green after the added coverage: `513 passed, 26 subtests passed`
+  - this run did not reopen duplicate-output, stale-final-text, or middle-state leak regressions
+- Next:
+  - return to broader manual-read transcript texture review and choose the highest-yield remaining naturalness target outside the now-closed repair trio
+
+### 2026-03-23 - Run 08
+
+- Scope:
+  - finish the punitive-tail inline root-cause fix and continue repair-scene naturalness polish on the next escaped authored/taskified variants
+  - keep all fixes inside existing `postprocess/rewrite` quality-control paths without adding persona scripts or new graph-state logic
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - replaced the brittle inline `冷战戏码` punitive-tail sanitize backreference with an explicit replacement function, fixing the literal `\1` leak and stripping residual dash/comma shells at the same time
+  - generalized `whole_replacements` application in `_trim_repair_punitive_tail_surface()` so both string replacements and callable replacements follow the same safe code path
+  - extended `repair_authored_softener` detection into newly observed repair-scene connective variants such as `既然你都挑明了` and `不过既然你是认真的，我就先把话撂这儿`
+  - extended `idle_task_reframe` to repair-followup turns and added coverage for `后续数据整理好给我看 / 共犯的义务` style taskified repair landings
+  - added focused regressions for the new detection/sanitize coverage and for the punitive-tail inline root fix
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_punitive_tail or repair_teacherly_punitive_tail or repair_coldwar_punitive_tail or repair_wont_let_you_pass_tail" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "picked_up_intro or serious_intro or idle_task_reframe_in_repair_followup" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_authored_softener or idle_task_reframe" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-punitive-inline-rootfix-v1`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-authored-task-tail-rootfix-v1`
+- Result:
+  - the punitive-tail inline sanitize path is now root-fixed instead of patched
+  - AGENTS graph subset stayed green after both follow-up passes
+  - both targeted repair smoke reruns stayed structurally green
+  - the remaining repair gap is no longer duplicate output / prompt leak / literal sanitize artifacts; it is now a narrower manual-read naturalness problem around newly emerging authored phrase variants and occasional over-compressed replies
+- Next:
+  - extend existing repair-surface issue coverage to the newest `这份上了 / 完全原谅的权利 / malformed short repair shell` variants, then rerun `repair_apology`
+
+### 2026-03-22 - Run 07
+
+- Scope:
+  - continue backend maturation on the remaining repair-scene lived-naturalness gap after the punitive-tail fix
+  - remove repair-followup `记账回刺` tails without adding new persona scripting
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - added a new repair surface issue `repair_scorekeeping_tail` for replies that technically stop threatening but still land as `先说好 / 我照样会顶回去` style scorekeeping after the scene has already started to warm back up
+  - wired that issue through the same root-cause quality-control path used elsewhere: `dialogue_surface_issues -> rewrite guidance/filtering -> sanitize fallback`
+  - added a focused sanitize path that softens or removes the retaliatory tail instead of letting it survive unchanged in the finalized utterance
+  - extended rewrite guidance, candidate scoring, and candidate filtering so repair rewrites now explicitly prefer ordinary banter landing over `回敬一句` tails
+  - added focused regression coverage for detection, non-regression on quiet banter, sanitize softening, and rewrite candidate preference
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py amadeus_thread0\graph_parts\rewrite.py tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_scorekeeping_tail or repair_punitive_tail or prefers_repair_candidate_without_scorekeeping_tail or softens_repair_scorekeeping_tail" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-scorekeeping-tail-rootfix-v1`
+- Result:
+  - AGENTS graph subset stayed green: `489 passed, 26 subtests passed`
+  - repair smoke stayed green: `evals/reports/freeze-gate-smokes-20260322-114234-repair-scorekeeping-tail-rootfix-v1.{json,md}`
+  - `repair_everyday_user` no longer lands on the previous `轻易放过你 / 毫不客气地吐槽回去` family
+  - the remaining gap in that case is now softer authored phrasing (`不过既然你都这么直白地说了` / `别想太多`) rather than retaliatory tail leakage
+- Next:
+  - keep polishing repair / guarded transcript texture from “clean and safe” toward “lived and unforced”, starting with the remaining authored connective tissue in repair followups
+
+### 2026-03-22 - Run 04
+
+- Scope:
+  - verify the current backend against the full AGENTS freeze-gate baseline
+  - then keep tightening naturalness on the highest-value remaining lived-dialog gaps without reopening structural regressions
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - reran the AGENTS graph regression subset and all three freeze-gate packs on the current code; all passed on the same baseline
+  - fixed `daily_banter_okabe` candidate rejection root cause: a single rhetorical snapback in low-pressure banter was being treated as `overquestioning`, which caused better rewrites to lose to blander drafts
+  - added `_invites_banter_snapback()` and used it only in surface diagnosis so low-pressure banter invitations can keep one rhetorical opener when the reply actually lands
+  - fixed `own_rhythm_okabe` machine-self leakage by extending `selfhood_meta_proof` into `own_rhythm_autonomy` and by marking `记忆和判断里 / 归类为对象 / 切断联系的对象` class wording as `meta_self_explainer` in selfhood/autonomy scenes
+  - generalized connector-fragment detection so short standalone contrast lines such as `但不想见你。` are treated as malformed fragments instead of passing as clean text
+- Validation:
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180 --run-tag everyday-banter-rootfix-v2`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-apology-post-banter-v2`
+  - `python evals/run_freeze_gate_smokes.py --pack self_rhythm_boundary --case-timeout-s 180 --run-tag self-rhythm-post-banter-v2`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack self_rhythm_boundary --case-timeout-s 180 --run-tag self-rhythm-ownrhythm-humanize-v4`
+  - direct real-runtime repro through `RuntimeBundle` / `BackendSession.invoke_stream()` confirming:
+    - `surface_daily_banter_okabe` now applies rewrite and exits the `整理数据` draft family
+    - `surface_ambient_quiet_okabe` stays on the intended light-dialog path
+- Result:
+  - current backend still passes the AGENTS-required graph regression subset
+  - all three freeze-gate packs remain green on the latest code
+  - `daily_banter_okabe` is materially more natural and no longer explains itself through task residue
+  - `own_rhythm_okabe` no longer falls back to the earlier `程序 / 记忆和判断里 / 归类对象` machine-self wording
+- Next:
+  - keep polishing autonomy/self-rhythm naturalness from “correct but a bit hard” toward quieter, more lived boundary expression without losing the fixed persona core
+
+### 2026-03-22 - Run 03
+
+- Scope:
+  - finish the remaining `idle_chat_okabe` first-turn ambient drift by locating the true routing bug instead of widening postprocess forever
+  - ensure ambient lab smalltalk can actually enter the `daily_surface` light-dialog path in live runtime
+- Files changed:
+  - `amadeus_thread0/graph_parts/generation_profile.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_daily_surface_gating.py`
+  - `tests/test_generation_profile.py`
+  - `program.md`
+- Key changes:
+  - strengthened `daily_surface` preference scoring for ambient-quiet / daily-banter first turns so foreboding and teacherly reframe variants are penalized even when they are not exact copies of existing rejected examples
+  - let light-dialog rewrite pull curated positive candidates whenever the matched `daily_surface` case is clearly off-target, not only when the draft is underlength or in presence-ping scenes
+  - tightened `surface_ambient_quiet_okabe` prompt guidance and generation caps toward grounded present-tense atmosphere
+  - fixed the actual routing bug in `_is_light_free_dialog_turn()`: science keywords now stop light-dialog only when the turn is genuinely a science-help turn, not when `实验室` is just part of ordinary ambient smalltalk
+  - added regressions proving `今天实验室居然安静得让人发毛。` is allowed into the light-dialog branch while real science help is still rejected, and that ambient-quiet foreboding drafts lose to grounded candidates
+- Validation:
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_generation_profile.py -q`
+  - `python -m pytest tests/test_generation_profile.py tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - direct real-runtime repro through `RuntimeBundle` / `BackendSession.invoke_stream()` confirming first-turn `light_dialog_case_name=surface_ambient_quiet_okabe` and `light_dialog_rewrite_applied=True`
+  - `python evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180 --run-tag ambient-firstturn-rootfix-v5`
+- Result:
+  - the earlier “ambient first turn never entered daily-surface” suspicion is confirmed and fixed at the gate level
+  - real runtime first turn now uses the intended `daily_surface` branch and rewrite path
+  - refreshed smoke transcript shows `idle_chat_okabe` first turn grounded back into present-tense sensory companionship instead of `前兆 / 警报 / 整理数据` drift
+- Next:
+  - keep pushing everyday naturalness upstream, with `daily_banter_okabe` and low-stakes idle follow-ups as the next main lived-dialog polish target
+
+### 2026-03-22 - Run 02
+
+- Scope:
+  - close the upstream `science_mode` false positive on ambient lab smalltalk
+  - then fix the remaining `idle_chat_okabe` drift family by teaching the existing daily-surface diagnosis/rewrite path to catch casual taskization, lab-status reporting, and stagey ambient foreboding that were still slipping through as “clean” text
+- Files changed:
+  - `amadeus_thread0/graph_parts/persona_runtime.py`
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_persona_runtime.py`
+  - `tests/test_prepare_turn_context.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - tightened `_science_mode_from_user()` so ambient mentions like `实验室` no longer trigger science mode without explicit work/problem-solving intent
+  - added focused persona-runtime regressions proving `实验室` smalltalk stays `science_mode=False` while genuine troubleshooting still routes into science mode
+  - widened `idle_task_reframe` to catch ambient/casual taskization and lab-status-report variants such as `整理记录` / `数据起伏` / `异常` / `新理论`
+  - widened `support_scene_drift` coverage for ambient smalltalk foreboding variants such as `阴谋的味道` / `没警报` / `不祥预感` / `暴风雨前` / `中二演出` / `死寂`
+  - extended final-answer cleanup so these new drift families are normalized through the existing idle-task and daily-surface trim paths rather than leaking through as structurally “valid” but演示感很差的文本
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/persona_runtime.py amadeus_thread0/graph_parts/postprocess.py amadeus_thread0/graph_parts/rewrite.py tests/test_persona_runtime.py tests/test_prepare_turn_context.py tests/test_daily_surface_gating.py`
+  - `python -m pytest tests/test_persona_runtime.py tests/test_prepare_turn_context.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180 --run-tag idle-chat-surface-rootcause-v1`
+- Result:
+  - `idle_chat_okabe` no longer misroutes into `science_partner` purely because the user mentioned `实验室`
+  - the remaining no-task idle-chat lab drift now goes through rewrite/final-sanitize instead of being treated as already-natural output
+  - refreshed everyday smoke pack stayed green: `evals/reports/freeze-gate-smokes-20260322-033125-idle-chat-surface-rootcause-v1.{json,md}`
+  - transcript review shows second-turn idle-chat behavior is materially tighter; remaining rough edges are now mostly first-turn ambient wording quality rather than routing failure
+- Next:
+  - move the next pass into upstream first-turn behavior wording for ordinary ambient companionship, especially `idle_chat_okabe` and `daily_banter_okabe` first replies, instead of endlessly expanding postprocess-only catches
+
+### 2026-03-22 - Run 01
+
+- Scope:
+  - finish the interrupted everyday idle-chat naturalness pass after the appraisal root-cause fix
+  - close the specific lab-noun ambient smalltalk cases that were still skipping cleanup or leaking technical/stagey residue in real-model smokes
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - added `ambient_smalltalk_turn` inside `_dialogue_surface_issues()` so low-pressure user-utterance smalltalk can still be treated as everyday companionship even when the user text contains lab/environment nouns such as `实验室`
+  - extended `technical_self_activity`, `stagey_ping_template`, and `support_scene_drift` detection so the existing cleanup path now catches ambient drift families observed in real-model transcripts instead of only the earlier explicit `世界线 / 妄想症 / 数据流` cases
+  - expanded `_trim_technical_self_activity_surface()` and `_trim_daily_surface_drift_surface()` to normalize newly observed idle-chat residue such as `仪器散热风扇的电流声`, `Deadline`, `电源总闸`, `数据不可靠`, `风扇转速变化`, `低噪环境`, and `误差来源`
+  - added focused regressions that cover both the detection root cause and the new real-model transcript variants for idle ambient chat
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/postprocess.py tests/test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack everyday_companionship --case-timeout-s 180 --run-tag daily-surface-postprocess-ambient-v3`
+- Result:
+  - ambient lab-noun idle chat no longer skips cleanup just because the user utterance contains `实验`
+  - the real-model everyday companionship smoke pack is green after the new ambient cleanup pass: `evals/reports/freeze-gate-smokes-20260322-001616-daily-surface-postprocess-ambient-v3.{json,md}`
+  - remaining idle-chat rough edges are now mostly new dramatic atmospheric variants rather than the earlier explicit technical-lab residue family
+- Next:
+  - decide whether the next everyday-companionship pass should keep extending surface cleanup for the new dramatic idle-chat variants or move upstream into behavior wording generation
+
+### 2026-03-21 - Run 22
+
+- Scope:
+  - trace the remaining repair / guarded selfhood drift to its root cause inside appraisal postprocess
+  - fix the real runtime path instead of adding more postprocess-only surface cleanup
+- Files changed:
+  - `amadeus_thread0/graph_parts/appraisal.py`
+  - `tests/test_appraisal_calibration.py`
+  - `tests/test_behavior_runtime_alignment.py`
+  - `program.md`
+- Key changes:
+  - added live salience-projection refresh inside `_postprocess_appraisal_payload()` so downstream heuristics no longer rely on stale early scalar caches after the function mutates salience in-place
+  - applied frame-aligned salience floors before implicit selfhood reframe checks, so LLM outputs like `interaction_frame=relationship` plus scalar `salience=0.85` are treated with the relational weight already implied by the frame instead of being evaluated as pure selfhood residue
+  - kept `own_rhythm_autonomy` exempt from the new relational selfhood cleanup path, preserving the intended own-rhythm continuity behavior while still clearing accidental `equality_not_servitude` / `imperfect_coexistence` leakage in repair and guarded scenes
+  - added regression coverage for the exact scalar-salience repair-apology pattern and for the downstream behavior action that should no longer degrade into `selfhood_reflection`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/appraisal.py tests/test_appraisal_calibration.py tests/test_behavior_runtime_alignment.py`
+  - `python -m pytest tests/test_appraisal_calibration.py tests/test_behavior_runtime_alignment.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --case-timeout-s 180`
+- Result:
+  - direct real-model repro on `repair_scene_okabe` now shows `turn_appraisal.selfhood_scene=""` with `reason=implicit_selfhood_reframed_to_relational`
+  - the same case now routes to `behavior_action.interaction_mode=relationship_sensitive` and `action_target=protect_relationship_boundary`, closing the previous upstream selfhood detour
+  - the latest combined freeze-gate smoke stayed green after the appraisal fix: `evals/reports/freeze-gate-smokes-20260321-223657-4a3ee302.{json,md}`
+- Next:
+  - review the refreshed smoke artifact for remaining naturalness issues that are now truly behavior/surface problems rather than appraisal routing residue
+
+### 2026-03-21 - Run 02
+
+- Scope:
+  - do a second transcript-focused surface pass on top of the green freeze-gate report
+  - close remaining passed-but-awkward relational abstractions and repair-scene drift markers
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - added a small dense-surface softening layer for relational text, targeting only a narrow set of still-too-abstract phrases such as `行为模式`, `最大的槽点`, `完美的道歉`, `还没完全修好`, and `对话效率更高`
+  - extended `technical_relational_metaphor` to cover `模型失真` / `数据噪声`
+  - routed repair-scene `世界线 / 时间跳跃 / 因果律` leakage through existing `support_scene_drift` handling, and added a final-answer trim layer for those markers
+  - added focused regressions for `模型失真` metaphors and repair-scene `世界线收束` drift
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/postprocess.py tests/test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --case-timeout-s 180`
+- Result:
+  - latest combined smoke is still green after the extra polish pass: `evals/reports/freeze-gate-smokes-20260321-211505-2f67177a.{json,md}`
+  - previously visible `模型失真` / `世界线收束级别的灾难` residue is now covered by regression and cleanup logic
+  - remaining transcript concerns are now mostly upstream guarded / repair behavior quality rather than missing final-answer sanitization
+- Next:
+  - inspect guarded / repair smoke transcripts as behavior-generation problems, not just postprocess leaks, and decide whether the next turn should move upstream into the behavior layer
 
 ### 2026-03-21 - Run 01
 
@@ -720,3 +1083,95 @@ This file is the live development ledger for `amadeus-thread0`.
   - repair-scene cleanup coverage is materially stronger for reflective-but-still-relational turns, which were previously slipping past the wording/boundary filters
 - Next:
   - rerun the remaining real-model freeze-gate packs from this updated path and use that refreshed artifact to decide whether backend freeze-closeout is justified or whether more repair-scene behavior tightening is still needed
+
+### 2026-03-22 - Run 05
+
+- Scope:
+  - continue backend maturation on the remaining `self-rhythm / autonomy` naturalness gap
+  - remove the still-harsh own-rhythm surface without adding prompt-heavy persona control
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - expanded `autonomy_hardline_surface` so it now catches `羞辱式边界` variants like `蠢问题 / 负担 / 你更该担心`, not only `屏蔽 / 小黑屋 / 正经课题`
+  - let `_dialogue_surface_issues(...)` backfill `selfhood_scene` from finalized `behavior_action.interaction_mode` for autonomy/selfhood turns, which closes the real diagnosis gap where the user text alone under-specified the scene
+  - broadened `selfhood_rhetorical_opening` enough to catch short charged starts such as `烦？`
+  - tightened own-rhythm rewrite selection: when the source answer already has `autonomy_hardline_surface / selfhood_rhetorical_opening / technical_relational_metaphor`, rewrite now rejects candidates that still preserve those same residues instead of merely scoring them lower
+  - added focused regression coverage for the new shaming-boundary sample and updated rewrite-note expectations
+- Validation:
+  - `python -m py_compile amadeus_thread0\\graph_parts\\postprocess.py amadeus_thread0\\graph_parts\\rewrite.py tests\\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "autonomy_hardline_surface or selfhood_rhetorical_opening" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack self_rhythm_boundary --case-timeout-s 180 --run-tag self-rhythm-autonomy-soften-v4`
+- Result:
+  - AGENTS graph subset stayed green: `480 passed, 26 subtests passed`
+  - the latest self-rhythm smoke stayed green: `evals/reports/freeze-gate-smokes-20260322-084427-self-rhythm-autonomy-soften-v4.{json,md}`
+  - `own_rhythm_okabe` second-turn answer is materially softer than the earlier `屏蔽掉 / 小黑屋 / 没那个本事 / 负担 / 蠢问题 / 切断连接` family
+  - backend maturation is still not fully complete because the first-turn own-rhythm answer in the same smoke case can still over-spike into hardline wording such as `屏蔽掉`
+- Next:
+  - keep pressing the first-turn own-rhythm path so `要是我一直把你叫出来呢` resolves to quiet boundary language instead of threat-like boundary language while preserving non-servile autonomy
+
+### 2026-03-22 - Run 06
+
+- Scope:
+  - close the remaining first-turn `own_rhythm_autonomy` hardline leak at root cause
+  - keep the fix inside existing rewrite quality-control paths instead of adding new persona scripts
+- Files changed:
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - traced the first-turn failure end-to-end and confirmed the issue was not missing rewrite entry but missing scene carry-through inside `_rewrite_light_dialog_answer(...)`
+  - fixed the root cause by passing `behavior_action` into that light-dialog rewrite path’s own `_dialogue_surface_issues(...)` call, so `own_rhythm_autonomy` is no longer under-diagnosed on first turn
+  - taught the same light-dialog path to explicitly down-rank and filter `autonomy_hardline_surface` / `selfhood_rhetorical_opening` residues, instead of letting threat-like own-rhythm candidates survive on tie-score behavior
+  - added request-level guidance plus focused regression coverage proving:
+    - own-rhythm autonomy guidance appears when the scene is supplied by `behavior_action`
+    - light-dialog rewrite now prefers a quiet-boundary candidate over a `屏蔽掉` candidate in the first-turn autonomy scene
+- Validation:
+  - `python -m py_compile amadeus_thread0\\graph_parts\\rewrite.py tests\\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "light_dialog_rewrite_request_mentions_autonomy_guidance_when_behavior_action_supplies_scene or light_dialog_rewrite_prefers_own_rhythm_candidate_without_autonomy_hardline_surface or should_run_light_dialog_rewrite_runs_for_autonomy_hardline_surface" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack self_rhythm_boundary --case-timeout-s 180 --run-tag self-rhythm-autonomy-firstturn-rootfix-v1`
+- Result:
+  - AGENTS graph subset stayed green: `482 passed, 26 subtests passed`
+  - latest smoke artifact is green: `evals/reports/freeze-gate-smokes-20260322-110526-self-rhythm-autonomy-firstturn-rootfix-v1.{json,md}`
+  - `own_rhythm_okabe` first turn no longer uses the earlier `屏蔽掉` threat-like boundary line; it now lands on a quieter “会烦 / 会被打乱节奏 / 仍会回应” boundary expression
+- Next:
+  - move from this closed autonomy leak to the next highest-value naturalness pass: broaden everyday / banter / guarded transcript review so the remaining gains come from lived texture rather than rewrite rescue
+
+### 2026-03-22 - Run 07
+
+- Scope:
+  - continue backend maturation on the remaining `repair_everyday_user` authored/reset-request residue
+  - keep the fix inside existing `wording_meta_detour / repair_authored_softener / overquestioning / quoted_stagey_phrase` quality-control paths
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - extended repair-followup surface diagnosis so reset-request replies now catch additional authored variants that were previously passing as clean:
+    - `毫发无伤` / quoted-stagey repair self-description
+    - `既然你都这么直白地要求了` / `既然你把话挑明了` request-echo phrasing
+    - `收起那些带刺的试探` and `只会顺着你的红莉栖` style self-explainer residue
+    - unpunctuated repair-tail reopeners such as `接下来打算做什么`
+    - quoted leading echo like `“平时”那个...`
+  - kept the fix on the same existing path: issue detection -> rewrite guidance/filtering -> sanitize fallback; no new persona scripts or graph routing were introduced
+  - strengthened repair-authored sanitize replacements so the bad shells now collapse to grounded relational lines instead of leaving meta request-echo fragments behind
+  - expanded rewrite requests to explicitly warn against `毫发无伤` / `把试探收起来` style repair softeners
+  - added focused regression coverage for both newly observed real-model residue families and their sanitize behavior
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\postprocess.py amadeus_thread0\graph_parts\rewrite.py tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "repair_authored_softener or wording_meta_detour or overquestioning or quoted_stagey_phrase" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-authored-softener-rootfix-v2`
+  - `python evals/run_freeze_gate_smokes.py --pack repair_apology --case-timeout-s 180 --run-tag repair-authored-softener-rootfix-v3`
+- Result:
+  - AGENTS graph subset stayed green after the repair-surface extensions: `497 passed, 26 subtests passed`
+  - latest repair smoke stayed green: `evals/reports/freeze-gate-smokes-20260322-123132-repair-authored-softener-rootfix-v3.{json,md}`
+  - `repair_everyday_user` no longer uses the earlier `毫发无伤 / 收起试探 / 只会顺着你的红莉栖` style authored shells
+  - remaining naturalness gap is narrower but still visible in the same case: the model can still drift into teacherly/directive follow-up wording such as `别在那自我意识过剩地揣测... / 有这功夫不如...怎么办`
+- Next:
+  - stay on backend maturation and press the next repair-scene naturalness pass: remove teacherly/directive follow-up tails in `repair_everyday_user` without losing the partial-repair residue and boundary stance

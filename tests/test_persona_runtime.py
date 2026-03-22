@@ -8,6 +8,15 @@ from amadeus_thread0.graph_parts.persona_runtime import (
 
 
 class PersonaRuntimeTests(unittest.TestCase):
+    def test_science_mode_ignores_lab_environment_mentions_without_task_intent(self):
+        self.assertFalse(_science_mode_from_context("今天实验室居然安静得让人发毛。"))
+        self.assertFalse(_science_mode_from_context("我今天在实验室待到现在。"))
+
+    def test_science_mode_requires_explicit_problem_solving_signal(self):
+        self.assertTrue(_science_mode_from_context("实验又卡住了，你轻轻拎我一下。"))
+        self.assertTrue(_science_mode_from_context("我想把这个实验方案拆成三步，顺便解释一下统计检验怎么选。"))
+        self.assertTrue(_science_mode_from_context("模型怎么还是不收敛。"))
+
     def test_science_mode_infers_from_recent_context_when_user_reopens_gently(self):
         self.assertTrue(
             _science_mode_from_context(
