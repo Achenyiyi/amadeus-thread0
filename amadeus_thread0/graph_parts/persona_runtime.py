@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -324,7 +325,49 @@ def _prefer_explicit_state_dict(
 
 
 def _science_mode_from_user(user_text: str) -> bool:
-    return any(k in _norm_text(user_text) for k in SCIENCE_KEYWORDS)
+    text = _norm_text(user_text)
+    if not text:
+        return False
+    # Science mode should reflect explicit work/problem-solving intent, not any ambient mention of labs or research settings.
+    direct_task_markers = {
+        "debug",
+        "benchmark",
+        "ablation",
+        "统计检验",
+        "不收敛",
+        "拟合",
+        "报错",
+        "报错了",
+        "bug",
+        "参数",
+        "误差",
+    }
+    if any(marker in text for marker in direct_task_markers):
+        return True
+    if re.search(
+        r"(实验|论文|模型|代码|算法|实现|优化|评测|数据)"
+        r"[^。！？!?]{0,12}"
+        r"(方案|设计|记录|结果|引言|答辩|统计检验|拆成|分成|三步|怎么|如何|为什么|怎么办|"
+        r"卡住|卡死|跑不通|跑不出来|解释|分析|选|设计|实现|优化|评测|排查|整理|修改|调|写|改|收尾|补完)",
+        text,
+        re.I,
+    ):
+        return True
+    if re.search(
+        r"(帮我|给我|带我|拎我一下|一起|顺便)"
+        r"[^。！？!?]{0,12}"
+        r"(实验|论文|模型|代码|算法|实现|优化|评测|数据|统计检验|引言|答辩)",
+        text,
+        re.I,
+    ):
+        return True
+    if re.search(
+        r"(实验方案|实验设计|实验记录|论文提纲|评测方案|实现细节|优化方案|统计检验)",
+        text,
+        re.I,
+    ):
+        return True
+    return False
 
 
 def _science_mode_from_context(

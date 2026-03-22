@@ -185,6 +185,107 @@ class RetrievedAgendaLifecycleHydrationTests(unittest.TestCase):
 
 
 class PrepareTurnContextTests(unittest.TestCase):
+    def test_prepare_turn_context_keeps_ambient_lab_smalltalk_out_of_science_mode(self):
+        profile = {
+            "counterpart_id": "okabe_rintaro",
+            "name": "冈部伦太郎",
+            "short_name": "冈部",
+            "aliases": ["冈部伦太郎", "冈部"],
+        }
+        persona_core = {
+            "character_id": "kurisu_amadeus",
+            "display_name": "Amadeus 牧濑红莉栖",
+            "role_brief": "",
+            "identity_axioms": [],
+            "value_floor": [],
+            "evolution_contract": {},
+            "strict_canon": True,
+        }
+        relationship = {
+            "stage": "friend",
+            "notes": "",
+            "affinity_score": 0.0,
+            "trust_score": 0.0,
+            "derived": True,
+        }
+        store = Mock()
+        store.get_relationship.return_value = relationship
+        store.set_relationship.return_value = None
+        store.list_proactive_continuity_history.return_value = []
+        state = {
+            "messages": [],
+            "recent_events": [],
+        }
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._active_counterpart_profile", return_value=(profile, {}))
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._active_persona_core", return_value=(persona_core, {}))
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._messages", return_value=[]))
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._last_user_text", return_value="今天实验室居然安静得让人发毛。")
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._previous_user_text", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._last_ai_text", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._normalize_event_override", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.derive_pending_fragment", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.derive_pending_user_goal", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.has_active_continuation", return_value=False))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context.continuation_seed_text", return_value=""))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._compact_thread_if_needed", return_value=None))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._is_external_probe_context", return_value=False))
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._retrieve_context",
+                    return_value={
+                        "semantic_self_narratives": [],
+                        "working_items": [],
+                        "working_chars": 0,
+                        "triggered": False,
+                        "relationship": relationship,
+                    },
+                )
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._relationship_runtime_snapshot", return_value=relationship)
+            )
+            stack.enter_context(
+                patch("amadeus_thread0.graph_parts.prepare_turn_context._relationship_has_meaningful_signal", return_value=True)
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._canon_okabe_recontact_baseline", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._worldline_focus", return_value=[]))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._semantic_narrative_profile", return_value={}))
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._invoke_turn_appraisal",
+                    return_value={"confidence": 0.38, "emotion_label": "stress", "salience": {}},
+                )
+            )
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._recent_interaction_carryover", return_value={}))
+            stack.enter_context(patch("amadeus_thread0.graph_parts.prepare_turn_context._seeded_interaction_carryover_from_state", return_value={}))
+            stack.enter_context(
+                patch(
+                    "amadeus_thread0.graph_parts.prepare_turn_context._append_recent_events",
+                    side_effect=lambda events, current_event, limit=6: [current_event],
+                )
+            )
+
+            prepared = _prepare_turn_context(
+                state=state,
+                store=store,
+                turn_now_ts=1234567890,
+            )
+
+        self.assertFalse(prepared["science_mode"])
+        self.assertEqual(prepared["response_style_hint"], "natural")
+        self.assertEqual(prepared["current_event"]["response_style_hint"], "natural")
+        self.assertFalse(prepared["current_event"]["science_mode"])
+        self.assertNotIn("science", prepared["current_event"].get("tags") or [])
+        self.assertNotIn("structured", prepared["current_event"].get("tags") or [])
+
     def test_prepare_turn_context_prefers_fresher_semantic_profile_for_carryover_seed(self):
         profile = {
             "counterpart_id": "okabe_rintaro",

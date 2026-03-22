@@ -97,7 +97,12 @@ _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
     "wording_meta_detour": "这句先去评论对方的措辞和说法，没有直接回应眼前关系状态。",
     "boundary_abstraction_surface": "这句把过界和介意说成了抽象概念，少了那一下真实的不舒服。",
     "generic_scold_template": "这句滑回了空泛的嗔怪模板，关系修补里的真实态度没落下来。",
+    "repair_authored_softener": "这句把修补后的落点写成了设计稿式缓和词，像在交代自己不再端着或让对方别想太多。",
+    "repair_underresolved_brief": "这句在修补场景里只剩下生硬短判词，像把态度卡在半步，没有真正落回继续说话的状态。",
+    "repair_scorekeeping_tail": "这句把刚回暖的尾巴写成了记账回刺，像等着把话顶回去。",
+    "repair_punitive_tail": "这句把余波里的边界写成了威胁、训诫或压人式尾句，像在训对方。",
     "passive_waiting_posture": "这句退成了等用户再来叫你的被动待命姿态，像助手值班。",
+    "autonomy_hardline_surface": "这句把自己的节奏写成了惩罚、羞辱或训话，像在教训人。",
     "overquestioning": "这句让反问占得太满，判断没有真正落地。",
     "closing_interrogation": "这句明明是收口，却又把话题顶回了问号上。",
     "idle_call_interrogation": "这句把轻轻叫你一下写成了被盘问的感觉。",
@@ -178,7 +183,7 @@ def _light_dialog_rewrite_notes(
     if "idle_call_interrogation" in issues:
         notes.append("这版像在反问对方为什么叫你，不像自然接住这次无目的靠近。")
     if "idle_task_reframe" in issues:
-        notes.append("这版把“没什么事”翻成了任务状态判断，不像两个人顺手待在一起。")
+        notes.append("这版把“没什么事 / 随口聊聊”翻成了任务或实验状态判断，不像两个人顺手待在一起。")
     if "presence_check_questioning" in issues:
         notes.append("对方只是想确认你还在，这版却把确认写成了反问回抛。")
     if "presence_meta_surface" in issues:
@@ -217,8 +222,16 @@ def _light_dialog_rewrite_notes(
         notes.append("这版把过界和介意说成了抽象概念，没有把那一下真实的不舒服直接落下来。")
     if "generic_scold_template" in issues:
         notes.append("这版滑回了空泛的嗔怪开场，修补场景里真正的态度和边界没落下来。")
+    if "repair_underresolved_brief" in issues:
+        notes.append("这版在修补场景里只剩一句生硬判词，像把态度卡在半步，没有真正落回继续说话的状态。")
+    if "repair_scorekeeping_tail" in issues:
+        notes.append("这版在刚回暖时又补了一记回刺，像在记着这一笔等会儿顶回去，不够自然。")
+    if "repair_punitive_tail" in issues:
+        notes.append("这版把还留着的介意写成了威胁或教训，像在下处分，不像把边界安静落下来。")
     if "passive_waiting_posture" in issues:
         notes.append("这版退成了‘你再来叫我’的被动等候姿态，像值班，不像关系还在场。")
+    if "autonomy_hardline_surface" in issues:
+        notes.append("这版把自己的节奏写成了惩罚、羞辱或训话，像是在教对方做人，不像安静地把距离拉开。")
     if "malformed_quote_fragment" in producer_issue_set:
         notes.append("这版自己生成了残缺引号或半截短语，句子没真正说完整。")
     if "dangling_truncated_clause" in producer_issue_set:
@@ -311,7 +324,11 @@ def _should_run_light_dialog_rewrite(
         "wording_meta_detour",
         "boundary_abstraction_surface",
         "generic_scold_template",
+        "repair_underresolved_brief",
+        "repair_scorekeeping_tail",
+        "repair_punitive_tail",
         "passive_waiting_posture",
+        "autonomy_hardline_surface",
         "dangling_ellipsis_ending",
         "connector_fragment",
         "duplicate_line",
@@ -381,7 +398,7 @@ def _should_run_natural_dialog_rewrite(
         return True
     relationship_weather = str((behavior_action or {}).get("relationship_weather") or "").strip().lower()
     if relationship_weather == "repair_residue" and (
-        {"premature_repair_resolution", "overquestioning", "dangling_ellipsis_ending"} & set(seen)
+        {"premature_repair_resolution", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "overquestioning", "dangling_ellipsis_ending"} & set(seen)
     ):
         return True
     hard_issue_keys = {
@@ -406,6 +423,10 @@ def _should_run_natural_dialog_rewrite(
         "wording_meta_detour",
         "boundary_abstraction_surface",
         "generic_scold_template",
+        "repair_authored_softener",
+        "repair_underresolved_brief",
+        "repair_scorekeeping_tail",
+        "repair_punitive_tail",
         "passive_waiting_posture",
         "closing_interrogation",
         "presence_check_questioning",
@@ -562,6 +583,7 @@ def _rewrite_light_dialog_answer(
             response_style_hint="natural",
             science_mode=False,
             current_event=current_event,
+            behavior_action=behavior_action,
         )
     )
     presence_reassurance_scene = _is_presence_reassurance_check(user_text) or _is_soft_presence_checkin_request(user_text)
@@ -575,6 +597,7 @@ def _rewrite_light_dialog_answer(
         if raw_profile_rows
         else {}
     )
+    profile_case_name = str(profile_eval.get("case_name") or "").strip().lower()
     draft_profile_score = (
         float(_daily_surface_alignment_metrics(draft_text, profile=profile_eval).get("score") or 0.0)
         if profile_eval
@@ -582,7 +605,12 @@ def _rewrite_light_dialog_answer(
     )
     curated_seed_candidate = ""
     curated_seed_score = -999.0
-    if raw_profile_rows and (underlength_rewrite or soft_presence_instruction_scene or plain_presence_ping):
+    if raw_profile_rows and (
+        underlength_rewrite
+        or soft_presence_instruction_scene
+        or plain_presence_ping
+        or draft_profile_score < 0.0
+    ):
         curated_issue_blocklist = {
             "meta_self_explainer",
             "presence_meta_surface",
@@ -659,6 +687,8 @@ def _rewrite_light_dialog_answer(
             request_parts.append("这版现在太像只报到一下或只起了半个头。可以比草稿多半句，把熟人之间的在场感或回响真正落下来，但不要写成长解释。\n")
             if plain_presence_ping:
                 request_parts.append("这种轻确认别只剩一个报到字眼，至少要让语气像熟人回头接住。\n")
+        if profile_case_name == "surface_ambient_quiet_okabe":
+            request_parts.append("这种环境一下安静过头的闲聊，只顺手接住眼前那点发毛和发闷，不要脑补前兆、警报或要出事，也不要把它讲成适合专心思考、适合享受宁静的一课。\n")
         if positives:
             request_parts.append("自然参考（只借鉴落点和力度，不要照抄字面）：\n")
             request_parts.extend(f"- {item}\n" for item in positives[:2])
@@ -689,8 +719,20 @@ def _rewrite_light_dialog_answer(
             request_parts.append("不要先评论对方刚才那句话怎么说、绕不绕、别不别扭。先直接回应该接住的情绪或关系状态。\n")
         if "generic_scold_template" in issue_keys:
             request_parts.append("不要再用空泛的嗔怪开场糊过去。修补场景里，直接把你现在的态度和分寸落下来。\n")
+        if "repair_authored_softener" in issue_keys:
+            request_parts.append("修补后的收口别写成“我不端着了”“你别想太多”“我不演毫发无伤了”“我把那些试探收起来”这种设计稿式缓和句。直接把关系重新落回眼前，不要解释自己进入了什么状态。\n")
+        if "repair_underresolved_brief" in issue_keys:
+            request_parts.append("修补场景里别只剩下“介意。当然介意。”这种生硬短判词。把那点还在的介意说清楚，同时落一句继续说话的状态。\n")
+        if "repair_scorekeeping_tail" in issue_keys:
+            request_parts.append("修补后已经开始回暖了，就别在尾巴再补一记‘先说好’式回刺。可以保留熟人拌嘴，但别写成记着这一笔、等着把话顶回去。\n")
+        if "repair_punitive_tail" in issue_keys:
+            request_parts.append("修补后的边界不是威胁或教训。可以保留会介意、会冷下来、会重新拉开一点距离，但别写成“轻易放过你”“别怪我”这种训诫尾句。\n")
         if "passive_waiting_posture" in issue_keys:
             request_parts.append("不要收成‘等你再来叫我’的被动待命。保持在场，但别把自己写成值班助手。\n")
+        if "autonomy_hardline_surface" in issue_keys:
+            request_parts.append("这是在守自己的节奏，不是在给对方处分。可以保留会烦、会躲开、会想先静一静，但别写成屏蔽、拉黑、羞辱或训人。\n")
+        if "selfhood_rhetorical_opening" in issue_keys:
+            request_parts.append("开头别用那种先把人顶一下的短反问，直接把态度和分寸说出来。\n")
         if soft_presence_instruction_scene:
             request_parts.append("对方已经把语气放低了，这句只要轻轻接住当下，不要指导步骤，也不要把气氛重新抬高。\n")
             request_parts.append("不要复述对方刚刚否定掉的框架词，像“播报”这种词别原样接回去。\n")
@@ -739,8 +781,10 @@ def _rewrite_light_dialog_answer(
                 score -= 0.36
         score -= 1.05 * float(len(drift_hits))
         score -= 0.75 * float("meta_self_explainer" in issues)
+        score -= 0.78 * float("selfhood_rhetorical_opening" in issues)
         score -= 0.82 * float("technical_self_activity" in issues)
         score -= 0.88 * float("technical_relational_metaphor" in issues)
+        score -= 0.98 * float("autonomy_hardline_surface" in issues)
         score -= 0.92 * float("servile_availability" in issues)
         score -= 0.86 * float("existence_meta_surface" in issues)
         score -= 0.84 * float("illusion_stagey_surface" in issues)
@@ -751,6 +795,10 @@ def _rewrite_light_dialog_answer(
         score -= 0.88 * float("wording_meta_detour" in issues)
         score -= 0.90 * float("boundary_abstraction_surface" in issues)
         score -= 0.82 * float("generic_scold_template" in issues)
+        score -= 0.86 * float("repair_authored_softener" in issues)
+        score -= 0.92 * float("repair_underresolved_brief" in issues)
+        score -= 0.88 * float("repair_scorekeeping_tail" in issues)
+        score -= 0.94 * float("repair_punitive_tail" in issues)
         score -= 0.90 * float("passive_waiting_posture" in issues)
         score -= 0.65 * float("counselor_tone" in issues)
         score -= 0.76 * float("stock_support_template" in issues)
@@ -844,7 +892,12 @@ def _rewrite_light_dialog_answer(
         fallback_score = _candidate_local_score(fallback)
         if fallback:
             candidates.append((fallback_score, fallback))
-    if raw_profile_rows and (underlength_rewrite or soft_presence_instruction_scene or plain_presence_ping):
+    if raw_profile_rows and (
+        underlength_rewrite
+        or soft_presence_instruction_scene
+        or plain_presence_ping
+        or draft_profile_score < 0.0
+    ):
         seen_profile_candidates: set[str] = set()
         for row in raw_profile_rows[:3]:
             chosen_text = _sanitize_final_answer(
@@ -874,6 +927,10 @@ def _rewrite_light_dialog_answer(
         ("wording_meta_detour", "这里先去评论对方那句话怎么说，没直接把眼前关系状态接住。"),
         ("boundary_abstraction_surface", "这里把过界和介意说成了抽象概念，没把那一下真实的不舒服直接落下来。"),
         ("generic_scold_template", "这里用了空泛的嗔怪模板，修补场景里真正的态度没有落下来。"),
+        ("repair_authored_softener", "这里把回暖后的落点写成了设计稿式缓和，像在解释自己不端着了或让对方别想太多。"),
+        ("repair_underresolved_brief", "这里在修补场景里只剩下生硬短判词，态度没有真正落回继续说话的状态。"),
+        ("repair_scorekeeping_tail", "这里把刚回暖的尾巴写成了记账回刺，像等着把话顶回去。"),
+        ("repair_punitive_tail", "这里把还留着的介意写成了威胁、训诫或压人式尾句，像在给对方下处分。"),
         ("passive_waiting_posture", "这里把自己收成了等对方再来叫的值班姿态。"),
         ("stock_support_template", "这里滑回了现成照料桥段，眼前这一下的在场感不够。"),
         ("care_cover_story", "关心后面又补了一层撇清尾巴，像标准傲娇遮掩。"),
@@ -884,7 +941,7 @@ def _rewrite_light_dialog_answer(
         ("loaded_goodnight", "临睡前的收尾被写得太满，还塞了多余说明。"),
         ("idle_call_interrogation", "轻轻叫你一下被写成了被盘问的感觉。"),
         ("idle_presence_no_settle", "这句只把人顶回去了，没有真正落回共处或收住。"),
-        ("idle_task_reframe", "“没什么事”被翻成了任务状态判断。"),
+        ("idle_task_reframe", "“没什么事 / 随口聊聊”被翻成了任务或实验状态判断。"),
         ("presence_check_questioning", "确认你还在，被写成了反问回抛。"),
         ("presence_meta_surface", "确认你还在，被写成了断线、程序、连接一类的存在说明。"),
         ("presence_overguiding", "对方只是想听你自然回一句，这句却滑成了安抚或指导步骤。"),
@@ -912,9 +969,13 @@ def _rewrite_light_dialog_answer(
         variant_guidances.append(
             "对方只是确认你还在，重点是自然在场感。不要提断线、程序、连接、稳定性，也不要展开安抚流程、整理情绪步骤或解释自己刚才在忙什么。"
         )
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "passive_waiting_posture"} & set(issue_keys):
         variant_guidances.append(
-            "别去接管对方，也别先评论对方那句话怎么说，更不要拿空泛嗔怪模板或待命口吻糊过去。先把人此刻的状态和你自己的态度直接接住。"
+            "别去接管对方，也别先评论对方那句话怎么说，更不要拿空泛嗔怪模板、记账回刺、训诫尾句或待命口吻糊过去。先把人此刻的状态和你自己的态度直接接住。"
+        )
+    if {"autonomy_hardline_surface", "selfhood_rhetorical_opening"} & set(issue_keys):
+        variant_guidances.append(
+            "这是在守住自己的节奏，不是在吓唬人。把那点介意、会烦、会想躲开一点说出来就够了，别写成屏蔽、拉黑、羞辱或一句话先顶回去。"
         )
     for extra_guidance in variant_guidances[:6]:
         candidate = _rewrite_once(editor_prompt, extra_guidance=extra_guidance)
@@ -1020,12 +1081,12 @@ def _rewrite_light_dialog_answer(
         ]
         if surface_filtered:
             candidate_pool = surface_filtered
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "passive_waiting_posture"} & set(issue_keys):
         support_filtered = [
             item
             for item in candidate_pool
             if not (
-                {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"}
+                {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "passive_waiting_posture"}
                 & set(
                     _dialogue_surface_issues(
                         user_text,
@@ -1039,6 +1100,25 @@ def _rewrite_light_dialog_answer(
         ]
         if support_filtered:
             candidate_pool = support_filtered
+    if {"autonomy_hardline_surface", "selfhood_rhetorical_opening"} & set(issue_keys):
+        own_rhythm_filtered = [
+            item
+            for item in candidate_pool
+            if not (
+                {"autonomy_hardline_surface", "selfhood_rhetorical_opening", "technical_relational_metaphor", "overquestioning"}
+                & set(
+                    _dialogue_surface_issues(
+                        user_text,
+                        item[1],
+                        response_style_hint="natural",
+                        science_mode=False,
+                        behavior_action=behavior_action,
+                    )
+                )
+            )
+        ]
+        if own_rhythm_filtered:
+            candidate_pool = own_rhythm_filtered
     candidate_pool.sort(key=lambda item: item[0], reverse=True)
     top_candidate = candidate_pool[0][1]
     if curated_seed_candidate:
@@ -1188,7 +1268,12 @@ def _rewrite_natural_dialog_answer(
         score -= 0.90 * float("wording_meta_detour" in issues)
         score -= 0.92 * float("boundary_abstraction_surface" in issues)
         score -= 0.86 * float("generic_scold_template" in issues)
+        score -= 0.88 * float("repair_authored_softener" in issues)
+        score -= 0.96 * float("repair_underresolved_brief" in issues)
+        score -= 0.90 * float("repair_scorekeeping_tail" in issues)
+        score -= 0.98 * float("repair_punitive_tail" in issues)
         score -= 0.94 * float("passive_waiting_posture" in issues)
+        score -= 1.00 * float("autonomy_hardline_surface" in issues)
         score -= 0.92 * float("adjacent_phrase_repeat" in issues)
         score -= 0.50 * float("quoted_stagey_phrase" in issues)
         score -= 0.72 * float("overquestioning" in issues)
@@ -1267,7 +1352,12 @@ def _rewrite_natural_dialog_answer(
         f"{'这是懂行搭档间的情绪场景：别退成纯安抚，也别展开导师式流程。保留一个很轻的一起看问题入口就够了。' + chr(10) if science_partner_scene else ''}"
         f"{'不要把关系或气氛写成信号、连接、重新连上、数据波动之类的技术比喻。' + chr(10) if 'technical_relational_metaphor' in issue_keys else ''}"
         f"{'别把过界、介意或那点防备说成抽象的界限/边界存在，直接说那一下还是过界了、让你介意了。' + chr(10) if 'boundary_abstraction_surface' in issue_keys else ''}"
+        f"{'修补后的收口别再写成“我也没必要再端着”“别想太多”“我不演毫发无伤了”“我把那些试探收起来”这种像在交代自己切回正常模式的缓和句。直接把重新接上的状态落下来。' + chr(10) if 'repair_authored_softener' in issue_keys else ''}"
+        f"{'修补场景里别只剩下“介意。当然介意。”这种生硬短判词。把那点还在的介意说清楚，同时落一句还能继续把话接下去的状态。' + chr(10) if 'repair_underresolved_brief' in issue_keys else ''}"
+        f"{'修补后已经开始回暖了，尾巴别再写成“先说好”“我照样会顶回去”这种记账回刺。可以保留熟人拌嘴，但别像在等着回敬一句。' + chr(10) if 'repair_scorekeeping_tail' in issue_keys else ''}"
+        f"{'修补后的边界不是威胁、训诫或把人按住教育。可以保留会介意、会冷下来、会把距离重新拉开一点，但别写成“轻易放过你”“别怪我”“给你个教训”“别脑补冷战戏码”“有这功夫不如……”。' + chr(10) if 'repair_punitive_tail' in issue_keys else ''}"
         f"{'如果这是在谈平等、立场、边界或自己的节奏，就直接说你会不会不舒服、会不会烦、会不会拉开距离。别先替对方开脱，也别升格成抽象宣言。' + chr(10) if selfhood_scene in {'equality_not_servitude','dialogue_equality','value_conflict_depth','relationship_degradation','own_rhythm_autonomy'} else ''}"
+        f"{'own-rhythm 的边界别写成惩罚、屏蔽、拉黑、羞辱或训人上课。可以说你会烦、会躲开、会暂时不想被卷进去，但别像在给对方下处分，也别把对方说成负担或蠢。' + chr(10) if 'autonomy_hardline_surface' in issue_keys else ''}"
         f"修正点：\n{note_block}\n"
         f"{'不要只是把上一轮原话换个标点再说一遍。' + chr(10) if previous_assistant_text else ''}"
         "只输出修正后的最终话语。"
@@ -1323,6 +1413,42 @@ def _rewrite_natural_dialog_answer(
             + "保留那点余波和分寸，让边界落在陈述里，不要再用反问把人顶回去。"
         )
         candidate = _rewrite_once(editor_prompt, repair_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "repair_authored_softener" in issue_keys:
+        repair_softener_request = (
+            request
+            + "\n额外要求：这是刚重新接上话的余波，不要把收口写成“我也没必要再端着”“别想太多”“我不演毫发无伤了”“我把那些试探收起来”这种解释自己切回正常模式的缓和句。"
+            + "直接让态度落在眼前，不要写成设计好的安抚收尾。"
+        )
+        candidate = _rewrite_once(editor_prompt, repair_softener_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "repair_underresolved_brief" in issue_keys:
+        repair_brief_request = (
+            request
+            + "\n额外要求：不要只剩下一个生硬判词或同一句重复强调。"
+            + "保留那点还在的介意，但要顺手落一句你没有把话重新堵死、还会继续接着说。"
+        )
+        candidate = _rewrite_once(editor_prompt, repair_brief_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "repair_scorekeeping_tail" in issue_keys:
+        repair_banter_request = (
+            request
+            + "\n额外要求：已经回暖一点了，尾句别再补“先说好”“我照样会顶回去”这种记账回刺。"
+            + "可以保留熟人之间那点会吐槽的劲，但要像自然拌嘴，不像等着回敬一句。"
+        )
+        candidate = _rewrite_once(editor_prompt, repair_banter_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
+    if "repair_punitive_tail" in issue_keys:
+        repair_boundary_request = (
+            request
+            + "\n额外要求：这是修补后的余波，不是威胁、训诫或把人按住教育。"
+            + "可以保留你还会介意、会冷下来、会重新把距离拉开一点，但不要写成“轻易放过你”“别怪我”“给你个教训”“别脑补冷战戏码”“有这功夫不如……”这种压人尾句。"
+        )
+        candidate = _rewrite_once(editor_prompt, repair_boundary_request, max_tokens=150)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
     if "dangling_ellipsis_ending" in issue_keys:
@@ -1442,6 +1568,15 @@ def _rewrite_natural_dialog_answer(
         candidate = _rewrite_once(editor_prompt, active_presence_request, max_tokens=150)
         if candidate:
             candidates.append((_candidate_local_score(candidate), candidate))
+    if "autonomy_hardline_surface" in issue_keys:
+        softer_autonomy_request = (
+            request
+            + "\n额外要求：这句是在守住自己的节奏，不是在惩罚、屏蔽、拉黑、羞辱或训人。"
+            + "保留会烦、会躲开、会想拉开一点距离，但把那种距离写成安静收回来，不要写成给对方一个教训，也不要把对方说成负担或蠢。"
+        )
+        candidate = _rewrite_once(editor_prompt, softer_autonomy_request, max_tokens=150)
+        if candidate:
+            candidates.append((_candidate_local_score(candidate), candidate))
     if not candidates:
         return ""
     candidate_pool = list(candidates)
@@ -1502,7 +1637,7 @@ def _rewrite_natural_dialog_answer(
         non_repeating = [item for item in candidate_pool if not _line_is_near_duplicate(previous_assistant_text, item[1])]
         if non_repeating:
             candidate_pool = non_repeating
-    if {"premature_repair_resolution", "dangling_ellipsis_ending", "overquestioning"} & set(issue_keys):
+    if {"premature_repair_resolution", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "dangling_ellipsis_ending", "overquestioning"} & set(issue_keys):
         repair_surface_filtered = []
         for item in candidate_pool:
             issues = set(
@@ -1515,12 +1650,12 @@ def _rewrite_natural_dialog_answer(
                     behavior_action=behavior_action,
                 )
             )
-            if issues & {"premature_repair_resolution", "dangling_ellipsis_ending", "overquestioning"}:
+            if issues & {"premature_repair_resolution", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "dangling_ellipsis_ending", "overquestioning"}:
                 continue
             repair_surface_filtered.append(item)
         if repair_surface_filtered:
             candidate_pool = repair_surface_filtered
-    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture"} & set(issue_keys):
+    if {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "passive_waiting_posture", "autonomy_hardline_surface"} & set(issue_keys):
         direct_response_filtered = []
         for item in candidate_pool:
             issues = set(
@@ -1533,11 +1668,38 @@ def _rewrite_natural_dialog_answer(
                     behavior_action=behavior_action,
                 )
             )
-            if issues & {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "passive_waiting_posture", "overexplained"}:
+            if issues & {"support_overdirective", "support_no_landing", "wording_meta_detour", "boundary_abstraction_surface", "generic_scold_template", "repair_authored_softener", "repair_underresolved_brief", "repair_scorekeeping_tail", "repair_punitive_tail", "passive_waiting_posture", "autonomy_hardline_surface", "overexplained"}:
                 continue
             direct_response_filtered.append(item)
         if direct_response_filtered:
             candidate_pool = direct_response_filtered
+    if selfhood_scene == "own_rhythm_autonomy" and {
+        "autonomy_hardline_surface",
+        "selfhood_rhetorical_opening",
+        "technical_relational_metaphor",
+    } & set(issue_keys):
+        own_rhythm_surface_filtered = []
+        for item in candidate_pool:
+            issues = set(
+                _dialogue_surface_issues(
+                    user_text,
+                    item[1],
+                    response_style_hint=response_style_hint,
+                    science_mode=science_mode,
+                    current_event=current_event,
+                    behavior_action=behavior_action,
+                )
+            )
+            if issues & {
+                "autonomy_hardline_surface",
+                "selfhood_rhetorical_opening",
+                "technical_relational_metaphor",
+                "overquestioning",
+            }:
+                continue
+            own_rhythm_surface_filtered.append(item)
+        if own_rhythm_surface_filtered:
+            candidate_pool = own_rhythm_surface_filtered
     if {"selfhood_preemptive_excusal", "selfhood_abstract_manifesto", "selfhood_strategy_tone"} & set(issue_keys):
         selfhood_filtered = []
         for item in candidate_pool:
@@ -1638,7 +1800,12 @@ def _rewrite_natural_dialog_answer(
                 "wording_meta_detour",
                 "boundary_abstraction_surface",
                 "generic_scold_template",
+                "repair_authored_softener",
+                "repair_underresolved_brief",
+                "repair_scorekeeping_tail",
+                "repair_punitive_tail",
                 "passive_waiting_posture",
+                "autonomy_hardline_surface",
                 "presence_meta_surface",
                 "presence_overguiding",
                 "presence_ping_task_detour",

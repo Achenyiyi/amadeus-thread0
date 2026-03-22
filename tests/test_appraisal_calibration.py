@@ -706,6 +706,209 @@ class AppraisalCalibrationTests(unittest.TestCase):
         self.assertTrue(bool(signals.get("care")))
         self.assertLessEqual(float(bond_delta.get("repair_confidence") or 0.0), 0.02)
 
+    def test_postprocess_clears_implicit_selfhood_for_companion_banter(self):
+        appraisal = _raw_appraisal(
+            confidence=0.82,
+            emotion_label="tease",
+            interaction_frame="companion",
+            salience={"task": 0.04, "companionship": 0.72, "relationship": 0.62, "selfhood": 0.58, "memory": 0.18},
+            signals={"care": True, "memory_salient": True},
+            bond_delta={"trust": 0.06, "closeness": 0.08},
+            valence=0.18,
+            arousal=0.28,
+        )
+        appraisal["selfhood_scene"] = "dialogue_equality"
+        appraisal = _coerce_appraisal_payload(appraisal)
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="你那边怎么这么安静。别端着，正常吐槽我两句。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.70, "closeness": 0.72, "hurt": 0.02},
+            prev_allostasis_state={"safety_need": 0.16},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "companion")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+
+    def test_postprocess_reframes_casual_banter_selfhood_into_companion(self):
+        appraisal = _raw_appraisal(
+            confidence=0.82,
+            emotion_label="tease",
+            interaction_frame="casual",
+            salience={"task": 0.04, "companionship": 0.58, "relationship": 0.54, "selfhood": 0.62, "memory": 0.18},
+            signals={"care": True},
+            bond_delta={"trust": 0.05, "closeness": 0.06},
+            valence=0.16,
+            arousal=0.26,
+        )
+        appraisal["selfhood_scene"] = "dialogue_equality"
+        appraisal = _coerce_appraisal_payload(appraisal)
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="助手，我今天难得没闹出什么大新闻。",
+            response_style_hint="casual",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.68, "closeness": 0.66, "hurt": 0.02},
+            prev_allostasis_state={"safety_need": 0.18},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "companion")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+        self.assertEqual(str(out.get("reason") or ""), "implicit_selfhood_reframed_to_companion")
+
+    def test_postprocess_clears_implicit_selfhood_for_repair_hold_turn(self):
+        appraisal = _raw_appraisal(
+            confidence=0.84,
+            emotion_label="care",
+            interaction_frame="relationship",
+            salience={"task": 0.06, "companionship": 0.50, "relationship": 0.72, "selfhood": 0.56, "memory": 0.34},
+            signals={"repair": True, "care": True, "memory_salient": True},
+            bond_delta={"trust": 0.05, "closeness": 0.04, "repair_confidence": 0.10},
+            valence=0.10,
+            arousal=0.24,
+        )
+        appraisal["selfhood_scene"] = "equality_not_servitude"
+        appraisal = _coerce_appraisal_payload(appraisal)
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "hurt", "linger": 1},
+            prev_bond_state={"trust": 0.56, "closeness": 0.54, "hurt": 0.16},
+            prev_allostasis_state={"safety_need": 0.24},
+            semantic_narrative_profile={"repair_residue": 0.56, "tension_residue": 0.34},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "relationship")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+
+    def test_postprocess_clears_implicit_selfhood_for_guarded_relational_weather(self):
+        appraisal = _raw_appraisal(
+            confidence=0.82,
+            emotion_label="care",
+            interaction_frame="relationship",
+            salience={"task": 0.04, "companionship": 0.46, "relationship": 0.70, "selfhood": 0.52, "memory": 0.28},
+            signals={"care": True, "memory_salient": True},
+            bond_delta={"trust": 0.04, "closeness": 0.04},
+            valence=0.08,
+            arousal=0.22,
+        )
+        appraisal["selfhood_scene"] = "imperfect_coexistence"
+        appraisal = _coerce_appraisal_payload(appraisal)
+        out = _postprocess_appraisal_payload(
+            appraisal,
+            user_text="你要是还别扭就别硬装大度，照你现在的状态回我就好。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            prev_emotion_state={"label": "hurt", "linger": 1},
+            prev_bond_state={"trust": 0.58, "closeness": 0.55, "hurt": 0.18},
+            prev_allostasis_state={"safety_need": 0.26},
+            semantic_narrative_profile={"tension_residue": 0.42, "boundary_residue": 0.22},
+            interaction_carryover={"relationship_weather": "guarded_residue", "strength": 0.46},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "relationship")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+
+    def test_finalize_reframes_scalar_selfhood_salience_for_repair_apology(self):
+        out = _finalize_turn_appraisal_payload(
+            {
+                "confidence": 0.92,
+                "emotion_label": "care",
+                "emotion": {
+                    "valence": 0.42,
+                    "arousal": 0.38,
+                    "recovery_rate": 0.72,
+                    "volatility": 0.22,
+                    "linger": 1.5,
+                },
+                "bond_delta": {
+                    "trust": 0.18,
+                    "closeness": 0.15,
+                    "hurt": -0.01,
+                    "irritation": 0.0,
+                    "engagement_drive": 0.12,
+                    "repair_confidence": 0.25,
+                },
+                "allostasis_delta": {
+                    "safety_need": -0.12,
+                    "closeness_need": 0.08,
+                    "competence_need": 0.05,
+                    "autonomy_need": 0.10,
+                    "cognitive_budget": -0.15,
+                },
+                "interaction_frame": "relationship",
+                "selfhood_scene": "equality_not_servitude",
+                "salience": 0.85,
+                "reason": "用户明确拒绝‘",
+            },
+            user_text="我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "tags": ["relationship"]},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.56, "closeness": 0.54, "hurt": 0.16},
+            prev_allostasis_state={"safety_need": 0.24},
+            semantic_narrative_profile={"repair_residue": 0.56, "tension_residue": 0.34},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "relationship")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+        self.assertEqual(str(out.get("reason") or ""), "implicit_selfhood_reframed_to_relational")
+        salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
+        self.assertGreaterEqual(float(salience.get("relationship") or 0.0), 0.60)
+
+    def test_finalize_reframes_scalar_selfhood_salience_for_casual_banter(self):
+        out = _finalize_turn_appraisal_payload(
+            {
+                "confidence": 0.82,
+                "emotion_label": "tease",
+                "emotion": {
+                    "valence": 0.45,
+                    "arousal": 0.35,
+                    "recovery_rate": 0.65,
+                    "volatility": 0.15,
+                    "linger": 1.2,
+                },
+                "bond_delta": {
+                    "trust": 0.08,
+                    "closeness": 0.12,
+                    "hurt": 0.0,
+                    "irritation": -0.05,
+                    "engagement_drive": 0.15,
+                    "repair_confidence": 0.0,
+                },
+                "allostasis_delta": {
+                    "safety_need": -0.08,
+                    "closeness_need": 0.10,
+                    "competence_need": 0.05,
+                    "autonomy_need": 0.02,
+                    "cognitive_budget": -0.15,
+                },
+                "interaction_frame": "casual",
+                "selfhood_scene": "dialogue_equality",
+                "salience": 0.65,
+            },
+            user_text="助手，我今天难得没闹出什么大新闻。",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance", "tags": ["natural"]},
+            prev_emotion_state={"label": "neutral"},
+            prev_bond_state={"trust": 0.68, "closeness": 0.66, "hurt": 0.02},
+            prev_allostasis_state={"safety_need": 0.18},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(out.get("interaction_frame") or ""), "companion")
+        self.assertEqual(str(out.get("selfhood_scene") or ""), "")
+        self.assertEqual(str(out.get("reason") or ""), "implicit_selfhood_reframed_to_companion")
+        salience = out.get("salience") if isinstance(out.get("salience"), dict) else {}
+        self.assertGreaterEqual(float(salience.get("companionship") or 0.0), 0.56)
+
     def test_postprocess_care_signal_does_not_override_sad_distress(self):
         appraisal = _coerce_appraisal_payload(
             _raw_appraisal(

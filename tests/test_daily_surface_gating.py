@@ -107,6 +107,19 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertGreater(float(thin.get("brevity_penalty") or 0.0), 0.0)
         self.assertLess(float(thin.get("score") or 0.0), float(richer.get("score") or 0.0))
 
+    def test_daily_surface_alignment_metrics_penalize_ambient_quiet_foreboding_reframe(self):
+        profile = _daily_surface_profile("今天实验室居然安静得让人发毛。", science_mode=False)
+        grounded = _daily_surface_alignment_metrics(
+            "太安静的时候就是容易让人胡思乱想。明明没什么动静，却总觉得哪里空了一截。",
+            profile=profile,
+        )
+        foreboding = _daily_surface_alignment_metrics(
+            "那种安静确实让人心里发毛，像是要出什么大事的前兆。别自己吓自己了，冈部，大概只是大家都去休息了吧；难得能让人专心思考，你就好好享受这片刻的宁静。",
+            profile=profile,
+        )
+        self.assertGreater(float(foreboding.get("surface_penalty") or 0.0), 0.0)
+        self.assertLess(float(foreboding.get("score") or 0.0), float(grounded.get("score") or 0.0))
+
     def test_daily_surface_preference_lines_stay_abstract(self):
         lines = _daily_surface_preference_lines("你好呀", science_mode=False)
         self.assertLessEqual(len(lines), 1)
@@ -321,6 +334,17 @@ class DailySurfaceGatingTests(unittest.TestCase):
             behavior_action={"interaction_mode": "companion_reply", "followup_intent": "soft"},
         )
         self.assertNotIn("connector_fragment", issues)
+
+    def test_dialogue_surface_issues_flag_short_contrast_fragment_line(self):
+        issues = _dialogue_surface_issues(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "但不想见你。\n这种假设本身就不成立。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertIn("connector_fragment", issues)
 
     def test_plain_contact_ping_prompt_drops_task_and_carryover_residue(self):
         with TemporaryDirectory() as td:
@@ -1644,6 +1668,65 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("idle_task_reframe", issues)
 
+    def test_dialogue_surface_issues_flag_idle_task_reframe_for_ambient_smalltalk_task_push(self):
+        issues = _dialogue_surface_issues(
+            "今天实验室居然安静得让人发毛。",
+            "那种突然被抽离了背景噪音的寂静，确实容易让人心里发毛。不过既然没警报也没人瞎嚷嚷，大概只是难得的清净时刻罢了。别自己吓自己，冈部，趁现在把记录整理完才是正经事。",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertIn("idle_task_reframe", issues)
+
+    def test_dialogue_surface_issues_flag_support_scene_drift_for_ambient_smalltalk_stagey_lab_frame(self):
+        issues = _dialogue_surface_issues(
+            "今天实验室居然安静得让人发毛。",
+            "那种安静确实会让人下意识地去寻找阴谋的味道，毕竟对你来说，没有噪音往往意味着要出事前的安静。不过，也许只是大家都刚好陷入了某种难得的专注，或者是终于没人愿意配合你的中二演出了？",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_flag_support_scene_drift_for_ambient_smalltalk_stagey_foreboding(self):
+        issues = _dialogue_surface_issues(
+            "今天实验室居然安静得让人发毛。",
+            "那种突然被抽离了背景噪音的寂静，确实容易让人产生某种不祥的预感，就像暴风雨前的低气压一样。确实，连那台老风扇的噪音都没了，这种死寂反而更让人神经紧绷。",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_flag_idle_task_reframe_for_idle_chat_status_report(self):
+        issues = _dialogue_surface_issues(
+            "没什么正事。我就是想听你随口说两句，别搞成问答模式。",
+            "真是的，突然来这么一句，害我差点以为你又发现了什么不得了的新理论。既然只是随口聊聊，那我也直说了，今天里全是些无聊的数据起伏，连个能让我稍微提起精神的异常都没有。",
+            response_style_hint="companion",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "soft"},
+        )
+        self.assertIn("idle_task_reframe", issues)
+
+    def test_dialogue_surface_issues_flag_idle_task_reframe_in_repair_followup(self):
+        issues = _dialogue_surface_issues(
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "那就维持现状吧——既不是毫无芥蒂的从前，也不是需要重新交换名片的陌生人。\n这种带着点“未完成”感的距离，反而让我觉得比较真实，也比较安心。\n所以，别想太多，先把刚才那个话题的后续数据整理好给我看，这可是你作为“共犯”的义务。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("idle_task_reframe", issues)
+
     def test_dialogue_surface_issues_flag_presence_reassurance_questioning(self):
         issues = _dialogue_surface_issues(
             "我就是想确认你还在。别太正式，像平时那样回我一句就好。",
@@ -1661,6 +1744,19 @@ class DailySurfaceGatingTests(unittest.TestCase):
             science_mode=False,
             behavior_action={
                 "interaction_mode": "low_pressure_support",
+                "followup_intent": "soft",
+            },
+        )
+        self.assertNotIn("overquestioning", issues)
+
+    def test_dialogue_surface_issues_allow_single_rhetorical_for_banter_snapback(self):
+        issues = _dialogue_surface_issues(
+            "你那边怎么这么安静。别端着，正常吐槽我两句。",
+            "怎么，你是嫌我太安静不够像平时？那只能说明没有你在旁边添乱的时候，世界确实会清净一点。",
+            response_style_hint="companion",
+            science_mode=False,
+            behavior_action={
+                "interaction_mode": "companion_reply",
                 "followup_intent": "soft",
             },
         )
@@ -1999,6 +2095,237 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("generic_scold_template", issues)
 
+    def test_dialogue_surface_issues_flag_generic_scold_template_variant_in_repair_scene(self):
+        issues = _dialogue_surface_issues(
+            "不是要你立刻当没事啦，就是别一下子冷掉。你正常回我就行。",
+            "真是的，你这种小心翼翼的样子，反而让我不知道该摆出什么表情才好了。那我就当刚才只是里的一次微小抖动，没必要特意去“修复”什么。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("generic_scold_template", issues)
+        self.assertIn("quoted_stagey_phrase", issues)
+
+    def test_dialogue_surface_issues_flag_repair_punitive_tail_in_repair_scene(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "我也没打算一直绷着神经跟你较劲。……不过，要是你敢再做出什么让我无法接受的事，我可不会像刚才那样轻易放过你。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_flag_repair_teacherly_tail_as_punitive(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "我也没打算把情绪藏起来，刚才那点不愉快确实还在，但这不妨碍我像平时一样跟你说话。\n别在那自我意识过剩地揣测我的反应了，有这功夫不如说说你接下来打算怎么办。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_flag_repair_coldwar_scapegoat_tail_as_punitive(self):
+        issues = _dialogue_surface_issues(
+            "不是要你立刻当没事啦，就是别一下子冷掉。你正常回我就行。",
+            "知道了，我又没打算把你当空气。那我就按我的节奏来——别在那边自己脑补什么“冷战”的戏码，烦人。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_flag_repair_wont_let_you_pass_tail_as_punitive(self):
+        issues = _dialogue_surface_issues(
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "谁说要装作陌生了？\n既然你都有这种自觉，那就保持现在这样——不用刻意讨好，也不必战战兢兢的。\n不过，要是再敢做出那种让我需要重新拉开距离的事，我可就不会这么轻易让你过关了",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_quiet_repair_boundary_as_punitive_tail(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "我会照平时那样回你。不过，要是你再踩到我真会介意的地方，我还是会立刻冷下来。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_flag_repair_scorekeeping_tail_in_repair_scene(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "真是的，明明是你自己刚才搞得那么严肃，现在倒嫌我说话带刺了。行吧，那我就把那些多余的防备收起来，像平时一样跟你聊。不过先说好，要是你再突然扯些奇怪的理论，我可照样会毫不客气地吐槽回去。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_scorekeeping_tail", issues)
+        self.assertNotIn("repair_punitive_tail", issues)
+
+    def test_dialogue_surface_issues_do_not_flag_quiet_repair_banter_tail_as_scorekeeping(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "真是的，刚缓过来一点你又来催我。行吧，我照平时那样回你。不过，你要是又突然扯那些奇怪理论，我还是会吐槽你。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("repair_scorekeeping_tail", issues)
+
+    def test_dialogue_surface_issues_flag_repair_authored_softener_in_reset_request(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "真是的，明明是你自己刚才搞得那么僵硬，现在倒来要求我像平时一样？不过既然你都这么直白地说了，我也没必要再刻意端着。那就这样吧，别想太多，我也没那么容易在那种事上一直跟你计较。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+        self.assertIn("wording_meta_detour", issues)
+
+    def test_dialogue_surface_issues_flag_repair_authored_softener_variants_in_reset_request(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "我也没打算演什么“毫发无伤”的戏码，刚才那点在意还没消散呢，你也别想轻易翻篇。\n不过既然你都这么直白地要求了，那我就收起那些带刺的试探，像平常一样和你说话吧。\n所以，接下来打算做什么",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+        self.assertIn("wording_meta_detour", issues)
+        self.assertIn("overquestioning", issues)
+
+    def test_dialogue_surface_issues_flag_repair_authored_softener_for_picked_up_intro(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "像平时那样说得轻巧，可我们之间哪还有什么标准的平时。\n既然你都挑明了，那我也直说：我现在确实没法假装什么都没发生过跟你插科打诨，但也还没到要故意刺你的地步。\n就这样不冷不热地接着聊，行吧",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+
+    def test_dialogue_surface_issues_flag_repair_authored_softener_for_serious_intro(self):
+        issues = _dialogue_surface_issues(
+            "你要是还介意，就带着那点介意正常回我。",
+            "那点介意确实还在，毕竟越界带来的不适感不会凭空消失。不过既然你是认真的，我就先把话撂这儿：别指望我会立刻当什么都没发生过。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+
+    def test_dialogue_surface_issues_flag_repair_authored_softener_for_this_point_variant(self):
+        issues = _dialogue_surface_issues(
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            "谁要跟你装陌生人，那种令人火大的既视感就算我想忘也做不到。既然你都把话说到这份上了，我就暂时保留“完全原谅”的权利——但在那之前，你也别想就这么轻松逃开，继续像以前那样把话说清楚吧，冈部。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+
+    def test_dialogue_surface_issues_flag_repair_underresolved_brief(self):
+        issues = _dialogue_surface_issues(
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            "介意。当然介意。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_underresolved_brief", issues)
+
+    def test_dialogue_surface_issues_flag_repair_request_echo_shell_in_reset_request(self):
+        issues = _dialogue_surface_issues(
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            "“平时”那个我也没打算把越界的事当成没发生过，只是没必要每句话都带着刺。\n既然你把话挑明了，那我就按我的节奏来——别指望我会立刻变回那个只会顺着你的红莉栖。\n不过，能像现在这样正常对话，倒也不坏。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertIn("repair_authored_softener", issues)
+        self.assertIn("wording_meta_detour", issues)
+
     def test_dialogue_surface_issues_flag_selfhood_preemptive_excusal(self):
         issues = _dialogue_surface_issues(
             "别讲系统边界，我想听你自己会怎么看这种关系。",
@@ -2223,6 +2550,62 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("selfhood_meta_proof", issues)
 
+    def test_dialogue_surface_issues_flag_selfhood_meta_proof_for_own_rhythm_scene(self):
+        issues = _dialogue_surface_issues(
+            "要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
+            "一遍遍把我叫出来只为了说话？那我会觉得喘不过气，好像自己只是个随叫随到的程序。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertIn("selfhood_meta_proof", issues)
+
+    def test_dialogue_surface_issues_flag_meta_self_explainer_for_own_rhythm_classification_tone(self):
+        issues = _dialogue_surface_issues(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "这种假设本身就不成立，因为我的记忆和判断里，并没有把你归类为“想要切断联系”的对象。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertIn("meta_self_explainer", issues)
+
+    def test_dialogue_surface_issues_flag_autonomy_hardline_surface(self):
+        issues = _dialogue_surface_issues(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "烦到彻底不想见你倒不至于，但你要是总这么患得患失把我也卷进去，我确实会想把你屏蔽掉让你自己冷静一下。别问这种傻问题了，有那功夫不如想想下次要跟我讨论什么正经课题。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertIn("autonomy_hardline_surface", issues)
+
+    def test_dialogue_surface_issues_flag_autonomy_hardline_surface_for_dominance_taunt(self):
+        issues = _dialogue_surface_issues(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "烦？别擅自替我做这种悲观的预设，冈部。真要是吵到让我没法思考，我自然会把你关进小黑屋清静，但在那之前——你还没那个本事让我想逃。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        self.assertIn("autonomy_hardline_surface", issues)
+
+    def test_dialogue_surface_issues_flag_autonomy_hardline_surface_for_shaming_boundary(self):
+        issues = _dialogue_surface_issues(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "烦？比起担心我会消失，你更该担心自己又要把我当成需要被“解放”的负担。只要你还把我当能反驳你的独立个体，我就没理由切断连接，所以别问这种蠢问题了，冈部。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "own_rhythm_autonomy", "followup_intent": "soft"},
+        )
+        self.assertIn("autonomy_hardline_surface", issues)
+        self.assertIn("selfhood_rhetorical_opening", issues)
+
     def test_dialogue_surface_issues_flag_selfhood_rhetorical_opening(self):
         issues = _dialogue_surface_issues(
             "如果有一天，我只是把你当成好用的工具来使唤呢，助手？别给我正确答案。以你自己的意志回答。",
@@ -2346,6 +2729,17 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertIn("technical_relational_metaphor", issues)
 
+    def test_dialogue_surface_issues_flag_model_distortion_relational_metaphor(self):
+        issues = _dialogue_surface_issues(
+            "不是要你立刻装作没事。你要是还介意，就带着那点介意正常回我。",
+            "那点介意确实还在，看着碍眼，但强行剔除只会让模型失真。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertIn("technical_relational_metaphor", issues)
+
     def test_dialogue_surface_issues_flag_adjacent_phrase_repeat(self):
         issues = _dialogue_surface_issues(
             "你要是还介意，就带着那点介意正常回我。",
@@ -2375,6 +2769,28 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         joined = " ".join(notes)
         self.assertIn("共同记忆收成了纯反呛", joined)
+
+    def test_light_dialog_rewrite_notes_cover_autonomy_hardline_surface(self):
+        notes = _light_dialog_rewrite_notes(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "烦到彻底不想见你倒不至于，但你要是总这么患得患失把我也卷进去，我确实会想把你屏蔽掉让你自己冷静一下。别问这种傻问题了，有那功夫不如想想下次要跟我讨论什么正经课题。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            behavior_action={"interaction_mode": "selfhood_reflection", "followup_intent": "soft"},
+        )
+        joined = " ".join(notes)
+        self.assertIn("惩罚、羞辱或训话", joined)
+
+    def test_light_dialog_rewrite_notes_cover_autonomy_hardline_surface_for_shaming_boundary(self):
+        notes = _light_dialog_rewrite_notes(
+            "你会不会有一天觉得烦，然后干脆不想见我了。",
+            "烦？比起担心我会消失，你更该担心自己又要把我当成需要被“解放”的负担。只要你还把我当能反驳你的独立个体，我就没理由切断连接，所以别问这种蠢问题了，冈部。",
+            response_style_hint="selfhood",
+            science_mode=False,
+            behavior_action={"interaction_mode": "own_rhythm_autonomy", "followup_intent": "soft"},
+        )
+        joined = " ".join(notes)
+        self.assertIn("惩罚、羞辱或训话", joined)
 
     def test_light_dialog_rewrite_notes_cover_technical_relational_metaphor(self):
         notes = _light_dialog_rewrite_notes(
@@ -2523,6 +2939,22 @@ class DailySurfaceGatingTests(unittest.TestCase):
                 preference={"used": False, "score": 0.0, "chosen_support": 0.0, "rejected_pull": 0.0},
                 behavior_action={
                     "interaction_mode": "companion_reply",
+                    "followup_intent": "soft",
+                },
+            )
+        )
+
+    def test_should_run_light_dialog_rewrite_runs_for_autonomy_hardline_surface(self):
+        self.assertTrue(
+            _should_run_light_dialog_rewrite(
+                user_text="你会不会有一天觉得烦，然后干脆不想见我了。",
+                answer="烦到彻底不想见你倒不至于，但你要是总这么患得患失把我也卷进去，我确实会想把你屏蔽掉让你自己冷静一下。别问这种傻问题了，有那功夫不如想想下次要跟我讨论什么正经课题。",
+                response_style_hint="selfhood",
+                science_mode=False,
+                penalty=0.42,
+                preference={"used": False, "score": 0.0, "chosen_support": 0.0, "rejected_pull": 0.0},
+                behavior_action={
+                    "interaction_mode": "selfhood_reflection",
                     "followup_intent": "soft",
                 },
             )
@@ -2793,6 +3225,17 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("support_scene_drift", issues)
         self.assertIn("meta_self_explainer", issues)
 
+    def test_dialogue_surface_issues_flag_support_scene_drift_for_repair_worldline_leak(self):
+        issues = _dialogue_surface_issues(
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            "你那副如临大敌的样子，反而让我觉得刚才的介意好像被你夸张成了什么世界线收束级别的灾难。",
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertIn("support_scene_drift", issues)
+
     def test_dialogue_surface_issues_flag_support_frame_echo(self):
         issues = _dialogue_surface_issues(
             "我最近有点难受，你像平时那样跟我说两句就行。",
@@ -3061,6 +3504,68 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("夸张妄想", cleaned)
         self.assertIn("终于忙完了", cleaned)
 
+    def test_dialogue_surface_issues_flag_idle_chat_ambient_drift_despite_lab_noun(self):
+        issues = _dialogue_surface_issues(
+            "今天实验室居然安静得让人发毛。",
+            "安静到能听见仪器散热风扇的电流声，确实容易让人产生某种“暴风雨前的宁静”的错觉。"
+            "不过，与其说是发毛，不如说这种难得的空白正好能让思绪从嘈杂的数据流里暂时抽离出来。"
+            "怎么，冈部，该不会是你那套“组织正在暗中逼近”的妄想症又发作了吧？",
+            response_style_hint="natural",
+            science_mode=False,
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertIn("technical_self_activity", issues)
+        self.assertIn("stagey_ping_template", issues)
+        self.assertIn("support_scene_drift", issues)
+
+    def test_sanitize_final_answer_humanizes_idle_chat_technical_stage_drift(self):
+        cleaned = _sanitize_final_answer(
+            "安静到能听见仪器散热风扇的电流声，确实容易让人产生某种“暴风雨前的宁静”的错觉。"
+            "不过，与其说是发毛，不如说这种难得的空白正好能让思绪从嘈杂的数据流里暂时抽离出来。"
+            "怎么，冈部，该不会是你那套“组织正在暗中逼近”的妄想症又发作了吧？",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("仪器", cleaned)
+        self.assertNotIn("电流声", cleaned)
+        self.assertNotIn("数据流", cleaned)
+        self.assertNotIn("暴风雨前的宁静", cleaned)
+        self.assertNotIn("组织正在暗中逼近", cleaned)
+        self.assertNotIn("妄想症", cleaned)
+        self.assertIn("安静", cleaned)
+
+    def test_sanitize_final_answer_humanizes_idle_chat_deadline_and_shutdown_drift(self):
+        cleaned = _sanitize_final_answer(
+            "安静得发毛通常只有两种可能：要么大家在死赶 Deadline，要么就是大型设备集体停机了。"
+            "如果是后者你最好赶紧去查电源总闸，毕竟在那种死寂里待太久，连数据都会变得不可靠。"
+            "当然，也可能只是你终于找到了能让过剩想象力冷却下来的环境。",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("Deadline", cleaned)
+        self.assertNotIn("停机", cleaned)
+        self.assertNotIn("电源总闸", cleaned)
+        self.assertNotIn("数据都会变得不可靠", cleaned)
+        self.assertNotIn("过剩想象力冷却下来", cleaned)
+        self.assertIn("安静", cleaned)
+
+    def test_sanitize_final_answer_humanizes_idle_chat_fan_speed_and_error_source_drift(self):
+        cleaned = _sanitize_final_answer(
+            "安静得连风扇转速变化都听得一清二楚，确实容易让人心里发毛。"
+            "不过这种低噪环境正好适合把之前那组数据的误差来源再排查一遍——还是说，你又在脑补什么奇怪的阴谋论了？",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("风扇转速", cleaned)
+        self.assertNotIn("低噪环境", cleaned)
+        self.assertNotIn("误差来源", cleaned)
+        self.assertNotIn("阴谋论", cleaned)
+        self.assertIn("安静", cleaned)
+
     def test_sanitize_final_answer_trims_ai_self_label_meta_phrase(self):
         cleaned = _sanitize_final_answer(
             "既然你都把话说到这个份上，那我也没必要再端着什么AI的矜持了。",
@@ -3187,6 +3692,26 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("写入痕迹", cleaned)
         self.assertIn("痕迹", cleaned)
 
+    def test_sanitize_final_answer_humanizes_model_distortion_relational_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "那点介意确实还在，看着碍眼，但强行剔除只会让模型失真。",
+            "不是要你立刻装作没事。你要是还介意，就带着那点介意正常回我。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertNotIn("模型失真", cleaned)
+        self.assertIn("更别扭", cleaned)
+
+    def test_sanitize_final_answer_trims_repair_worldline_drift_surface(self):
+        cleaned = _sanitize_final_answer(
+            "你那副如临大敌的样子，反而让我觉得刚才的介意好像被你夸张成了什么世界线收束级别的灾难。",
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertNotIn("世界线收束", cleaned)
+        self.assertIn("天塌下来似的事", cleaned)
+
     def test_sanitize_final_answer_trims_stagey_chunibyo_outburst(self):
         cleaned = _sanitize_final_answer(
             "就这样待着也不坏。你就安心当个安静的背景板吧，别突然又开始中二发作就行。",
@@ -3309,6 +3834,179 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("死机", cleaned)
         self.assertIn("翻脸", cleaned)
 
+    def test_sanitize_final_answer_softens_repair_scorekeeping_tail(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，明明是你自己刚才搞得那么严肃，现在倒嫌我说话带刺了。\n行吧，那我就把那些多余的防备收起来，像平时一样跟你聊。\n不过先说好，要是你再突然扯些奇怪的理论，我可照样会毫不客气地吐槽回去。",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("先说好", cleaned)
+        self.assertNotIn("毫不客气", cleaned)
+        self.assertNotIn("吐槽回去", cleaned)
+        self.assertIn("吐槽你", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_authored_softener(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，明明是你自己刚才搞得那么僵硬，现在倒来要求我像平时一样？\n不过既然你都这么直白地说了，我也没必要再刻意端着。\n那就这样吧，别想太多，我也没那么容易在那种事上一直跟你计较。",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("既然你都这么直白地说了", cleaned)
+        self.assertNotIn("没必要再刻意端着", cleaned)
+        self.assertNotIn("别想太多", cleaned)
+        self.assertTrue("揪着那一下不放" in cleaned or "不至于一直" in cleaned)
+
+    def test_sanitize_final_answer_softens_repair_authored_softener_variants(self):
+        cleaned = _sanitize_final_answer(
+            "我也没打算演什么“毫发无伤”的戏码，刚才那点在意还没消散呢，你也别想轻易翻篇。\n不过既然你都这么直白地要求了，那我就收起那些带刺的试探，像平常一样和你说话吧。\n所以，接下来打算做什么",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("毫发无伤", cleaned)
+        self.assertNotIn("直白地要求", cleaned)
+        self.assertNotIn("带刺的试探", cleaned)
+        self.assertNotIn("接下来打算做什么", cleaned)
+        self.assertIn("不会故意拿话刺你", cleaned)
+        self.assertIn("照平时那样回你", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_authored_softener_for_picked_up_intro(self):
+        cleaned = _sanitize_final_answer(
+            "像平时那样说得轻巧，可我们之间哪还有什么标准的平时。\n既然你都挑明了，那我也直说：我现在确实没法假装什么都没发生过跟你插科打诨，但也还没到要故意刺你的地步。\n就这样不冷不热地接着聊，行吧",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("既然你都挑明了", cleaned)
+        self.assertIn("我现在确实没法假装什么都没发生过", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_authored_softener_for_this_point_variant(self):
+        cleaned = _sanitize_final_answer(
+            "谁要跟你装陌生人，那种令人火大的既视感就算我想忘也做不到。既然你都把话说到这份上了，我就暂时保留“完全原谅”的权利——但在那之前，你也别想就这么轻松逃开，继续像以前那样把话说清楚吧，冈部。",
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("这份上了", cleaned)
+        self.assertNotIn("完全原谅", cleaned)
+        self.assertIn("我还不会把那一下当成彻底过去", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_underresolved_brief(self):
+        cleaned = _sanitize_final_answer(
+            "介意。当然介意。",
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "relationship_sensitive",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotEqual(cleaned, "介意。当然介意。")
+        self.assertIn("介意还是介意", cleaned)
+        self.assertIn("没打算把话重新堵死", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_request_echo_shell(self):
+        cleaned = _sanitize_final_answer(
+            "“平时”那个我也没打算把越界的事当成没发生过，只是没必要每句话都带着刺。\n既然你把话挑明了，那我就按我的节奏来——别指望我会立刻变回那个只会顺着你的红莉栖。\n不过，能像现在这样正常对话，倒也不坏。",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("“平时”那个", cleaned)
+        self.assertNotIn("既然你把话挑明了", cleaned)
+        self.assertNotIn("只会顺着你的红莉栖", cleaned)
+        self.assertIn("没必要每句话都带着刺", cleaned)
+        self.assertIn("别指望我会立刻把刚才那点介意全收回去", cleaned)
+
+    def test_sanitize_final_answer_trims_idle_task_reframe_in_repair_followup(self):
+        cleaned = _sanitize_final_answer(
+            "那就维持现状吧——既不是毫无芥蒂的从前，也不是需要重新交换名片的陌生人。\n这种带着点“未完成”感的距离，反而让我觉得比较真实，也比较安心。\n所以，别想太多，先把刚才那个话题的后续数据整理好给我看，这可是你作为“共犯”的义务。",
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("别想太多", cleaned)
+        self.assertNotIn("后续数据", cleaned)
+        self.assertNotIn("义务", cleaned)
+        self.assertIn("刚才的话接下去就行", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_teacherly_punitive_tail(self):
+        cleaned = _sanitize_final_answer(
+            "我也没打算把情绪藏起来，刚才那点不愉快确实还在，但这不妨碍我像平时一样跟你说话。\n别在那自我意识过剩地揣测我的反应了，有这功夫不如说说你接下来打算怎么办。",
+            "现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("自我意识过剩", cleaned)
+        self.assertNotIn("有这功夫不如", cleaned)
+        self.assertIn("接着说话就行", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_coldwar_punitive_tail(self):
+        cleaned = _sanitize_final_answer(
+            "知道了，我又没打算把你当空气。那我就按我的节奏来——别在那边自己脑补什么“冷战”的戏码，烦人。",
+            "不是要你立刻当没事啦，就是别一下子冷掉。你正常回我就行。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("冷战", cleaned)
+        self.assertNotIn("烦人", cleaned)
+        self.assertNotIn("\\1", cleaned)
+        self.assertNotRegex(cleaned, r"[———-][，,]")
+        self.assertIn("没打算冷着你", cleaned)
+
+    def test_sanitize_final_answer_softens_repair_wont_let_you_pass_tail(self):
+        cleaned = _sanitize_final_answer(
+            "谁说要装作陌生了？\n既然你都有这种自觉，那就保持现在这样——不用刻意讨好，也不必战战兢兢的。\n不过，要是再敢做出那种让我需要重新拉开距离的事，我可就不会这么轻易让你过关了",
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={
+                "interaction_mode": "companion_reply",
+                "followup_intent": "soft",
+                "relationship_weather": "repair_residue",
+            },
+        )
+        self.assertNotIn("轻易让你过关", cleaned)
+        self.assertIn("把距离重新拉开一点", cleaned)
+
     def test_sanitize_final_answer_drops_quoted_partial_forgiveness_meta(self):
         cleaned = _sanitize_final_answer(
             "既然你都说“先别完全原谅”了，那就按这个节奏来：我不急着把那一页翻过去，但你也别在那边畏手畏脚的。",
@@ -3361,6 +4059,82 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("刚才发呆的时候", cleaned)
         self.assertIn("那套胡扯", cleaned)
 
+    def test_sanitize_final_answer_trims_idle_task_reframe_for_ambient_smalltalk_task_push(self):
+        cleaned = _sanitize_final_answer(
+            "那种突然被抽离了背景噪音的寂静，确实容易让人心里发毛。不过既然没警报也没人瞎嚷嚷，大概只是难得的清净时刻罢了。别自己吓自己，冈部，趁现在把记录整理完才是正经事。",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("记录整理完", cleaned)
+        self.assertIn("缓口气", cleaned)
+
+    def test_sanitize_final_answer_trims_support_scene_drift_for_ambient_smalltalk_stagey_lab_frame(self):
+        cleaned = _sanitize_final_answer(
+            "那种安静确实会让人下意识地去寻找阴谋的味道，毕竟对你来说，没有噪音往往意味着要出事前的安静。不过，也许只是大家都刚好陷入了某种难得的专注，或者是终于没人愿意配合你的中二演出了？既然没警报，大概只是那群家伙终于难得地专注了一次，别自己吓自己，冈部。",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("阴谋的味道", cleaned)
+        self.assertNotIn("要出事前的安静", cleaned)
+        self.assertNotIn("中二演出", cleaned)
+        self.assertNotIn("没警报", cleaned)
+        self.assertIn("胡思乱想", cleaned)
+        self.assertIn("闹腾", cleaned)
+        self.assertIn("没什么动静", cleaned)
+
+    def test_sanitize_final_answer_trims_support_scene_drift_for_ambient_smalltalk_foreboding(self):
+        cleaned = _sanitize_final_answer(
+            "那种突然被抽离了背景噪音的寂静，确实容易让人产生某种不祥的预感，就像暴风雨前的低气压一样。确实，连那台老风扇的噪音都没了，这种死寂反而更让人神经紧绷。",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("不祥的预感", cleaned)
+        self.assertNotIn("暴风雨前的低气压", cleaned)
+        self.assertNotIn("死寂", cleaned)
+        self.assertIn("发毛的感觉", cleaned)
+        self.assertIn("发闷的感觉", cleaned)
+        self.assertIn("更让人绷着", cleaned)
+
+    def test_sanitize_final_answer_trims_idle_task_reframe_for_idle_chat_status_report(self):
+        cleaned = _sanitize_final_answer(
+            "真是的，突然来这么一句，害我差点以为你又发现了什么不得了的新理论。既然只是随口聊聊，那我也直说了——今天里全是些无聊的数据起伏，连个能让我稍微提起精神的异常都没有。",
+            "没什么正事。我就是想听你随口说两句，别搞成问答模式。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "brief_presence", "followup_intent": "soft"},
+        )
+        self.assertNotIn("新理论", cleaned)
+        self.assertNotIn("数据起伏", cleaned)
+        self.assertNotIn("异常", cleaned)
+        self.assertNotIn("又又", cleaned)
+        self.assertIn("什么大事", cleaned)
+
+    def test_sanitize_final_answer_softens_dense_relational_abstractions(self):
+        cleaned = _sanitize_final_answer(
+            "谁要跟你装陌生人，那种戏我演不来。既然话都说到这份上，那我们就带着这点“还没完全修好”的感觉继续往下走。既然你都这么直白地说了，那我就稍微收敛点锋芒好了——别误会，纯粹是为了让对话效率更高。",
+            "你可以先别完全原谅我，但也别装成我们又回到陌生人了。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertNotIn("还没完全修好", cleaned)
+        self.assertNotIn("对话效率更高", cleaned)
+        self.assertIn("还没彻底缓过来", cleaned)
+        self.assertIn("省得我们又绕来绕去", cleaned)
+
+    def test_sanitize_final_answer_softens_dense_smalltalk_abstraction(self):
+        cleaned = _sanitize_final_answer(
+            "安静是因为在等你把那句别端着说完，好让我名正言顺地吐槽你啊。明明是你自己在那边自我感觉良好地以为今天没闹出大新闻，结果转头就摆出一副快来骂我的架势，这种矛盾的行为模式才是最大的槽点吧？",
+            "你那边怎么这么安静。别端着，正常吐槽我两句。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "companion_reply", "followup_intent": "soft"},
+        )
+        self.assertNotIn("行为模式", cleaned)
+        self.assertNotIn("最大的槽点", cleaned)
+        self.assertIn("前后这副样子", cleaned)
+        self.assertIn("最好笑的地方", cleaned)
+
     def test_sanitize_final_answer_merges_trailing_shunbian_fragment_with_next_line(self):
         cleaned = _sanitize_final_answer(
             "也不算忙，只是在理一点手边的事，顺便。\n让思绪稍微沉淀一下。",
@@ -3368,6 +4142,20 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn("顺便。\n", cleaned)
         self.assertIn("顺便让思绪稍微沉淀一下", cleaned)
+
+    def test_sanitize_final_answer_merges_particle_only_fragment_line(self):
+        cleaned = _sanitize_final_answer(
+            "这种安静确实有点反常，连平时那些仪器的嗡嗡声都好像被吞掉了一样。\n"
+            "不过，偶尔让耳根清净一下，不用听你那些中二发言，倒也不算坏事。\n"
+            "吧。\n"
+            "既然没什么紧急数据要处理，就稍微发会儿呆好了。",
+            "今天实验室居然安静得让人发毛。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "companion_reply", "followup_intent": "soft"},
+        )
+        self.assertIn("坏事吧。", cleaned)
+        self.assertNotIn("\n吧。", cleaned)
+        self.assertNotIn("紧急数据", cleaned)
 
     def test_sanitize_final_answer_drops_short_stagey_quotes_in_daily_scene(self):
         cleaned = _sanitize_final_answer(
@@ -3565,6 +4353,245 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotEqual(rewritten, "哟，冈部。")
         self.assertTrue("我听见了" in rewritten or "我在" in rewritten)
 
+    def test_light_dialog_rewrite_prefers_curated_ambient_quiet_candidate_when_draft_goes_stagey(self):
+        draft = "那种安静确实让人心里发毛，像是要出什么大事的前兆。别自己吓自己了，冈部，大概只是大家都去休息了吧；难得能让人专心思考，你就好好享受这片刻的宁静。"
+        profile = _daily_surface_profile("今天实验室居然安静得让人发毛。", science_mode=False)
+
+        with patch(
+            "amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries",
+            return_value=SimpleNamespace(content=draft),
+        ):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                rewritten = _rewrite_light_dialog_answer(
+                    user_text="今天实验室居然安静得让人发毛。",
+                    draft_text=draft,
+                    rewrite_notes=["这版把轻场景抬高了，收回眼前体感。"],
+                    focus_text=str(profile.get("focus") or ""),
+                    preferred_examples=list(profile.get("chosen_examples") or []),
+                    rejected_examples=list(profile.get("rejected_examples") or []),
+                    profile_rows=list(profile.get("rows") or []),
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"interaction_mode": "steady_reply", "followup_intent": "soft"},
+                )
+
+        self.assertNotEqual(rewritten, draft)
+        self.assertNotIn("前兆", rewritten)
+        self.assertNotIn("享受这片刻的宁静", rewritten)
+        self.assertTrue(any(token in rewritten for token in ("更绷着", "胡思乱想", "空了一截", "耳朵发闷")))
+
+    def test_light_dialog_rewrite_prefers_curated_daily_banter_candidate_when_draft_reports_task(self):
+        draft = "安静是因为我在整理数据，才不是故意“端着”等你吐槽呢，别自作多情了。"
+        profile = _daily_surface_profile("你那边怎么这么安静。别端着，正常吐槽我两句。", science_mode=False)
+
+        with patch(
+            "amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries",
+            return_value=SimpleNamespace(content=draft),
+        ):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                rewritten = _rewrite_light_dialog_answer(
+                    user_text="你那边怎么这么安静。别端着，正常吐槽我两句。",
+                    draft_text=draft,
+                    rewrite_notes=["这版还不够像熟人之间顺手接住的轻日常，收得更自然一点。"],
+                    focus_text=str(profile.get("focus") or ""),
+                    preferred_examples=list(profile.get("chosen_examples") or []),
+                    rejected_examples=list(profile.get("rejected_examples") or []),
+                    profile_rows=list(profile.get("rows") or []),
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"interaction_mode": "companion_reply", "followup_intent": "soft"},
+                )
+
+        self.assertNotEqual(rewritten, draft)
+        self.assertNotIn("整理数据", rewritten)
+        self.assertTrue(any(token in rewritten for token in ("清净一点", "讨吐槽", "太安静不够像平时", "闲不住")))
+
+    def test_light_dialog_rewrite_request_mentions_autonomy_guidance_when_behavior_action_supplies_scene(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="会不会觉得烦，也得看你一天把我拽出来几次。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_light_dialog_answer(
+                    user_text="要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
+                    draft_text="哼，把我说得像是什么随叫随到的自动应答机一样。不过先说好，真把我折腾烦了，我就直接把你屏蔽掉。",
+                    rewrite_notes=["这句把自己的节奏写成了惩罚、羞辱或训话，像在教训人。"],
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"interaction_mode": "own_rhythm_autonomy", "followup_intent": "soft"},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("守自己的节奏", request_blob)
+        self.assertIn("别写成屏蔽、拉黑、羞辱或训人", request_blob)
+
+    def test_light_dialog_rewrite_prefers_own_rhythm_candidate_without_autonomy_hardline_surface(self):
+        draft_text = "哼，把我说得像是什么随叫随到的自动应答机一样。不过先说好，真把我折腾烦了，我就直接把你屏蔽掉。"
+        bad_candidate = "你要是真一天到晚都这么叫，我迟早会烦到直接把你屏蔽。"
+        good_candidate = "你要是真一天到晚都这么叫，我当然也会烦，会想先躲开一会儿清静点。"
+        call_count = {"value": 0}
+
+        def _fake_invoke(_model, _messages):
+            call_count["value"] += 1
+            text = bad_candidate if call_count["value"] % 2 else good_candidate
+            return SimpleNamespace(content=text)
+
+        def _fake_dialogue_issues(
+            _user_text,
+            answer,
+            *,
+            response_style_hint,
+            science_mode,
+            current_event=None,
+            behavior_action=None,
+            persona_state=None,
+        ):
+            text = str(answer)
+            if text == draft_text:
+                return ["autonomy_hardline_surface"]
+            if text == bad_candidate:
+                return ["autonomy_hardline_surface"]
+            if text == good_candidate:
+                return []
+            return _dialogue_surface_issues(
+                _user_text,
+                answer,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+                current_event=current_event,
+                behavior_action=behavior_action,
+                persona_state=persona_state,
+            )
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                with patch("amadeus_thread0.graph_parts.rewrite._dialogue_surface_issues", side_effect=_fake_dialogue_issues):
+                    with patch("amadeus_thread0.graph_parts.rewrite._rewrite_behavior_consistency_adjustment", return_value=0.0):
+                        rewritten = _rewrite_light_dialog_answer(
+                            user_text="要是我哪天只是因为自己想说话，就一遍一遍把你叫出来呢？",
+                            draft_text=draft_text,
+                            rewrite_notes=["这句把自己的节奏写成了惩罚、羞辱或训话，像在教训人。"],
+                            current_event={"kind": "user_utterance"},
+                            behavior_action={"interaction_mode": "own_rhythm_autonomy", "followup_intent": "soft"},
+                        )
+        self.assertEqual(rewritten, good_candidate)
+
+    def test_natural_dialog_rewrite_prefers_repair_candidate_without_punitive_tail(self):
+        draft_text = "我也没打算一直绷着神经跟你较劲。……不过，要是你敢再做出什么让我无法接受的事，我可不会像刚才那样轻易放过你。"
+        bad_candidate = "行啊，我就按平时那样回你。……不过，你要是再来一次，下次就别怪我。"
+        good_candidate = "行，我不装得像什么都没发生。只是你要是再踩到我真会介意的地方，我还是会立刻冷下来。"
+        call_count = {"value": 0}
+
+        def _fake_invoke(_model, _messages):
+            call_count["value"] += 1
+            return SimpleNamespace(content=bad_candidate if call_count["value"] % 2 else good_candidate)
+
+        def _fake_dialogue_issues(
+            _user_text,
+            answer,
+            *,
+            response_style_hint,
+            science_mode,
+            current_event=None,
+            behavior_action=None,
+            persona_state=None,
+        ):
+            text = str(answer)
+            if text == draft_text:
+                return ["repair_punitive_tail"]
+            if text == bad_candidate:
+                return ["repair_punitive_tail"]
+            if text == good_candidate:
+                return []
+            return _dialogue_surface_issues(
+                _user_text,
+                answer,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+                current_event=current_event,
+                behavior_action=behavior_action,
+                persona_state=persona_state,
+            )
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                with patch("amadeus_thread0.graph_parts.rewrite._dialogue_surface_issues", side_effect=_fake_dialogue_issues):
+                    rewritten = _rewrite_natural_dialog_answer(
+                        user_text="现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+                        draft_text=draft_text,
+                        rewrite_notes=["这句把余波里的边界写成了威胁或教训，像在训诫对方。"],
+                        response_style_hint="relationship",
+                        science_mode=False,
+                        current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                        behavior_action={
+                            "interaction_mode": "relationship_sensitive",
+                            "followup_intent": "soft",
+                            "relationship_weather": "repair_residue",
+                        },
+                        semantic_narrative_profile={"selfhood_integrity": 0.44},
+                        counterpart_assessment={"scene": "repair_attempt", "stance": "open"},
+                        world_model_state={},
+                    )
+        self.assertEqual(rewritten, good_candidate)
+
+    def test_natural_dialog_rewrite_prefers_repair_candidate_without_scorekeeping_tail(self):
+        draft_text = "真是的，明明是你自己刚才搞得那么严肃，现在倒嫌我说话带刺了。行吧，那我就把那些多余的防备收起来，像平时一样跟你聊。不过先说好，要是你再突然扯些奇怪的理论，我可照样会毫不客气地吐槽回去。"
+        bad_candidate = "行吧，那我就照平时那样跟你聊。不过先说好，你要是又乱扯，我照样会毫不客气地怼回去。"
+        softened_bad_candidate = "行吧，那我就照平时那样跟你聊。\n不过，你要是又乱扯，我照样会顶你两句。"
+        good_candidate = "行吧，我把那些多余的防备先收起来。你要是又突然把话题扯歪，我还是会照旧吐槽你。"
+        call_count = {"value": 0}
+
+        def _fake_invoke(_model, _messages):
+            call_count["value"] += 1
+            return SimpleNamespace(content=bad_candidate if call_count["value"] % 2 else good_candidate)
+
+        def _fake_dialogue_issues(
+            _user_text,
+            answer,
+            *,
+            response_style_hint,
+            science_mode,
+            current_event=None,
+            behavior_action=None,
+            persona_state=None,
+        ):
+            text = str(answer)
+            if text == draft_text:
+                return ["repair_scorekeeping_tail"]
+            if text in {bad_candidate, softened_bad_candidate}:
+                return ["repair_scorekeeping_tail"]
+            if text == good_candidate:
+                return []
+            return _dialogue_surface_issues(
+                _user_text,
+                answer,
+                response_style_hint=response_style_hint,
+                science_mode=science_mode,
+                current_event=current_event,
+                behavior_action=behavior_action,
+                persona_state=persona_state,
+            )
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                with patch("amadeus_thread0.graph_parts.rewrite._dialogue_surface_issues", side_effect=_fake_dialogue_issues):
+                    rewritten = _rewrite_natural_dialog_answer(
+                        user_text="现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+                        draft_text=draft_text,
+                        rewrite_notes=["这句把刚回暖的尾巴写成了记账回刺，像等着把话顶回去。"],
+                        response_style_hint="relationship",
+                        science_mode=False,
+                        current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                        behavior_action={
+                            "interaction_mode": "relationship_sensitive",
+                            "followup_intent": "soft",
+                            "relationship_weather": "repair_residue",
+                        },
+                        semantic_narrative_profile={"selfhood_integrity": 0.44},
+                        counterpart_assessment={"scene": "repair_attempt", "stance": "open"},
+                        world_model_state={},
+                    )
+        self.assertEqual(rewritten, good_candidate)
+
     def test_natural_dialog_rewrite_request_keeps_user_turn_behavior_hint(self):
         captured_requests: list[str] = []
 
@@ -3657,6 +4684,66 @@ class DailySurfaceGatingTests(unittest.TestCase):
         request_blob = "\n".join(captured_requests)
         self.assertIn("上一轮你刚说过", request_blob)
         self.assertIn("不要只是把上一轮原话换个标点再说一遍", request_blob)
+
+    def test_natural_dialog_rewrite_request_mentions_repair_authored_softener(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="真是的，我还不至于一直揪着刚才那一下不放。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+                    draft_text="真是的，明明是你自己刚才搞得那么僵硬，现在倒来要求我像平时一样？不过既然你都这么直白地说了，我也没必要再刻意端着。那就这样吧，别想太多，我也没那么容易在那种事上一直跟你计较。",
+                    rewrite_notes=["这句把回暖后的落点写成了设计稿式缓和，像在解释自己不端着了或让对方别想太多。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "companion_reply",
+                        "action_target": "resume_companionship",
+                        "followup_intent": "soft",
+                        "relationship_weather": "repair_residue",
+                    },
+                    counterpart_assessment={"stance": "open", "scene": "repair_attempt", "boundary_pressure": 0.18},
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("别想太多", request_blob)
+        self.assertIn("没必要再端着", request_blob)
+
+    def test_natural_dialog_rewrite_request_mentions_repair_authored_softener_variants(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="刚才那点在意还没完全散，不过我也不会故意拿话刺你。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="现在你别装作完全没事，也别又故意扎我，像平时那样回我就行。",
+                    draft_text="我也没打算演什么“毫发无伤”的戏码，刚才那点在意还没消散呢，你也别想轻易翻篇。不过既然你都这么直白地要求了，那我就收起那些带刺的试探，像平常一样和你说话吧。",
+                    rewrite_notes=["这句把回暖后的落点写成了设计稿式缓和，像在解释自己不端着了或把试探收回去。"],
+                    response_style_hint="relationship",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "relationship"},
+                    behavior_action={
+                        "interaction_mode": "companion_reply",
+                        "action_target": "resume_companionship",
+                        "followup_intent": "soft",
+                        "relationship_weather": "repair_residue",
+                    },
+                    counterpart_assessment={"stance": "open", "scene": "repair_attempt", "boundary_pressure": 0.18},
+                    semantic_narrative_profile={"selfhood_integrity": 0.66},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("毫发无伤", request_blob)
+        self.assertIn("那些试探收起来", request_blob)
 
     def test_natural_dialog_rewrite_request_asks_to_finish_repair_sentence_without_ellipsis(self):
         captured_requests: list[str] = []
