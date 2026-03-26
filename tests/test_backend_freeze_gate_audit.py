@@ -3,6 +3,7 @@ import unittest
 from evals.run_backend_freeze_gate_audit import (
     _apply_historical_readiness,
     _aggregate_overall_status,
+    _build_check_specs,
     _compute_pass_streak,
     _parse_freeze_gate_artifacts,
     _recent_audit_history,
@@ -138,6 +139,13 @@ class BackendFreezeGateAuditTests(unittest.TestCase):
         self.assertIn("`freeze_gate_smokes`", rendered)
         self.assertIn("`json`: `E:/repo/evals/reports/freeze.json`", rendered)
         self.assertIn("`freeze_gate_overall_status=failed`", rendered)
+
+    def test_build_check_specs_covers_architecture_decision_gate(self):
+        specs = _build_check_specs(case_timeout_s=120, smoke_run_tag="audit")
+        ids = {item["id"] for item in specs}
+        self.assertIn("session_fabric_perception_contract", ids)
+        self.assertIn("final_semantics_writeback_traceability", ids)
+        self.assertIn("capability_presence_runtime", ids)
 
 
 if __name__ == "__main__":

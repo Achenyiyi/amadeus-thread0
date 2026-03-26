@@ -12,6 +12,46 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
 
+## Backend Closure Status
+
+Status as of `2026-03-26`: `backend-complete for P0/P1 decisions`
+
+For backend purposes, the structural decisions in this document are now treated as closed under one executable gate:
+
+- formal closeout entrypoint: `python evals/run_backend_freeze_gate_audit.py`
+- required readiness state: `freeze_gate_ready`
+- handoff posture: frontend may consume the frozen backend contract, but backend work should now be limited to bug-fix or additive polish rather than redesign
+
+Closure evidence by decision family:
+
+- `Session Fabric + Perception Event`
+  - runtime: `amadeus_thread0.runtime.runtime_bundle`, `amadeus_thread0.runtime.backend_session`, `amadeus_thread0.runtime.event_identity`
+  - checks: `tests/test_perception_event_contract.py`, `tests/test_thread_runtime.py`, `tests/test_runtime_bundle.py`, `tests/test_turn_events.py`, `tests/test_session_context.py`
+- `Persona Core Fixed + Self Model Evolves`
+  - runtime: `amadeus_thread0/persona_specs/`, `amadeus_thread0.graph_parts.persona_runtime`, `amadeus_thread0.graph_parts.appraisal`, `amadeus_thread0.graph_parts.behavior_runtime`
+  - checks: `tests/test_persona_runtime.py`, `tests/test_appraisal_calibration.py`, `tests/test_behavior_runtime_alignment.py`, `tests/test_dialogue_mode_counterpart.py`
+- `Final Semantics Freeze Before Writeback`
+  - runtime: `amadeus_thread0.graph_parts.prepare_turn_runtime`, `amadeus_thread0.graph_parts.memory_evolution`, `amadeus_thread0.runtime.final_state`
+  - checks: `tests/test_memory_evolution_semantic_writeback.py`, `tests/test_prepare_turn_runtime.py`, `tests/test_response_finalize.py`, `tests/test_final_state.py`, `tests/test_backend_api.py`
+- `Counterpart Model + Relationship Appraisal`
+  - runtime: `amadeus_thread0.graph_parts.relational_runtime`, `amadeus_thread0.graph_parts.relational_carryover`, `amadeus_thread0.utils.counterpart_profile`
+  - checks: `tests/test_dialogue_mode_counterpart.py`, `tests/test_world_model_residue.py`, `tests/test_counterpart_profile.py`
+- `Own Rhythm Engine + Presence Layer`
+  - runtime: `amadeus_thread0.graph_parts.behavior_agenda`, `amadeus_thread0.graph_parts.behavior_runtime`, `amadeus_thread0.runtime.backend_session`
+  - checks: `tests/test_idle_event_context.py`, `tests/test_cli_threading.py`, `tests/test_backend_session.py`, `tests/test_subjective_review_pack.py`
+- `Capability Bus Outside Persona Core`
+  - runtime: tool routing and approval stay in runtime/tooling surfaces, not persona authority surfaces
+  - checks: `tests/test_tooling_routing.py`, `tests/test_tool_approval_policy.py`
+- `Relational Boundary Guard + Full Persona Traceability`
+  - runtime: `counterpart_assessment`, `boundary_pressure`, `reconsolidation_snapshot`, `writeback_trace`
+  - checks: `tests/test_behavior_runtime_alignment.py`, `tests/test_memory_guard.py`, `tests/test_backend_api.py`, `tests/test_cli_views.py`
+
+This closure does not change the intentional P2 deferrals below:
+
+- cross-surface continuity beyond the current backend contract still comes later
+- subagents remain peripheral
+- dynamic skill generation remains deferred
+
 ## P0 Decisions
 
 ### 1. Session Fabric Is The Base Runtime
@@ -156,9 +196,9 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 
 ## Current Implementation Order
 
-1. `Session Fabric + Perception Event`
-2. `Counterpart Model + Relationship Appraisal`
-3. `Own Rhythm Engine`
-4. `Capability Bus`
-5. `Presence Layer`
-6. later frontend / multimodal integration
+1. `Session Fabric + Perception Event` - `backend-closed`
+2. `Counterpart Model + Relationship Appraisal` - `backend-closed`
+3. `Own Rhythm Engine` - `backend-closed`
+4. `Capability Bus` - `backend-closed`
+5. `Presence Layer` - `backend-closed`
+6. later frontend / multimodal integration - `intentionally deferred`

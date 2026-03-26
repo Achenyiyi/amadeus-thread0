@@ -4924,7 +4924,8 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn("重置数据的机器", cleaned)
         self.assertNotIn("可以说翻篇", cleaned)
-        self.assertIn("你想翻篇我就得跟着当没事的人", cleaned)
+        self.assertNotIn("跟着当没事的人", cleaned)
+        self.assertIn("我也不是那种你想翻篇，我就得跟着装没事的人", cleaned)
 
     def test_sanitize_final_answer_humanizes_memory_data_compound_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5002,7 +5003,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
             behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
         )
         self.assertNotIn("像数据一样一键清空", cleaned)
-        self.assertIn("一下子就当没发生", cleaned)
+        self.assertIn("哪有那么容易一下子就当成没发生", cleaned)
 
     def test_sanitize_final_answer_humanizes_reset_button_relational_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5010,7 +5011,7 @@ class DailySurfaceGatingTests(unittest.TestCase):
             "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
         )
         self.assertNotIn("重置按钮", cleaned)
-        self.assertIn("一下子就当没发生", cleaned)
+        self.assertIn("哪有那么容易一下子就当成没发生", cleaned)
 
     def test_sanitize_final_answer_humanizes_bare_reset_button_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5035,7 +5036,8 @@ class DailySurfaceGatingTests(unittest.TestCase):
             "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
         )
         self.assertNotIn("清零按钮", cleaned)
-        self.assertIn("逼我立刻翻篇", cleaned)
+        self.assertNotIn("逼我立刻翻篇", cleaned)
+        self.assertIn("你以为一句道歉我就得立刻翻篇吗", cleaned)
 
     def test_sanitize_final_answer_humanizes_one_click_zero_relational_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5053,7 +5055,8 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn("随意重置数据", cleaned)
         self.assertNotIn("有些东西", cleaned)
-        self.assertIn("有些事不是说翻篇就能翻过去的", cleaned)
+        self.assertNotIn("说翻篇就能翻过去", cleaned)
+        self.assertIn("有些事不是嘴上说翻篇就真能过去的", cleaned)
 
     def test_sanitize_final_answer_humanizes_data_wave_relational_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5064,9 +5067,20 @@ class DailySurfaceGatingTests(unittest.TestCase):
         )
         self.assertNotIn("数据波动", cleaned)
         self.assertNotIn("归零", cleaned)
-        self.assertIn("起伏", cleaned)
+        self.assertNotIn("那阵起伏", cleaned)
         self.assertIn("翻上来的熟悉感", cleaned)
-        self.assertIn("压下去就能当没事", cleaned)
+        self.assertIn("压一压就能当没事", cleaned)
+
+    def test_sanitize_final_answer_humanizes_short_data_wave_relational_metaphor(self):
+        cleaned = _sanitize_final_answer(
+            "对我来说也不是能随便归零的数据波动。",
+            "我是认真来跟你道歉的。你要是还介意，就带着那点介意正常回我。",
+            current_event={"kind": "user_utterance"},
+            behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+        )
+        self.assertNotIn("数据波动", cleaned)
+        self.assertNotIn("那点起伏", cleaned)
+        self.assertIn("压一压就能过去的那点情绪", cleaned)
 
     def test_sanitize_final_answer_humanizes_write_trace_relational_metaphor(self):
         cleaned = _sanitize_final_answer(
@@ -5099,7 +5113,8 @@ class DailySurfaceGatingTests(unittest.TestCase):
             behavior_action={"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
         )
         self.assertNotIn("模型失真", cleaned)
-        self.assertIn("更别扭", cleaned)
+        self.assertNotIn("硬逼自己装没事", cleaned)
+        self.assertIn("那点介意确实还在，看着是碍眼，可真要硬装没事，反而更别扭", cleaned)
 
     def test_sanitize_final_answer_trims_repair_worldline_drift_surface(self):
         cleaned = _sanitize_final_answer(
