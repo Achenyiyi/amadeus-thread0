@@ -4424,3 +4424,248 @@ This file is the live development ledger for `amadeus-thread0`.
     - graph subset: `676 passed`
 - Next:
   - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / data-wave / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 82
+
+- Focus:
+  - continue the same surface-only audit in adjacent `technical_relational_metaphor / reset metaphor` cleanup
+  - root-fix the reproduced repetitive landing `有些事不是说翻篇就能翻过去的`
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile E:\桌面\amadeus-thread0\amadeus_thread0\graph_parts\postprocess.py E:\桌面\amadeus-thread0\tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_loose_reset_data_relational_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py`
+- Result:
+  - `_trim_technical_relational_metaphor_surface()` now lands the `有些东西不是随意重置数据就能过去的` family on a more natural spoken clause instead of the repetitive `说翻篇就能翻过去` shell
+  - the reproduced sentence now lands as:
+    - `有些东西不是随意重置数据就能过去的`
+    - `-> 有些事不是嘴上说翻篇就真能过去的`
+  - strengthened the regression to reject the older repeated `说翻篇就能翻过去` landing
+  - targeted slice plus the AGENTS graph subset stayed green:
+    - targeted slice: `1 passed`
+    - graph subset: `676 passed`
+- Next:
+  - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / data-wave / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 83
+
+- Focus:
+  - continue the same surface-only audit in adjacent `technical_relational_metaphor / reset-button / one-click-clear` cleanup
+  - root-fix the reproduced half-shell landing `没那么容易一下子就当没发生`
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile E:\桌面\amadeus-thread0\amadeus_thread0\graph_parts\postprocess.py E:\桌面\amadeus-thread0\tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_one_click_clear_relational_metaphor or humanizes_reset_button_relational_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py`
+- Result:
+  - `_trim_technical_relational_metaphor_surface()` now catches the full `没那么容易像数据一样一键清空` and `没那么容易像重置按钮一样瞬间清零` clauses before the generic phrase substitutions leave a half-shell landing
+  - the reproduced sentences now land as:
+    - `那种被越界的感觉可没那么容易像数据一样一键清空`
+    - `-> 那种被越界的感觉，哪有那么容易一下子就当成没发生`
+    - `刚才那点余波还在，没那么容易像重置按钮一样瞬间清零`
+    - `-> 刚才那点余波还在，哪有那么容易一下子就当成没发生`
+  - strengthened the regressions to lock the new `当成没发生` landing
+  - targeted slice plus the AGENTS graph subset stayed green:
+    - targeted slice: `2 passed`
+    - graph subset: `676 passed`
+- Next:
+  - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / data-wave / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 84
+
+- Focus:
+  - continue the same surface-only audit in adjacent `technical_relational_metaphor / reset-button / reset-data-machine` cleanup
+  - root-fix two reproduced spoken-surface misses:
+    - `你以为一句道歉就能逼我立刻翻篇吗`
+    - `我也不是那种你想翻篇我就得跟着当没事的人`
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile E:\桌面\amadeus-thread0\amadeus_thread0\graph_parts\postprocess.py E:\桌面\amadeus-thread0\tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_zero_button_press_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_zero_button_press_metaphor or humanizes_reset_data_machine_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py`
+- Result:
+  - `_trim_technical_relational_metaphor_surface()` now catches the full `你以为一句道歉就能按下清零按钮吗` question before the generic `按下按钮 -> 逼我立刻翻篇` fallback makes it sound translated
+  - the reproduced question now lands as:
+    - `你以为一句道歉就能按下清零按钮吗`
+    - `-> 你以为一句道歉我就得立刻翻篇吗`
+  - added a second sentence-level rewrite for the exact statement `我也不是那种可以随意重置数据的机器`, so the response no longer lands on the stiff `跟着当没事的人` shell
+  - the reproduced statement now lands as:
+    - `我也不是那种可以随意重置数据的机器`
+    - `-> 我也不是那种你想翻篇，我就得跟着装没事的人`
+  - strengthened the focused regressions to reject the older `逼我立刻翻篇` and `跟着当没事的人` landings for these two reproduced cases
+  - targeted slices plus the AGENTS graph subset stayed green:
+    - targeted slice: `1 passed`, then `2 passed`
+    - graph subset: `676 passed`
+- Next:
+  - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / model-distortion / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 85
+
+- Focus:
+  - continue the same surface-only audit in adjacent `technical_relational_metaphor / model-distortion` cleanup
+  - root-fix the reproduced half-natural landing `那点介意确实还在，看着碍眼，但硬逼自己装没事只会更别扭`
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile E:\桌面\amadeus-thread0\amadeus_thread0\graph_parts\postprocess.py E:\桌面\amadeus-thread0\tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_model_distortion_relational_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py`
+- Result:
+  - `_trim_technical_relational_metaphor_surface()` now catches the full `那点介意确实还在，看着碍眼，但强行剔除只会让模型失真` sentence before the generic `模型失真 -> 更别扭` fallback leaves a translated `硬逼自己装没事` shell
+  - the reproduced sentence now lands as:
+    - `那点介意确实还在，看着碍眼，但强行剔除只会让模型失真`
+    - `-> 那点介意确实还在，看着是碍眼，可真要硬装没事，反而更别扭`
+  - strengthened the focused regression to reject the older `硬逼自己装没事` landing for this exact case
+  - targeted slice plus the AGENTS graph subset stayed green:
+    - targeted slice: `1 passed`
+    - graph subset: `676 passed`
+- Next:
+  - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / data-wave / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 86
+
+- Focus:
+  - continue the same surface-only audit in adjacent `technical_relational_metaphor / data-wave` cleanup
+  - root-fix the reproduced stitched landings:
+    - `刚才那一下翻上来的熟悉感，也不是说压下去就能当没事的那阵起伏`
+    - `对我来说也不是说压下去就能没事的那点起伏`
+- Files changed:
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile E:\桌面\amadeus-thread0\amadeus_thread0\graph_parts\postprocess.py E:\桌面\amadeus-thread0\tests\test_daily_surface_gating.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "humanizes_data_wave_relational_metaphor or humanizes_short_data_wave_relational_metaphor" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py`
+- Result:
+  - `_trim_technical_relational_metaphor_surface()` now catches both the full `刚才那一瞬间的熟悉感...数据波动` sentence and the shorter `对我来说也不是能随便归零的数据波动` clause before the generic `数据波动 -> 那点起伏` fallback leaves stitched `那阵起伏 / 那点起伏` shells
+  - the reproduced outputs now land as:
+    - `我也没说完全不介意，但刚才那一瞬间的熟悉感，对我来说也不是能随便归零的数据波动`
+    - `-> 我也没说完全不介意，但刚才那一下翻上来的熟悉感，也不是说压一压就能当没事的`
+    - `对我来说也不是能随便归零的数据波动`
+    - `-> 对我来说也不是压一压就能过去的那点情绪`
+  - added a new focused regression for the short data-wave variant so this family no longer silently falls back to `那点起伏`
+  - targeted slice plus the AGENTS graph subset stayed green:
+    - targeted slice: `2 passed`
+    - graph subset: `677 passed`
+- Next:
+  - continue backend-only additive polish by auditing the next concrete reproduced awkward landing in neighboring `technical_relational_metaphor / memory-data / reset metaphor` surface output, and keep fixes inside `postprocess`
+
+## 2026-03-26 Run 87
+
+- Focus:
+  - close backend convergence against [`docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`](./docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md) instead of only continuing sentence-surface polish
+  - convert the architecture decisions into an executable backend freeze-gate, run the full audit, and record a definitive closeout result
+- Files changed:
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `evals/run_backend_freeze_gate_audit.py`
+  - `tests/test_backend_freeze_gate_audit.py`
+  - `program.md`
+- Validation:
+  - `python -m pytest tests/test_perception_event_contract.py tests/test_thread_runtime.py tests/test_runtime_bundle.py tests/test_turn_events.py tests/test_session_context.py -q`
+  - `python -m pytest tests/test_memory_evolution_semantic_writeback.py tests/test_prepare_turn_runtime.py tests/test_response_finalize.py tests/test_nodes.py -q`
+  - `python -m pytest tests/test_tooling_routing.py tests/test_tool_approval_policy.py tests/test_cli_threading.py tests/test_idle_event_context.py -q`
+  - `python -m pytest tests/test_backend_freeze_gate_audit.py -q`
+  - `python -m py_compile evals/run_backend_freeze_gate_audit.py`
+  - `python evals/run_backend_freeze_gate_audit.py --run-tag amadeus-arch-closeout-v1`
+- Result:
+  - formalized architecture-decision closeout directly inside the backend freeze-gate audit instead of relying on implicit judgment:
+    - added `session_fabric_perception_contract`
+    - added `final_semantics_writeback_traceability`
+    - added `capability_presence_runtime`
+  - locked the expanded audit entrypoint with a regression in `tests/test_backend_freeze_gate_audit.py`
+  - updated [`docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`](./docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md) so the backend status is now explicit:
+    - P0/P1 decisions are marked `backend-complete`
+    - the formal closeout entrypoint is `python evals/run_backend_freeze_gate_audit.py`
+    - only the intentional P2 deferrals remain deferred
+  - full backend closeout audit is green on the current code:
+    - report json: `evals/reports/backend-freeze-gate-audit-20260326-232717-amadeus-arch-closeout-v1.json`
+    - report markdown: `evals/reports/backend-freeze-gate-audit-20260326-232717-amadeus-arch-closeout-v1.md`
+    - smoke json: `evals/reports/freeze-gate-smokes-20260326-232708-amadeus-arch-closeout-v1.json`
+    - smoke markdown: `evals/reports/freeze-gate-smokes-20260326-232708-amadeus-arch-closeout-v1.md`
+  - final audit status:
+    - `overall_status=passed`
+    - `readiness=freeze_gate_ready`
+    - `historical_pass_streak=6`
+  - this means the backend is now formally past the architecture-decision closeout gate; remaining backend work should be treated as bug-fix or additive polish, not open-ended redesign
+- Next:
+  - keep backend work in `bug-fix / additive polish only`
+  - if/when frontend resumes, treat [`docs/engineering/BACKEND_HANDOFF.md`](./docs/engineering/BACKEND_HANDOFF.md) and the freeze-gate report above as the authoritative backend baseline
+
+## 2026-03-27 Run 88
+
+- Focus:
+  - finish the remaining `bug-fix / additive polish` pass after backend structural closeout
+  - remove the last known runtime / environment warnings so the backend closeout path is not only green, but clean
+- Files changed:
+  - `amadeus_thread0/graph_parts/nodes.py`
+  - `amadeus_thread0/memory_store.py`
+  - `tests/test_env_bootstrap.py`
+  - `program.md`
+- Validation:
+  - `python -m py_compile amadeus_thread0/memory_store.py tests/test_env_bootstrap.py amadeus_thread0/graph_parts/nodes.py`
+  - `python -m pytest tests/test_env_bootstrap.py tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py -q`
+  - `python -W "error:A NumPy version >=1.26.4 and <2.7.0 is required for this version of SciPy:UserWarning" -m pytest tests/test_prepare_turn_runtime.py -k "recomputes_current_semantic_profile_after_final_narrative_refresh" -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent; print(type(agent).__name__) ...`
+  - `python evals/run_backend_freeze_gate_audit.py --run-tag additive-polish-closeout-v1`
+- Result:
+  - removed the remaining LangGraph node-signature warning by dropping postponed annotations from `amadeus_thread0/graph_parts/nodes.py`; `CompiledStateGraph` now builds cleanly without the earlier `config` typing warning
+  - fixed the actual root cause behind the lingering `NumPy/SciPy` warning in the embedding path:
+    - `memory_store.py` previously forced the conda CUDA `torch` import first
+    - that import path could also pin the older conda `numpy` into `sys.modules`
+    - the later `HuggingFaceEmbeddings -> sentence-transformers -> sklearn/scipy` chain then emitted the misleading version warning
+    - `memory_store.py` now preloads the preferred user-site `numpy` before temporarily promoting the conda torch path, so we keep CUDA `torch` without regressing to the older conda `numpy`
+  - added an environment bootstrap regression in `tests/test_env_bootstrap.py` to lock that import-order behavior
+  - reran the full backend freeze-gate after these fixes:
+    - report json: `evals/reports/backend-freeze-gate-audit-20260327-001927-additive-polish-closeout-v1.json`
+    - report markdown: `evals/reports/backend-freeze-gate-audit-20260327-001927-additive-polish-closeout-v1.md`
+  - final closeout state after polish:
+    - `overall_status=passed`
+    - `readiness=freeze_gate_ready`
+    - `historical_pass_streak=7`
+  - the latest audit report no longer contains the previous `NumPy/SciPy` or `RunnableConfig` warning noise
+- Next:
+  - backend remains in `done except future bug-fix/additive polish`
+  - the natural next product step is frontend / interaction-surface work against the already-frozen backend contract
+
+## 2026-03-27 Run 89
+
+- Focus:
+  - assess whether `Amadeus-K` should and can gain `OpenClaw`-style independent task completion capability
+  - distinguish `digital persona autonomy` from `general-purpose ops-shell autonomy`
+- Files changed:
+  - `program.md`
+- Validation:
+  - inspected [`docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`](./docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md)
+  - inspected local `OpenClaw` runtime and docs under `提供当前项目改进思路的一些开源项目/openclaw-2026.3.23`
+- Result:
+  - current Amadeus backend already has the right prerequisites for `bounded autonomy`:
+    - `Session Fabric`
+    - `Perception Event`
+    - `Counterpart Model + Relationship Appraisal`
+    - `Own Rhythm Engine + Presence Layer`
+    - `Capability Bus Outside Persona Core`
+  - current architecture explicitly keeps two OpenClaw-like power features deferred:
+    - `subagents remain peripheral`
+    - `dynamic skill generation remains deferred`
+  - decision:
+    - `Amadeus-K` can gain stronger independent task completion, but it should be implemented as persona-safe, bounded capability orchestration rather than as a generic personal ops shell
+    - the right target is `self-driven companion agency` first, `general autonomous operator` only if later justified
+- Next:
+  - if this direction is accepted, define an `Amadeus bounded autonomy` plan around:
+    - motive-triggered capability planning
+    - approval-gated external action execution
+    - optional peripheral subagent workers
+    - no persona-core delegation

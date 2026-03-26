@@ -22,6 +22,31 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 os.environ.setdefault("USE_TF", "0")
 
 
+def _preload_user_site_numpy() -> None:
+    """Keep a newer user-site numpy from being shadowed by the conda torch import path.
+
+    The GPU torch bootstrap below temporarily promotes the conda site-packages
+    directory so `torch` resolves to the CUDA build. Without preloading numpy,
+    that import can also pin the older conda numpy into `sys.modules`, and the
+    later sentence-transformers/sklearn stack then emits version warnings.
+    """
+
+    if sys.modules.get("numpy") is not None:
+        return
+    try:
+        user_site = str(site.getusersitepackages() or "").strip()
+    except Exception:
+        user_site = ""
+    if not user_site:
+        return
+    if not (Path(user_site) / "numpy" / "__init__.py").exists():
+        return
+    try:
+        importlib.import_module("numpy")
+    except Exception:
+        sys.modules.pop("numpy", None)
+
+
 def _prefer_conda_gpu_torch() -> None:
     """Prefer the conda-managed GPU torch over a user-site CPU shadow build.
 
@@ -55,6 +80,7 @@ def _prefer_conda_gpu_torch() -> None:
     user_site_str = str(user_site)
     original_path = list(sys.path)
     try:
+        _preload_user_site_numpy()
         sys.path[:] = [item for item in sys.path if item != user_site_str]
         if conda_site_str in sys.path:
             sys.path.remove(conda_site_str)
