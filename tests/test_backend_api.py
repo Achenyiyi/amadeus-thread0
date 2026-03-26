@@ -17,6 +17,7 @@ class FakeBackendSession:
         self.current_checkpoint_config = None
         self.last_summary_state = None
         self.last_extract_args = None
+        self.memory_store = None
 
     def worldline_view(self):
         return {
@@ -240,12 +241,18 @@ class BackendApiTests(unittest.TestCase):
             api, session = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
             state_values = {
                 "emotion_state": {"label": "care"},
+                "bond_state": {"trust": 0.7, "closeness": 0.68, "hurt": 0.02},
+                "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.28},
+                "semantic_narrative_profile": {"history_weight": 0.54, "presence_carry": 0.5},
+                "world_model_state": {"presence_residue": 0.4, "ambient_resonance": 0.2, "self_activity_momentum": 0.3},
+                "evolution_state": {"self_coherence": 0.76, "agency_pressure": 0.42},
                 "behavior_action": {"interaction_mode": "checkin"},
                 "behavior_plan": {"kind": "small_opening"},
                 "reconsolidation_snapshot": {
                     "event_kind": "user_utterance",
                     "interaction_frame": "relationship",
                     "counterpart": {
+                        "summary": "她会先把这次靠近当成一次仍带着谨慎感的修复尝试。",
                         "stance": "watchful",
                         "scene": "repair_attempt",
                         "respect_level": 0.58,
@@ -254,8 +261,14 @@ class BackendApiTests(unittest.TestCase):
                         "reliability_read": 0.57,
                     },
                     "behavior_consequence": {"kind": "leave_small_opening"},
+                    "agenda_lifecycle_consequence": {
+                        "kind": "released_to_self_activity",
+                        "carryover_mode": "own_rhythm",
+                    },
                 },
                 "current_event": {"kind": "idle"},
+                "counterpart_assessment": {"stance": "open", "scene": "care_bid"},
+                "agenda_lifecycle_residue": {"kind": "held", "carryover_mode": "small_opening"},
                 "turn_appraisal": {"scene": "daily_care"},
                 "claim_links": [{"source_ids": [9]}],
                 "evidence_pack": [{"id": 9, "title": "paper"}],
@@ -278,8 +291,29 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["final_text"], "我在。")
             self.assertEqual(event_response.payload["emotion_label"], "care")
             self.assertEqual(event_response.payload["behavior_action"]["interaction_mode"], "checkin")
+            self.assertEqual(event_response.payload["session_context"]["thread_id"], "thread-a")
             self.assertEqual(event_response.payload["turn_summary"]["relationship"]["stage"], "warming")
             self.assertEqual(event_response.payload["reconsolidation_snapshot"]["interaction_frame"], "relationship")
+            self.assertEqual(event_response.payload["emotion_state"]["label"], "care")
+            self.assertEqual(event_response.payload["bond_state"]["trust"], 0.7)
+            self.assertEqual(event_response.payload["allostasis_state"]["autonomy_need"], 0.28)
+            self.assertEqual(event_response.payload["semantic_narrative_profile"]["history_weight"], 0.54)
+            self.assertEqual(event_response.payload["world_model_state"]["presence_residue"], 0.4)
+            self.assertEqual(event_response.payload["evolution_state"]["self_coherence"], 0.76)
+            self.assertEqual(event_response.payload["counterpart_assessment"]["scene"], "repair_attempt")
+            self.assertIn("修复尝试", event_response.payload["counterpart_assessment"]["summary"])
+            event_profile = (
+                event_response.payload["counterpart_assessment"].get("assessment_profile")
+                if isinstance(event_response.payload["counterpart_assessment"].get("assessment_profile"), dict)
+                else {}
+            )
+            self.assertEqual(event_profile.get("dominant_scene_signal"), "repair")
+            self.assertIn("safety_read", event_profile)
+            self.assertIn("repairability", event_profile)
+            self.assertIn("predictability", event_profile)
+            self.assertIn("dependency_risk", event_profile)
+            self.assertIn("closeness_read", event_profile)
+            self.assertEqual(event_response.payload["agenda_lifecycle_residue"]["kind"], "released_to_self_activity")
             self.assertEqual(
                 event_response.payload["turn_summary"]["current_turn"]["behavior_consequence_kind"],
                 "leave_small_opening",
@@ -288,15 +322,225 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(turn_response.kind, "assistant_turn")
             self.assertEqual(turn_response.meta["source"], "cli")
             self.assertEqual(turn_response.payload["final_text"], "final from session")
+            self.assertEqual(turn_response.payload["session_context"]["thread_id"], "thread-a")
             self.assertEqual(turn_response.payload["claim_links"][0]["source_ids"], [9])
             self.assertEqual(turn_response.payload["sources"][0]["id"], 9)
             self.assertEqual(turn_response.payload["reconsolidation_snapshot"]["event_kind"], "user_utterance")
+            self.assertEqual(turn_response.payload["emotion_state"]["label"], "care")
+            self.assertEqual(turn_response.payload["bond_state"]["closeness"], 0.68)
+            self.assertEqual(turn_response.payload["allostasis_state"]["safety_need"], 0.18)
+            self.assertEqual(turn_response.payload["semantic_narrative_profile"]["presence_carry"], 0.5)
+            self.assertEqual(turn_response.payload["world_model_state"]["ambient_resonance"], 0.2)
+            self.assertEqual(turn_response.payload["evolution_state"]["agency_pressure"], 0.42)
             self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["recon_event_kind"], "user_utterance")
             self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["counterpart_stance"], "watchful")
             self.assertEqual(turn_response.payload["turn_summary"]["current_turn"]["counterpart_scene"], "repair_attempt")
+            self.assertEqual(turn_response.payload["counterpart_assessment"]["scene"], "repair_attempt")
+            turn_profile = (
+                turn_response.payload["counterpart_assessment"].get("assessment_profile")
+                if isinstance(turn_response.payload["counterpart_assessment"].get("assessment_profile"), dict)
+                else {}
+            )
+            self.assertEqual(turn_profile.get("dominant_scene_signal"), "repair")
+            self.assertIn("safety_read", turn_profile)
+            self.assertIn("repairability", turn_profile)
+            self.assertEqual(turn_response.payload["agenda_lifecycle_residue"]["carryover_mode"], "own_rhythm")
             self.assertEqual(turn_response.payload["pending_utterance_fragment"], "unfinished thought")
+            self.assertEqual(turn_response.payload["current_event"]["kind"], "idle")
             self.assertEqual(session.last_extract_args, (state_values, "ignored"))
             self.assertIs(session.last_summary_state, state_values)
+
+    def test_turn_response_prefers_graph_session_context_for_turn_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "session_context": {
+                    "thread_id": "thread-a",
+                    "turn_id": "thread-a:555",
+                    "turn_started_at": 555,
+                    "user_id": "okabe",
+                    "checkpoint_id": "cp-2",
+                },
+                "current_event": {
+                    "kind": "idle",
+                    "created_at": 555,
+                    "perception": {},
+                },
+            }
+
+            response = api.build_turn_response(state_values=state_values, streamed_text="")
+
+            self.assertEqual(response.payload["session_context"]["thread_id"], "thread-a")
+            self.assertEqual(response.payload["session_context"]["turn_id"], "thread-a:555")
+            self.assertEqual(response.payload["session_context"]["turn_started_at"], 555)
+            self.assertEqual(response.payload["session_context"]["user_id"], "okabe")
+            self.assertEqual(response.payload["session_context"]["checkpoint_id"], "cp-2")
+            self.assertEqual(response.payload["current_event"]["perception"]["thread_id"], "thread-a")
+            self.assertEqual(response.payload["current_event"]["perception"]["turn_id"], "thread-a:555")
+
+    def test_turn_response_backfills_sparse_event_perception_from_session_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "session_context": {
+                    "thread_id": "thread-a",
+                    "turn_id": "thread-a:555",
+                    "channel": "system",
+                    "modality": "system",
+                    "source_role": "system",
+                    "trust_tier": "high",
+                    "salience": 0.58,
+                    "interruptibility": "soft",
+                    "delivery_mode": "scheduled",
+                    "is_proactive": False,
+                },
+                "current_event": {
+                    "kind": "idle",
+                    "source": "scheduler",
+                    "created_at": 555,
+                    "perception": {},
+                },
+            }
+
+            response = api.build_turn_response(state_values=state_values, streamed_text="")
+            perception = response.payload["current_event"]["perception"]
+
+            self.assertEqual(perception["thread_id"], "thread-a")
+            self.assertEqual(perception["turn_id"], "thread-a:555")
+            self.assertEqual(perception["event_id"], "thread-a:555:idle:scheduler")
+            self.assertEqual(perception["channel"], "system")
+            self.assertEqual(perception["modality"], "system")
+            self.assertEqual(perception["source_role"], "system")
+            self.assertEqual(perception["trust_tier"], "high")
+            self.assertEqual(perception["salience"], 0.58)
+            self.assertEqual(perception["interruptibility"], "soft")
+            self.assertEqual(perception["delivery_mode"], "scheduled")
+            self.assertFalse(perception["is_proactive"])
+
+    def test_turn_and_event_responses_include_current_turn_writeback_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, session = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            session.memory_store = SimpleNamespace(
+                list_revision_traces=lambda limit=60: [
+                    {
+                        "namespace": "semantic_self_evidence",
+                        "target_id": "agency_style",
+                        "after_summary": "她不会永远围着对方转。",
+                        "source": "auto:passive_evolution_final",
+                        "created_at": 531,
+                    },
+                    {
+                        "namespace": "semantic_self_narratives",
+                        "target_id": "12",
+                        "after_summary": "她有自己的节奏和靠近方式。",
+                        "reason": "semantic_reconsolidation",
+                        "source": "auto:passive_evolution_final",
+                        "updated_at": 532,
+                    },
+                    {
+                        "namespace": "semantic_self_evidence",
+                        "target_id": "presence_style",
+                        "after_summary": "旧的非本轮痕迹不该混进来。",
+                        "source": "auto:passive_evolution_final",
+                        "updated_at": 400,
+                    },
+                    {
+                        "namespace": "semantic_self_evidence",
+                        "target_id": "presence_style",
+                        "after_summary": "非 final source 不该进入 finished-turn trace。",
+                        "source": "auto:passive_evolution",
+                        "updated_at": 540,
+                    },
+                ],
+                list_semantic_self_narratives=lambda limit=20: [
+                    {
+                        "id": 12,
+                        "category": "agency_style",
+                        "text": "她有自己的节奏和靠近方式。",
+                        "updated_at": 532,
+                    },
+                    {
+                        "id": 15,
+                        "category": "presence_style",
+                        "text": "这条太早，不该被当成本轮写回。",
+                        "updated_at": 400,
+                    },
+                ],
+                list_counterpart_assessment_history=lambda limit=12: [
+                    {
+                        "summary": "她重新判断这次靠近是认真修复，不是敷衍找补。",
+                        "stance": "repair_open",
+                        "scene": "repair",
+                        "created_at": 534,
+                    },
+                    {
+                        "summary": "这条太早，不该被混入本轮写回。",
+                        "stance": "guarded",
+                        "scene": "friction",
+                        "created_at": 401,
+                    },
+                ],
+                list_proactive_continuity_history=lambda limit=12: [
+                    {
+                        "summary": "她把这轮余温收进后续小幅回头的连续性里。",
+                        "kind": "promoted",
+                        "trace_family": "continuity_recontact",
+                        "created_at": 535,
+                    },
+                    {
+                        "summary": "旧的 own-rhythm 记录不该混进本轮预览。",
+                        "kind": "held",
+                        "trace_family": "own_rhythm",
+                        "created_at": 402,
+                    },
+                ],
+            )
+            state_values = {
+                "session_context": {
+                    "thread_id": "thread-a",
+                    "turn_id": "thread-a:530",
+                    "turn_started_at": 530,
+                },
+                "current_event": {
+                    "kind": "user_utterance",
+                    "created_at": 530,
+                    "perception": {},
+                },
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我在。",
+            )
+            turn_response = api.build_turn_response(
+                state_values=state_values,
+                streamed_text="ignored",
+            )
+
+            for payload in (event_response.payload, turn_response.payload):
+                writeback = payload["writeback_trace"]
+                self.assertEqual(writeback["turn_started_at"], 530)
+                self.assertEqual(len(writeback["revision_traces"]), 2)
+                self.assertTrue(all(item["source"] == "auto:passive_evolution_final" for item in writeback["revision_traces"]))
+                self.assertEqual([item["category"] for item in writeback["semantic_self_narratives"]], ["agency_style"])
+                self.assertEqual(writeback["semantic_self_narratives"][0]["text"], "她有自己的节奏和靠近方式。")
+                self.assertEqual(
+                    [item["summary"] for item in writeback["counterpart_assessment_history"]],
+                    ["她重新判断这次靠近是认真修复，不是敷衍找补。"],
+                )
+                self.assertEqual(
+                    [item["summary"] for item in writeback["proactive_continuity_history"]],
+                    ["她把这轮余温收进后续小幅回头的连续性里。"],
+                )
 
     def test_turn_and_event_responses_prefer_final_persisted_behavior_plan_over_derived_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -369,6 +613,16 @@ class BackendApiTests(unittest.TestCase):
                     "primary_motive": "preserve_self_rhythm",
                     "motive_tension": "self_rhythm_vs_contact",
                     "goal_frame": "stale live action should not win",
+                    "initiative_shape": "pause",
+                    "initiative_level": 0.22,
+                    "disclosure_posture": "tight",
+                    "window_profile": {
+                        "profile_type": "self_opening",
+                        "decision": "hold_own_rhythm",
+                        "readiness": 0.22,
+                        "required_readiness": 0.49,
+                        "reopen_ready": False,
+                    },
                 },
                 "behavior_plan": {
                     "kind": "self_activity_continue",
@@ -390,7 +644,37 @@ class BackendApiTests(unittest.TestCase):
                         "goal_frame": "顺着前面的惦记等更自然的时候再接回来。",
                         "deferred_action_family": "life_window",
                         "timing_window_min": 30,
+                        "engagement_level": 0.61,
+                        "initiative_level": 0.47,
+                        "task_focus": "relationship",
+                        "affect_surface": "gentle",
+                        "silence_ok": True,
+                        "proactive_checkin_readiness": 0.39,
+                        "initiative_shape": "micro_opening",
+                        "disclosure_posture": "measured",
+                        "note": "顺着余温看一眼，但不立刻把距离拉近。",
                         "relationship_weather": "warm_residue",
+                        "window_profile": {
+                            "profile_type": "self_opening",
+                            "event_kind": "self_activity_state",
+                            "family": "self_activity",
+                            "trigger_family": "life_window",
+                            "stance": "watchful",
+                            "scene": "repair_attempt",
+                            "decision": "wait_and_recheck",
+                            "readiness": 0.41,
+                            "required_readiness": 0.57,
+                            "reopen_ready": False,
+                            "recheck_min": 18,
+                            "continuity_bonus": 0.14,
+                            "carryover_mode": "own_rhythm",
+                            "carryover_strength": 0.46,
+                            "presence_residue": 0.33,
+                            "ambient_resonance": 0.22,
+                            "self_activity_momentum": 0.58,
+                            "recontact_echo": 0.29,
+                            "own_rhythm_load": 0.63,
+                        },
                     },
                     "behavior_plan": {
                         "kind": "deferred_checkin",
@@ -422,10 +706,130 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["behavior_action"]["action_target"], "wait_and_recheck")
             self.assertEqual(turn_response.payload["behavior_action"]["interaction_mode"], "deferred_watch")
             self.assertEqual(event_response.payload["behavior_action"]["timing_window_min"], 30)
+            self.assertEqual(event_response.payload["behavior_action"]["initiative_shape"], "micro_opening")
+            self.assertEqual(event_response.payload["behavior_action"]["initiative_level"], 0.47)
+            self.assertEqual(turn_response.payload["behavior_action"]["engagement_level"], 0.61)
+            self.assertEqual(turn_response.payload["behavior_action"]["disclosure_posture"], "measured")
+            self.assertEqual(turn_response.payload["behavior_action"]["task_focus"], "relationship")
+            self.assertTrue(turn_response.payload["behavior_action"]["silence_ok"])
+            self.assertEqual(turn_response.payload["behavior_action"]["note"], "顺着余温看一眼，但不立刻把距离拉近。")
+            self.assertEqual(event_response.payload["behavior_action"]["window_profile"]["decision"], "wait_and_recheck")
+            self.assertEqual(turn_response.payload["behavior_action"]["window_profile"]["profile_type"], "self_opening")
+            self.assertEqual(turn_response.payload["behavior_action"]["window_profile"]["recheck_min"], 18)
             self.assertEqual(turn_response.payload["behavior_plan"]["kind"], "deferred_checkin")
             self.assertEqual(event_response.payload["interaction_carryover"]["source"], "reconsolidation")
             self.assertEqual(turn_response.payload["interaction_carryover"]["carryover_mode"], "own_rhythm")
             self.assertEqual(turn_response.payload["interaction_carryover"]["strength"], 0.53)
+
+    def test_turn_and_event_responses_prefer_frozen_behavior_plan_with_context_only_signal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "behavior_plan": {
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "trigger_family": "observe",
+                    "scheduled_after_min": 45,
+                },
+                "reconsolidation_snapshot": {
+                    "behavior_plan": {
+                        "note": "final frozen context should win",
+                        "attention_target": "counterpart_state",
+                        "nonverbal_signal": "quiet_glance",
+                        "carryover_strength": 0.46,
+                        "presence_residue": 0.33,
+                        "ambient_resonance": 0.22,
+                        "self_activity_momentum": 0.58,
+                        "allow_interrupt": False,
+                    }
+                },
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我在。",
+            )
+            turn_response = api.build_turn_response(
+                state_values=state_values,
+                streamed_text="ignored",
+            )
+
+            self.assertEqual(event_response.payload["behavior_plan"]["note"], "final frozen context should win")
+            self.assertEqual(event_response.payload["behavior_plan"]["attention_target"], "counterpart_state")
+            self.assertEqual(event_response.payload["behavior_plan"]["nonverbal_signal"], "quiet_glance")
+            self.assertEqual(event_response.payload["behavior_plan"]["presence_residue"], 0.33)
+            self.assertEqual(turn_response.payload["behavior_plan"]["ambient_resonance"], 0.22)
+            self.assertEqual(turn_response.payload["behavior_plan"]["self_activity_momentum"], 0.58)
+            self.assertEqual(turn_response.payload["behavior_plan"]["carryover_strength"], 0.46)
+            self.assertFalse(turn_response.payload["behavior_plan"]["allow_interrupt"])
+            self.assertNotIn("kind", event_response.payload["behavior_plan"])
+
+    def test_turn_and_event_responses_derive_plan_from_frozen_action_before_live_plan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "behavior_action": {
+                    "action_target": "hold_own_rhythm",
+                    "interaction_mode": "self_activity_hold",
+                    "primary_motive": "preserve_self_rhythm",
+                    "goal_frame": "stale live action should not win",
+                },
+                "behavior_plan": {
+                    "kind": "self_activity_continue",
+                    "target": "self",
+                    "trigger_family": "self_activity",
+                    "scheduled_after_min": 45,
+                    "legacy_hint": "stale-live-plan",
+                },
+                "reconsolidation_snapshot": {
+                    "behavior_action": {
+                        "action_target": "wait_and_recheck",
+                        "interaction_mode": "deferred_watch",
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "contact_without_pressure",
+                        "goal_frame": "顺着前面的惦记等更自然的时候再接回来。",
+                        "deferred_action_family": "life_window",
+                        "timing_window_min": 30,
+                        "relationship_weather": "warm_residue",
+                    }
+                },
+                "current_event": {"kind": "self_activity_state"},
+                "world_model_state": {"presence_residue": 0.42},
+            }
+
+            with patch(
+                "amadeus_thread0.runtime.final_state._behavior_plan_from_action",
+                return_value={
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "trigger_family": "life_window",
+                    "scheduled_after_min": 30,
+                    "primary_motive": "honor_continuity",
+                },
+            ) as mock_derive:
+                event_response = api.build_event_round_response(
+                    state_values=state_values,
+                    final_text="我在。",
+                )
+                turn_response = api.build_turn_response(
+                    state_values=state_values,
+                    streamed_text="ignored",
+                )
+
+            self.assertEqual(event_response.payload["behavior_action"]["action_target"], "wait_and_recheck")
+            self.assertEqual(turn_response.payload["behavior_action"]["interaction_mode"], "deferred_watch")
+            self.assertEqual(event_response.payload["behavior_plan"]["kind"], "deferred_checkin")
+            self.assertEqual(turn_response.payload["behavior_plan"]["trigger_family"], "life_window")
+            self.assertEqual(turn_response.payload["behavior_plan"]["scheduled_after_min"], 30)
+            self.assertNotIn("legacy_hint", event_response.payload["behavior_plan"])
+            self.assertNotIn("legacy_hint", turn_response.payload["behavior_plan"])
+            self.assertEqual(mock_derive.call_count, 2)
 
 
 if __name__ == "__main__":

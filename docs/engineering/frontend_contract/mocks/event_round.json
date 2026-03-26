@@ -6,6 +6,11 @@
   "payload": {
     "final_text": "You can finish your current step first.",
     "emotion_label": "neutral",
+    "session_context": {
+      "thread_id": "thread-demo",
+      "turn_id": "thread-demo:1710000001",
+      "event_id": "thread-demo:1710000001:scheduled_life_due:runtime"
+    },
     "behavior_action": {
       "interaction_mode": "self_activity_reopen",
       "action_target": "offer_small_opening",
@@ -30,6 +35,26 @@
       "strength": 0.57,
       "relationship_weather": "warm_residue"
     },
+    "counterpart_assessment": {
+      "summary": "She reads the delay as busy-but-not-dismissive, so the contact stays open without pressure.",
+      "stance": "open",
+      "scene": "busy_not_disrespectful",
+      "respect_level": 0.62,
+      "reciprocity": 0.59,
+      "boundary_pressure": 0.14,
+      "reliability_read": 0.63
+    },
+    "agenda_lifecycle_residue": {
+      "kind": "held",
+      "source_event_kind": "scheduled_life_due",
+      "trigger_family": "life_window",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.41,
+      "relationship_weather": "warm_residue",
+      "hold_count": 1,
+      "counterpart_scene_bias": "busy_not_disrespectful",
+      "note": "The opening stays available, but she lets the scene breathe."
+    },
     "reconsolidation_snapshot": {
       "event_kind": "scheduled_life_due",
       "interaction_frame": "relationship",
@@ -40,10 +65,17 @@
     },
     "current_event": {
       "kind": "scheduled_life_due",
+      "source": "runtime",
+      "created_at": 1710000001,
       "trigger_family": "life_window",
       "carryover_mode": "own_rhythm",
       "carryover_strength": 0.41,
-      "relationship_weather": "warm_residue"
+      "relationship_weather": "warm_residue",
+      "perception": {
+        "thread_id": "thread-demo",
+        "turn_id": "thread-demo:1710000001",
+        "event_id": "thread-demo:1710000001:scheduled_life_due:runtime"
+      }
     },
     "turn_appraisal": {
       "interaction_frame": "relationship",
@@ -150,6 +182,8 @@
         "recontact_anchor": 0.0,
         "boundary_anchor": 0.0,
         "memory_anchor": 0.0,
+        "semantic_continuity_depth": 0.0,
+        "semantic_identity_gravity": 0.0,
         "lineage_gravity": 0.0,
         "contact_lineage": 0.0,
         "boundary_lineage": 0.0,
@@ -158,6 +192,7 @@
         "recontact_cooldown": 0.0,
         "counterpart_scene_bias": "",
         "counterpart_boundary_delta": 0.0,
+        "created_at": 1710000001,
         "source_tags": [],
         "note": ""
       },
@@ -175,7 +210,44 @@
         "relationship_weather": "warm_residue"
       },
       "behavior_queue_preview": [],
-      "worldline_focus_preview": []
+      "worldline_focus_preview": [],
+      "worldline_focus_items": []
+    },
+    "writeback_trace": {
+      "turn_started_at": 1710000000,
+      "semantic_self_narratives": [
+        {
+          "id": 12,
+          "category": "agency_style",
+          "text": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "updated_at": 1710000001
+        }
+      ],
+      "revision_traces": [
+        {
+          "namespace": "semantic_self_evidence",
+          "target_id": "agency_style",
+          "after_summary": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "source": "auto:passive_evolution_final",
+          "created_at": 1710000001
+        }
+      ],
+      "counterpart_assessment_history": [
+        {
+          "summary": "She reads this return as sincere repair rather than a casual ping.",
+          "stance": "repair_open",
+          "scene": "repair",
+          "created_at": 1710000001
+        }
+      ],
+      "proactive_continuity_history": [
+        {
+          "summary": "She keeps a small reopening path alive after returning from her own rhythm.",
+          "kind": "promoted",
+          "trace_family": "continuity_recontact",
+          "created_at": 1710000001
+        }
+      ]
     }
   },
   "meta": {

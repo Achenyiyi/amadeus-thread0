@@ -6,6 +6,21 @@
   "payload": {
     "final_text": "I am here. You can slow down first.",
     "emotion_label": "care",
+    "session_context": {
+      "thread_id": "thread-demo",
+      "turn_id": "thread-demo:1710000000",
+      "event_id": "thread-demo:1710000000:user_utterance:external"
+    },
+    "current_event": {
+      "kind": "user_utterance",
+      "source": "external",
+      "created_at": 1710000000,
+      "perception": {
+        "thread_id": "thread-demo",
+        "turn_id": "thread-demo:1710000000",
+        "event_id": "thread-demo:1710000000:user_utterance:external"
+      }
+    },
     "turn_summary": {
       "relationship": {
         "stage": "warming",
@@ -132,6 +147,8 @@
         "recontact_anchor": 0.47,
         "boundary_anchor": 0.22,
         "memory_anchor": 0.55,
+        "semantic_continuity_depth": 0.68,
+        "semantic_identity_gravity": 0.64,
         "lineage_gravity": 0.7,
         "contact_lineage": 0.58,
         "boundary_lineage": 0.62,
@@ -140,6 +157,7 @@
         "recontact_cooldown": 0.52,
         "counterpart_scene_bias": "busy_not_disrespectful",
         "counterpart_boundary_delta": 0.0,
+        "created_at": 1710000000,
         "source_tags": [
           "life_window",
           "own_rhythm"
@@ -210,6 +228,23 @@
       "worldline_focus_preview": [
         "The last turn still leaves a gentle presence.",
         "She answers from inside her own rhythm."
+      ],
+      "worldline_focus_items": [
+        {
+          "id": 101,
+          "kind": "relationship_timeline",
+          "text": "The last turn still leaves a gentle presence.",
+          "affinity_delta": 0.12,
+          "trust_delta": 0.18,
+          "created_at": 1710000000
+        },
+        {
+          "id": 102,
+          "kind": "unresolved_tension",
+          "text": "She answers from inside her own rhythm.",
+          "severity": 0.22,
+          "updated_at": 1710000000
+        }
       ]
     },
     "behavior_action": {
@@ -236,6 +271,34 @@
       "carryover_mode": "own_rhythm",
       "strength": 0.57,
       "relationship_weather": "warm_residue"
+    },
+    "counterpart_assessment": {
+      "summary": "She reads this as a careful attempt to come closer, not a demand for instant closeness.",
+      "stance": "watchful",
+      "scene": "repair_attempt",
+      "respect_level": 0.58,
+      "reciprocity": 0.54,
+      "boundary_pressure": 0.31,
+      "reliability_read": 0.57,
+      "assessment_profile": {
+        "dominant_scene_signal": "friction",
+        "openness_drive": 0.42,
+        "guarded_drive": 0.63,
+        "guard_margin": 0.21
+      }
+    },
+    "agenda_lifecycle_residue": {
+      "kind": "released_to_self_activity",
+      "trigger_family": "life_window",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.53,
+      "relationship_weather": "warm_residue",
+      "hold_count": 2,
+      "presence_residue": 0.33,
+      "ambient_resonance": 0.24,
+      "self_activity_momentum": 0.58,
+      "counterpart_scene_bias": "busy_not_disrespectful",
+      "note": "The earlier opening was not forced forward; attention returned to her own rhythm."
     },
     "reconsolidation_snapshot": {
       "event_kind": "user_utterance",
@@ -270,6 +333,42 @@
         "query": "example query"
       }
     ],
+    "writeback_trace": {
+      "turn_started_at": 1710000000,
+      "semantic_self_narratives": [
+        {
+          "id": 12,
+          "category": "agency_style",
+          "text": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "updated_at": 1710000001
+        }
+      ],
+      "revision_traces": [
+        {
+          "namespace": "semantic_self_evidence",
+          "target_id": "agency_style",
+          "after_summary": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "source": "auto:passive_evolution_final",
+          "created_at": 1710000001
+        }
+      ],
+      "counterpart_assessment_history": [
+        {
+          "summary": "She reads this return as sincere repair rather than a casual ping.",
+          "stance": "repair_open",
+          "scene": "repair",
+          "created_at": 1710000001
+        }
+      ],
+      "proactive_continuity_history": [
+        {
+          "summary": "She keeps a small reopening path alive after returning from her own rhythm.",
+          "kind": "promoted",
+          "trace_family": "continuity_recontact",
+          "created_at": 1710000001
+        }
+      ]
+    },
     "pending_utterance_fragment": ""
   },
   "meta": {

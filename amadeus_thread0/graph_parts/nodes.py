@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 
 from ..persona_authority import normalize_override_mode
 from .messages import (
@@ -15,6 +16,7 @@ from .postprocess import _clean_utf8_text
 from .prepare_turn_context import _prepare_turn_context
 from .response_finalize import _finalize_text_response
 from .rewrite import _invoke_model_with_retries, _model
+from .session_context import resolve_session_context
 from .state import ThreadState
 from .tool_nodes import (
     _node_tool_execute,
@@ -37,14 +39,16 @@ def _prefer_nonempty_mapping(preferred: Any, fallback: Any) -> dict[str, Any]:
     return {}
 
 
-def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
+def _node_prepare_turn(state: ThreadState, config: RunnableConfig | None = None) -> dict[str, Any]:
 
     store = _get_store()
     turn_now_ts = _now_ts()
+    session_context = resolve_session_context(state=state, config=config, turn_now_ts=turn_now_ts)
     prepared_turn = _prepare_turn_context(
         state=state,
         store=store,
         turn_now_ts=turn_now_ts,
+        session_context=session_context,
     )
     counterpart_trace = prepared_turn["counterpart_trace"]
     persona_trace = prepared_turn["persona_trace"]
@@ -112,6 +116,7 @@ def _node_prepare_turn(state: ThreadState) -> dict[str, Any]:
         "behavior_agenda": behavior_agenda,
         "behavior_queue": behavior_agenda,
         "turn_appraisal": appraisal,
+        "session_context": _sanitize_obj(session_context),
         "current_event": _sanitize_obj(current_event),
         "recent_events": _sanitize_obj(recent_events),
         "interaction_carryover": interaction_carryover,

@@ -655,7 +655,7 @@ def _prepare_turn_runtime(
             interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
             reconsolidation_snapshot=writeback_reconsolidation_snapshot,
-            source="auto:passive_evolution",
+            source="auto:passive_evolution_final",
             confidence=behavior_trace_confidence,
         )
         semantic_evidence_written = _record_semantic_self_evidence(

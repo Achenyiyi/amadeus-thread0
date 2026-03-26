@@ -38,6 +38,29 @@ class EventPayload(TypedDict, total=False):
     self_activity_momentum: float
     attention_target_hint: str
     nonverbal_signal_hint: str
+    perception: "PerceptionContextPayload"
+
+
+class PerceptionContextPayload(TypedDict, total=False):
+    event_id: str
+    thread_id: str
+    turn_id: str
+    channel: str
+    modality: str
+    source_role: str
+    trust_tier: str
+    salience: float
+    interruptibility: str
+    delivery_mode: str
+    is_proactive: bool
+
+
+class SessionContextPayload(TypedDict, total=False):
+    thread_id: str
+    turn_id: str
+    turn_started_at: int
+    user_id: str
+    checkpoint_id: str
 
 
 class BehaviorActionPayload(TypedDict, total=False):
@@ -247,6 +270,7 @@ class ThreadState(TypedDict, total=False):
     worldline_focus: list[dict[str, Any]]
     evidence_pack: list[dict[str, Any]]
     event_override: EventPayload
+    session_context: SessionContextPayload
     current_event: EventPayload
     recent_events: list[EventPayload]
     interaction_carryover: InteractionCarryoverPayload

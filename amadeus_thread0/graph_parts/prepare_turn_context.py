@@ -46,8 +46,9 @@ from .relational_runtime import (
     _worldline_focus,
 )
 from .retrieval import _empty_retrieved_context, _retrieve_context
+from .session_context import resolve_session_context
 from .semantic_narrative import _prefer_semantic_narrative_profile, _semantic_narrative_profile
-from .state import ThreadState
+from .state import SessionContextPayload, ThreadState
 from .turn_events import (
     _append_recent_events,
     _appraisal_event_context,
@@ -63,7 +64,14 @@ def _prepare_turn_context(
     state: ThreadState,
     store: MemoryStore,
     turn_now_ts: int,
+    session_context: SessionContextPayload | None = None,
 ) -> dict[str, Any]:
+    session_context = (
+        resolve_session_context(state=state, config=None, turn_now_ts=turn_now_ts)
+        if session_context is None
+        else session_context
+    )
+    thread_id = str(session_context.get("thread_id") or "").strip() or "thread"
     profile, counterpart_trace = _active_counterpart_profile(state, store, with_trace=True)
     persona_core, persona_trace = _active_persona_core(state, with_trace=True)
     msgs = _messages(state)
@@ -73,6 +81,9 @@ def _prepare_turn_context(
     event_override = _normalize_event_override(
         _sanitize_obj(state.get("event_override")),
         counterpart_name=counterpart_name,
+        thread_id=thread_id,
+        session_context=session_context,
+        turn_now_ts=turn_now_ts,
     )
     prior_current_event = _sanitize_obj(state.get("current_event")) if isinstance(state.get("current_event"), dict) else {}
     prior_behavior_action = (
@@ -272,6 +283,9 @@ def _prepare_turn_context(
         counterpart_name=counterpart_name,
         pending_user_goal=pending_user_goal,
         event_override=event_override,
+        thread_id=thread_id,
+        session_context=session_context,
+        turn_now_ts=turn_now_ts,
     )
     semantic_narrative_profile_for_appraisal = _semantic_narrative_profile(
         retrieved.get("semantic_self_narratives")
@@ -372,6 +386,9 @@ def _prepare_turn_context(
             appraisal=appraisal,
             counterpart_name=counterpart_name,
             pending_user_goal=pending_user_goal,
+            thread_id=thread_id,
+            session_context=session_context,
+            turn_now_ts=turn_now_ts,
         )
     )
     interaction_carryover = _recent_interaction_carryover(
@@ -417,6 +434,7 @@ def _prepare_turn_context(
         "persona_trace": persona_trace,
         "msgs": msgs,
         "event_override": event_override,
+        "session_context": session_context,
         "prior_current_event": prior_current_event,
         "prior_behavior_action": prior_behavior_action,
         "prior_behavior_plan": prior_behavior_plan,

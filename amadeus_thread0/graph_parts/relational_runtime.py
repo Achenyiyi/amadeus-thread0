@@ -4,6 +4,7 @@ from typing import Any
 
 from ..config import ABLATE_WORLDLINE_MEMORY, CANON_COUNTERPART_NAME
 from ..memory_store import MemoryStore
+from ..utils.counterpart_profile import normalize_counterpart_assessment_profile
 from .common import _clamp01, _clamp_signed
 from .postprocess import _looks_like_light_smalltalk
 from .retrieval import (
@@ -285,111 +286,7 @@ def _compact_relationship_summary(relationship: dict[str, Any]) -> str:
 def _counterpart_assessment_profile(
     assessment: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    item = assessment if isinstance(assessment, dict) else {}
-    raw_profile = item.get("assessment_profile") if isinstance(item.get("assessment_profile"), dict) else {}
-    stance = str(item.get("stance") or "").strip().lower()
-    scene = str(item.get("scene") or "").strip().lower()
-    respect = _clamp01(item.get("respect_level"), 0.5)
-    reciprocity = _clamp01(item.get("reciprocity"), 0.5)
-    pressure = _clamp01(item.get("boundary_pressure"), 0.1)
-    reliability = _clamp01(item.get("reliability_read"), 0.5)
-
-    derived_scene_strengths = {
-        "care": _clamp01(
-            (0.46 if scene == "care_bid" else 0.0)
-            + 0.24 * respect
-            + 0.20 * reciprocity
-            + 0.12 * reliability
-            - 0.10 * pressure
-        ),
-        "repair": _clamp01(
-            (0.48 if scene == "repair_attempt" else 0.0)
-            + 0.22 * reliability
-            + 0.18 * respect
-            + 0.08 * reciprocity
-            - 0.10 * pressure
-        ),
-        "friction": _clamp01(
-            (0.52 if scene in {"friction", "relationship_degradation", "boundary_non_compliance"} else 0.0)
-            + 0.30 * pressure
-            + 0.10 * _clamp01(1.0 - respect, 0.0)
-            + 0.08 * _clamp01(1.0 - reliability, 0.0)
-        ),
-        "selfhood": _clamp01(
-            (0.48 if scene in {"equality_not_servitude", "value_conflict_depth"} else 0.0)
-            + 0.18 * pressure
-            + 0.08 * _clamp01(1.0 - reciprocity, 0.0)
-        ),
-        "busy": _clamp01(
-            (0.50 if scene == "busy_not_disrespectful" else 0.0)
-            + 0.18 * reliability
-            + 0.14 * respect
-            + 0.10 * _clamp01(1.0 - pressure, 0.0)
-        ),
-    }
-    raw_scene_strengths = raw_profile.get("scene_strengths") if isinstance(raw_profile.get("scene_strengths"), dict) else {}
-    scene_strengths = {
-        name: _clamp01(raw_scene_strengths.get(name), default)
-        for name, default in derived_scene_strengths.items()
-    }
-    openness_drive = _clamp01(
-        raw_profile.get("openness_drive"),
-        0.28 * respect + 0.28 * reciprocity + 0.24 * reliability + 0.20 * _clamp01(1.0 - pressure, 0.0),
-    )
-    guarded_drive = _clamp01(
-        raw_profile.get("guarded_drive"),
-        0.50 * pressure
-        + 0.18 * _clamp01(1.0 - respect, 0.0)
-        + 0.18 * _clamp01(1.0 - reliability, 0.0)
-        + 0.14 * _clamp01(1.0 - reciprocity, 0.0),
-    )
-    if stance == "guarded":
-        guarded_drive = max(guarded_drive, 0.66)
-    elif stance == "watchful":
-        guarded_drive = max(guarded_drive, 0.46)
-    if scene == "care_bid":
-        openness_drive = max(openness_drive, 0.62)
-    elif scene == "repair_attempt":
-        scene_strengths["repair"] = max(scene_strengths["repair"], 0.62)
-    elif scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
-        scene_strengths["friction"] = max(scene_strengths["friction"], 0.62)
-    elif scene in {"equality_not_servitude", "value_conflict_depth"}:
-        scene_strengths["selfhood"] = max(scene_strengths["selfhood"], 0.62)
-    elif scene == "busy_not_disrespectful":
-        scene_strengths["busy"] = max(scene_strengths["busy"], 0.62)
-
-    dominant_scene_signal = str(raw_profile.get("dominant_scene_signal") or "").strip().lower()
-    if dominant_scene_signal not in scene_strengths:
-        ranked_scene_signals = sorted(scene_strengths.items(), key=lambda item: (-item[1], item[0]))
-        if ranked_scene_signals and ranked_scene_signals[0][1] >= 0.05:
-            dominant_scene_signal = ranked_scene_signals[0][0]
-        elif scene:
-            dominant_scene_signal = scene
-        else:
-            dominant_scene_signal = ""
-
-    guard_margin = _clamp_signed(
-        raw_profile.get("guard_margin"),
-        guarded_drive - openness_drive,
-    )
-    normalized = {
-        "openness_drive": round(openness_drive, 3),
-        "guarded_drive": round(guarded_drive, 3),
-        "guard_margin": round(guard_margin, 3),
-        "dominant_scene_signal": dominant_scene_signal,
-        "scene_strengths": {name: round(score, 3) for name, score in scene_strengths.items()},
-    }
-    if any(
-        (
-            normalized["openness_drive"] > 0.0,
-            normalized["guarded_drive"] > 0.0,
-            abs(normalized["guard_margin"]) > 0.0,
-            normalized["dominant_scene_signal"],
-            any(score > 0.0 for score in normalized["scene_strengths"].values()),
-        )
-    ):
-        return normalized
-    return {}
+    return normalize_counterpart_assessment_profile(assessment)
 
 
 def _counterpart_relationship_pressures(
@@ -410,12 +307,18 @@ def _counterpart_relationship_pressures(
     friction_signal = _clamp01(scene_strengths.get("friction"), 0.0)
     busy_signal = _clamp01(scene_strengths.get("busy"), 0.0)
     selfhood_signal = _clamp01(scene_strengths.get("selfhood"), 0.0)
+    safety_read = _clamp01(profile.get("safety_read"), 0.0)
+    repairability = _clamp01(profile.get("repairability"), 0.0)
+    predictability = _clamp01(profile.get("predictability"), 0.0)
+    dependency_risk = _clamp01(profile.get("dependency_risk"), 0.0)
+    closeness_read = _clamp01(profile.get("closeness_read"), 0.0)
 
     affinity_support = _clamp01(
         0.44 * max(0.0, respect - 0.5)
         + 0.44 * max(0.0, reciprocity - 0.5)
         + 0.24 * max(0.0, openness_drive - 0.58)
         + 0.08 * max(0.0, care_signal - 0.55)
+        + 0.08 * max(0.0, closeness_read - 0.55)
     )
     trust_support = _clamp01(
         0.52 * max(0.0, reliability - 0.5)
@@ -423,6 +326,9 @@ def _counterpart_relationship_pressures(
         + 0.18 * max(0.0, reciprocity - 0.5)
         + 0.08 * max(0.0, busy_signal - 0.55)
         + 0.06 * max(0.0, repair_signal - 0.55)
+        + 0.08 * max(0.0, safety_read - 0.55)
+        + 0.08 * max(0.0, predictability - 0.55)
+        + 0.06 * max(0.0, repairability - 0.55)
     )
     guarded_pressure = _clamp01(
         0.36 * boundary
@@ -430,6 +336,8 @@ def _counterpart_relationship_pressures(
         + 0.20 * guard_margin
         + 0.12 * max(0.0, friction_signal - 0.55)
         + 0.08 * max(0.0, selfhood_signal - 0.55)
+        + 0.10 * max(0.0, dependency_risk - 0.55)
+        + 0.08 * max(0.0, 0.45 - safety_read)
     )
     instability_pressure = _clamp01(
         0.36 * max(0.0, 0.5 - reliability)
@@ -437,6 +345,7 @@ def _counterpart_relationship_pressures(
         + 0.20 * max(0.0, 0.5 - reciprocity)
         + 0.10 * max(0.0, friction_signal - 0.55)
         + 0.10 * guard_margin
+        + 0.10 * max(0.0, 0.5 - predictability)
     )
     positive_signal = _clamp01(max(affinity_support, trust_support))
     return {

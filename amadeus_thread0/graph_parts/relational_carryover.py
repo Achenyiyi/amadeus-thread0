@@ -998,6 +998,20 @@ def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -
         "ambient_resonance": _clamp01(_pick("ambient_resonance"), 0.0),
         "self_activity_momentum": _clamp01(_pick("self_activity_momentum"), 0.0),
         "own_rhythm_bias": _clamp01(_pick("own_rhythm_bias"), 0.0),
+        "continuity_anchor": _clamp01(_pick("continuity_anchor"), 0.0),
+        "own_rhythm_anchor": _clamp01(_pick("own_rhythm_anchor"), 0.0),
+        "recontact_anchor": _clamp01(_pick("recontact_anchor"), 0.0),
+        "boundary_anchor": _clamp01(_pick("boundary_anchor"), 0.0),
+        "memory_anchor": _clamp01(_pick("memory_anchor"), 0.0),
+        "semantic_continuity_depth": _clamp01(_pick("semantic_continuity_depth"), 0.0),
+        "semantic_identity_gravity": _clamp01(_pick("semantic_identity_gravity"), 0.0),
+        "long_term_axis_count": max(0, int(_pick("long_term_axis_count") or 0)),
+        "lineage_gravity": _clamp01(_pick("lineage_gravity"), 0.0),
+        "contact_lineage": _clamp01(_pick("contact_lineage"), 0.0),
+        "repair_lineage": _clamp01(_pick("repair_lineage"), 0.0),
+        "boundary_lineage": _clamp01(_pick("boundary_lineage"), 0.0),
+        "selfhood_lineage": _clamp01(_pick("selfhood_lineage"), 0.0),
+        "agency_lineage": _clamp01(_pick("agency_lineage"), 0.0),
         "primary_motive": str(_pick("primary_motive") or "").strip().lower(),
         "motive_tension": str(_pick("motive_tension") or "").strip().lower(),
         "goal_frame": str(_pick("goal_frame") or "").strip(),
@@ -1108,6 +1122,20 @@ def _proactive_continuity_history_carryover(
         ambient_resonance = _clamp01(item.get("ambient_resonance"), 0.0)
         recontact_cooldown = _clamp01(item.get("recontact_cooldown"), 0.0)
         hold_count = max(0, int(item.get("hold_count") or 0))
+        continuity_anchor = _clamp01(item.get("continuity_anchor"), 0.0)
+        own_rhythm_anchor = _clamp01(item.get("own_rhythm_anchor"), 0.0)
+        recontact_anchor = _clamp01(item.get("recontact_anchor"), 0.0)
+        boundary_anchor = _clamp01(item.get("boundary_anchor"), 0.0)
+        memory_anchor = _clamp01(item.get("memory_anchor"), 0.0)
+        semantic_continuity_depth = _clamp01(item.get("semantic_continuity_depth"), 0.0)
+        semantic_identity_gravity = _clamp01(item.get("semantic_identity_gravity"), 0.0)
+        long_term_axis_count = max(0, int(item.get("long_term_axis_count") or 0))
+        lineage_gravity = _clamp01(item.get("lineage_gravity"), 0.0)
+        contact_lineage = _clamp01(item.get("contact_lineage"), 0.0)
+        repair_lineage = _clamp01(item.get("repair_lineage"), 0.0)
+        boundary_lineage = _clamp01(item.get("boundary_lineage"), 0.0)
+        selfhood_lineage = _clamp01(item.get("selfhood_lineage"), 0.0)
+        agency_lineage = _clamp01(item.get("agency_lineage"), 0.0)
         trace_family = str(item.get("trace_family") or "").strip().lower()
         counterpart_scene_bias = str(item.get("counterpart_scene_bias") or "").strip().lower()
 
@@ -1117,6 +1145,10 @@ def _proactive_continuity_history_carryover(
                 strength,
                 0.74 * own_rhythm_bias,
                 0.72 * self_activity_momentum,
+                0.82 * own_rhythm_anchor,
+                0.60 * continuity_anchor,
+                0.64 * agency_lineage,
+                0.56 * lineage_gravity,
                 0.16 + 0.08 * min(3, hold_count),
             )
         elif carryover_mode == "quiet_recontact":
@@ -1124,23 +1156,49 @@ def _proactive_continuity_history_carryover(
                 strength,
                 0.18 + 0.16 * (1.0 - recontact_cooldown),
                 0.62 * presence_residue,
+                0.74 * recontact_anchor,
+                0.58 * continuity_anchor,
+                0.52 * memory_anchor,
+                0.48 * contact_lineage,
             )
         elif carryover_mode == "small_opening":
             strength = max(
                 strength,
                 0.64 * presence_residue,
                 0.58 * self_activity_momentum,
+                0.62 * own_rhythm_anchor,
+                0.54 * recontact_anchor,
+                0.48 * continuity_anchor,
+                0.48 * max(agency_lineage, contact_lineage),
                 0.20 + 0.06 * min(3, hold_count),
             )
         elif carryover_mode == "brief_presence":
-            strength = max(strength, 0.66 * presence_residue, 0.44 * ambient_resonance)
+            strength = max(
+                strength,
+                0.66 * presence_residue,
+                0.44 * ambient_resonance,
+                0.60 * recontact_anchor,
+                0.42 * memory_anchor,
+            )
         else:
-            strength = max(strength, 0.52 * presence_residue, 0.44 * ambient_resonance)
+            strength = max(
+                strength,
+                0.52 * presence_residue,
+                0.44 * ambient_resonance,
+                0.50 * continuity_anchor,
+                0.40 * memory_anchor,
+            )
 
         if trace_family == "continuity_recontact":
             strength = max(strength, 0.22 + 0.18 * max(carryover_strength, presence_residue))
         if counterpart_scene_bias == "busy_not_disrespectful":
             strength = max(strength, 0.24 + 0.16 * max(carryover_strength, presence_residue))
+        if boundary_lineage >= 0.46 or selfhood_lineage >= 0.46 or boundary_anchor >= 0.44:
+            strength = max(strength, 0.18 + 0.18 * max(boundary_lineage, selfhood_lineage, boundary_anchor))
+        if long_term_axis_count > 0:
+            strength = max(strength, 0.14 + 0.04 * min(4, long_term_axis_count))
+        if semantic_continuity_depth >= 0.50 or semantic_identity_gravity >= 0.50:
+            strength = max(strength, 0.18 + 0.16 * max(semantic_continuity_depth, semantic_identity_gravity))
 
         if hint == "structured":
             strength *= 0.35
@@ -1164,6 +1222,18 @@ def _proactive_continuity_history_carryover(
                     str(item.get("kind") or "").strip().lower(),
                     carryover_mode,
                     counterpart_scene_bias,
+                    "own_rhythm_anchor" if own_rhythm_anchor >= 0.40 else "",
+                    "recontact_anchor" if recontact_anchor >= 0.34 else "",
+                    "boundary_anchor" if boundary_anchor >= 0.40 else "",
+                    "continuity_anchor" if continuity_anchor >= 0.40 else "",
+                    "memory_anchor" if memory_anchor >= 0.40 else "",
+                    "agency_lineage" if agency_lineage >= 0.46 else "",
+                    "contact_lineage" if contact_lineage >= 0.46 else "",
+                    "repair_lineage" if repair_lineage >= 0.46 else "",
+                    "boundary_lineage" if boundary_lineage >= 0.46 else "",
+                    "selfhood_lineage" if selfhood_lineage >= 0.46 else "",
+                    "lineage_gravity" if lineage_gravity >= 0.50 else "",
+                    "long_term_axis" if long_term_axis_count > 0 else "",
                 ]
             )
             if tag
@@ -1177,7 +1247,7 @@ def _proactive_continuity_history_carryover(
             "source_motive_tension": str(item.get("motive_tension") or "").strip().lower() or default_motive_tension,
             "source_goal_frame": str(item.get("goal_frame") or "").strip()[:220],
             "source_text": str(item.get("summary") or "").strip()[:180],
-            "source_tags": source_tags[:6],
+            "source_tags": source_tags[:10],
             "carryover_mode": carryover_mode,
             "strength": round(strength, 3),
             "relationship_weather": relationship_weather,

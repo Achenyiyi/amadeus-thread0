@@ -16,6 +16,7 @@ The target is not arbitrary cleanliness. The target is:
 ```text
 amadeus-thread0/
 ├── amadeus_thread0/        # primary Python package
+├── frontend/               # React/Vite frontend shell consuming frozen backend envelopes
 ├── docs/                   # architecture, evaluation, defense, maintenance docs
 ├── evals/                  # evaluation entrypoints and reports
 ├── tests/                  # regression suite
@@ -76,6 +77,10 @@ amadeus_thread0/
   idle-time event override construction and idle-seeded state-update entry.
 - `prepare_turn_context.py`
   the front half of `prepare_turn`: retrieval, event normalization, appraisal input assembly, and carryover seeding.
+- `perception.py`
+  canonical perception-event normalization and session/perception metadata attachment for runtime input events.
+- `session_context.py`
+  graph-native session fabric normalization for conversation mode, channel, presence, and related runtime carryover fields.
 - `prepare_turn_runtime.py`
   the back half of `prepare_turn`: persona/runtime state evolution, memory-triggered refresh, and behavior synthesis.
 - `model_call_prepare.py`
@@ -116,6 +121,7 @@ Rule:
 - `settings.py`
 - `backend_api.py`
 - `backend_session.py`
+- `event_identity.py`
 - `memory_admin.py`
 - `runtime_bundle.py`
 - `thread_runtime.py`
@@ -141,6 +147,11 @@ Rule:
 - wraps backend session and memory-admin views in stable envelopes
 - exposes thread inventory, runtime layout, environment summary, turn/event response payloads
 - provides the interface future frontend shells should consume before any CLI formatting
+
+`event_identity.py` holds shared readback identity normalization:
+
+- canonical `current_event` perception id hydration for backend envelopes and inspector summaries
+- thin `session_context` readback normalization so turn/event identity is resolved once and reused
 
 `tool_approval.py` holds the reusable approval policy surface:
 
@@ -178,6 +189,7 @@ They are thin facades implemented through `amadeus_thread0/_compat.py`.
 - `tool_registry.py`
 - `runtime_audit.py`
 - `cli_views.py`
+- `counterpart_profile.py`
 - `perception_events.py`
 - `state.py`
 - `nodes.py`
@@ -188,12 +200,22 @@ Rule:
 - if a module is generic support or compatibility-facing, it belongs here
 - if a module directly shapes graph execution semantics, it belongs in `graph_parts/`
 
+## Frontend Workspace
+
+`frontend/` is a separate React/Vite workspace for backend-contract consumption.
+
+- It should render frozen `backend.v1` envelopes rather than inventing an alternative state schema.
+- Contract copies and mock fixtures should stay close to the frontend shell so UI work can proceed without touching backend internals.
+- Any future transport adapter should remain thin and delegate semantics to `amadeus_thread0/runtime/backend_api.py` and `backend_session.py`.
+
 ## Entry Points
 
 - deployment graph:
   `amadeus_thread0/agent.py`
 - CLI:
   `python -m amadeus_thread0.cli`
+- frontend dev shell:
+  `cd frontend && npm run dev`
 - deployment config:
   `langgraph.json`
 

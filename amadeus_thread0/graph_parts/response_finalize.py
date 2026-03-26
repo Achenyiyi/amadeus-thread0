@@ -19,6 +19,7 @@ from .guards import _canon_guard, _ooc_risk, _persona_gap
 from .postprocess import (
     _dialogue_surface_issues,
     _effective_natural_dialog_target_flags,
+    _has_recent_clause_repetition,
     _line_is_near_duplicate,
     _light_dialog_surface_penalty,
     _needs_structured_answer,
@@ -97,9 +98,51 @@ def _dialogue_issues_with_recent_repeat(
         current_event=current_event,
         behavior_action=behavior_action,
     )
-    if previous_assistant_text and _line_is_near_duplicate(previous_assistant_text, answer):
+    if previous_assistant_text and (
+        _line_is_near_duplicate(previous_assistant_text, answer)
+        or _has_recent_clause_repetition(previous_assistant_text, answer)
+    ):
         issues = list(dict.fromkeys(list(issues) + ["recent_turn_repetition"]))
     return issues
+
+
+def _should_accept_natural_dialog_rewrite(
+    *,
+    aligned: str,
+    rewritten: str,
+    current_gap: float,
+    rewritten_gap: float,
+    effective_targeted_flags: list[str] | tuple[str, ...],
+    rewritten_issues: list[str] | tuple[str, ...],
+    rewritten_gap_flags: list[str] | tuple[str, ...],
+) -> bool:
+    if _norm_text(rewritten) == _norm_text(aligned):
+        return False
+
+    targeted_flag_set = {str(item).strip() for item in (effective_targeted_flags or []) if str(item or "").strip()}
+    rewritten_flag_set = {
+        str(item).strip()
+        for item in list(rewritten_issues or []) + list(rewritten_gap_flags or [])
+        if str(item or "").strip()
+    }
+    draft_issue_pressure = sum(1 for item in targeted_flag_set if item in _NATURAL_REWRITE_ISSUE_KEYS)
+    rewritten_pressure = sum(1 for item in rewritten_flag_set if item in _NATURAL_REWRITE_ISSUE_KEYS)
+
+    if rewritten_pressure < draft_issue_pressure or rewritten_gap + 0.05 < current_gap:
+        return True
+
+    if "overexplained" not in targeted_flag_set or rewritten_pressure > draft_issue_pressure:
+        return False
+
+    aligned_len = len(_norm_text(aligned))
+    rewritten_len = len(_norm_text(rewritten))
+    if rewritten_len >= max(24, int(aligned_len * 0.78)):
+        return False
+
+    hard_regressions = rewritten_flag_set - targeted_flag_set
+    if hard_regressions & (_NATURAL_REWRITE_ISSUE_KEYS - {"overexplained", "visible_template", "lecture_list"}):
+        return False
+    return True
 
 
 def _finalize_text_response(
@@ -380,18 +423,15 @@ def _finalize_text_response(
                     current_event=current_event,
                     behavior_action=behavior_action,
                 )
-                draft_issue_pressure = sum(
-                    1 for item in effective_targeted_flags if item in _NATURAL_REWRITE_ISSUE_KEYS
-                )
-                rewritten_pressure = sum(
-                    1
-                    for item in list(rewritten_issues) + list(rewritten_gap_flags)
-                    if item in _NATURAL_REWRITE_ISSUE_KEYS
-                )
-                if (
-                    rewritten_pressure < draft_issue_pressure
-                    or rewritten_gap + 0.05 < current_gap
-                ) and _norm_text(rewritten) != _norm_text(aligned):
+                if _should_accept_natural_dialog_rewrite(
+                    aligned=aligned,
+                    rewritten=rewritten,
+                    current_gap=current_gap,
+                    rewritten_gap=rewritten_gap,
+                    effective_targeted_flags=effective_targeted_flags,
+                    rewritten_issues=rewritten_issues,
+                    rewritten_gap_flags=rewritten_gap_flags,
+                ):
                     aligned = rewritten
                     alignment_applied = True
                     natural_dialog_rewrite_applied = True

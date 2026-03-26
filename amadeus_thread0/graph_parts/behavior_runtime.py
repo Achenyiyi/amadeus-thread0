@@ -163,14 +163,22 @@ def _derive_behavior_motive(
     narrative_repair: float,
     continuity_depth: float,
     commitment_carry: float,
+    continuity_anchor: float,
+    own_rhythm_anchor: float,
+    recontact_anchor: float,
+    boundary_anchor: float,
+    memory_anchor: float,
 ) -> dict[str, str]:
     motive = "maintain_natural_contact"
     tension = "none"
     goal_frame = "先自然接住这轮互动。"
-    continuity_active = continuity_depth >= 0.56 or commitment_carry >= 0.58
+    continuity_active = (
+        max(continuity_depth, continuity_anchor, 0.78 * recontact_anchor, 0.64 * memory_anchor) >= 0.56
+        or commitment_carry >= 0.58
+    )
 
     if action_target == "protect_relationship_boundary" or (
-        approach_style == "guarded" and boundary_pressure >= 0.48
+        approach_style == "guarded" and max(boundary_pressure, boundary_anchor) >= 0.48
     ):
         motive = "protect_boundary"
         tension = "boundary_vs_closeness" if trust >= 0.46 or closeness >= 0.46 else "none"
@@ -179,14 +187,16 @@ def _derive_behavior_motive(
         motive = "preserve_self_rhythm"
         tension = (
             "self_rhythm_vs_contact"
-            if event_kind in {"time_idle", "self_activity_state", "user_utterance"} or closeness >= 0.48
+            if own_rhythm_anchor >= 0.42
+            or event_kind in {"time_idle", "self_activity_state", "user_utterance"}
+            or closeness >= 0.48
             else "none"
         )
         goal_frame = "先维持自己的节奏，不急着把全部注意力交出去。"
     elif action_target == "wait_and_recheck":
         if (
             approach_style == "guarded"
-            or boundary_pressure >= 0.32
+            or max(boundary_pressure, boundary_anchor) >= 0.32
             or hurt >= 0.16
             or counterpart_stance in {"guarded", "watchful"}
             or safety_need >= 0.54
@@ -211,7 +221,7 @@ def _derive_behavior_motive(
             motive = "honor_continuity"
             tension = (
                 "self_rhythm_vs_contact"
-                if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44
+                if max(effective_own_rhythm_load, own_rhythm_anchor) >= 0.44 or self_activity_momentum >= 0.44
                 else "space_vs_contact"
                 if counterpart_stance != "open"
                 else "none"
@@ -224,7 +234,11 @@ def _derive_behavior_motive(
         and continuity_active
     ):
         motive = "honor_continuity"
-        tension = "self_rhythm_vs_contact" if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44 else "none"
+        tension = (
+            "self_rhythm_vs_contact"
+            if max(effective_own_rhythm_load, own_rhythm_anchor) >= 0.44 or self_activity_momentum >= 0.44
+            else "none"
+        )
         goal_frame = "先把前面没散掉的惦记接上，而不是为了刷存在感才冒头。"
     elif interaction_mode == "self_activity_reopen" or action_target == "offer_small_opening":
         motive = "gentle_recontact"
@@ -275,7 +289,7 @@ def _derive_behavior_motive(
         motive = "honor_continuity"
         tension = (
             "self_rhythm_vs_contact"
-            if effective_own_rhythm_load >= 0.44 or self_activity_momentum >= 0.44
+            if max(effective_own_rhythm_load, own_rhythm_anchor) >= 0.44 or self_activity_momentum >= 0.44
             else "space_vs_contact"
             if counterpart_stance != "open"
             else "none"
@@ -283,9 +297,9 @@ def _derive_behavior_motive(
         goal_frame = "先把前面那点生活上的惦记轻轻接回来。"
     elif action_target == "ambient_checkin":
         motive = "maintain_natural_contact"
-        tension = "self_rhythm_vs_contact" if effective_own_rhythm_load >= 0.54 else "none"
+        tension = "self_rhythm_vs_contact" if max(effective_own_rhythm_load, own_rhythm_anchor) >= 0.54 else "none"
         goal_frame = "先顺着环境里的细小变化自然接一句。"
-    elif autonomy_need >= 0.60 and self_activity_momentum >= 0.56:
+    elif autonomy_need >= 0.60 and max(self_activity_momentum, own_rhythm_anchor) >= 0.56:
         motive = "preserve_self_rhythm"
         tension = "self_rhythm_vs_contact"
         goal_frame = "先保住自己的节奏，再看这轮要给多少注意力。"
@@ -317,6 +331,7 @@ def _behavior_action_from_state(
     prior_counterpart_assessment: dict[str, Any] | None = None,
     appraisal: dict[str, Any] | None = None,
 ) -> BehaviorActionPayload:
+    narrative = dict(semantic_narrative_profile or {})
     warmth = _clamp01((behavior_policy or {}).get("warmth"), 0.5)
     initiative = _clamp01((behavior_policy or {}).get("initiative"), 0.5)
     reply_length = _clamp01((behavior_policy or {}).get("reply_length_bias"), 0.5)
@@ -400,6 +415,26 @@ def _behavior_action_from_state(
         (behavior_policy or {}).get("semantic_contested_selfhood_pressure"),
         _clamp01(semantic_evidence.get("contested_selfhood_pressure"), 0.0),
     )
+    semantic_continuity_anchor = _clamp01(
+        (behavior_policy or {}).get("semantic_continuity_anchor"),
+        max(_clamp01(semantic_evidence.get("continuity_anchor"), 0.0), _clamp01(narrative.get("continuity_anchor"), 0.0)),
+    )
+    semantic_own_rhythm_anchor = _clamp01(
+        (behavior_policy or {}).get("semantic_own_rhythm_anchor"),
+        max(_clamp01(semantic_evidence.get("own_rhythm_anchor"), 0.0), _clamp01(narrative.get("own_rhythm_anchor"), 0.0)),
+    )
+    semantic_recontact_anchor = _clamp01(
+        (behavior_policy or {}).get("semantic_recontact_anchor"),
+        max(_clamp01(semantic_evidence.get("recontact_anchor"), 0.0), _clamp01(narrative.get("recontact_anchor"), 0.0)),
+    )
+    semantic_boundary_anchor = _clamp01(
+        (behavior_policy or {}).get("semantic_boundary_anchor"),
+        max(_clamp01(semantic_evidence.get("boundary_anchor"), 0.0), _clamp01(narrative.get("boundary_anchor"), 0.0)),
+    )
+    semantic_memory_anchor = _clamp01(
+        (behavior_policy or {}).get("semantic_memory_anchor"),
+        max(_clamp01(semantic_evidence.get("memory_anchor"), 0.0), _clamp01(narrative.get("memory_anchor"), 0.0)),
+    )
     world = dict(world_model_state or {})
     world_presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     world_ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
@@ -478,6 +513,8 @@ def _behavior_action_from_state(
         world_presence_residue,
         narrative_presence,
         0.78 * narrative_history,
+        0.68 * semantic_continuity_anchor,
+        0.82 * semantic_recontact_anchor,
         0.86 * motive_continuity,
         0.72 * motive_support,
         0.76 * motive_shared_window,
@@ -486,12 +523,17 @@ def _behavior_action_from_state(
         world_ambient_resonance,
         narrative_ambient,
         0.82 * narrative_history,
+        0.92 * semantic_memory_anchor,
+        0.52 * semantic_continuity_anchor,
         0.90 * motive_memory,
         0.58 * motive_continuity,
     )
     semantic_contact_bias = max(
         narrative_presence,
         0.74 * narrative_history,
+        0.84 * semantic_continuity_anchor,
+        0.88 * semantic_recontact_anchor,
+        0.48 * semantic_memory_anchor,
         0.88 * motive_continuity,
         0.72 * motive_support,
         0.76 * motive_shared_window,
@@ -504,6 +546,8 @@ def _behavior_action_from_state(
     semantic_narrative_rhythm_bias = max(
         0.72 * narrative_rhythm,
         0.68 * narrative_agency,
+        0.96 * semantic_own_rhythm_anchor,
+        0.62 * semantic_boundary_anchor,
         0.92 * motive_self_rhythm,
         0.58 * motive_boundary,
     )
@@ -519,6 +563,7 @@ def _behavior_action_from_state(
     semantic_own_rhythm_bias = max(
         effective_own_rhythm_load,
         semantic_narrative_rhythm_bias,
+        0.78 * semantic_own_rhythm_anchor,
     )
     prior_counterpart = prior_counterpart_assessment if isinstance(prior_counterpart_assessment, dict) else {}
     prior_bond = prior_bond_state if isinstance(prior_bond_state, dict) else {}
@@ -1663,6 +1708,11 @@ def _behavior_action_from_state(
         narrative_repair=narrative_repair,
         continuity_depth=continuity_depth,
         commitment_carry=narrative_commitment,
+        continuity_anchor=semantic_continuity_anchor,
+        own_rhythm_anchor=semantic_own_rhythm_anchor,
+        recontact_anchor=semantic_recontact_anchor,
+        boundary_anchor=semantic_boundary_anchor,
+        memory_anchor=semantic_memory_anchor,
     )
     primary_motive = str(motive_state.get("primary_motive") or "").strip()
     motive_tension = str(motive_state.get("motive_tension") or "").strip() or "none"

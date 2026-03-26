@@ -1,0 +1,341 @@
+{
+  "schema_version": "backend.v1",
+  "generated_at": 1710000000,
+  "kind": "assistant_turn",
+  "thread_id": "thread-demo",
+  "payload": {
+    "final_text": "I am here. You can slow down first.",
+    "emotion_label": "care",
+    "session_context": {
+      "thread_id": "thread-demo",
+      "turn_id": "thread-demo:1710000000",
+      "event_id": "thread-demo:1710000000:user_utterance:external"
+    },
+    "current_event": {
+      "kind": "user_utterance",
+      "source": "external",
+      "created_at": 1710000000,
+      "perception": {
+        "thread_id": "thread-demo",
+        "turn_id": "thread-demo:1710000000",
+        "event_id": "thread-demo:1710000000:user_utterance:external"
+      }
+    },
+    "turn_summary": {
+      "relationship": {
+        "stage": "warming",
+        "affinity_score": 0.72,
+        "trust_score": 0.74,
+        "notes": "Stable mutual trust is forming."
+      },
+      "continuity_vector": {
+        "presence": {
+          "semantic": 0.58,
+          "world": 0.41
+        },
+        "ambient": {
+          "semantic": 0.46,
+          "world": 0.32
+        },
+        "rhythm": {
+          "semantic": 0.63,
+          "world": 0.57
+        }
+      },
+      "semantic_continuity": {
+        "history_weight": 0.67,
+        "dominant_category": "rhythm_style",
+        "active_categories": [
+          "presence_style",
+          "rhythm_style"
+        ],
+        "reactivated_categories": [
+          "ambient_style"
+        ],
+        "summary_lines": [
+          "The last turn still affects the next one."
+        ],
+        "anchor_lines": [
+          "She does not reset her inner rhythm every turn."
+        ],
+        "top_narratives": [
+          {
+            "category": "rhythm_style",
+            "score": 0.72,
+            "reactivated": true,
+            "text": "She keeps her inner rhythm across turns."
+          }
+        ]
+      },
+      "identity_continuity": {
+        "identity_lines": [
+          "She keeps a peer-to-peer stance."
+        ],
+        "identity_prompt_lines": [
+          "You keep a peer-to-peer stance."
+        ],
+        "dominant_identity_category": "selfhood_style",
+        "long_term_self_narratives": [
+          {
+            "category": "selfhood_style",
+            "score": 0.77,
+            "horizon_tag": "long_term",
+            "text": "She keeps a peer-to-peer stance.",
+            "prompt_text": "You keep a peer-to-peer stance."
+          }
+        ]
+      },
+      "world_dynamics": {
+        "bond_depth": 0.64,
+        "tension_load": 0.08,
+        "selfhood_load": 0.42,
+        "agency_load": 0.51,
+        "memory_gravity": 0.48,
+        "companionship_pull": 0.54,
+        "task_pull": 0.2
+      },
+      "current_turn": {
+        "event_kind": "user_utterance",
+        "emotion_label": "care",
+        "trust": 0.68,
+        "closeness": 0.66,
+        "hurt": 0.04,
+        "counterpart_stance": "open",
+        "counterpart_scene": "care_bid",
+        "behavior_mode": "self_activity_reopen",
+        "action_target": "offer_small_opening",
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "behavior_weather": "warm_residue",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.57,
+        "carryover_weather": "warm_residue",
+        "recon_event_kind": "user_utterance",
+        "recon_interaction_frame": "relationship",
+        "behavior_consequence_kind": "leave_small_opening",
+        "behavior_consequence_summary": "She looked back, but only left a small opening."
+      },
+      "event_residue": {
+        "event_kind": "user_utterance",
+        "trigger_family": "",
+        "carryover_mode": "",
+        "carryover_strength": 0.0,
+        "relationship_weather": "",
+        "presence_residue": 0.0,
+        "ambient_resonance": 0.0,
+        "self_activity_momentum": 0.0,
+        "scheduled_after_min": 0,
+        "idle_minutes": 0
+      },
+      "agenda_lifecycle": {
+        "kind": "held",
+        "source_event_kind": "scheduled_life_due",
+        "trigger_family": "life_window",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.41,
+        "relationship_weather": "warm_residue",
+        "hold_count": 2,
+        "idle_minutes": 0,
+        "attention_target": "counterpart_state",
+        "nonverbal_signal": "glance_back",
+        "presence_residue": 0.33,
+        "ambient_resonance": 0.24,
+        "self_activity_momentum": 0.58,
+        "continuity_anchor": 0.61,
+        "own_rhythm_anchor": 0.64,
+        "recontact_anchor": 0.47,
+        "boundary_anchor": 0.22,
+        "memory_anchor": 0.55,
+        "semantic_continuity_depth": 0.68,
+        "semantic_identity_gravity": 0.64,
+        "lineage_gravity": 0.7,
+        "contact_lineage": 0.58,
+        "boundary_lineage": 0.62,
+        "agency_lineage": 0.72,
+        "own_rhythm_bias": 0.61,
+        "recontact_cooldown": 0.52,
+        "counterpart_scene_bias": "busy_not_disrespectful",
+        "counterpart_boundary_delta": 0.0,
+        "created_at": 1710000000,
+        "source_tags": [
+          "life_window",
+          "own_rhythm"
+        ],
+        "note": "The window was held instead of being forced forward."
+      },
+      "opening_window": {
+        "profile_type": "self_opening",
+        "event_kind": "self_activity_state",
+        "family": "self_activity",
+        "trigger_family": "self_activity",
+        "stance": "open",
+        "scene": "care_bid",
+        "decision": "offer_small_opening",
+        "readiness": 0.71,
+        "required_readiness": 0.55,
+        "reopen_ready": true,
+        "gap": 0.16,
+        "recheck_min": 0,
+        "continuity_bonus": 0.12,
+        "continuity_discount": 0.0,
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.57,
+        "event_carryover_mode": "own_rhythm",
+        "event_carryover_strength": 0.57,
+        "presence_residue": 0.41,
+        "ambient_resonance": 0.32,
+        "self_activity_momentum": 0.57,
+        "recontact_echo": 0.34,
+        "own_rhythm_load": 0.49
+      },
+      "behavior_plan": {
+        "kind": "small_opening",
+        "target": "counterpart",
+        "trigger_family": "self_activity",
+        "scheduled_after_min": 0,
+        "primary_motive": "gentle_recontact",
+        "motive_tension": "self_rhythm_vs_contact",
+        "goal_frame": "Return from her own rhythm and leave a small opening.",
+        "carryover_mode": "own_rhythm",
+        "carryover_strength": 0.57,
+        "relationship_weather": "warm_residue"
+      },
+      "behavior_queue_preview": [
+        {
+          "agenda_id": "q1",
+          "kind": "deferred_checkin",
+          "target": "counterpart",
+          "status": "pending",
+          "trigger_family": "life_window",
+          "scheduled_after_min": 45,
+          "expires_after_min": 180,
+          "priority": 0.73,
+          "base_priority": 0.62,
+          "hold_count": 2,
+          "last_recheck_at_min": 15,
+          "carryover_mode": "own_rhythm",
+          "carryover_strength": 0.41,
+          "relationship_weather": "warm_residue",
+          "presence_residue": 0.33,
+          "ambient_resonance": 0.24,
+          "self_activity_momentum": 0.58,
+          "attention_target": "counterpart_state",
+          "nonverbal_signal": "glance_back",
+          "note": "Check in later if the window opens naturally."
+        }
+      ],
+      "worldline_focus_preview": [
+        "The last turn still leaves a gentle presence.",
+        "She answers from inside her own rhythm."
+      ],
+      "worldline_focus_items": [
+        {
+          "id": 101,
+          "kind": "relationship_timeline",
+          "text": "The last turn still leaves a gentle presence.",
+          "affinity_delta": 0.12,
+          "trust_delta": 0.18,
+          "created_at": 1710000000
+        },
+        {
+          "id": 102,
+          "kind": "unresolved_tension",
+          "text": "She answers from inside her own rhythm.",
+          "severity": 0.22,
+          "updated_at": 1710000000
+        }
+      ]
+    },
+    "behavior_action": {
+      "interaction_mode": "self_activity_reopen",
+      "action_target": "offer_small_opening",
+      "primary_motive": "gentle_recontact",
+      "motive_tension": "self_rhythm_vs_contact",
+      "goal_frame": "Return from her own rhythm and leave a small opening.",
+      "relationship_weather": "warm_residue"
+    },
+    "behavior_plan": {
+      "kind": "small_opening",
+      "target": "counterpart",
+      "trigger_family": "self_activity",
+      "scheduled_after_min": 0,
+      "primary_motive": "gentle_recontact",
+      "motive_tension": "self_rhythm_vs_contact",
+      "goal_frame": "Return from her own rhythm and leave a small opening.",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.57,
+      "relationship_weather": "warm_residue"
+    },
+    "interaction_carryover": {
+      "carryover_mode": "own_rhythm",
+      "strength": 0.57,
+      "relationship_weather": "warm_residue"
+    },
+    "counterpart_assessment": {
+      "summary": "She reads this as a careful attempt to come closer, not a demand for instant closeness.",
+      "stance": "watchful",
+      "scene": "repair_attempt",
+      "respect_level": 0.58,
+      "reciprocity": 0.54,
+      "boundary_pressure": 0.31,
+      "reliability_read": 0.57,
+      "assessment_profile": {
+        "dominant_scene_signal": "friction",
+        "openness_drive": 0.42,
+        "guarded_drive": 0.63,
+        "guard_margin": 0.21
+      }
+    },
+    "agenda_lifecycle_residue": {
+      "kind": "released_to_self_activity",
+      "trigger_family": "life_window",
+      "carryover_mode": "own_rhythm",
+      "carryover_strength": 0.53,
+      "relationship_weather": "warm_residue",
+      "hold_count": 2,
+      "presence_residue": 0.33,
+      "ambient_resonance": 0.24,
+      "self_activity_momentum": 0.58,
+      "counterpart_scene_bias": "busy_not_disrespectful",
+      "note": "The earlier opening was not forced forward; attention returned to her own rhythm."
+    },
+    "reconsolidation_snapshot": {
+      "event_kind": "user_utterance",
+      "interaction_frame": "relationship",
+      "behavior_mode": "self_activity_reopen",
+      "primary_motive": "gentle_recontact",
+      "motive_tension": "self_rhythm_vs_contact",
+      "goal_frame": "Return from her own rhythm and leave a small opening.",
+      "behavior_consequence": {
+        "kind": "leave_small_opening",
+        "summary": "She looked back, but only left a small opening."
+      }
+    },
+    "turn_appraisal": {
+      "interaction_frame": "relationship",
+      "selfhood_scene": "dialogue_equality"
+    },
+    "claim_links": [
+      {
+        "claim_excerpt": "A claim tied to evidence",
+        "source_ids": [
+          9
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": 9,
+        "tool_name": "web_search",
+        "title": "Example paper",
+        "url": "https://example.com/paper",
+        "query": "example query"
+      }
+    ],
+    "pending_utterance_fragment": ""
+  },
+  "meta": {
+    "source": "cli"
+  }
+}
