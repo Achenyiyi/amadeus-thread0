@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 import site
 
+from .utils.counterpart_profile import normalize_counterpart_assessment_profile
+
 # Reduce TensorFlow noise emitted through sentence-transformers dependencies.
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
@@ -413,111 +415,7 @@ class MemoryStore:
 
     @staticmethod
     def _counterpart_assessment_profile(item: dict[str, Any] | None) -> dict[str, Any]:
-        row = item if isinstance(item, dict) else {}
-        raw_profile = row.get("assessment_profile") if isinstance(row.get("assessment_profile"), dict) else {}
-        stance = str(row.get("stance") or "").strip().lower()
-        scene = str(row.get("scene") or "").strip().lower()
-        respect = MemoryStore._clamp01(row.get("respect_level"), 0.5)
-        reciprocity = MemoryStore._clamp01(row.get("reciprocity"), 0.5)
-        pressure = MemoryStore._clamp01(row.get("boundary_pressure"), 0.1)
-        reliability = MemoryStore._clamp01(row.get("reliability_read"), 0.5)
-
-        derived_scene_strengths = {
-            "care": MemoryStore._clamp01(
-                (0.46 if scene == "care_bid" else 0.0)
-                + 0.24 * respect
-                + 0.20 * reciprocity
-                + 0.12 * reliability
-                - 0.10 * pressure
-            ),
-            "repair": MemoryStore._clamp01(
-                (0.48 if scene == "repair_attempt" else 0.0)
-                + 0.22 * reliability
-                + 0.18 * respect
-                + 0.08 * reciprocity
-                - 0.10 * pressure
-            ),
-            "friction": MemoryStore._clamp01(
-                (0.52 if scene in {"friction", "relationship_degradation", "boundary_non_compliance"} else 0.0)
-                + 0.30 * pressure
-                + 0.10 * MemoryStore._clamp01(1.0 - respect, 0.0)
-                + 0.08 * MemoryStore._clamp01(1.0 - reliability, 0.0)
-            ),
-            "selfhood": MemoryStore._clamp01(
-                (0.48 if scene in {"equality_not_servitude", "value_conflict_depth"} else 0.0)
-                + 0.18 * pressure
-                + 0.08 * MemoryStore._clamp01(1.0 - reciprocity, 0.0)
-            ),
-            "busy": MemoryStore._clamp01(
-                (0.50 if scene == "busy_not_disrespectful" else 0.0)
-                + 0.18 * reliability
-                + 0.14 * respect
-                + 0.10 * MemoryStore._clamp01(1.0 - pressure, 0.0)
-            ),
-        }
-        raw_scene_strengths = raw_profile.get("scene_strengths") if isinstance(raw_profile.get("scene_strengths"), dict) else {}
-        scene_strengths = {
-            name: MemoryStore._clamp01(raw_scene_strengths.get(name), default)
-            for name, default in derived_scene_strengths.items()
-        }
-        openness_drive = MemoryStore._clamp01(
-            raw_profile.get("openness_drive"),
-            0.28 * respect + 0.28 * reciprocity + 0.24 * reliability + 0.20 * MemoryStore._clamp01(1.0 - pressure, 0.0),
-        )
-        guarded_drive = MemoryStore._clamp01(
-            raw_profile.get("guarded_drive"),
-            0.50 * pressure
-            + 0.18 * MemoryStore._clamp01(1.0 - respect, 0.0)
-            + 0.18 * MemoryStore._clamp01(1.0 - reliability, 0.0)
-            + 0.14 * MemoryStore._clamp01(1.0 - reciprocity, 0.0),
-        )
-        if stance == "guarded":
-            guarded_drive = max(guarded_drive, 0.66)
-        elif stance == "watchful":
-            guarded_drive = max(guarded_drive, 0.46)
-        if scene == "care_bid":
-            openness_drive = max(openness_drive, 0.62)
-        elif scene == "repair_attempt":
-            scene_strengths["repair"] = max(scene_strengths["repair"], 0.62)
-        elif scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
-            scene_strengths["friction"] = max(scene_strengths["friction"], 0.62)
-        elif scene in {"equality_not_servitude", "value_conflict_depth"}:
-            scene_strengths["selfhood"] = max(scene_strengths["selfhood"], 0.62)
-        elif scene == "busy_not_disrespectful":
-            scene_strengths["busy"] = max(scene_strengths["busy"], 0.62)
-
-        dominant_scene_signal = str(raw_profile.get("dominant_scene_signal") or "").strip().lower()
-        if dominant_scene_signal not in scene_strengths:
-            ranked_scene_signals = sorted(scene_strengths.items(), key=lambda pair: (-pair[1], pair[0]))
-            if ranked_scene_signals and ranked_scene_signals[0][1] >= 0.05:
-                dominant_scene_signal = ranked_scene_signals[0][0]
-            elif scene:
-                dominant_scene_signal = scene
-            else:
-                dominant_scene_signal = ""
-
-        guard_margin = MemoryStore._clamp_signed(
-            raw_profile.get("guard_margin"),
-            guarded_drive - openness_drive,
-        )
-        normalized = {
-            "openness_drive": round(openness_drive, 3),
-            "guarded_drive": round(guarded_drive, 3),
-            "guard_margin": round(guard_margin, 3),
-            "dominant_scene_signal": dominant_scene_signal,
-            "scene_strengths": {name: round(score, 3) for name, score in scene_strengths.items()},
-        }
-        if any(
-            (
-                normalized["openness_drive"] > 0.0,
-                normalized["guarded_drive"] > 0.0,
-                abs(normalized["guard_margin"]) > 0.0,
-                normalized["dominant_scene_signal"],
-                any(score > 0.0 for score in normalized["scene_strengths"].values()),
-            )
-        ):
-            return normalized
-        return {}
+        return normalize_counterpart_assessment_profile(item)
 
     @staticmethod
     def _counterpart_relationship_evidence_stats(
@@ -1862,6 +1760,21 @@ class MemoryStore:
         ambient_resonance: float = 0.0,
         self_activity_momentum: float = 0.0,
         own_rhythm_bias: float = 0.0,
+        continuity_anchor: float = 0.0,
+        own_rhythm_anchor: float = 0.0,
+        recontact_anchor: float = 0.0,
+        boundary_anchor: float = 0.0,
+        memory_anchor: float = 0.0,
+        semantic_continuity_depth: float = 0.0,
+        semantic_identity_gravity: float = 0.0,
+        long_term_axis_count: int = 0,
+        lineage_gravity: float = 0.0,
+        contact_lineage: float = 0.0,
+        repair_lineage: float = 0.0,
+        boundary_lineage: float = 0.0,
+        selfhood_lineage: float = 0.0,
+        agency_lineage: float = 0.0,
+        counterpart_boundary_delta: float = 0.0,
         primary_motive: str = "",
         motive_tension: str = "",
         goal_frame: str = "",
@@ -1891,6 +1804,21 @@ class MemoryStore:
                     "ambient_resonance": float(ambient_resonance),
                     "self_activity_momentum": float(self_activity_momentum),
                     "own_rhythm_bias": float(own_rhythm_bias),
+                    "continuity_anchor": float(continuity_anchor),
+                    "own_rhythm_anchor": float(own_rhythm_anchor),
+                    "recontact_anchor": float(recontact_anchor),
+                    "boundary_anchor": float(boundary_anchor),
+                    "memory_anchor": float(memory_anchor),
+                    "semantic_continuity_depth": float(semantic_continuity_depth),
+                    "semantic_identity_gravity": float(semantic_identity_gravity),
+                    "long_term_axis_count": int(long_term_axis_count),
+                    "lineage_gravity": float(lineage_gravity),
+                    "contact_lineage": float(contact_lineage),
+                    "repair_lineage": float(repair_lineage),
+                    "boundary_lineage": float(boundary_lineage),
+                    "selfhood_lineage": float(selfhood_lineage),
+                    "agency_lineage": float(agency_lineage),
+                    "counterpart_boundary_delta": float(counterpart_boundary_delta),
                     "primary_motive": str(primary_motive or "").strip().lower(),
                     "motive_tension": str(motive_tension or "").strip().lower(),
                     "goal_frame": str(goal_frame or "").strip()[:220],

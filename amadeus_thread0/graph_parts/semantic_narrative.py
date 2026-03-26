@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from ..config import CANON_COUNTERPART_NAME
+from ..utils.counterpart_profile import compact_counterpart_profile
 from .counterpart_dynamics import _clamp01
 from .retrieval import _query_overlap_score, _record_value, _self_narrative_salience
 from .turn_events import _now_ts
@@ -72,6 +73,22 @@ _SEMANTIC_CATEGORY_SUMMARY_LINES = {
     "agency_style": "她有自己的节奏和主动性，靠近或沉默都不等于失去自我。",
     "rhythm_style": "她会把自己的内部节奏延续到下一轮，不会每次回应都把自己清零。",
 }
+
+_SEMANTIC_PROACTIVE_CONTINUITY_FIELDS = (
+    "continuity_anchor",
+    "own_rhythm_anchor",
+    "recontact_anchor",
+    "boundary_anchor",
+    "memory_anchor",
+    "semantic_continuity_depth",
+    "semantic_identity_gravity",
+    "lineage_gravity",
+    "contact_lineage",
+    "repair_lineage",
+    "boundary_lineage",
+    "selfhood_lineage",
+    "agency_lineage",
+)
 
 
 def _semantic_query_signature(text: str) -> str:
@@ -225,6 +242,32 @@ def _semantic_identity_bonus(horizon_tag: str, support_span_s: float, reactivati
         bonus += 0.02
     return _clamp01(bonus)
 
+
+def _semantic_proactive_continuity_payload(item: dict[str, Any] | None) -> dict[str, float]:
+    if not isinstance(item, dict):
+        return {}
+    payload: dict[str, float] = {}
+    has_signal = False
+    for key in _SEMANTIC_PROACTIVE_CONTINUITY_FIELDS:
+        value = round(float(_clamp01(_record_value(item, key, 0.0), 0.0)), 3)
+        payload[key] = value
+        has_signal = has_signal or value > 0.0
+    return payload if has_signal else {}
+
+
+def _semantic_proactive_continuity_strength(
+    payload: dict[str, Any] | None,
+    *,
+    weight: float = 0.0,
+) -> float:
+    if not isinstance(payload, dict) or not payload:
+        return 0.0
+    numeric = [
+        max(0.0, float(payload.get(key) or 0.0))
+        for key in _SEMANTIC_PROACTIVE_CONTINUITY_FIELDS
+    ]
+    return _clamp01(max(numeric + [0.76 * _clamp01(weight, 0.0)]))
+
 def _semantic_narrative_profile(
     items: list[dict[str, Any]] | None,
     *,
@@ -261,12 +304,25 @@ def _semantic_narrative_profile(
         "lineage_snapshot": {},
         "motive_snapshot": {},
         "counterpart_snapshot": {},
+        "proactive_continuity_snapshot": {},
         "identity_snapshot": {},
         "identity_lines": [],
         "identity_prompt_lines": [],
         "long_term_self_narratives": [],
         "long_term_axis_count": 0,
+        "continuity_anchor": 0.0,
+        "own_rhythm_anchor": 0.0,
+        "recontact_anchor": 0.0,
+        "boundary_anchor": 0.0,
+        "memory_anchor": 0.0,
+        "semantic_continuity_depth": 0.0,
+        "semantic_identity_gravity": 0.0,
         "lineage_gravity": 0.0,
+        "contact_lineage": 0.0,
+        "repair_lineage": 0.0,
+        "boundary_lineage": 0.0,
+        "selfhood_lineage": 0.0,
+        "agency_lineage": 0.0,
         "contested_categories": [],
     }
     if not isinstance(items, list) or not items:
@@ -302,6 +358,7 @@ def _semantic_narrative_profile(
     lineage_snapshot: dict[str, float] = {}
     motive_snapshot: dict[str, dict[str, Any]] = {}
     counterpart_snapshot: dict[str, dict[str, Any]] = {}
+    proactive_continuity_snapshot: dict[str, dict[str, Any]] = {}
     identity_snapshot: dict[str, dict[str, Any]] = {}
     continuity_axis_snapshot: dict[str, dict[str, Any]] = {}
     contested_categories: set[str] = set()
@@ -443,10 +500,18 @@ def _semantic_narrative_profile(
         dominant_counterpart_stance = str(_record_value(item, "dominant_counterpart_stance", "") or "").strip()
         dominant_counterpart_scene = str(_record_value(item, "dominant_counterpart_scene", "") or "").strip()
         counterpart_dominant_signal = str(_record_value(item, "counterpart_dominant_scene_signal", "") or "").strip()
+        counterpart_scene_strengths = {
+            "care": round(float(_record_value(item, "counterpart_scene_care_strength", 0.0) or 0.0), 3),
+            "repair": round(float(_record_value(item, "counterpart_scene_repair_strength", 0.0) or 0.0), 3),
+            "friction": round(float(_record_value(item, "counterpart_scene_friction_strength", 0.0) or 0.0), 3),
+            "selfhood": round(float(_record_value(item, "counterpart_scene_selfhood_strength", 0.0) or 0.0), 3),
+            "busy": round(float(_record_value(item, "counterpart_scene_busy_strength", 0.0) or 0.0), 3),
+        }
         counterpart_has_signal = bool(
             dominant_counterpart_stance
             or dominant_counterpart_scene
             or counterpart_dominant_signal
+            or any(score > 0.0 for score in counterpart_scene_strengths.values())
             or float(_record_value(item, "counterpart_support_mass", 0.0) or 0.0) > 0.0
         )
         if category and counterpart_has_signal:
@@ -461,16 +526,38 @@ def _semantic_narrative_profile(
                     "counterpart_reciprocity": round(float(_record_value(item, "counterpart_reciprocity", 0.0) or 0.0), 3),
                     "counterpart_boundary_pressure": round(float(_record_value(item, "counterpart_boundary_pressure", 0.0) or 0.0), 3),
                     "counterpart_reliability_read": round(float(_record_value(item, "counterpart_reliability_read", 0.0) or 0.0), 3),
-                    "counterpart_profile": {
-                        "openness_drive": round(float(_record_value(item, "counterpart_openness_drive", 0.0) or 0.0), 3),
-                        "guarded_drive": round(float(_record_value(item, "counterpart_guarded_drive", 0.0) or 0.0), 3),
-                        "guard_margin": round(float(_record_value(item, "counterpart_guard_margin", 0.0) or 0.0), 3),
-                        "dominant_scene_signal": counterpart_dominant_signal,
-                    },
+                    "counterpart_profile": compact_counterpart_profile(
+                        {
+                            "openness_drive": round(float(_record_value(item, "counterpart_openness_drive", 0.0) or 0.0), 3),
+                            "guarded_drive": round(float(_record_value(item, "counterpart_guarded_drive", 0.0) or 0.0), 3),
+                            "guard_margin": round(float(_record_value(item, "counterpart_guard_margin", 0.0) or 0.0), 3),
+                            "dominant_scene_signal": counterpart_dominant_signal,
+                            "scene_strengths": counterpart_scene_strengths,
+                            "safety_read": round(float(_record_value(item, "counterpart_safety_read", 0.0) or 0.0), 3),
+                            "repairability": round(float(_record_value(item, "counterpart_repairability", 0.0) or 0.0), 3),
+                            "predictability": round(float(_record_value(item, "counterpart_predictability", 0.0) or 0.0), 3),
+                            "dependency_risk": round(float(_record_value(item, "counterpart_dependency_risk", 0.0) or 0.0), 3),
+                            "closeness_read": round(float(_record_value(item, "counterpart_closeness_read", 0.0) or 0.0), 3),
+                        }
+                    ),
                     "counterpart_support_count": int(_record_value(item, "counterpart_support_count", 0) or 0),
                     "counterpart_support_mass": round(float(_record_value(item, "counterpart_support_mass", 0.0) or 0.0), 3),
                     "counterpart_confidence_avg": round(float(_record_value(item, "counterpart_confidence_avg", 0.0) or 0.0), 3),
                     "counterpart_fresh_ratio": round(float(_record_value(item, "counterpart_fresh_ratio", 0.0) or 0.0), 3),
+                }
+        proactive_payload = _semantic_proactive_continuity_payload(item)
+        if category and proactive_payload:
+            previous_proactive = (
+                proactive_continuity_snapshot.get(category)
+                if isinstance(proactive_continuity_snapshot.get(category), dict)
+                else {}
+            )
+            previous_proactive_score = float(previous_proactive.get("_score", -1.0) or -1.0)
+            proactive_score = _semantic_proactive_continuity_strength(proactive_payload, weight=weight)
+            if proactive_score >= previous_proactive_score:
+                proactive_continuity_snapshot[category] = {
+                    "_score": round(float(proactive_score), 3),
+                    **dict(proactive_payload),
                 }
         if category in categories and continuity_signal > 0.0:
             previous_axis = (
@@ -615,6 +702,23 @@ def _semantic_narrative_profile(
     out["support_mass_snapshot"] = support_mass_snapshot
     out["support_quality_snapshot"] = support_quality_snapshot
     out["lineage_snapshot"] = lineage_snapshot
+    if proactive_continuity_snapshot:
+        out["proactive_continuity_snapshot"] = {
+            category: {
+                key: round(float(data.get(key) or 0.0), 3)
+                for key in _SEMANTIC_PROACTIVE_CONTINUITY_FIELDS
+            }
+            for category, data in proactive_continuity_snapshot.items()
+            if str(category or "").strip() and isinstance(data, dict)
+        }
+        for key in _SEMANTIC_PROACTIVE_CONTINUITY_FIELDS:
+            values = [
+                float(data.get(key) or 0.0)
+                for data in out["proactive_continuity_snapshot"].values()
+                if isinstance(data, dict)
+            ]
+            if values:
+                out[key] = round(max(float(out.get(key) or 0.0), max(values)), 3)
     if counterpart_snapshot:
         out["counterpart_snapshot"] = {
             category: {
@@ -624,12 +728,9 @@ def _semantic_narrative_profile(
                 "counterpart_reciprocity": round(float(data.get("counterpart_reciprocity") or 0.0), 3),
                 "counterpart_boundary_pressure": round(float(data.get("counterpart_boundary_pressure") or 0.0), 3),
                 "counterpart_reliability_read": round(float(data.get("counterpart_reliability_read") or 0.0), 3),
-                "counterpart_profile": {
-                    "openness_drive": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("openness_drive") or 0.0), 3),
-                    "guarded_drive": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("guarded_drive") or 0.0), 3),
-                    "guard_margin": round(float(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("guard_margin") or 0.0), 3),
-                    "dominant_scene_signal": str(((data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}).get("dominant_scene_signal") or "").strip(),
-                },
+                "counterpart_profile": compact_counterpart_profile(
+                    (data.get("counterpart_profile") or {}) if isinstance(data.get("counterpart_profile"), dict) else {}
+                ),
                 "counterpart_support_count": int(data.get("counterpart_support_count") or 0),
                 "counterpart_support_mass": round(float(data.get("counterpart_support_mass") or 0.0), 3),
                 "counterpart_confidence_avg": round(float(data.get("counterpart_confidence_avg") or 0.0), 3),
@@ -640,6 +741,11 @@ def _semantic_narrative_profile(
         }
     out["identity_snapshot"] = identity_snapshot
     out["contested_categories"] = sorted(contested_categories)
+    proactive_snapshot = (
+        out.get("proactive_continuity_snapshot")
+        if isinstance(out.get("proactive_continuity_snapshot"), dict)
+        else {}
+    )
     if continuity_axis_snapshot:
         continuity_axes = [
             {
@@ -654,6 +760,11 @@ def _semantic_narrative_profile(
                 "counterpart_snapshot": (
                     out["counterpart_snapshot"].get(str(category or "").strip())
                     if isinstance(out.get("counterpart_snapshot"), dict)
+                    else {}
+                ),
+                "proactive_continuity": (
+                    dict((proactive_snapshot.get(str(category or "").strip()) or {}))
+                    if isinstance(proactive_snapshot, dict)
                     else {}
                 ),
                 "goal_frame_examples": [
@@ -784,6 +895,11 @@ def _semantic_narrative_profile(
                             if isinstance(out.get("counterpart_snapshot"), dict)
                             else {}
                         ),
+                        "proactive_continuity": (
+                            dict((proactive_snapshot.get(category) or {}))
+                            if isinstance(proactive_snapshot, dict)
+                            else {}
+                        ),
                     }
                 )
         out["identity_lines"] = identity_lines
@@ -813,6 +929,17 @@ def _semantic_narrative_profile(
                         + 0.16 * _clamp01(len(lineage_values) / 3.0)
                     )
                 ),
+                3,
+            )
+    if proactive_snapshot:
+        proactive_lineage_values = [
+            float(data.get("lineage_gravity") or 0.0)
+            for data in proactive_snapshot.values()
+            if isinstance(data, dict)
+        ]
+        if proactive_lineage_values:
+            out["lineage_gravity"] = round(
+                max(float(out.get("lineage_gravity") or 0.0), max(proactive_lineage_values)),
                 3,
             )
 
@@ -851,6 +978,11 @@ def _semantic_narrative_profile(
                 "counterpart_snapshot": (
                     out["counterpart_snapshot"].get(category)
                     if isinstance(out.get("counterpart_snapshot"), dict)
+                    else {}
+                ),
+                "proactive_continuity": (
+                    dict((proactive_snapshot.get(category) or {}))
+                    if isinstance(proactive_snapshot, dict)
                     else {}
                 ),
             }

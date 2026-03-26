@@ -106,6 +106,7 @@ class FakeMemoryStore:
                     "summary": "你觉得冈部伦太郎这句是在认真靠近你，不是普通客套。",
                     "stance": "open",
                     "scene": "care_bid",
+                    "created_at": 1710000003,
                     "respect_level": 0.76,
                     "reciprocity": 0.72,
                     "boundary_pressure": 0.08,
@@ -128,6 +129,9 @@ class FakeMemoryStore:
                     "self_activity_momentum": 0.58,
                     "own_rhythm_bias": 0.61,
                     "counterpart_scene_bias": "busy_not_disrespectful",
+                    "semantic_continuity_depth": 0.68,
+                    "semantic_identity_gravity": 0.64,
+                    "created_at": 1710000004,
                     "primary_motive": "preserve_self_rhythm",
                     "motive_tension": "self_rhythm_vs_contact",
                     "goal_frame": "先让这段窗口自然过去，把注意力收回自己的节奏。",
@@ -148,11 +152,17 @@ class FakeMemoryStore:
     def snapshot(self):
         return dict(self._snapshot)
 
+    def list_commitments(self, limit=50):
+        return list(self._snapshot.get("commitments", [])[:limit])
+
     def list_relationship_timeline(self, limit=30):
         return list(self._timeline[:limit])
 
     def list_conflict_repairs(self, limit=30):
         return list(self._repairs[:limit])
+
+    def list_unresolved_tensions(self, limit=30):
+        return list(self._snapshot.get("unresolved_tensions", [])[:limit])
 
     def list_counterpart_assessment_history(self, limit=30):
         return list(self._counterpart_history[:limit])
@@ -300,7 +310,42 @@ class BackendSessionTests(unittest.TestCase):
             "bond_state": {"trust": 0.7},
             "allostasis_state": {"autonomy_need": 0.4},
             "counterpart_assessment": {"stance": "open"},
-            "semantic_narrative_profile": {"presence_carry": 0.5},
+            "semantic_narrative_profile": {
+                "presence_carry": 0.5,
+                "top_narratives": [
+                    {
+                        "category": "rhythm_style",
+                        "score": 0.74,
+                        "reactivated": True,
+                        "text": "她会把自己的内部节奏延续到下一轮。",
+                        "primary_motive": "preserve_self_rhythm",
+                        "motive_tension": "self_rhythm_vs_contact",
+                        "counterpart_snapshot": {
+                            "counterpart_stance": "watchful",
+                            "counterpart_scene": "busy_not_disrespectful",
+                            "counterpart_respect_level": 0.61,
+                            "counterpart_profile": {"dominant_scene_signal": "busy"},
+                        },
+                        "proactive_continuity": {
+                            "_score": 0.67,
+                            "own_rhythm_anchor": 0.71,
+                        },
+                    }
+                ],
+                "long_term_self_narratives": [
+                    {
+                        "category": "selfhood_style",
+                        "score": 0.79,
+                        "horizon_tag": "long_term",
+                        "text": "她会把自己放在平等互动的位置上。",
+                        "prompt_text": "你会把自己放在平等互动的位置上。",
+                        "primary_motive": "preserve_selfhood",
+                        "motive_tension": "selfhood_vs_appeasement",
+                        "sedimentation_score": 0.73,
+                        "identity_strength": 0.82,
+                    }
+                ],
+            },
             "world_model_state": {"presence_residue": 0.4},
             "evolution_state": {"stable": True},
             "reconsolidation_snapshot": {"event_kind": "user_utterance"},
@@ -311,6 +356,15 @@ class BackendSessionTests(unittest.TestCase):
             "agenda_lifecycle_residue": {"kind": "held"},
             "behavior_plan": {"kind": "deferred_checkin"},
             "behavior_queue": [{"agenda_id": "a1", "kind": "deferred_checkin", "status": "pending"}],
+            "worldline_focus": [
+                {
+                    "id": 21,
+                    "focus_kind": "commitment",
+                    "text": "记得提醒冈部吃饭。",
+                    "status": "open",
+                    "due_at": "今晚",
+                }
+            ],
             "science_mode": False,
             "tsundere_intensity": 0.6,
             "ooc_detector": {"risk": 0.1},
@@ -323,9 +377,28 @@ class BackendSessionTests(unittest.TestCase):
         worldline = session.worldline_view()
         self.assertEqual(worldline["worldline_events"][0]["summary"], "一起熬夜。")
         self.assertEqual(worldline["worldline_summary"]["relationship"]["stage"], "warming")
+        self.assertEqual(worldline["worldline_summary"]["worldline_focus_preview"][0], "记得提醒冈部吃饭。")
+        self.assertEqual(worldline["worldline_summary"]["worldline_focus_items"][0]["kind"], "commitment")
+        self.assertEqual(worldline["worldline_summary"]["worldline_focus_items"][0]["due_at"], "今晚")
+        self.assertEqual(
+            worldline["worldline_summary"]["semantic_continuity"]["top_narratives"][0]["primary_motive"],
+            "preserve_self_rhythm",
+        )
+        self.assertEqual(
+            worldline["worldline_summary"]["semantic_continuity"]["top_narratives"][0]["counterpart_snapshot"]["scene"],
+            "busy_not_disrespectful",
+        )
+        self.assertEqual(
+            worldline["worldline_summary"]["identity_continuity"]["long_term_self_narratives"][0]["identity_strength"],
+            0.82,
+        )
         self.assertEqual(worldline["counterpart_assessment_history"][0]["scene"], "care_bid")
+        self.assertEqual(worldline["counterpart_assessment_preview"][0]["created_at"], 1710000003)
         self.assertEqual(worldline["proactive_continuity_history"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["trace_family"], "own_rhythm_busy_window")
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["created_at"], 1710000004)
 
         persona = session.persona_view()
         self.assertEqual(persona["persona_state"]["role"], "kurisu_amadeus")
@@ -336,12 +409,185 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(bond["bond_state"]["trust"], 0.7)
         self.assertEqual(bond["counterpart_assessment_history"][0]["scene"], "care_bid")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["stance"], "open")
+        self.assertEqual(bond["counterpart_assessment_preview"][0]["created_at"], 1710000003)
         self.assertEqual(bond["proactive_continuity_history"][0]["kind"], "released_to_self_activity")
         self.assertEqual(bond["proactive_continuity_preview"][0]["carryover_mode"], "own_rhythm")
+        self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
+        self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
 
         sources = session.sources_view()
         self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
         self.assertEqual(sources["claim_links"][0]["source_ids"], [9])
+
+    def test_build_evolution_summary_derives_worldline_focus_from_memory_when_state_is_missing_field(self):
+        values = {
+            "persona_state": {"role": "kurisu_amadeus"},
+            "emotion_state": {"label": "care"},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        self.assertEqual(summary["worldline_focus_preview"][0], "提醒他吃饭。")
+        self.assertEqual(summary["worldline_focus_items"][0]["kind"], "commitment")
+
+    def test_build_evolution_summary_preserves_explicit_empty_worldline_focus(self):
+        values = {
+            "persona_state": {"role": "kurisu_amadeus"},
+            "emotion_state": {"label": "care"},
+            "worldline_focus": [],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        self.assertEqual(summary["worldline_focus_preview"], [])
+        self.assertEqual(summary["worldline_focus_items"], [])
+
+    def test_build_evolution_summary_normalizes_event_identity_from_session_context(self):
+        values = {
+            "session_context": {
+                "thread_id": "thread-a",
+                "turn_id": "thread-a:555",
+            },
+            "current_event": {
+                "kind": "idle",
+                "source": "scheduler",
+                "created_at": 555,
+                "perception": {},
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+
+        self.assertEqual(event_residue.get("thread_id"), "thread-a")
+        self.assertEqual(event_residue.get("turn_id"), "thread-a:555")
+        self.assertEqual(event_residue.get("event_id"), "thread-a:555:idle:scheduler")
+
+    def test_build_evolution_summary_backfills_sparse_event_perception_from_session_context(self):
+        values = {
+            "session_context": {
+                "thread_id": "thread-a",
+                "turn_id": "thread-a:555",
+                "channel": "system",
+                "modality": "system",
+                "source_role": "system",
+                "trust_tier": "high",
+                "salience": 0.58,
+                "interruptibility": "soft",
+                "delivery_mode": "scheduled",
+                "is_proactive": False,
+            },
+            "current_event": {
+                "kind": "idle",
+                "source": "scheduler",
+                "created_at": 555,
+                "perception": {},
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+
+        self.assertEqual(event_residue.get("thread_id"), "thread-a")
+        self.assertEqual(event_residue.get("turn_id"), "thread-a:555")
+        self.assertEqual(event_residue.get("event_id"), "thread-a:555:idle:scheduler")
+        self.assertEqual(event_residue.get("channel"), "system")
+        self.assertEqual(event_residue.get("modality"), "system")
+        self.assertEqual(event_residue.get("source_role"), "system")
+        self.assertEqual(event_residue.get("trust_tier"), "high")
+        self.assertEqual(event_residue.get("salience"), 0.58)
+        self.assertEqual(event_residue.get("interruptibility"), "soft")
+        self.assertEqual(event_residue.get("delivery_mode"), "scheduled")
+        self.assertFalse(event_residue.get("is_proactive"))
+
+    def test_persona_view_uses_same_normalized_current_event_as_evolution_summary_for_plan_derivation(self):
+        values = {
+            "session_context": {
+                "thread_id": "thread-a",
+                "turn_id": "thread-a:555",
+            },
+            "current_event": {
+                "created_at": 555,
+                "perception": {},
+            },
+            "reconsolidation_snapshot": {
+                "behavior_action": {
+                    "action_target": "wait_and_recheck",
+                    "interaction_mode": "deferred_watch",
+                    "primary_motive": "honor_continuity",
+                    "goal_frame": "顺着余温等更自然的窗口。",
+                    "deferred_action_family": "observe",
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        def _derive(current_event, action, world_model_state=None):
+            kind = str((current_event or {}).get("kind") or "").strip() or "missing"
+            return {
+                "kind": f"derived:{kind}",
+                "target": "counterpart",
+                "scheduled_after_min": 12,
+                "trigger_family": kind,
+            }
+
+        with patch("amadeus_thread0.runtime.final_state._behavior_plan_from_action", side_effect=_derive):
+            worldline = session.worldline_view()
+            persona = session.persona_view()
+
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["kind"], "derived:external_event")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["trigger_family"], "external_event")
+        self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "derived:external_event")
+        self.assertEqual(persona["behavior_plan"]["kind"], "derived:external_event")
+        self.assertEqual(persona["behavior_plan"]["trigger_family"], "external_event")
+
+    def test_build_evolution_summary_preserves_event_created_at_and_tags(self):
+        values = {
+            "current_event": {
+                "kind": "scheduled_life_due",
+                "response_style_hint": "relationship",
+                "science_mode": False,
+                "continuation_mode": True,
+                "counterpart_name": "冈部伦太郎",
+                "appraisal_label": "care",
+                "appraisal_confidence": 0.61,
+                "created_at": 1710000018,
+                "tags": ["user_busy", "commitment_window", ""],
+                "derived_from_plan_kind": "commitment_window",
+                "commitment_id": 12,
+                "due_at": "今晚",
+                "attention_target_hint": "counterpart_state",
+                "nonverbal_signal_hint": "quiet_glance",
+            }
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+
+        self.assertEqual(event_residue.get("created_at"), 1710000018)
+        self.assertEqual(event_residue.get("tags"), ["user_busy", "commitment_window"])
+        self.assertEqual(event_residue.get("response_style_hint"), "relationship")
+        self.assertFalse(event_residue.get("science_mode"))
+        self.assertTrue(event_residue.get("continuation_mode"))
+        self.assertEqual(event_residue.get("counterpart_name"), "冈部伦太郎")
+        self.assertEqual(event_residue.get("appraisal_label"), "care")
+        self.assertEqual(event_residue.get("appraisal_confidence"), 0.61)
+        self.assertEqual(event_residue.get("derived_from_plan_kind"), "commitment_window")
+        self.assertEqual(event_residue.get("commitment_id"), 12)
+        self.assertEqual(event_residue.get("due_at"), "今晚")
+        self.assertEqual(event_residue.get("attention_target_hint"), "counterpart_state")
+        self.assertEqual(event_residue.get("nonverbal_signal_hint"), "quiet_glance")
 
     def test_session_views_use_final_reconsolidation_snapshot_for_evolution_summary(self):
         final_snapshot = {
@@ -350,6 +596,21 @@ class BackendSessionTests(unittest.TestCase):
             "primary_motive": "gentle_recontact",
             "motive_tension": "self_rhythm_vs_contact",
             "goal_frame": "先从自己的节奏里回头，留一个不压迫对方的小开口。",
+            "behavior_plan": {
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "observe",
+                "scheduled_after_min": 20,
+                "relationship_weather": "steady_warmth",
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "quiet_glance",
+                "note": "先把窗口留着，再看要不要顺手接回来。",
+                "carryover_mode": "warm_residue",
+                "carryover_strength": 0.67,
+                "presence_residue": 0.4,
+                "ambient_resonance": 0.2,
+                "self_activity_momentum": 0.3,
+            },
             "interaction_carryover": {
                 "source": "reconsolidation",
                 "strength": 0.67,
@@ -358,6 +619,7 @@ class BackendSessionTests(unittest.TestCase):
                 "note": "final carryover should win",
             },
             "counterpart": {
+                "summary": "她会先把这次开口当成带着摩擦感的重新靠近，不会直接判成已经完全放松下来了。",
                 "stance": "guarded",
                 "scene": "relationship_degradation",
                 "respect_level": 0.38,
@@ -395,7 +657,7 @@ class BackendSessionTests(unittest.TestCase):
                 "motive_tension": "self_rhythm_vs_contact",
                 "goal_frame": "先从自己的节奏里回头。",
             },
-            "behavior_plan": {"kind": "deferred_checkin"},
+            "behavior_plan": {"kind": "deferred_checkin", "relationship_weather": "stale_live_weather"},
             "behavior_queue": [],
             "interaction_carryover": {"carryover_mode": "own_rhythm", "strength": 0.53, "relationship_weather": "warm_residue"},
             "current_event": {"kind": "user_utterance"},
@@ -411,6 +673,13 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline_turn["recon_interaction_frame"], "relationship")
         self.assertEqual(worldline_turn["behavior_consequence_kind"], "leave_small_opening")
         self.assertIn("小开口", worldline_turn["behavior_consequence_summary"])
+        self.assertEqual(
+            worldline_turn["counterpart_summary"],
+            "她会先把这次开口当成带着摩擦感的重新靠近，不会直接判成已经完全放松下来了。",
+        )
+        lifecycle = worldline["worldline_summary"]["agenda_lifecycle"]
+        self.assertEqual(lifecycle["kind"], "released_to_self_activity")
+        self.assertEqual(lifecycle["carryover_mode"], "own_rhythm")
 
         persona = session.persona_view()
         self.assertEqual(persona["reconsolidation_snapshot"], final_snapshot)
@@ -423,6 +692,26 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(counterpart_profile.get("guarded_drive"), 0.71)
         self.assertEqual(worldline_turn["carryover_mode"], "warm_residue")
         self.assertEqual(worldline_turn["carryover_strength"], 0.67)
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["relationship_weather"], "steady_warmth")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["attention_target"], "counterpart_state")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["nonverbal_signal"], "quiet_glance")
+        self.assertEqual(persona["counterpart_assessment"]["scene"], "relationship_degradation")
+        self.assertEqual(persona["counterpart_assessment"]["stance"], "guarded")
+        self.assertIn("重新靠近", persona["counterpart_assessment"]["summary"])
+        persona_profile = (
+            persona["counterpart_assessment"].get("assessment_profile")
+            if isinstance(persona["counterpart_assessment"].get("assessment_profile"), dict)
+            else {}
+        )
+        self.assertEqual(persona_profile.get("dominant_scene_signal"), "friction")
+        self.assertEqual(persona_profile.get("guarded_drive"), 0.71)
+        self.assertEqual(persona_profile.get("safety_read"), counterpart_profile.get("safety_read"))
+        self.assertEqual(persona_profile.get("repairability"), counterpart_profile.get("repairability"))
+        self.assertEqual(persona_profile.get("predictability"), counterpart_profile.get("predictability"))
+        self.assertEqual(persona_profile.get("dependency_risk"), counterpart_profile.get("dependency_risk"))
+        self.assertEqual(persona_profile.get("closeness_read"), counterpart_profile.get("closeness_read"))
+        self.assertEqual(persona["agenda_lifecycle_residue"]["kind"], "released_to_self_activity")
+        self.assertEqual(persona["agenda_lifecycle_residue"]["carryover_mode"], "own_rhythm")
         self.assertEqual(persona["interaction_carryover"]["source"], "reconsolidation")
         self.assertEqual(persona["interaction_carryover"]["relationship_weather"], "steady_warmth")
 
@@ -471,6 +760,49 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "deferred_checkin")
         mock_derive.assert_not_called()
 
+    def test_persona_and_worldline_views_prefer_frozen_behavior_plan_with_context_only_signal(self):
+        values = {
+            "world_model_state": {"presence_residue": 0.42},
+            "current_event": {"kind": "self_activity_state"},
+            "behavior_plan": {
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "observe",
+                "scheduled_after_min": 45,
+            },
+            "reconsolidation_snapshot": {
+                "behavior_plan": {
+                    "note": "final frozen context should win",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "carryover_strength": 0.46,
+                    "presence_residue": 0.33,
+                    "ambient_resonance": 0.22,
+                    "self_activity_momentum": 0.58,
+                    "allow_interrupt": False,
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        persona = session.persona_view()
+
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["kind"], "")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["note"], "final frozen context should win")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["attention_target"], "counterpart_state")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["nonverbal_signal"], "quiet_glance")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["presence_residue"], 0.33)
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["ambient_resonance"], 0.22)
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["self_activity_momentum"], 0.58)
+        self.assertFalse(worldline["worldline_summary"]["behavior_plan"]["allow_interrupt"])
+        self.assertEqual(persona["behavior_plan"]["note"], "final frozen context should win")
+        self.assertEqual(persona["behavior_plan"]["attention_target"], "counterpart_state")
+        self.assertEqual(persona["behavior_plan"]["nonverbal_signal"], "quiet_glance")
+        self.assertEqual(persona["behavior_plan"]["carryover_strength"], 0.46)
+        self.assertFalse(persona["behavior_plan"]["allow_interrupt"])
+
     def test_persona_and_worldline_views_prefer_frozen_reconsolidation_behavior_action(self):
         values = {
             "world_model_state": {"presence_residue": 0.42},
@@ -481,6 +813,16 @@ class BackendSessionTests(unittest.TestCase):
                 "primary_motive": "preserve_self_rhythm",
                 "motive_tension": "self_rhythm_vs_contact",
                 "goal_frame": "stale live action should not win",
+                "initiative_shape": "pause",
+                "disclosure_posture": "tight",
+                "initiative_level": 0.22,
+                "window_profile": {
+                    "profile_type": "self_opening",
+                    "decision": "hold_own_rhythm",
+                    "readiness": 0.22,
+                    "required_readiness": 0.49,
+                    "reopen_ready": False,
+                },
             },
             "behavior_plan": {
                 "kind": "self_activity_continue",
@@ -496,7 +838,37 @@ class BackendSessionTests(unittest.TestCase):
                     "goal_frame": "顺着前面的惦记等更自然的时候再接回来。",
                     "deferred_action_family": "life_window",
                     "timing_window_min": 30,
+                    "engagement_level": 0.61,
+                    "initiative_level": 0.47,
+                    "task_focus": "relationship",
+                    "affect_surface": "gentle",
+                    "silence_ok": True,
+                    "proactive_checkin_readiness": 0.39,
+                    "initiative_shape": "micro_opening",
+                    "disclosure_posture": "measured",
+                    "note": "顺着余温看一眼，但不立刻把距离拉近。",
                     "relationship_weather": "warm_residue",
+                    "window_profile": {
+                        "profile_type": "self_opening",
+                        "event_kind": "self_activity_state",
+                        "family": "self_activity",
+                        "trigger_family": "life_window",
+                        "stance": "watchful",
+                        "scene": "repair_attempt",
+                        "decision": "wait_and_recheck",
+                        "readiness": 0.41,
+                        "required_readiness": 0.57,
+                        "reopen_ready": False,
+                        "recheck_min": 18,
+                        "continuity_bonus": 0.14,
+                        "carryover_mode": "own_rhythm",
+                        "carryover_strength": 0.46,
+                        "presence_residue": 0.33,
+                        "ambient_resonance": 0.22,
+                        "self_activity_momentum": 0.58,
+                        "recontact_echo": 0.29,
+                        "own_rhythm_load": 0.63,
+                    },
                 },
                 "behavior_plan": {
                     "kind": "deferred_checkin",
@@ -514,8 +886,86 @@ class BackendSessionTests(unittest.TestCase):
 
         self.assertEqual(worldline["worldline_summary"]["current_turn"]["action_target"], "wait_and_recheck")
         self.assertEqual(worldline["worldline_summary"]["current_turn"]["behavior_mode"], "deferred_watch")
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["initiative_shape"], "micro_opening")
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["initiative_level"], 0.47)
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["engagement_level"], 0.61)
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["disclosure_posture"], "measured")
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["behavior_note"], "顺着余温看一眼，但不立刻把距离拉近。")
         self.assertEqual(persona["behavior_action"]["primary_motive"], "honor_continuity")
         self.assertEqual(persona["behavior_action"]["timing_window_min"], 30)
+        self.assertEqual(persona["behavior_action"]["initiative_shape"], "micro_opening")
+        self.assertEqual(persona["behavior_action"]["initiative_level"], 0.47)
+        self.assertEqual(persona["behavior_action"]["engagement_level"], 0.61)
+        self.assertEqual(persona["behavior_action"]["disclosure_posture"], "measured")
+        self.assertTrue(persona["behavior_action"]["silence_ok"])
+        self.assertEqual(persona["behavior_action"]["task_focus"], "relationship")
+        self.assertEqual(persona["behavior_action"]["note"], "顺着余温看一眼，但不立刻把距离拉近。")
+        window = worldline["worldline_summary"]["opening_window"]
+        self.assertEqual(window["profile_type"], "self_opening")
+        self.assertEqual(window["decision"], "wait_and_recheck")
+        self.assertEqual(window["readiness"], 0.41)
+        self.assertEqual(window["required_readiness"], 0.57)
+        self.assertEqual(window["recheck_min"], 18)
+        self.assertEqual(persona["behavior_action"]["window_profile"]["decision"], "wait_and_recheck")
+        self.assertEqual(persona["behavior_action"]["window_profile"]["own_rhythm_load"], 0.63)
+        self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "deferred_checkin")
+
+    def test_persona_and_worldline_views_derive_plan_from_frozen_action_before_live_plan(self):
+        values = {
+            "world_model_state": {"presence_residue": 0.42},
+            "current_event": {"kind": "self_activity_state"},
+            "behavior_action": {
+                "action_target": "hold_own_rhythm",
+                "interaction_mode": "self_activity_hold",
+                "primary_motive": "preserve_self_rhythm",
+                "goal_frame": "stale live action should not win",
+            },
+            "behavior_plan": {
+                "kind": "self_activity_continue",
+                "target": "self",
+                "trigger_family": "self_activity",
+                "scheduled_after_min": 45,
+                "legacy_hint": "stale-live-plan",
+            },
+            "reconsolidation_snapshot": {
+                "behavior_action": {
+                    "action_target": "wait_and_recheck",
+                    "interaction_mode": "deferred_watch",
+                    "primary_motive": "honor_continuity",
+                    "motive_tension": "contact_without_pressure",
+                    "goal_frame": "顺着前面的惦记等更自然的时候再接回来。",
+                    "deferred_action_family": "life_window",
+                    "timing_window_min": 30,
+                    "relationship_weather": "warm_residue",
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        with patch(
+            "amadeus_thread0.runtime.final_state._behavior_plan_from_action",
+            return_value={
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "life_window",
+                "scheduled_after_min": 30,
+                "primary_motive": "honor_continuity",
+            },
+        ):
+            worldline = session.worldline_view()
+            persona = session.persona_view()
+
+        self.assertEqual(worldline["worldline_summary"]["current_turn"]["action_target"], "wait_and_recheck")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["kind"], "deferred_checkin")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["trigger_family"], "life_window")
+        self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["scheduled_after_min"], 30)
+        self.assertNotIn("legacy_hint", worldline["worldline_summary"]["behavior_plan"])
+        self.assertEqual(persona["behavior_action"]["interaction_mode"], "deferred_watch")
+        self.assertEqual(persona["behavior_plan"]["kind"], "deferred_checkin")
+        self.assertEqual(persona["behavior_plan"]["trigger_family"], "life_window")
+        self.assertEqual(persona["behavior_plan"]["scheduled_after_min"], 30)
+        self.assertNotIn("legacy_hint", persona["behavior_plan"])
         self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "deferred_checkin")
 
     def test_worldline_view_uses_final_persisted_semantic_self_narratives_not_retrieved_copy(self):
@@ -592,6 +1042,42 @@ class BackendSessionTests(unittest.TestCase):
         self.assertAlmostEqual(float(bond["relationship_state"]["trust_score"]), 0.87, places=3)
         self.assertIn("稳定信赖", bond["relationship_state"]["notes"])
         self.assertEqual(bond["relationship_timeline"][0]["summary"], "关系变近")
+
+    def test_evolution_summary_and_bond_view_share_relationship_resolution_rule(self):
+        values = {
+            "relationship": {
+                "stage": "trusted",
+                "affinity_score": 0.81,
+                "trust_score": 0.85,
+                "notes": "这一轮里已经明显进入稳定信赖。",
+            },
+            "bond_state": {"trust": 0.82, "closeness": 0.79},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        memory_store = FakeMemoryStore()
+        memory_store._relationship = {
+            "stage": "friend",
+            "affinity_score": 0.0,
+            "trust_score": 0.0,
+            "notes": "",
+        }
+        session = BackendSession(graph=graph, memory_store=memory_store, thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        worldline = session.worldline_view()
+        persona = session.persona_view()
+        bond = session.bond_view()
+
+        for relationship_state in (
+            summary["relationship"],
+            worldline["worldline_summary"]["relationship"],
+            persona["evolution_summary"]["relationship"],
+            bond["relationship_state"],
+        ):
+            self.assertEqual(relationship_state["stage"], "trusted")
+            self.assertAlmostEqual(float(relationship_state["affinity_score"]), 0.81, places=3)
+            self.assertAlmostEqual(float(relationship_state["trust_score"]), 0.85, places=3)
+            self.assertIn("稳定信赖", relationship_state["notes"])
 
     def test_checkpoint_and_behavior_queue_views_use_backend_session_surface(self):
         values = {
@@ -673,6 +1159,143 @@ class BackendSessionTests(unittest.TestCase):
 
         queue = session.behavior_queue_view()
         self.assertEqual(queue["behavior_queue"][0]["agenda_id"], "legacy-a1")
+
+    def test_session_views_preserve_behavior_queue_semantic_context_in_summary(self):
+        values = {
+            "behavior_queue": [
+                {
+                    "agenda_id": "queue-a1",
+                    "kind": "deferred_checkin",
+                    "target": "counterpart",
+                    "status": "pending",
+                    "trigger_family": "life_window",
+                    "scheduled_after_min": 18,
+                    "expires_after_min": 180,
+                    "priority": 0.58,
+                    "base_priority": 0.52,
+                    "hold_count": 2,
+                    "last_recheck_at_min": 6,
+                    "allow_interrupt": False,
+                    "primary_motive": "honor_continuity",
+                    "motive_tension": "self_rhythm_vs_contact",
+                    "goal_frame": "先把前面那点生活上的惦记轻轻接回来。",
+                    "source_event_kind": "scheduled_life_due",
+                    "created_at": 1710000018,
+                    "carryover_mode": "small_opening",
+                    "carryover_strength": 0.44,
+                    "relationship_weather": "warm_residue",
+                    "presence_residue": 0.38,
+                    "ambient_resonance": 0.27,
+                    "self_activity_momentum": 0.49,
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "continuity_anchor": 0.61,
+                    "own_rhythm_anchor": 0.72,
+                    "recontact_anchor": 0.38,
+                    "boundary_anchor": 0.27,
+                    "memory_anchor": 0.33,
+                    "semantic_continuity_depth": 0.68,
+                    "semantic_identity_gravity": 0.64,
+                    "lineage_gravity": 0.74,
+                    "contact_lineage": 0.51,
+                    "repair_lineage": 0.29,
+                    "boundary_lineage": 0.36,
+                    "selfhood_lineage": 0.63,
+                    "agency_lineage": 0.77,
+                    "long_term_axis_count": 4,
+                    "note": "窗口先留着，等更自然的时候再推进",
+                }
+            ]
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        persona = session.persona_view()
+        queue = session.behavior_queue_view()
+
+        worldline_preview = worldline["worldline_summary"]["behavior_queue_preview"][0]
+        self.assertFalse(worldline_preview["allow_interrupt"])
+        self.assertEqual(worldline_preview["primary_motive"], "honor_continuity")
+        self.assertEqual(worldline_preview["motive_tension"], "self_rhythm_vs_contact")
+        self.assertEqual(worldline_preview["goal_frame"], "先把前面那点生活上的惦记轻轻接回来。")
+        self.assertEqual(worldline_preview["source_event_kind"], "scheduled_life_due")
+        self.assertEqual(worldline_preview["created_at"], 1710000018)
+        self.assertEqual(worldline_preview["continuity_anchor"], 0.61)
+        self.assertEqual(worldline_preview["semantic_continuity_depth"], 0.68)
+        self.assertEqual(worldline_preview["semantic_identity_gravity"], 0.64)
+        self.assertEqual(worldline_preview["lineage_gravity"], 0.74)
+        self.assertEqual(worldline_preview["agency_lineage"], 0.77)
+        self.assertEqual(worldline_preview["long_term_axis_count"], 4)
+
+        persona_summary = persona["behavior_queue_summary"][0]
+        self.assertEqual(persona_summary["source_event_kind"], "scheduled_life_due")
+        self.assertEqual(persona_summary["goal_frame"], "先把前面那点生活上的惦记轻轻接回来。")
+        self.assertEqual(persona_summary["memory_anchor"], 0.33)
+        self.assertEqual(persona_summary["contact_lineage"], 0.51)
+
+        queue_summary = queue["behavior_queue_summary"][0]
+        self.assertFalse(queue_summary["allow_interrupt"])
+        self.assertEqual(queue_summary["created_at"], 1710000018)
+        self.assertEqual(queue_summary["repair_lineage"], 0.29)
+        self.assertEqual(queue_summary["selfhood_lineage"], 0.63)
+
+    def test_session_views_preserve_agenda_lifecycle_semantic_context_in_summary(self):
+        values = {
+            "agenda_lifecycle_residue": {
+                "kind": "released_to_self_activity",
+                "source_event_kind": "scheduled_life_due",
+                "trigger_family": "life_window",
+                "carryover_mode": "own_rhythm",
+                "carryover_strength": 0.53,
+                "relationship_weather": "warm_residue",
+                "hold_count": 2,
+                "idle_minutes": 18,
+                "attention_target": "counterpart_state",
+                "nonverbal_signal": "quiet_glance",
+                "presence_residue": 0.33,
+                "ambient_resonance": 0.24,
+                "self_activity_momentum": 0.58,
+                "continuity_anchor": 0.66,
+                "own_rhythm_anchor": 0.72,
+                "recontact_anchor": 0.34,
+                "boundary_anchor": 0.22,
+                "memory_anchor": 0.30,
+                "semantic_continuity_depth": 0.68,
+                "semantic_identity_gravity": 0.64,
+                "lineage_gravity": 0.70,
+                "contact_lineage": 0.44,
+                "repair_lineage": 0.41,
+                "boundary_lineage": 0.36,
+                "selfhood_lineage": 0.69,
+                "agency_lineage": 0.78,
+                "long_term_axis_count": 4,
+                "own_rhythm_bias": 0.61,
+                "recontact_cooldown": 0.47,
+                "counterpart_scene_bias": "busy_not_disrespectful",
+                "counterpart_boundary_delta": -0.04,
+                "created_at": 1710000099,
+                "source_tags": ["user_busy", "agenda_lifecycle"],
+                "note": "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+            }
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        worldline = session.worldline_view()
+        persona = session.persona_view()
+
+        worldline_lifecycle = worldline["worldline_summary"]["agenda_lifecycle"]
+        self.assertEqual(worldline_lifecycle["semantic_continuity_depth"], 0.68)
+        self.assertEqual(worldline_lifecycle["semantic_identity_gravity"], 0.64)
+        self.assertEqual(worldline_lifecycle["created_at"], 1710000099)
+        self.assertEqual(worldline_lifecycle["repair_lineage"], 0.41)
+        self.assertEqual(worldline_lifecycle["selfhood_lineage"], 0.69)
+
+        persona_lifecycle = persona["evolution_summary"]["agenda_lifecycle"]
+        self.assertEqual(persona_lifecycle["created_at"], 1710000099)
+        self.assertEqual(persona_lifecycle["contact_lineage"], 0.44)
+        self.assertEqual(persona_lifecycle["agency_lineage"], 0.78)
 
     def test_idle_helpers_and_emotion_label_use_backend_session_surface(self):
         values = {

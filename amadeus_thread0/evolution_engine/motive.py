@@ -10,6 +10,13 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
     motive_snapshot = narrative.get("motive_snapshot") if isinstance(narrative.get("motive_snapshot"), dict) else {}
     residue_snapshot = narrative.get("residue_snapshot") if isinstance(narrative.get("residue_snapshot"), dict) else {}
     persistence_snapshot = narrative.get("persistence_snapshot") if isinstance(narrative.get("persistence_snapshot"), dict) else {}
+    continuity_anchor = clamp01(narrative.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = clamp01(narrative.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = clamp01(narrative.get("recontact_anchor"), 0.0)
+    boundary_anchor = clamp01(narrative.get("boundary_anchor"), 0.0)
+    memory_anchor = clamp01(narrative.get("memory_anchor"), 0.0)
+    semantic_continuity_depth = clamp01(narrative.get("semantic_continuity_depth"), 0.0)
+    semantic_identity_gravity = clamp01(narrative.get("semantic_identity_gravity"), 0.0)
     axis_values = {
         "bond_style": max(
             clamp01(narrative.get("bond_depth"), 0.0),
@@ -136,6 +143,34 @@ def semantic_motive_vector(profile: dict[str, Any] | None) -> dict[str, Any]:
             vector["continuity_pull"] = max(float(vector["continuity_pull"]), 0.28 * strength)
         elif motive_tension == "care_vs_guard":
             vector["support_pull"] = max(float(vector["support_pull"]), 0.34 * strength)
+
+    vector["boundary_pull"] = max(
+        float(vector["boundary_pull"]),
+        0.92 * boundary_anchor,
+        0.20 * semantic_identity_gravity,
+    )
+    vector["self_rhythm_pull"] = max(
+        float(vector["self_rhythm_pull"]),
+        0.96 * own_rhythm_anchor,
+        0.28 * boundary_anchor,
+        0.18 * semantic_identity_gravity,
+    )
+    vector["continuity_pull"] = max(
+        float(vector["continuity_pull"]),
+        0.90 * continuity_anchor,
+        0.72 * recontact_anchor,
+        0.26 * semantic_continuity_depth,
+    )
+    vector["memory_pull"] = max(
+        float(vector["memory_pull"]),
+        0.94 * memory_anchor,
+        0.24 * continuity_anchor,
+    )
+    vector["shared_window_pull"] = max(
+        float(vector["shared_window_pull"]),
+        0.84 * recontact_anchor,
+        0.30 * continuity_anchor,
+    )
 
     for key in ("boundary_pull", "self_rhythm_pull", "continuity_pull", "memory_pull", "support_pull", "shared_window_pull"):
         vector[key] = round(clamp01(vector[key], 0.0), 3)

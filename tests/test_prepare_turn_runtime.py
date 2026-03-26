@@ -538,6 +538,7 @@ class PrepareTurnRuntimeTests(unittest.TestCase):
                 self.assertEqual(len(traces), 1)
                 self.assertEqual(str(traces[0].get("target_id") or ""), "small_opening")
                 trace_content = traces[0].get("content") if isinstance(traces[0].get("content"), dict) else {}
+                self.assertEqual(str(trace_content.get("source") or ""), "auto:passive_evolution_final")
                 self.assertEqual(str(trace_content.get("primary_motive") or ""), "gentle_recontact")
                 self.assertIn("轻轻回头", str(trace_content.get("goal_frame") or ""))
             finally:

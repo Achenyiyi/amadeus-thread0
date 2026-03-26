@@ -30,3 +30,5 @@ user_study/runtime/
 user_study/results/
 user_study/packets/
 user_study/archive_runtime/
+frontend/node_modules/
+frontend/dist/

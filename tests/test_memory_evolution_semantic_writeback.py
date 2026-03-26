@@ -104,6 +104,22 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                         "primary_motive": "honor_continuity",
                         "motive_tension": "contact_without_pressure",
                         "goal_frame": "顺着之前留下的惦记等更自然的时候再接回来。",
+                        "semantic_anchor_bundle": {
+                            "continuity_anchor": 0.66,
+                            "own_rhythm_anchor": 0.58,
+                            "recontact_anchor": 0.62,
+                            "boundary_anchor": 0.28,
+                            "memory_anchor": 0.54,
+                            "semantic_continuity_depth": 0.71,
+                            "semantic_identity_gravity": 0.64,
+                            "lineage_gravity": 0.68,
+                            "contact_lineage": 0.61,
+                            "repair_lineage": 0.36,
+                            "boundary_lineage": 0.30,
+                            "selfhood_lineage": 0.46,
+                            "agency_lineage": 0.63,
+                            "long_term_axis_count": 4,
+                        },
                         "behavior_action": {
                             "action_target": "wait_and_recheck",
                             "interaction_mode": "steady_reply",
@@ -137,6 +153,12 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                     str(trace.get("primary_motive") or trace.get("content", {}).get("primary_motive") or ""),
                     "honor_continuity",
                 )
+                self.assertEqual(float(trace.get("continuity_anchor") or trace.get("content", {}).get("continuity_anchor") or 0.0), 0.66)
+                self.assertEqual(float(trace.get("own_rhythm_anchor") or trace.get("content", {}).get("own_rhythm_anchor") or 0.0), 0.58)
+                self.assertEqual(float(trace.get("recontact_anchor") or trace.get("content", {}).get("recontact_anchor") or 0.0), 0.62)
+                self.assertEqual(float(trace.get("memory_anchor") or trace.get("content", {}).get("memory_anchor") or 0.0), 0.54)
+                self.assertEqual(float(trace.get("semantic_identity_gravity") or trace.get("content", {}).get("semantic_identity_gravity") or 0.0), 0.64)
+                self.assertEqual(int(trace.get("long_term_axis_count") or trace.get("content", {}).get("long_term_axis_count") or 0), 4)
             finally:
                 store.close()
 
@@ -217,7 +239,22 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                             "ambient_resonance": 0.24,
                             "self_activity_momentum": 0.58,
                             "own_rhythm_bias": 0.61,
+                            "continuity_anchor": 0.66,
+                            "own_rhythm_anchor": 0.72,
+                            "recontact_anchor": 0.34,
+                            "boundary_anchor": 0.22,
+                            "memory_anchor": 0.30,
+                            "semantic_continuity_depth": 0.68,
+                            "semantic_identity_gravity": 0.64,
+                            "long_term_axis_count": 3,
+                            "lineage_gravity": 0.70,
+                            "contact_lineage": 0.44,
+                            "repair_lineage": 0.28,
+                            "boundary_lineage": 0.36,
+                            "selfhood_lineage": 0.32,
+                            "agency_lineage": 0.78,
                             "counterpart_scene_bias": "busy_not_disrespectful",
+                            "counterpart_boundary_delta": -0.04,
                             "primary_motive": "preserve_self_rhythm",
                             "motive_tension": "self_rhythm_vs_contact",
                             "goal_frame": "先把自己的节奏走稳，再看那点窗口之后要不要接回来。",
@@ -243,6 +280,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                     str(trace.get("target_id") or trace.get("content", {}).get("target_id") or ""),
                     "released_to_self_activity",
                 )
+                self.assertEqual(float(trace.get("continuity_anchor") or trace.get("content", {}).get("continuity_anchor") or 0.0), 0.66)
+                self.assertEqual(float(trace.get("own_rhythm_anchor") or trace.get("content", {}).get("own_rhythm_anchor") or 0.0), 0.72)
+                self.assertEqual(float(trace.get("lineage_gravity") or trace.get("content", {}).get("lineage_gravity") or 0.0), 0.70)
+                self.assertEqual(float(trace.get("agency_lineage") or trace.get("content", {}).get("agency_lineage") or 0.0), 0.78)
 
                 proactive = store.list_proactive_continuity_history(limit=10)
                 self.assertEqual(len(proactive), 1)
@@ -263,6 +304,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                     str(record.get("primary_motive") or record.get("content", {}).get("primary_motive") or ""),
                     "preserve_self_rhythm",
                 )
+                self.assertEqual(float(record.get("continuity_anchor") or record.get("content", {}).get("continuity_anchor") or 0.0), 0.66)
+                self.assertEqual(float(record.get("own_rhythm_anchor") or record.get("content", {}).get("own_rhythm_anchor") or 0.0), 0.72)
+                self.assertEqual(float(record.get("lineage_gravity") or record.get("content", {}).get("lineage_gravity") or 0.0), 0.70)
+                self.assertEqual(float(record.get("agency_lineage") or record.get("content", {}).get("agency_lineage") or 0.0), 0.78)
             finally:
                 store.close()
 
@@ -302,6 +347,22 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                         "primary_motive": "gentle_recontact",
                         "motive_tension": "self_rhythm_vs_contact",
                         "goal_frame": "顺着刚刚留下的余温，轻轻回头一下。",
+                        "semantic_anchor_bundle": {
+                            "continuity_anchor": 0.64,
+                            "own_rhythm_anchor": 0.70,
+                            "recontact_anchor": 0.59,
+                            "boundary_anchor": 0.24,
+                            "memory_anchor": 0.56,
+                            "semantic_continuity_depth": 0.72,
+                            "semantic_identity_gravity": 0.67,
+                            "lineage_gravity": 0.65,
+                            "contact_lineage": 0.60,
+                            "repair_lineage": 0.32,
+                            "boundary_lineage": 0.28,
+                            "selfhood_lineage": 0.48,
+                            "agency_lineage": 0.66,
+                            "long_term_axis_count": 3,
+                        },
                         "counterpart": {
                             "stance": "open",
                             "scene": "care_bid",
@@ -310,6 +371,13 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                                 "guarded_drive": 0.18,
                                 "guard_margin": -0.58,
                                 "dominant_scene_signal": "care",
+                                "scene_strengths": {
+                                    "care": 0.84,
+                                    "repair": 0.18,
+                                    "friction": 0.06,
+                                    "selfhood": 0.12,
+                                    "busy": 0.22,
+                                },
                             },
                         },
                     },
@@ -331,6 +399,17 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertTrue(all(str(item.get("counterpart_scene") or "") == "care_bid" for item in traces))
                 self.assertTrue(all(str(item.get("counterpart_dominant_scene_signal") or "") == "care" for item in traces))
                 self.assertTrue(all(float(item.get("counterpart_openness_drive") or 0.0) == 0.76 for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_scene_care_strength") or 0.0) == 0.84 for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_scene_repair_strength") or 0.0) == 0.18 for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_scene_friction_strength") or 0.0) == 0.06 for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_scene_selfhood_strength") or 0.0) == 0.12 for item in traces))
+                self.assertTrue(all(float(item.get("counterpart_scene_busy_strength") or 0.0) == 0.22 for item in traces))
+                self.assertTrue(all(float(item.get("continuity_anchor") or 0.0) == 0.64 for item in traces))
+                self.assertTrue(all(float(item.get("own_rhythm_anchor") or 0.0) == 0.70 for item in traces))
+                self.assertTrue(all(float(item.get("recontact_anchor") or 0.0) == 0.59 for item in traces))
+                self.assertTrue(all(float(item.get("memory_anchor") or 0.0) == 0.56 for item in traces))
+                self.assertTrue(all(float(item.get("semantic_identity_gravity") or 0.0) == 0.67 for item in traces))
+                self.assertTrue(all(int(item.get("long_term_axis_count") or 0) == 3 for item in traces))
             finally:
                 store.close()
 
@@ -1335,6 +1414,13 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                                 "guarded_drive": 0.18,
                                 "guard_margin": -0.58,
                                 "dominant_scene_signal": "care",
+                                "scene_strengths": {
+                                    "care": 0.84,
+                                    "repair": 0.18,
+                                    "friction": 0.06,
+                                    "selfhood": 0.12,
+                                    "busy": 0.22,
+                                },
                             },
                         }
                     },
@@ -1375,6 +1461,11 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertEqual(str(presence.get("dominant_counterpart_scene") or ""), "care_bid")
                 self.assertEqual(str(presence.get("counterpart_dominant_scene_signal") or ""), "care")
                 self.assertEqual(float(presence.get("counterpart_openness_drive") or 0.0), 0.76)
+                self.assertEqual(float(presence.get("counterpart_scene_care_strength") or 0.0), 0.84)
+                self.assertEqual(float(presence.get("counterpart_scene_repair_strength") or 0.0), 0.18)
+                self.assertEqual(float(presence.get("counterpart_scene_friction_strength") or 0.0), 0.06)
+                self.assertEqual(float(presence.get("counterpart_scene_selfhood_strength") or 0.0), 0.12)
+                self.assertEqual(float(presence.get("counterpart_scene_busy_strength") or 0.0), 0.22)
             finally:
                 store.close()
 

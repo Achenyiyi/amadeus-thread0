@@ -117,8 +117,19 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         )
         if str(item or "").strip()
     }
-    continuity_depth = clamp01(profile.get("continuity_depth"), 0.0)
-    identity_gravity = clamp01(profile.get("identity_gravity"), 0.0)
+    continuity_anchor = clamp01(profile.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = clamp01(profile.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = clamp01(profile.get("recontact_anchor"), 0.0)
+    boundary_anchor = clamp01(profile.get("boundary_anchor"), 0.0)
+    memory_anchor = clamp01(profile.get("memory_anchor"), 0.0)
+    continuity_depth = max(
+        clamp01(profile.get("continuity_depth"), 0.0),
+        clamp01(profile.get("semantic_continuity_depth"), 0.0),
+    )
+    identity_gravity = max(
+        clamp01(profile.get("identity_gravity"), 0.0),
+        clamp01(profile.get("semantic_identity_gravity"), 0.0),
+    )
     lineage_gravity = clamp01(profile.get("lineage_gravity"), 0.0)
     history_weight = clamp01(profile.get("history_weight"), 0.0)
     bond_depth = clamp01(profile.get("bond_depth"), 0.0)
@@ -155,17 +166,39 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.08 * commitment_carry,
         0.0,
     )
-    contact_confidence = clamp01(contact_confidence + 0.12 * contact_lineage + 0.06 * lineage_gravity, 0.0)
+    contact_confidence = clamp01(
+        contact_confidence
+        + 0.14 * continuity_anchor
+        + 0.12 * recontact_anchor
+        + 0.05 * memory_anchor
+        + 0.12 * contact_lineage
+        + 0.06 * lineage_gravity,
+        0.0,
+    )
     repair_confidence = clamp01(
         0.68 * repair_support + 0.20 * continuity_depth + 0.12 * commitment_carry,
         0.0,
     )
-    repair_confidence = clamp01(repair_confidence + 0.10 * repair_lineage + 0.04 * lineage_gravity, 0.0)
+    repair_confidence = clamp01(
+        repair_confidence
+        + 0.08 * continuity_anchor
+        + 0.06 * memory_anchor
+        + 0.10 * repair_lineage
+        + 0.04 * lineage_gravity,
+        0.0,
+    )
     boundary_confidence = clamp01(
         0.58 * boundary_support + 0.24 * identity_gravity + 0.18 * continuity_depth,
         0.0,
     )
-    boundary_confidence = clamp01(boundary_confidence + 0.12 * boundary_lineage + 0.06 * lineage_gravity, 0.0)
+    boundary_confidence = clamp01(
+        boundary_confidence
+        + 0.18 * boundary_anchor
+        + 0.04 * own_rhythm_anchor
+        + 0.12 * boundary_lineage
+        + 0.06 * lineage_gravity,
+        0.0,
+    )
     selfhood_confidence = clamp01(
         0.52 * selfhood_support
         + 0.24 * identity_gravity
@@ -173,7 +206,14 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.10 * selfhood_integrity,
         0.0,
     )
-    selfhood_confidence = clamp01(selfhood_confidence + 0.10 * selfhood_lineage + 0.06 * lineage_gravity, 0.0)
+    selfhood_confidence = clamp01(
+        selfhood_confidence
+        + 0.12 * own_rhythm_anchor
+        + 0.08 * boundary_anchor
+        + 0.10 * selfhood_lineage
+        + 0.06 * lineage_gravity,
+        0.0,
+    )
     agency_confidence = clamp01(
         0.54 * agency_support
         + 0.24 * identity_gravity
@@ -181,7 +221,14 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         + 0.10 * agency_drive,
         0.0,
     )
-    agency_confidence = clamp01(agency_confidence + 0.12 * agency_lineage + 0.06 * lineage_gravity, 0.0)
+    agency_confidence = clamp01(
+        agency_confidence
+        + 0.20 * own_rhythm_anchor
+        + 0.06 * recontact_anchor
+        + 0.12 * agency_lineage
+        + 0.06 * lineage_gravity,
+        0.0,
+    )
 
     return {
         "contact_confidence": round(contact_confidence, 3),
@@ -189,6 +236,11 @@ def _semantic_behavior_evidence(narrative: dict[str, Any] | None) -> dict[str, f
         "boundary_confidence": round(boundary_confidence, 3),
         "selfhood_confidence": round(selfhood_confidence, 3),
         "agency_confidence": round(agency_confidence, 3),
+        "continuity_anchor": round(continuity_anchor, 3),
+        "own_rhythm_anchor": round(own_rhythm_anchor, 3),
+        "recontact_anchor": round(recontact_anchor, 3),
+        "boundary_anchor": round(boundary_anchor, 3),
+        "memory_anchor": round(memory_anchor, 3),
         "contested_contact_pressure": round(
             _semantic_contested_pressure(contested_categories, contact_categories, contact_confidence),
             3,
@@ -355,6 +407,11 @@ def build_behavior_policy(
     semantic_boundary_confidence = clamp01(semantic_evidence.get("boundary_confidence"), 0.0)
     semantic_selfhood_confidence = clamp01(semantic_evidence.get("selfhood_confidence"), 0.0)
     semantic_agency_confidence = clamp01(semantic_evidence.get("agency_confidence"), 0.0)
+    semantic_continuity_anchor = clamp01(semantic_evidence.get("continuity_anchor"), 0.0)
+    semantic_own_rhythm_anchor = clamp01(semantic_evidence.get("own_rhythm_anchor"), 0.0)
+    semantic_recontact_anchor = clamp01(semantic_evidence.get("recontact_anchor"), 0.0)
+    semantic_boundary_anchor = clamp01(semantic_evidence.get("boundary_anchor"), 0.0)
+    semantic_memory_anchor = clamp01(semantic_evidence.get("memory_anchor"), 0.0)
     semantic_contested_contact = clamp01(semantic_evidence.get("contested_contact_pressure"), 0.0)
     semantic_contested_boundary = clamp01(semantic_evidence.get("contested_boundary_pressure"), 0.0)
     semantic_contested_selfhood = clamp01(semantic_evidence.get("contested_selfhood_pressure"), 0.0)
@@ -455,6 +512,54 @@ def build_behavior_policy(
         + 0.06 * semantic_contested_boundary
     )
 
+    warmth = clamp01(
+        warmth
+        + 0.03 * semantic_continuity_anchor
+        + 0.04 * semantic_recontact_anchor
+        - 0.04 * semantic_boundary_anchor
+        - 0.03 * semantic_own_rhythm_anchor
+    )
+    initiative = clamp01(
+        initiative
+        + 0.04 * semantic_continuity_anchor
+        + 0.02 * semantic_recontact_anchor
+        - 0.06 * semantic_own_rhythm_anchor
+        - 0.03 * semantic_boundary_anchor
+    )
+    disclosure = clamp01(
+        disclosure
+        + 0.02 * semantic_continuity_anchor
+        - 0.07 * semantic_boundary_anchor
+        - 0.05 * semantic_own_rhythm_anchor
+    )
+    reply_length_bias = clamp01(
+        reply_length_bias
+        + 0.03 * semantic_memory_anchor
+        - 0.04 * semantic_own_rhythm_anchor
+    )
+    approach_vs_withdraw = clamp01(
+        approach_vs_withdraw
+        + 0.05 * semantic_continuity_anchor
+        + 0.04 * semantic_recontact_anchor
+        - 0.08 * semantic_boundary_anchor
+        - 0.06 * semantic_own_rhythm_anchor
+    )
+    boundary_assertiveness = clamp01(
+        boundary_assertiveness
+        + 0.18 * semantic_boundary_anchor
+        + 0.06 * semantic_own_rhythm_anchor
+    )
+    self_directedness = clamp01(
+        self_directedness
+        + 0.20 * semantic_own_rhythm_anchor
+        + 0.06 * semantic_boundary_anchor
+    )
+    equality_guard = clamp01(
+        equality_guard
+        + 0.14 * semantic_boundary_anchor
+        + 0.08 * semantic_own_rhythm_anchor
+    )
+
     warmth = clamp01(warmth + 0.03 * motive_continuity + 0.05 * motive_support + 0.03 * motive_shared_window - 0.05 * motive_boundary)
     initiative = clamp01(initiative + 0.04 * motive_continuity + 0.04 * motive_support + 0.03 * motive_shared_window - 0.03 * motive_boundary)
     disclosure = clamp01(disclosure + 0.03 * motive_continuity + 0.03 * motive_memory - 0.06 * motive_boundary - 0.03 * motive_self_rhythm)
@@ -520,6 +625,11 @@ def build_behavior_policy(
         "semantic_contested_contact_pressure": round(semantic_contested_contact, 3),
         "semantic_contested_boundary_pressure": round(semantic_contested_boundary, 3),
         "semantic_contested_selfhood_pressure": round(semantic_contested_selfhood, 3),
+        "semantic_continuity_anchor": round(semantic_continuity_anchor, 3),
+        "semantic_own_rhythm_anchor": round(semantic_own_rhythm_anchor, 3),
+        "semantic_recontact_anchor": round(semantic_recontact_anchor, 3),
+        "semantic_boundary_anchor": round(semantic_boundary_anchor, 3),
+        "semantic_memory_anchor": round(semantic_memory_anchor, 3),
         "semantic_lineage_gravity": round(clamp01(semantic_evidence.get("lineage_gravity"), 0.0), 3),
         "semantic_contact_lineage": round(clamp01(semantic_evidence.get("contact_lineage"), 0.0), 3),
         "semantic_repair_lineage": round(clamp01(semantic_evidence.get("repair_lineage"), 0.0), 3),

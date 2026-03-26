@@ -130,6 +130,8 @@
         "recontact_anchor": 0.47,
         "boundary_anchor": 0.22,
         "memory_anchor": 0.55,
+        "semantic_continuity_depth": 0.68,
+        "semantic_identity_gravity": 0.64,
         "lineage_gravity": 0.7,
         "contact_lineage": 0.58,
         "boundary_lineage": 0.62,
@@ -138,6 +140,7 @@
         "recontact_cooldown": 0.52,
         "counterpart_scene_bias": "busy_not_disrespectful",
         "counterpart_boundary_delta": 0.0,
+        "created_at": 1710000000,
         "source_tags": [
           "life_window",
           "own_rhythm"
@@ -201,6 +204,16 @@
       ],
       "worldline_focus_preview": [
         "The last turn still leaves a gentle presence."
+      ],
+      "worldline_focus_items": [
+        {
+          "id": 101,
+          "kind": "relationship_timeline",
+          "text": "The last turn still leaves a gentle presence.",
+          "affinity_delta": 0.12,
+          "trust_delta": 0.18,
+          "created_at": 1710000000
+        }
       ]
     },
     "persona_state": {

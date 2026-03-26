@@ -12,9 +12,10 @@ from ..evolution_engine import (
 )
 from ..memory_store import MemoryStore
 from .common import _now_ts as _common_now_ts, _sanitize_obj as _common_sanitize_obj
+from .perception import attach_perception_context
 from .postprocess import _has_any_marker
 from .retrieval import _commitment_priority, _record_value
-from .state import EventPayload
+from .state import EventPayload, SessionContextPayload
 
 
 def _now_ts() -> int:
@@ -75,9 +76,12 @@ def _build_current_event(
     appraisal: dict[str, Any],
     counterpart_name: str,
     pending_user_goal: str,
+    thread_id: str = "",
+    session_context: SessionContextPayload | None = None,
+    turn_now_ts: int | None = None,
 ) -> EventPayload:
     semantic_goal = str(pending_user_goal or effective_text or user_text).strip()
-    return _sanitize_obj(
+    event = _sanitize_obj(
         {
             "kind": "user_utterance",
             "source": "text",
@@ -107,9 +111,24 @@ def _build_current_event(
             "created_at": _now_ts(),
         }
     )
+    return _sanitize_obj(
+        attach_perception_context(
+            event,
+            thread_id=str(thread_id or ""),
+            turn_id=str((session_context or {}).get("turn_id") or "").strip(),
+            turn_now_ts=int(turn_now_ts or event.get("created_at") or _now_ts()),
+        )
+    )
 
 
-def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayload:
+def _normalize_event_override(
+    raw: Any,
+    *,
+    counterpart_name: str,
+    thread_id: str = "",
+    session_context: SessionContextPayload | None = None,
+    turn_now_ts: int | None = None,
+) -> EventPayload:
     raw = _sanitize_obj(raw)
     if not isinstance(raw, dict) or not raw:
         return {}
@@ -237,7 +256,14 @@ def _normalize_event_override(raw: Any, *, counterpart_name: str) -> EventPayloa
     nonverbal_signal_hint = str(raw.get("nonverbal_signal_hint") or "").strip()
     if nonverbal_signal_hint:
         payload["nonverbal_signal_hint"] = nonverbal_signal_hint
-    return _sanitize_obj(payload)
+    return _sanitize_obj(
+        attach_perception_context(
+            payload,
+            thread_id=str(thread_id or ""),
+            turn_id=str((session_context or {}).get("turn_id") or "").strip(),
+            turn_now_ts=int(turn_now_ts or payload.get("created_at") or _now_ts()),
+        )
+    )
 
 
 def _parse_due_at_timestamp(raw: Any) -> int | None:
@@ -374,10 +400,19 @@ def _appraisal_event_context(
     counterpart_name: str,
     pending_user_goal: str,
     event_override: Any,
+    thread_id: str = "",
+    session_context: SessionContextPayload | None = None,
+    turn_now_ts: int | None = None,
 ) -> EventPayload:
     if isinstance(event_override, dict) and event_override:
-        return _normalize_event_override(event_override, counterpart_name=counterpart_name)
-    return _sanitize_obj(
+        return _normalize_event_override(
+            event_override,
+            counterpart_name=counterpart_name,
+            thread_id=thread_id,
+            session_context=session_context,
+            turn_now_ts=turn_now_ts,
+        )
+    event = _sanitize_obj(
         {
             "kind": "user_utterance",
             "source": "text",
@@ -403,6 +438,14 @@ def _appraisal_event_context(
             ),
             "created_at": _now_ts(),
         }
+    )
+    return _sanitize_obj(
+        attach_perception_context(
+            event,
+            thread_id=str(thread_id or ""),
+            turn_id=str((session_context or {}).get("turn_id") or "").strip(),
+            turn_now_ts=int(turn_now_ts or event.get("created_at") or _now_ts()),
+        )
     )
 
 

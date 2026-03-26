@@ -9,6 +9,7 @@ from ..evolution_engine.reconsolidation import (
     derive_behavior_consequence,
 )
 from ..memory_store import MemoryStore
+from ..utils.counterpart_profile import compact_counterpart_profile
 from .common import _clamp01
 from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
@@ -67,6 +68,21 @@ SHARED_COMMITMENT_MARKERS = {
 }
 SOFT_REPAIR_DEESCALATION_MARKERS = {"别放大", "不是在吵架", "不是要吵架", "别往吵架上走"}
 SOFT_REPAIR_RESIDUE_MARKERS = {"别扭", "节奏有点卡", "节奏卡", "先记着", "卡住"}
+_SEMANTIC_ANCHOR_FLOAT_KEYS = (
+    "continuity_anchor",
+    "own_rhythm_anchor",
+    "recontact_anchor",
+    "boundary_anchor",
+    "memory_anchor",
+    "semantic_continuity_depth",
+    "semantic_identity_gravity",
+    "lineage_gravity",
+    "contact_lineage",
+    "repair_lineage",
+    "boundary_lineage",
+    "selfhood_lineage",
+    "agency_lineage",
+)
 
 __all__ = [
     "_selfhood_preference_scene",
@@ -320,6 +336,79 @@ def _reconsolidation_behavior_plan_snapshot(
     ):
         return snapshot
     return {}
+
+
+def _reconsolidation_semantic_anchor_bundle(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    bundle = recon.get("semantic_anchor_bundle")
+    if isinstance(bundle, dict):
+        snapshot = {
+            key: _clamp01(bundle.get(key), 0.0)
+            for key in _SEMANTIC_ANCHOR_FLOAT_KEYS
+        }
+        snapshot["long_term_axis_count"] = max(0, int(bundle.get("long_term_axis_count") or 0))
+        if any(float(snapshot.get(key) or 0.0) > 0.0 for key in _SEMANTIC_ANCHOR_FLOAT_KEYS) or snapshot["long_term_axis_count"] > 0:
+            return snapshot
+
+    continuity = recon.get("semantic_continuity")
+    if not isinstance(continuity, dict):
+        return {}
+    lineage_snapshot = continuity.get("lineage_snapshot") if isinstance(continuity.get("lineage_snapshot"), dict) else {}
+    contact_lineage = max(
+        _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+        _clamp01(lineage_snapshot.get("presence_style"), 0.0),
+        _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+        _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+    )
+    repair_lineage = max(
+        _clamp01(lineage_snapshot.get("repair_style"), 0.0),
+        _clamp01(lineage_snapshot.get("commitment_style"), 0.0),
+        _clamp01(lineage_snapshot.get("bond_style"), 0.0),
+    )
+    boundary_lineage = max(
+        _clamp01(lineage_snapshot.get("boundary_style"), 0.0),
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+    )
+    selfhood_lineage = max(
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+        _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+        _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+    )
+    agency_lineage = max(
+        _clamp01(lineage_snapshot.get("agency_style"), 0.0),
+        _clamp01(lineage_snapshot.get("rhythm_style"), 0.0),
+        _clamp01(lineage_snapshot.get("selfhood_style"), 0.0),
+    )
+    snapshot = {
+        "continuity_anchor": 0.0,
+        "own_rhythm_anchor": 0.0,
+        "recontact_anchor": 0.0,
+        "boundary_anchor": 0.0,
+        "memory_anchor": 0.0,
+        "semantic_continuity_depth": _clamp01(continuity.get("continuity_depth"), 0.0),
+        "semantic_identity_gravity": _clamp01(continuity.get("identity_gravity"), 0.0),
+        "lineage_gravity": _clamp01(continuity.get("lineage_gravity"), 0.0),
+        "contact_lineage": contact_lineage,
+        "repair_lineage": repair_lineage,
+        "boundary_lineage": boundary_lineage,
+        "selfhood_lineage": selfhood_lineage,
+        "agency_lineage": agency_lineage,
+        "long_term_axis_count": 0,
+    }
+    return snapshot if any(float(snapshot.get(key) or 0.0) > 0.0 for key in _SEMANTIC_ANCHOR_FLOAT_KEYS) else {}
+
+
+def _apply_semantic_anchor_metadata(metadata: dict[str, Any], semantic_anchor_bundle: dict[str, Any] | None) -> None:
+    bundle = semantic_anchor_bundle if isinstance(semantic_anchor_bundle, dict) else {}
+    if not bundle:
+        return
+    for key in _SEMANTIC_ANCHOR_FLOAT_KEYS:
+        if key in bundle:
+            metadata[key] = float(bundle.get(key) or 0.0)
+    if "long_term_axis_count" in bundle:
+        metadata["long_term_axis_count"] = max(0, int(bundle.get("long_term_axis_count") or 0))
 
 
 def _reconsolidation_interaction_carryover_snapshot(
@@ -1100,6 +1189,18 @@ def _refresh_semantic_self_narratives(
         openness_weight = 0.0
         guarded_weight = 0.0
         guard_margin_weight = 0.0
+        safety_read_weight = 0.0
+        repairability_weight = 0.0
+        predictability_weight = 0.0
+        dependency_risk_weight = 0.0
+        closeness_read_weight = 0.0
+        scene_strength_weights = {
+            "care": 0.0,
+            "repair": 0.0,
+            "friction": 0.0,
+            "selfhood": 0.0,
+            "busy": 0.0,
+        }
         for idx, item in enumerate(items):
             if _semantic_evidence_has_trusted_behavior_semantics(item):
                 primary_motive = str(_record_value(item, "primary_motive", "") or "").strip().lower()
@@ -1142,6 +1243,18 @@ def _refresh_semantic_self_narratives(
             reliability = _clamp01(_record_value(item, "counterpart_reliability_read", 0.5), 0.5)
             openness_drive = _clamp01(_record_value(item, "counterpart_openness_drive", 0.0), 0.0)
             guarded_drive = _clamp01(_record_value(item, "counterpart_guarded_drive", 0.0), 0.0)
+            safety_read = _clamp01(_record_value(item, "counterpart_safety_read", 0.0), 0.0)
+            repairability = _clamp01(_record_value(item, "counterpart_repairability", 0.0), 0.0)
+            predictability = _clamp01(_record_value(item, "counterpart_predictability", 0.0), 0.0)
+            dependency_risk = _clamp01(_record_value(item, "counterpart_dependency_risk", 0.0), 0.0)
+            closeness_read = _clamp01(_record_value(item, "counterpart_closeness_read", 0.0), 0.0)
+            counterpart_scene_strengths = {
+                "care": _clamp01(_record_value(item, "counterpart_scene_care_strength", 0.0), 0.0),
+                "repair": _clamp01(_record_value(item, "counterpart_scene_repair_strength", 0.0), 0.0),
+                "friction": _clamp01(_record_value(item, "counterpart_scene_friction_strength", 0.0), 0.0),
+                "selfhood": _clamp01(_record_value(item, "counterpart_scene_selfhood_strength", 0.0), 0.0),
+                "busy": _clamp01(_record_value(item, "counterpart_scene_busy_strength", 0.0), 0.0),
+            }
             try:
                 guard_margin = max(-1.0, min(1.0, float(_record_value(item, "counterpart_guard_margin", 0.0) or 0.0)))
             except Exception:
@@ -1157,6 +1270,12 @@ def _refresh_semantic_self_narratives(
                 or openness_drive > 0.0
                 or guarded_drive > 0.0
                 or abs(guard_margin) > 0.0
+                or safety_read > 0.0
+                or repairability > 0.0
+                or predictability > 0.0
+                or dependency_risk > 0.0
+                or closeness_read > 0.0
+                or any(score > 0.0 for score in counterpart_scene_strengths.values())
             )
             if counterpart_has_signal:
                 counterpart_support_count += 1
@@ -1177,6 +1296,13 @@ def _refresh_semantic_self_narratives(
                 openness_weight += weight * openness_drive
                 guarded_weight += weight * guarded_drive
                 guard_margin_weight += weight * guard_margin
+                safety_read_weight += weight * safety_read
+                repairability_weight += weight * repairability
+                predictability_weight += weight * predictability
+                dependency_risk_weight += weight * dependency_risk
+                closeness_read_weight += weight * closeness_read
+                for scene_name, score in counterpart_scene_strengths.items():
+                    scene_strength_weights[scene_name] += weight * score
 
         def _pick_dominant(counts: dict[str, float], order: dict[str, int]) -> str:
             if not counts:
@@ -1217,6 +1343,15 @@ def _refresh_semantic_self_narratives(
                     "guarded_drive": round(guarded_weight / counterpart_support_mass, 3),
                     "guard_margin": round(guard_margin_weight / counterpart_support_mass, 3),
                     "dominant_scene_signal": dominant_signal,
+                    "scene_strengths": {
+                        scene_name: round(scene_strength_weights[scene_name] / counterpart_support_mass, 3)
+                        for scene_name in ("care", "repair", "friction", "selfhood", "busy")
+                    },
+                    "safety_read": round(safety_read_weight / counterpart_support_mass, 3),
+                    "repairability": round(repairability_weight / counterpart_support_mass, 3),
+                    "predictability": round(predictability_weight / counterpart_support_mass, 3),
+                    "dependency_risk": round(dependency_risk_weight / counterpart_support_mass, 3),
+                    "closeness_read": round(closeness_read_weight / counterpart_support_mass, 3),
                 },
                 "counterpart_support_count": counterpart_support_count,
                 "counterpart_support_mass": round(counterpart_support_mass, 3),
@@ -1629,16 +1764,7 @@ def _refresh_semantic_self_narratives(
             counterpart_snapshot["counterpart_stance"] = str(counterpart_snapshot.get("counterpart_stance") or "").strip()
             counterpart_snapshot["counterpart_scene"] = str(counterpart_snapshot.get("counterpart_scene") or "").strip()
             profile = counterpart_snapshot.get("counterpart_profile") if isinstance(counterpart_snapshot.get("counterpart_profile"), dict) else {}
-            try:
-                guard_margin = max(-1.0, min(1.0, float(profile.get("guard_margin", 0.0) or 0.0)))
-            except Exception:
-                guard_margin = 0.0
-            counterpart_snapshot["counterpart_profile"] = {
-                "openness_drive": round(_clamp01(profile.get("openness_drive"), 0.0), 3),
-                "guarded_drive": round(_clamp01(profile.get("guarded_drive"), 0.0), 3),
-                "guard_margin": round(guard_margin, 3),
-                "dominant_scene_signal": str(profile.get("dominant_scene_signal") or "").strip(),
-            }
+            counterpart_snapshot["counterpart_profile"] = compact_counterpart_profile(profile)
             counterpart_snapshot["counterpart_respect_level"] = round(_clamp01(counterpart_snapshot.get("counterpart_respect_level"), 0.5), 3)
             counterpart_snapshot["counterpart_reciprocity"] = round(_clamp01(counterpart_snapshot.get("counterpart_reciprocity"), 0.5), 3)
             counterpart_snapshot["counterpart_boundary_pressure"] = round(_clamp01(counterpart_snapshot.get("counterpart_boundary_pressure"), 0.1), 3)
@@ -1981,6 +2107,11 @@ def _refresh_semantic_self_narratives(
         motive_signature = str(motive_state.get("motive_signature") or "").strip()
         counterpart_state = motive_state.get("counterpart_snapshot") if isinstance(motive_state.get("counterpart_snapshot"), dict) else {}
         counterpart_profile_state = counterpart_state.get("counterpart_profile") if isinstance(counterpart_state.get("counterpart_profile"), dict) else {}
+        counterpart_scene_strengths = (
+            counterpart_profile_state.get("scene_strengths")
+            if isinstance(counterpart_profile_state.get("scene_strengths"), dict)
+            else {}
+        )
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
         prev_refresh = max(0, int(_record_value(prev or {}, "refresh_count", 0) or 0))
         prev_consolidation = max(0, int(_record_value(prev or {}, "consolidation_count", 0) or 0))
@@ -2360,6 +2491,16 @@ def _refresh_semantic_self_narratives(
             "counterpart_openness_drive": round(float(counterpart_profile_state.get("openness_drive") or 0.0), 3),
             "counterpart_guarded_drive": round(float(counterpart_profile_state.get("guarded_drive") or 0.0), 3),
             "counterpart_guard_margin": round(float(counterpart_profile_state.get("guard_margin") or 0.0), 3),
+            "counterpart_safety_read": round(float(counterpart_profile_state.get("safety_read") or 0.0), 3),
+            "counterpart_repairability": round(float(counterpart_profile_state.get("repairability") or 0.0), 3),
+            "counterpart_predictability": round(float(counterpart_profile_state.get("predictability") or 0.0), 3),
+            "counterpart_dependency_risk": round(float(counterpart_profile_state.get("dependency_risk") or 0.0), 3),
+            "counterpart_closeness_read": round(float(counterpart_profile_state.get("closeness_read") or 0.0), 3),
+            "counterpart_scene_care_strength": round(float(counterpart_scene_strengths.get("care") or 0.0), 3),
+            "counterpart_scene_repair_strength": round(float(counterpart_scene_strengths.get("repair") or 0.0), 3),
+            "counterpart_scene_friction_strength": round(float(counterpart_scene_strengths.get("friction") or 0.0), 3),
+            "counterpart_scene_selfhood_strength": round(float(counterpart_scene_strengths.get("selfhood") or 0.0), 3),
+            "counterpart_scene_busy_strength": round(float(counterpart_scene_strengths.get("busy") or 0.0), 3),
             "counterpart_support_count": max(0, int(counterpart_state.get("counterpart_support_count") or 0)),
             "counterpart_support_mass": round(float(counterpart_state.get("counterpart_support_mass") or 0.0), 3),
             "counterpart_confidence_avg": round(_clamp01(float(counterpart_state.get("counterpart_confidence_avg") or 0.0), 0.0), 3),
@@ -2782,6 +2923,7 @@ def _record_behavior_consequence(
 ) -> bool:
     behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
     frozen_behavior_action = _reconsolidation_behavior_action_snapshot(reconsolidation_snapshot)
+    semantic_anchor_bundle = _reconsolidation_semantic_anchor_bundle(reconsolidation_snapshot)
     effective_behavior_action = frozen_behavior_action or (
         behavior_action if isinstance(behavior_action, dict) else {}
     )
@@ -2830,6 +2972,7 @@ def _record_behavior_consequence(
         metadata["counterpart_reciprocity"] = float(counterpart.get("reciprocity") or 0.0)
         metadata["counterpart_boundary_pressure"] = float(counterpart.get("boundary_pressure") or 0.0)
         metadata["counterpart_reliability_read"] = float(counterpart.get("reliability_read") or 0.0)
+    _apply_semantic_anchor_metadata(metadata, semantic_anchor_bundle)
     recent = [
         item
         for item in store.list_revision_traces(limit=20)
@@ -3600,7 +3743,22 @@ def _record_agenda_lifecycle_consequence(
         "ambient_resonance": float(consequence.get("ambient_resonance") or 0.0),
         "self_activity_momentum": float(consequence.get("self_activity_momentum") or 0.0),
         "own_rhythm_bias": float(consequence.get("own_rhythm_bias") or 0.0),
+        "continuity_anchor": float(consequence.get("continuity_anchor") or 0.0),
+        "own_rhythm_anchor": float(consequence.get("own_rhythm_anchor") or 0.0),
+        "recontact_anchor": float(consequence.get("recontact_anchor") or 0.0),
+        "boundary_anchor": float(consequence.get("boundary_anchor") or 0.0),
+        "memory_anchor": float(consequence.get("memory_anchor") or 0.0),
+        "semantic_continuity_depth": float(consequence.get("semantic_continuity_depth") or 0.0),
+        "semantic_identity_gravity": float(consequence.get("semantic_identity_gravity") or 0.0),
+        "long_term_axis_count": int(consequence.get("long_term_axis_count") or 0),
+        "lineage_gravity": float(consequence.get("lineage_gravity") or 0.0),
+        "contact_lineage": float(consequence.get("contact_lineage") or 0.0),
+        "repair_lineage": float(consequence.get("repair_lineage") or 0.0),
+        "boundary_lineage": float(consequence.get("boundary_lineage") or 0.0),
+        "selfhood_lineage": float(consequence.get("selfhood_lineage") or 0.0),
+        "agency_lineage": float(consequence.get("agency_lineage") or 0.0),
         "counterpart_scene_bias": str(consequence.get("counterpart_scene_bias") or "").strip(),
+        "counterpart_boundary_delta": float(consequence.get("counterpart_boundary_delta") or 0.0),
         "primary_motive": str(consequence.get("primary_motive") or "").strip(),
         "motive_tension": str(consequence.get("motive_tension") or "").strip(),
         "goal_frame": str(consequence.get("goal_frame") or "").strip()[:220],
@@ -3730,10 +3888,40 @@ def _record_agenda_lifecycle_long_horizon_memory(
     carryover_strength = _clamp01(item.get("carryover_strength"), 0.0)
     own_rhythm_bias = _clamp01(item.get("own_rhythm_bias"), 0.0)
     self_activity_momentum = _clamp01(item.get("self_activity_momentum"), 0.0)
+    continuity_anchor = _clamp01(item.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = _clamp01(item.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = _clamp01(item.get("recontact_anchor"), 0.0)
+    boundary_anchor = _clamp01(item.get("boundary_anchor"), 0.0)
+    memory_anchor = _clamp01(item.get("memory_anchor"), 0.0)
+    semantic_continuity_depth = _clamp01(item.get("semantic_continuity_depth"), 0.0)
+    semantic_identity_gravity = _clamp01(item.get("semantic_identity_gravity"), 0.0)
+    long_term_axis_count = max(0, int(item.get("long_term_axis_count") or 0))
+    lineage_gravity = _clamp01(item.get("lineage_gravity"), 0.0)
+    contact_lineage = _clamp01(item.get("contact_lineage"), 0.0)
+    repair_lineage = _clamp01(item.get("repair_lineage"), 0.0)
+    boundary_lineage = _clamp01(item.get("boundary_lineage"), 0.0)
+    selfhood_lineage = _clamp01(item.get("selfhood_lineage"), 0.0)
+    agency_lineage = _clamp01(item.get("agency_lineage"), 0.0)
+    try:
+        counterpart_boundary_delta = max(-1.0, min(1.0, float(item.get("counterpart_boundary_delta") or 0.0)))
+    except Exception:
+        counterpart_boundary_delta = 0.0
     own_rhythm_signal = max(
         own_rhythm_bias,
         self_activity_momentum,
+        own_rhythm_anchor,
+        0.82 * agency_lineage,
+        0.72 * lineage_gravity,
         carryover_strength if carryover_mode in {"own_rhythm", "small_opening"} else 0.0,
+    )
+    continuity_signal = max(
+        carryover_strength,
+        continuity_anchor,
+        recontact_anchor,
+        memory_anchor,
+        0.78 * contact_lineage,
+        0.72 * repair_lineage,
+        0.68 * lineage_gravity,
     )
     busy_not_disrespectful = counterpart_scene_bias == "busy_not_disrespectful"
     own_rhythm_memory = bool(
@@ -3749,7 +3937,7 @@ def _record_agenda_lifecycle_long_horizon_memory(
         and (
             hold_count >= 1
             or carryover_mode in {"quiet_recontact", "brief_presence", "small_opening"}
-            or carryover_strength >= 0.34
+            or continuity_signal >= 0.34
         )
     )
     if not own_rhythm_memory and not continuity_memory and not busy_not_disrespectful:
@@ -3779,6 +3967,21 @@ def _record_agenda_lifecycle_long_horizon_memory(
         "ambient_resonance": _clamp01(item.get("ambient_resonance"), 0.0),
         "self_activity_momentum": self_activity_momentum,
         "own_rhythm_bias": own_rhythm_bias,
+        "continuity_anchor": continuity_anchor,
+        "own_rhythm_anchor": own_rhythm_anchor,
+        "recontact_anchor": recontact_anchor,
+        "boundary_anchor": boundary_anchor,
+        "memory_anchor": memory_anchor,
+        "semantic_continuity_depth": semantic_continuity_depth,
+        "semantic_identity_gravity": semantic_identity_gravity,
+        "long_term_axis_count": long_term_axis_count,
+        "lineage_gravity": lineage_gravity,
+        "contact_lineage": contact_lineage,
+        "repair_lineage": repair_lineage,
+        "boundary_lineage": boundary_lineage,
+        "selfhood_lineage": selfhood_lineage,
+        "agency_lineage": agency_lineage,
+        "counterpart_boundary_delta": counterpart_boundary_delta,
     }
     recent_history = store.list_proactive_continuity_history(limit=12)
     latest_history = _normalized_proactive_continuity_record(recent_history[0]) if recent_history else {}
@@ -3814,6 +4017,21 @@ def _record_agenda_lifecycle_long_horizon_memory(
             ambient_resonance=normalized_current["ambient_resonance"],
             self_activity_momentum=self_activity_momentum,
             own_rhythm_bias=own_rhythm_bias,
+            continuity_anchor=continuity_anchor,
+            own_rhythm_anchor=own_rhythm_anchor,
+            recontact_anchor=recontact_anchor,
+            boundary_anchor=boundary_anchor,
+            memory_anchor=memory_anchor,
+            semantic_continuity_depth=semantic_continuity_depth,
+            semantic_identity_gravity=semantic_identity_gravity,
+            long_term_axis_count=long_term_axis_count,
+            lineage_gravity=lineage_gravity,
+            contact_lineage=contact_lineage,
+            repair_lineage=repair_lineage,
+            boundary_lineage=boundary_lineage,
+            selfhood_lineage=selfhood_lineage,
+            agency_lineage=agency_lineage,
+            counterpart_boundary_delta=counterpart_boundary_delta,
             primary_motive=str(item.get("primary_motive") or "").strip().lower(),
             motive_tension=str(item.get("motive_tension") or "").strip().lower(),
             goal_frame=str(item.get("goal_frame") or "").strip()[:220],
@@ -3864,6 +4082,7 @@ def _record_agenda_lifecycle_long_horizon_memory(
                 _clamp01(
                     0.42
                     + 0.22 * own_rhythm_signal
+                    + 0.08 * continuity_signal
                     + 0.06 * min(3, hold_count)
                     + (0.08 if busy_not_disrespectful else 0.0)
                     + (0.08 if continuity_memory else 0.0)
@@ -3932,6 +4151,21 @@ def _normalized_proactive_continuity_record(item: dict[str, Any] | None) -> dict
         "ambient_resonance": _clamp01(_pick("ambient_resonance"), 0.0),
         "self_activity_momentum": _clamp01(_pick("self_activity_momentum"), 0.0),
         "own_rhythm_bias": _clamp01(_pick("own_rhythm_bias"), 0.0),
+        "continuity_anchor": _clamp01(_pick("continuity_anchor"), 0.0),
+        "own_rhythm_anchor": _clamp01(_pick("own_rhythm_anchor"), 0.0),
+        "recontact_anchor": _clamp01(_pick("recontact_anchor"), 0.0),
+        "boundary_anchor": _clamp01(_pick("boundary_anchor"), 0.0),
+        "memory_anchor": _clamp01(_pick("memory_anchor"), 0.0),
+        "semantic_continuity_depth": _clamp01(_pick("semantic_continuity_depth"), 0.0),
+        "semantic_identity_gravity": _clamp01(_pick("semantic_identity_gravity"), 0.0),
+        "long_term_axis_count": max(0, _int_like(_pick("long_term_axis_count"), 0)),
+        "lineage_gravity": _clamp01(_pick("lineage_gravity"), 0.0),
+        "contact_lineage": _clamp01(_pick("contact_lineage"), 0.0),
+        "repair_lineage": _clamp01(_pick("repair_lineage"), 0.0),
+        "boundary_lineage": _clamp01(_pick("boundary_lineage"), 0.0),
+        "selfhood_lineage": _clamp01(_pick("selfhood_lineage"), 0.0),
+        "agency_lineage": _clamp01(_pick("agency_lineage"), 0.0),
+        "counterpart_boundary_delta": max(-1.0, min(1.0, float(_pick("counterpart_boundary_delta", 0.0) or 0.0))),
     }
 
 
@@ -3945,7 +4179,22 @@ def _proactive_continuity_shift_score(current: dict[str, Any], previous: dict[st
         abs(float(current.get("ambient_resonance") or 0.0) - float(previous.get("ambient_resonance") or 0.0)),
         abs(float(current.get("self_activity_momentum") or 0.0) - float(previous.get("self_activity_momentum") or 0.0)),
         abs(float(current.get("own_rhythm_bias") or 0.0) - float(previous.get("own_rhythm_bias") or 0.0)),
+        abs(float(current.get("continuity_anchor") or 0.0) - float(previous.get("continuity_anchor") or 0.0)),
+        abs(float(current.get("own_rhythm_anchor") or 0.0) - float(previous.get("own_rhythm_anchor") or 0.0)),
+        abs(float(current.get("recontact_anchor") or 0.0) - float(previous.get("recontact_anchor") or 0.0)),
+        abs(float(current.get("boundary_anchor") or 0.0) - float(previous.get("boundary_anchor") or 0.0)),
+        abs(float(current.get("memory_anchor") or 0.0) - float(previous.get("memory_anchor") or 0.0)),
+        abs(float(current.get("semantic_continuity_depth") or 0.0) - float(previous.get("semantic_continuity_depth") or 0.0)),
+        abs(float(current.get("semantic_identity_gravity") or 0.0) - float(previous.get("semantic_identity_gravity") or 0.0)),
+        abs(float(current.get("lineage_gravity") or 0.0) - float(previous.get("lineage_gravity") or 0.0)),
+        abs(float(current.get("contact_lineage") or 0.0) - float(previous.get("contact_lineage") or 0.0)),
+        abs(float(current.get("repair_lineage") or 0.0) - float(previous.get("repair_lineage") or 0.0)),
+        abs(float(current.get("boundary_lineage") or 0.0) - float(previous.get("boundary_lineage") or 0.0)),
+        abs(float(current.get("selfhood_lineage") or 0.0) - float(previous.get("selfhood_lineage") or 0.0)),
+        abs(float(current.get("agency_lineage") or 0.0) - float(previous.get("agency_lineage") or 0.0)),
+        abs(float(current.get("counterpart_boundary_delta") or 0.0) - float(previous.get("counterpart_boundary_delta") or 0.0)) / 2.0,
         abs(min(3, int(current.get("hold_count") or 0)) - min(3, int(previous.get("hold_count") or 0))) / 3.0,
+        abs(min(6, int(current.get("long_term_axis_count") or 0)) - min(6, int(previous.get("long_term_axis_count") or 0))) / 6.0,
     ]
     categorical_penalty = 0.0
     for key in ("kind", "trace_family", "trigger_family", "carryover_mode"):
@@ -3980,6 +4229,7 @@ def _record_semantic_self_evidence(
 ) -> bool:
     frozen_behavior_semantics = _reconsolidation_behavior_semantics(reconsolidation_snapshot)
     frozen_counterpart = _reconsolidation_counterpart_snapshot(reconsolidation_snapshot)
+    frozen_semantic_anchor_bundle = _reconsolidation_semantic_anchor_bundle(reconsolidation_snapshot)
     snapshot_behavior_action = (
         {
             "primary_motive": frozen_behavior_semantics.get("primary_motive", ""),
@@ -4060,12 +4310,28 @@ def _record_semantic_self_evidence(
                 else {}
             )
             if frozen_counterpart_profile:
+                frozen_scene_strengths = (
+                    frozen_counterpart_profile.get("scene_strengths")
+                    if isinstance(frozen_counterpart_profile.get("scene_strengths"), dict)
+                    else {}
+                )
                 trace_metadata["counterpart_openness_drive"] = float(frozen_counterpart_profile.get("openness_drive") or 0.0)
                 trace_metadata["counterpart_guarded_drive"] = float(frozen_counterpart_profile.get("guarded_drive") or 0.0)
                 trace_metadata["counterpart_guard_margin"] = float(frozen_counterpart_profile.get("guard_margin") or 0.0)
+                trace_metadata["counterpart_safety_read"] = float(frozen_counterpart_profile.get("safety_read") or 0.0)
+                trace_metadata["counterpart_repairability"] = float(frozen_counterpart_profile.get("repairability") or 0.0)
+                trace_metadata["counterpart_predictability"] = float(frozen_counterpart_profile.get("predictability") or 0.0)
+                trace_metadata["counterpart_dependency_risk"] = float(frozen_counterpart_profile.get("dependency_risk") or 0.0)
+                trace_metadata["counterpart_closeness_read"] = float(frozen_counterpart_profile.get("closeness_read") or 0.0)
+                trace_metadata["counterpart_scene_care_strength"] = float(frozen_scene_strengths.get("care") or 0.0)
+                trace_metadata["counterpart_scene_repair_strength"] = float(frozen_scene_strengths.get("repair") or 0.0)
+                trace_metadata["counterpart_scene_friction_strength"] = float(frozen_scene_strengths.get("friction") or 0.0)
+                trace_metadata["counterpart_scene_selfhood_strength"] = float(frozen_scene_strengths.get("selfhood") or 0.0)
+                trace_metadata["counterpart_scene_busy_strength"] = float(frozen_scene_strengths.get("busy") or 0.0)
                 trace_metadata["counterpart_dominant_scene_signal"] = str(
                     frozen_counterpart_profile.get("dominant_scene_signal") or ""
                 ).strip()
+        _apply_semantic_anchor_metadata(trace_metadata, frozen_semantic_anchor_bundle)
         store.add_revision_trace(
             namespace="semantic_self_evidence",
             target_id=category,

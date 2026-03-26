@@ -4,6 +4,23 @@ from typing import Any
 
 from .appraisal import normalize_appraisal_payload
 from .schemas import clamp01
+from ..utils.counterpart_profile import compact_counterpart_profile
+
+_SEMANTIC_ANCHOR_FLOAT_KEYS = (
+    "continuity_anchor",
+    "own_rhythm_anchor",
+    "recontact_anchor",
+    "boundary_anchor",
+    "memory_anchor",
+    "semantic_continuity_depth",
+    "semantic_identity_gravity",
+    "lineage_gravity",
+    "contact_lineage",
+    "repair_lineage",
+    "boundary_lineage",
+    "selfhood_lineage",
+    "agency_lineage",
+)
 
 
 def _normalized_event_tags(current_event: dict[str, Any] | None) -> set[str]:
@@ -20,7 +37,9 @@ def _compact_counterpart_snapshot(counterpart_assessment: dict[str, Any] | None)
     assessment = dict(counterpart_assessment or {})
     stance = str(assessment.get("stance") or "").strip()
     scene = str(assessment.get("scene") or "").strip()
+    summary = str(assessment.get("summary") or "").strip()
     snapshot = {
+        "summary": summary[:220],
         "stance": stance,
         "scene": scene,
         "respect_level": clamp01(assessment.get("respect_level"), 0.5),
@@ -30,21 +49,8 @@ def _compact_counterpart_snapshot(counterpart_assessment: dict[str, Any] | None)
     }
     profile = assessment.get("assessment_profile") if isinstance(assessment.get("assessment_profile"), dict) else {}
     if profile:
-        raw_scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
-        snapshot["assessment_profile"] = {
-            "openness_drive": clamp01(profile.get("openness_drive"), 0.0),
-            "guarded_drive": clamp01(profile.get("guarded_drive"), 0.0),
-            "guard_margin": max(-1.0, min(1.0, float(profile.get("guard_margin", 0.0) or 0.0))),
-            "dominant_scene_signal": str(profile.get("dominant_scene_signal") or "").strip().lower(),
-            "scene_strengths": {
-                "care": clamp01(raw_scene_strengths.get("care"), 0.0),
-                "repair": clamp01(raw_scene_strengths.get("repair"), 0.0),
-                "friction": clamp01(raw_scene_strengths.get("friction"), 0.0),
-                "selfhood": clamp01(raw_scene_strengths.get("selfhood"), 0.0),
-                "busy": clamp01(raw_scene_strengths.get("busy"), 0.0),
-            },
-        }
-    if stance or scene:
+        snapshot["assessment_profile"] = compact_counterpart_profile(profile)
+    if summary or stance or scene:
         return snapshot
     numeric_signal = (
         abs(snapshot["respect_level"] - 0.5)
@@ -63,6 +69,9 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
         "target": str(plan.get("target") or "").strip().lower(),
         "trigger_family": str(plan.get("trigger_family") or "").strip().lower(),
         "carryover_mode": str(plan.get("carryover_mode") or "").strip().lower(),
+        "relationship_weather": str(plan.get("relationship_weather") or "").strip().lower(),
+        "attention_target": str(plan.get("attention_target") or "").strip().lower(),
+        "nonverbal_signal": str(plan.get("nonverbal_signal") or "").strip().lower(),
         "note": str(plan.get("note") or "").strip()[:220],
         "primary_motive": str(plan.get("primary_motive") or "").strip().lower(),
         "motive_tension": str(plan.get("motive_tension") or "").strip().lower(),
@@ -80,6 +89,9 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
             snapshot["target"],
             snapshot["trigger_family"],
             snapshot["carryover_mode"],
+            snapshot["relationship_weather"],
+            snapshot["attention_target"],
+            snapshot["nonverbal_signal"],
             snapshot["note"],
             snapshot["primary_motive"],
             snapshot["motive_tension"],
@@ -97,20 +109,31 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
 
 def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) -> dict[str, Any]:
     action = dict(behavior_action or {})
+    window_profile = _compact_window_profile_snapshot(action.get("window_profile"))
     snapshot = {
         "interaction_mode": str(action.get("interaction_mode") or "").strip().lower(),
         "action_target": str(action.get("action_target") or "").strip().lower(),
         "channel": str(action.get("channel") or "").strip().lower(),
         "approach_style": str(action.get("approach_style") or "").strip().lower(),
+        "engagement_level": clamp01(action.get("engagement_level"), 0.0),
+        "initiative_level": clamp01(action.get("initiative_level"), 0.0),
         "followup_intent": str(action.get("followup_intent") or "").strip().lower(),
+        "task_focus": str(action.get("task_focus") or "").strip().lower(),
+        "affect_surface": str(action.get("affect_surface") or "").strip().lower(),
+        "silence_ok": bool(action.get("silence_ok", False)),
+        "proactive_checkin_readiness": clamp01(action.get("proactive_checkin_readiness"), 0.0),
         "deferred_action_family": str(action.get("deferred_action_family") or "").strip().lower(),
         "relationship_weather": str(action.get("relationship_weather") or "").strip().lower(),
         "attention_target": str(action.get("attention_target") or "").strip().lower(),
         "nonverbal_signal": str(action.get("nonverbal_signal") or "").strip().lower(),
+        "initiative_shape": str(action.get("initiative_shape") or "").strip().lower(),
+        "disclosure_posture": str(action.get("disclosure_posture") or "").strip().lower(),
         "primary_motive": str(action.get("primary_motive") or "").strip().lower(),
         "motive_tension": str(action.get("motive_tension") or "").strip().lower(),
         "goal_frame": str(action.get("goal_frame") or "").strip()[:220],
+        "note": str(action.get("note") or "").strip()[:220],
         "timing_window_min": max(0, int(action.get("timing_window_min") or 0)),
+        "window_profile": window_profile,
     }
     if any(
         (
@@ -118,15 +141,89 @@ def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) ->
             snapshot["action_target"],
             snapshot["channel"],
             snapshot["approach_style"],
+            snapshot["engagement_level"] > 0.0,
+            snapshot["initiative_level"] > 0.0,
             snapshot["followup_intent"],
+            snapshot["task_focus"],
+            snapshot["affect_surface"],
+            snapshot["silence_ok"],
+            snapshot["proactive_checkin_readiness"] > 0.0,
             snapshot["deferred_action_family"],
             snapshot["relationship_weather"],
             snapshot["attention_target"],
             snapshot["nonverbal_signal"],
+            snapshot["initiative_shape"],
+            snapshot["disclosure_posture"],
             snapshot["primary_motive"],
             snapshot["motive_tension"],
             snapshot["goal_frame"],
+            snapshot["note"],
             snapshot["timing_window_min"] > 0,
+            bool(snapshot["window_profile"]),
+        )
+    ):
+        return snapshot
+    return {}
+
+
+def _compact_window_profile_snapshot(profile: dict[str, Any] | None) -> dict[str, Any]:
+    window = dict(profile or {})
+    if not window:
+        return {}
+    snapshot = {
+        "profile_type": str(window.get("profile_type") or "").strip().lower(),
+        "event_kind": str(window.get("event_kind") or "").strip().lower(),
+        "family": str(window.get("family") or "").strip().lower(),
+        "trigger_family": str(window.get("trigger_family") or "").strip().lower(),
+        "stance": str(window.get("stance") or "").strip().lower(),
+        "scene": str(window.get("scene") or "").strip().lower(),
+        "decision": str(window.get("decision") or "").strip().lower(),
+        "maturity": clamp01(window.get("maturity"), 0.0),
+        "required_maturity": clamp01(window.get("required_maturity"), 0.0),
+        "invite_ready": bool(window.get("invite_ready", False)),
+        "readiness": clamp01(window.get("readiness"), 0.0),
+        "required_readiness": clamp01(window.get("required_readiness"), 0.0),
+        "reopen_ready": bool(window.get("reopen_ready", False)),
+        "recheck_min": max(0, int(window.get("recheck_min") or 0)),
+        "continuity_bonus": clamp01(window.get("continuity_bonus"), 0.0),
+        "continuity_discount": clamp01(window.get("continuity_discount"), 0.0),
+        "carryover_mode": str(window.get("carryover_mode") or "").strip().lower(),
+        "carryover_strength": clamp01(window.get("carryover_strength"), 0.0),
+        "event_carryover_mode": str(window.get("event_carryover_mode") or "").strip().lower(),
+        "event_carryover_strength": clamp01(window.get("event_carryover_strength"), 0.0),
+        "presence_residue": clamp01(window.get("presence_residue"), 0.0),
+        "ambient_resonance": clamp01(window.get("ambient_resonance"), 0.0),
+        "self_activity_momentum": clamp01(window.get("self_activity_momentum"), 0.0),
+        "recontact_echo": clamp01(window.get("recontact_echo"), 0.0),
+        "own_rhythm_load": clamp01(window.get("own_rhythm_load"), 0.0),
+    }
+    if any(
+        (
+            snapshot["profile_type"],
+            snapshot["event_kind"],
+            snapshot["family"],
+            snapshot["trigger_family"],
+            snapshot["stance"],
+            snapshot["scene"],
+            snapshot["decision"],
+            snapshot["maturity"] > 0.0,
+            snapshot["required_maturity"] > 0.0,
+            snapshot["invite_ready"],
+            snapshot["readiness"] > 0.0,
+            snapshot["required_readiness"] > 0.0,
+            snapshot["reopen_ready"],
+            snapshot["recheck_min"] > 0,
+            snapshot["continuity_bonus"] > 0.0,
+            snapshot["continuity_discount"] > 0.0,
+            snapshot["carryover_mode"],
+            snapshot["carryover_strength"] > 0.0,
+            snapshot["event_carryover_mode"],
+            snapshot["event_carryover_strength"] > 0.0,
+            snapshot["presence_residue"] > 0.0,
+            snapshot["ambient_resonance"] > 0.0,
+            snapshot["self_activity_momentum"] > 0.0,
+            snapshot["recontact_echo"] > 0.0,
+            snapshot["own_rhythm_load"] > 0.0,
         )
     ):
         return snapshot
@@ -158,6 +255,18 @@ def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any
             bool(snapshot["source_tags"]),
         )
     ):
+        return snapshot
+    return {}
+
+
+def _compact_semantic_anchor_bundle(semantic_narrative_profile: dict[str, Any] | None) -> dict[str, Any]:
+    semantic = semantic_narrative_profile if isinstance(semantic_narrative_profile, dict) else {}
+    snapshot = {
+        key: clamp01(semantic.get(key), 0.0)
+        for key in _SEMANTIC_ANCHOR_FLOAT_KEYS
+    }
+    snapshot["long_term_axis_count"] = max(0, int(semantic.get("long_term_axis_count") or 0))
+    if any(float(snapshot.get(key) or 0.0) > 0.0 for key in _SEMANTIC_ANCHOR_FLOAT_KEYS) or snapshot["long_term_axis_count"] > 0:
         return snapshot
     return {}
 
@@ -338,6 +447,24 @@ def derive_agenda_lifecycle_consequence(
     presence_residue = clamp01(residue.get("presence_residue"), 0.0)
     ambient_resonance = clamp01(residue.get("ambient_resonance"), 0.0)
     self_activity_momentum = clamp01(residue.get("self_activity_momentum"), 0.0)
+    continuity_anchor = clamp01(residue.get("continuity_anchor"), 0.0)
+    own_rhythm_anchor = clamp01(residue.get("own_rhythm_anchor"), 0.0)
+    recontact_anchor = clamp01(residue.get("recontact_anchor"), 0.0)
+    boundary_anchor = clamp01(residue.get("boundary_anchor"), 0.0)
+    memory_anchor = clamp01(residue.get("memory_anchor"), 0.0)
+    semantic_continuity_depth = clamp01(residue.get("semantic_continuity_depth"), 0.0)
+    semantic_identity_gravity = clamp01(residue.get("semantic_identity_gravity"), 0.0)
+    long_term_axis_count = max(0, int(residue.get("long_term_axis_count") or 0))
+    lineage_gravity = clamp01(residue.get("lineage_gravity"), 0.0)
+    contact_lineage = clamp01(residue.get("contact_lineage"), 0.0)
+    repair_lineage = clamp01(residue.get("repair_lineage"), 0.0)
+    boundary_lineage = clamp01(residue.get("boundary_lineage"), 0.0)
+    selfhood_lineage = clamp01(residue.get("selfhood_lineage"), 0.0)
+    agency_lineage = clamp01(residue.get("agency_lineage"), 0.0)
+    try:
+        counterpart_boundary_delta = max(-1.0, min(1.0, float(residue.get("counterpart_boundary_delta") or 0.0)))
+    except Exception:
+        counterpart_boundary_delta = 0.0
     primary_motive = ""
     motive_tension = "self_rhythm_vs_contact"
     goal_frame = ""
@@ -423,7 +550,22 @@ def derive_agenda_lifecycle_consequence(
         "ambient_resonance": ambient_resonance,
         "self_activity_momentum": self_activity_momentum,
         "own_rhythm_bias": own_rhythm_bias,
+        "continuity_anchor": continuity_anchor,
+        "own_rhythm_anchor": own_rhythm_anchor,
+        "recontact_anchor": recontact_anchor,
+        "boundary_anchor": boundary_anchor,
+        "memory_anchor": memory_anchor,
+        "semantic_continuity_depth": semantic_continuity_depth,
+        "semantic_identity_gravity": semantic_identity_gravity,
+        "long_term_axis_count": long_term_axis_count,
+        "lineage_gravity": lineage_gravity,
+        "contact_lineage": contact_lineage,
+        "repair_lineage": repair_lineage,
+        "boundary_lineage": boundary_lineage,
+        "selfhood_lineage": selfhood_lineage,
+        "agency_lineage": agency_lineage,
         "counterpart_scene_bias": counterpart_scene_bias,
+        "counterpart_boundary_delta": counterpart_boundary_delta,
         "primary_motive": primary_motive,
         "motive_tension": motive_tension,
         "goal_frame": goal_frame[:220],
@@ -469,6 +611,7 @@ def build_reconsolidation_snapshot(
     counterpart = _compact_counterpart_snapshot(counterpart_assessment)
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
     lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
+    semantic_anchor_bundle = _compact_semantic_anchor_bundle(semantic)
     return {
         "event_kind": str(event.get("kind") or "user_utterance"),
         "interaction_frame": str(app.get("interaction_frame") or ""),
@@ -482,6 +625,7 @@ def build_reconsolidation_snapshot(
         "interaction_carryover": carryover_snapshot,
         "behavior_consequence": behavior_consequence,
         "agenda_lifecycle_consequence": agenda_lifecycle_consequence,
+        "semantic_anchor_bundle": semantic_anchor_bundle,
         "salience": dict(salience),
         "world_model": {
             "relationship_maturity": clamp01(world.get("relationship_maturity"), 0.0),

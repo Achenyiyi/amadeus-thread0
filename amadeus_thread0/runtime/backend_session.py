@@ -6,7 +6,7 @@ from typing import Any, Callable
 from langgraph.types import Command
 
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
-from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state
+from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state, _worldline_focus
 from ..memory_store import MemoryStore
 from ..utils.cli_views import (
     build_behavior_queue_cli_summary,
@@ -14,7 +14,14 @@ from ..utils.cli_views import (
     build_evolution_cli_summary,
     build_proactive_continuity_cli_summary,
 )
-from .final_state import resolve_behavior_payloads, resolve_behavior_queue, resolve_interaction_carryover
+from .event_identity import resolve_readback_current_event
+from .final_state import (
+    resolve_agenda_lifecycle_residue,
+    resolve_behavior_payloads,
+    resolve_behavior_queue,
+    resolve_counterpart_assessment,
+    resolve_interaction_carryover,
+)
 
 
 def _coerce_values(snapshot: Any) -> dict[str, Any]:
@@ -46,6 +53,40 @@ def _normalized_graph_config(
 
 def _message_content(message: Any) -> str:
     return str(getattr(message, "content", "") or "").strip()
+
+
+def _resolved_relationship_state(
+    memory_store: MemoryStore,
+    values: dict[str, Any] | None,
+) -> dict[str, Any]:
+    vals = values if isinstance(values, dict) else {}
+    runtime_relationship = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else {}
+    persisted_relationship = memory_store.get_relationship()
+    return _prefer_refreshed_relationship_state(runtime_relationship, persisted_relationship)
+
+
+def _resolved_worldline_focus(
+    memory_store: MemoryStore,
+    values: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    vals = values if isinstance(values, dict) else {}
+    if "worldline_focus" in vals and isinstance(vals.get("worldline_focus"), list):
+        return list(vals.get("worldline_focus") or [])
+    return _worldline_focus(memory_store)
+
+
+def _resolved_readback_current_event(
+    values: dict[str, Any] | None,
+    *,
+    thread_id: str,
+) -> dict[str, Any]:
+    vals = values if isinstance(values, dict) else {}
+    session_context = vals.get("session_context") if isinstance(vals.get("session_context"), dict) else {}
+    return resolve_readback_current_event(
+        vals,
+        thread_id=thread_id,
+        session_context=session_context,
+    )
 
 
 def _state_final_text(values: dict[str, Any] | None) -> str:
@@ -301,6 +342,7 @@ class BackendSession:
 
     def build_evolution_summary(self, *, state_values: dict[str, Any] | None = None) -> dict[str, Any]:
         vals = state_values if isinstance(state_values, dict) else self.get_state_values()
+        current_event = _resolved_readback_current_event(vals, thread_id=self.thread_id)
         reconsolidation_snapshot = (
             vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {}
         )
@@ -308,7 +350,7 @@ class BackendSession:
             behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
             behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
             reconsolidation_snapshot=reconsolidation_snapshot,
-            current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
+            current_event=current_event,
             world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
         )
         interaction_carryover = resolve_interaction_carryover(
@@ -317,31 +359,39 @@ class BackendSession:
             else {},
             reconsolidation_snapshot=reconsolidation_snapshot,
         )
+        counterpart_assessment = resolve_counterpart_assessment(
+            counterpart_assessment=vals.get("counterpart_assessment")
+            if isinstance(vals.get("counterpart_assessment"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        )
+        agenda_lifecycle_residue = resolve_agenda_lifecycle_residue(
+            agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue")
+            if isinstance(vals.get("agenda_lifecycle_residue"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        )
         behavior_queue = resolve_behavior_queue(
             behavior_queue=vals.get("behavior_queue"),
             behavior_agenda=vals.get("behavior_agenda"),
         )
         return build_evolution_cli_summary(
-            relationship=self.memory_store.get_relationship(),
+            relationship=_resolved_relationship_state(self.memory_store, vals),
             semantic_narrative_profile=vals.get("semantic_narrative_profile")
             if isinstance(vals.get("semantic_narrative_profile"), dict)
             else {},
             world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
             emotion_state=vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
             bond_state=vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
-            counterpart_assessment=vals.get("counterpart_assessment")
-            if isinstance(vals.get("counterpart_assessment"), dict)
-            else {},
+            counterpart_assessment=counterpart_assessment,
             behavior_action=behavior_action,
             behavior_plan=behavior_plan,
             behavior_queue=behavior_queue,
             interaction_carryover=interaction_carryover,
-            current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
-            worldline_focus=vals.get("worldline_focus") if isinstance(vals.get("worldline_focus"), list) else [],
+            current_event=current_event,
+            worldline_focus=_resolved_worldline_focus(self.memory_store, vals),
             reconsolidation_snapshot=reconsolidation_snapshot,
-            agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue")
-            if isinstance(vals.get("agenda_lifecycle_residue"), dict)
-            else {},
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
         )
 
     def worldline_view(self) -> dict[str, Any]:
@@ -365,9 +415,7 @@ class BackendSession:
 
     def bond_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
-        runtime_relationship = vals.get("relationship") if isinstance(vals.get("relationship"), dict) else {}
-        persisted_relationship = self.memory_store.get_relationship()
-        relationship_state = _prefer_refreshed_relationship_state(runtime_relationship, persisted_relationship)
+        relationship_state = _resolved_relationship_state(self.memory_store, vals)
         counterpart_history = list(reversed(self.memory_store.list_counterpart_assessment_history(limit=30)))
         proactive_history = list(reversed(self.memory_store.list_proactive_continuity_history(limit=30)))
         return {
@@ -390,6 +438,7 @@ class BackendSession:
 
     def persona_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
+        current_event = _resolved_readback_current_event(vals, thread_id=self.thread_id)
         reconsolidation_snapshot = (
             vals.get("reconsolidation_snapshot") if isinstance(vals.get("reconsolidation_snapshot"), dict) else {}
         )
@@ -401,12 +450,24 @@ class BackendSession:
             behavior_action=vals.get("behavior_action") if isinstance(vals.get("behavior_action"), dict) else {},
             behavior_plan=vals.get("behavior_plan") if isinstance(vals.get("behavior_plan"), dict) else {},
             reconsolidation_snapshot=reconsolidation_snapshot,
-            current_event=vals.get("current_event") if isinstance(vals.get("current_event"), dict) else {},
+            current_event=current_event,
             world_model_state=vals.get("world_model_state") if isinstance(vals.get("world_model_state"), dict) else {},
         )
         interaction_carryover = resolve_interaction_carryover(
             interaction_carryover=vals.get("interaction_carryover")
             if isinstance(vals.get("interaction_carryover"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        )
+        counterpart_assessment = resolve_counterpart_assessment(
+            counterpart_assessment=vals.get("counterpart_assessment")
+            if isinstance(vals.get("counterpart_assessment"), dict)
+            else {},
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        )
+        agenda_lifecycle_residue = resolve_agenda_lifecycle_residue(
+            agenda_lifecycle_residue=vals.get("agenda_lifecycle_residue")
+            if isinstance(vals.get("agenda_lifecycle_residue"), dict)
             else {},
             reconsolidation_snapshot=reconsolidation_snapshot,
         )
@@ -416,9 +477,7 @@ class BackendSession:
             "emotion_state": vals.get("emotion_state") if isinstance(vals.get("emotion_state"), dict) else {},
             "bond_state": vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
             "allostasis_state": vals.get("allostasis_state") if isinstance(vals.get("allostasis_state"), dict) else {},
-            "counterpart_assessment": vals.get("counterpart_assessment")
-            if isinstance(vals.get("counterpart_assessment"), dict)
-            else {},
+            "counterpart_assessment": counterpart_assessment,
             "semantic_narrative_profile": vals.get("semantic_narrative_profile")
             if isinstance(vals.get("semantic_narrative_profile"), dict)
             else {},
@@ -429,9 +488,7 @@ class BackendSession:
             "behavior_policy": vals.get("behavior_policy") if isinstance(vals.get("behavior_policy"), dict) else {},
             "behavior_action": behavior_action,
             "interaction_carryover": interaction_carryover,
-            "agenda_lifecycle_residue": vals.get("agenda_lifecycle_residue")
-            if isinstance(vals.get("agenda_lifecycle_residue"), dict)
-            else {},
+            "agenda_lifecycle_residue": agenda_lifecycle_residue,
             "behavior_plan": behavior_plan,
             "behavior_queue": queue_vals,
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue_vals, limit=3),
