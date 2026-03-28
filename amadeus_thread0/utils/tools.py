@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import difflib
 import operator as op
 import os
 import re
@@ -332,7 +333,13 @@ def _workspace_preview(path: Path, *, limit: int = 24) -> tuple[str, bool]:
     return preview[:1200], truncated
 
 
-def _workspace_artifact_context(path: Path) -> dict[str, Any]:
+def _text_preview(text: str, *, limit: int = 1200) -> tuple[str, bool]:
+    normalized = str(text or "")
+    preview = normalized[: max(1, int(limit))]
+    return preview, len(normalized) > len(preview)
+
+
+def _workspace_artifact_context(path: Path, *, source_tool_name: str = "create_workspace_access") -> dict[str, Any]:
     preview, preview_truncated = _workspace_preview(path)
     try:
         updated_at = int(path.stat().st_mtime)
@@ -353,11 +360,44 @@ def _workspace_artifact_context(path: Path) -> dict[str, Any]:
         "source_url": "",
         "source_query": "",
         "source_title": path.name,
-        "source_tool_name": "create_workspace_access",
+        "source_tool_name": str(source_tool_name or "").strip() or "create_workspace_access",
     }
 
 
-def _workspace_access_hints(*, hints: dict[str, Any], workspace_path: Path) -> dict[str, Any]:
+def _file_artifact_context(path: Path, *, content: str, source_tool_name: str) -> dict[str, Any]:
+    preview, preview_truncated = _text_preview(content, limit=1200)
+    try:
+        stat = path.stat()
+        updated_at = int(stat.st_mtime)
+        size_bytes = int(stat.st_size)
+    except Exception:
+        updated_at = 0
+        size_bytes = len(str(content or "").encode("utf-8"))
+    return {
+        "carrier": "filesystem",
+        "artifact_kind": "file",
+        "artifact_ref": str(path),
+        "artifact_label": path.name,
+        "reacquisition_mode": "reopen_file",
+        "preview": preview,
+        "preview_truncated": preview_truncated,
+        "exists": path.exists(),
+        "size_bytes": size_bytes,
+        "updated_at": updated_at,
+        "source_ref_ids": [],
+        "source_url": "",
+        "source_query": "",
+        "source_title": path.name,
+        "source_tool_name": source_tool_name,
+    }
+
+
+def _workspace_access_hints(
+    *,
+    hints: dict[str, Any],
+    workspace_path: Path,
+    source_tool_name: str = "create_workspace_access",
+) -> dict[str, Any]:
     refreshed = dict(hints or {})
     refreshed.update(
         {
@@ -373,7 +413,7 @@ def _workspace_access_hints(*, hints: dict[str, Any], workspace_path: Path) -> d
             "artifact_source_url": "",
             "artifact_source_query": "",
             "artifact_source_title": workspace_path.name,
-            "artifact_source_tool_name": "create_workspace_access",
+            "artifact_source_tool_name": str(source_tool_name or "").strip() or "create_workspace_access",
         }
     )
     refreshed.setdefault("world_surfaces", [])
@@ -396,6 +436,127 @@ def _workspace_access_hints(*, hints: dict[str, Any], workspace_path: Path) -> d
     elif proposals:
         refreshed["access_acquire_proposals"] = proposals
     return refreshed
+
+
+def _workspace_file_hints(*, hints: dict[str, Any], file_path: Path, source_tool_name: str) -> dict[str, Any]:
+    refreshed = dict(hints or {})
+    refreshed.update(
+        {
+            "filesystem_state": "writable",
+            "artifact_continuity": "attached",
+            "active_artifact_kind": "file",
+            "active_artifact_ref": str(file_path),
+            "active_artifact_label": file_path.name,
+            "artifact_age_s": 0,
+            "artifact_reacquisition_mode": "reopen_file",
+            "artifact_carrier": "filesystem",
+            "artifact_source_ref_ids": [],
+            "artifact_source_url": "",
+            "artifact_source_query": "",
+            "artifact_source_title": file_path.name,
+            "artifact_source_tool_name": str(source_tool_name or "").strip() or "write_workspace_file",
+            "workspace_path": str(file_path.parent),
+        }
+    )
+    refreshed.setdefault("world_surfaces", [])
+    if isinstance(refreshed.get("world_surfaces"), list):
+        surfaces = [str(item).strip().lower() for item in refreshed.get("world_surfaces", []) if str(item or "").strip()]
+        if "filesystem" not in surfaces:
+            surfaces.append("filesystem")
+        refreshed["world_surfaces"] = surfaces[:12]
+    return prune_resolved_access_hints(refreshed)
+
+
+def _path_within_root(path: Path, root: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+        return True
+    except Exception:
+        return False
+
+
+def _normalize_workspace_relative_path(raw: Any) -> Path:
+    text = str(raw or "").strip()
+    if not text:
+        raise ValueError("relative_path is required")
+    candidate = Path(text.replace("\\", "/"))
+    if candidate.is_absolute():
+        raise ValueError("relative_path must stay inside the current workspace")
+    parts: list[str] = []
+    for part in candidate.parts:
+        stripped = str(part or "").strip()
+        if not stripped or stripped == ".":
+            continue
+        if stripped == "..":
+            raise ValueError("relative_path cannot escape the current workspace")
+        parts.append(stripped)
+    if not parts:
+        raise ValueError("relative_path is required")
+    return Path(*parts)
+
+
+def _workspace_root_dir() -> Path:
+    settings = get_settings()
+    root = settings.data_dir / "workspaces"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _resolve_runtime_workspace(
+    *,
+    hints: dict[str, Any],
+    workspace_name: Any = "",
+) -> Path | None:
+    root = _workspace_root_dir()
+    root_resolved = root.resolve(strict=False)
+    explicit_name = _slugify_workspace_name(workspace_name, fallback="workspace") if str(workspace_name or "").strip() else ""
+    if explicit_name:
+        candidate = root / explicit_name
+        if candidate.exists() and candidate.is_dir() and _path_within_root(candidate, root_resolved):
+            return candidate
+
+    artifact_kind = _clean_lower_text(hints.get("active_artifact_kind"))
+
+    def _workspace_root_from_path(candidate: Path) -> Path | None:
+        try:
+            relative = candidate.resolve(strict=False).relative_to(root_resolved)
+        except Exception:
+            return None
+        parts = tuple(str(part or "").strip() for part in relative.parts if str(part or "").strip())
+        if not parts:
+            return None
+        workspace_root = (root_resolved / parts[0]).resolve(strict=False)
+        if workspace_root.exists() and workspace_root.is_dir() and _path_within_root(workspace_root, root_resolved):
+            return workspace_root
+        return None
+
+    for raw in (
+        hints.get("workspace_path"),
+        hints.get("active_artifact_ref"),
+    ):
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        candidate = Path(text).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve(strict=False)
+        workspace_root = _workspace_root_from_path(resolved)
+        if workspace_root is not None:
+            return workspace_root
+
+    settings = get_settings()
+    thread_workspace = root / _slugify_workspace_name(settings.thread_id, fallback="workspace")
+    if thread_workspace.exists() and thread_workspace.is_dir() and _path_within_root(thread_workspace, root_resolved):
+        return thread_workspace
+
+    try:
+        children = [item for item in root.iterdir() if item.is_dir()]
+    except Exception:
+        children = []
+    if len(children) == 1 and _path_within_root(children[0], root_resolved):
+        return children[0]
+    return None
 
 
 def _langchain_requested_topics(query: str) -> set[str]:
@@ -2160,6 +2321,7 @@ def create_workspace_access(
         refreshed_hints = _workspace_access_hints(
             hints=hints,
             workspace_path=workspace_path,
+            source_tool_name=tool_name,
         )
         body = derive_digital_body_state(
             current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
@@ -2172,7 +2334,7 @@ def create_workspace_access(
         )
         access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
         resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
-        artifact_context = _workspace_artifact_context(workspace_path)
+        artifact_context = _workspace_artifact_context(workspace_path, source_tool_name=tool_name)
         summary = (
             f"已新建可写工作区 {workspace_path.name}，这条落盘路径现在接上了。"
             if created_new
@@ -2199,6 +2361,745 @@ def create_workspace_access(
             "INTERNAL",
             str(e),
             {"workspace_name": workspace_name, "access_hints": hints},
+        )
+
+
+@tool
+def inspect_workspace_path(
+    relative_path: str = ".",
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    preview_chars: int = 1200,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里读取一个受限路径，作为数字身体的只读感知面。"""
+
+    tool_name = "inspect_workspace_path"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            return _err(
+                tool_name,
+                "WORKSPACE_REQUIRED",
+                "no attached runtime workspace is available for inspection",
+                {
+                    "workspace_name": workspace_name,
+                    "active_artifact_kind": hints.get("active_artifact_kind"),
+                    "active_artifact_ref": hints.get("active_artifact_ref"),
+                },
+            )
+
+        raw_relative = str(relative_path or "").strip()
+        target_relative = Path() if not raw_relative or raw_relative in {".", "./", ".\\"} else _normalize_workspace_relative_path(raw_relative)
+        target_path = (workspace_path / target_relative).resolve(strict=False)
+        if not _path_within_root(target_path, workspace_path):
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "relative_path escapes the current workspace",
+                {"relative_path": str(relative_path), "workspace_path": str(workspace_path)},
+            )
+        if not target_path.exists():
+            return _err(
+                tool_name,
+                "TARGET_NOT_FOUND",
+                "target path does not exist inside the current workspace",
+                {"relative_path": str(relative_path), "workspace_path": str(workspace_path)},
+            )
+
+        if target_path.is_dir():
+            refreshed_hints = _workspace_access_hints(
+                hints=hints,
+                workspace_path=target_path,
+                source_tool_name=tool_name,
+            )
+            artifact_context = _workspace_artifact_context(target_path, source_tool_name=tool_name)
+            artifact_kind = "workspace"
+            preview = str(artifact_context.get("preview") or "")
+            preview_truncated = bool(artifact_context.get("preview_truncated", False))
+            size_bytes = int(artifact_context.get("size_bytes") or 0)
+            summary = f"已查看目录 {target_path.name or workspace_path.name}，当前结构已经重新接回工作面。"
+        else:
+            content = target_path.read_text(encoding="utf-8", errors="ignore")
+            preview, preview_truncated = _text_preview(content, limit=max(80, int(preview_chars or 1200)))
+            refreshed_hints = _workspace_file_hints(
+                hints=hints,
+                file_path=target_path,
+                source_tool_name=tool_name,
+            )
+            artifact_context = _file_artifact_context(
+                target_path,
+                content=content,
+                source_tool_name=tool_name,
+            )
+            artifact_context["preview"] = preview
+            artifact_context["preview_truncated"] = preview_truncated
+            artifact_kind = "file"
+            size_bytes = int(artifact_context.get("size_bytes") or len(content.encode("utf-8")))
+            summary = f"已查看文件 {target_path.name}，当前内容已经重新接回工作面。"
+
+        refreshed_hints["filesystem_state"] = _probe_filesystem_state(workspace_path)
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        normalized_relative = "." if target_relative == Path() else str(target_relative).replace("\\", "/")
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(workspace_path),
+                "workspace_name": workspace_path.name,
+                "relative_path": normalized_relative,
+                "artifact_kind": artifact_kind,
+                "artifact_ref": str(target_path),
+                "artifact_label": target_path.name or workspace_path.name,
+                "artifact_preview": preview,
+                "artifact_preview_truncated": preview_truncated,
+                "artifact_exists": True,
+                "artifact_size_bytes": size_bytes,
+                "artifact_updated_at": int(artifact_context.get("updated_at") or 0),
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(refreshed_hints.get("filesystem_state") or "unavailable").strip().lower(),
+            },
+        )
+    except ValueError as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+
+
+@tool
+def write_workspace_file(
+    relative_path: str,
+    content: str,
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    overwrite: bool = True,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里真实写入一个文件。"""
+
+    return _mutate_workspace_file(
+        operation="write",
+        relative_path=relative_path,
+        content=content,
+        workspace_name=workspace_name,
+        access_hints=access_hints,
+        overwrite=overwrite,
+    )
+
+
+def _mutate_workspace_file(
+    *,
+    operation: str,
+    relative_path: str,
+    content: str,
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    overwrite: bool = True,
+    ensure_newline: bool = False,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里真实写入一个文件。
+
+    约束：
+    - 只会写到 `AMADEUS_DATA_DIR/workspaces/<workspace>/` 下面
+    - `relative_path` 不能是绝对路径，也不能用 `..` 逃逸工作区
+    - 若当前 runtime 里没有可解析的工作区，需要先显式创建/接回工作区
+    """
+
+    op = str(operation or "").strip().lower()
+    if op not in {"write", "append"}:
+        raise ValueError(f"unsupported workspace file operation: {operation}")
+    tool_name = "append_workspace_file" if op == "append" else "write_workspace_file"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            return _err(
+                tool_name,
+                "WORKSPACE_REQUIRED",
+                "no attached runtime workspace is available for file writes",
+                {
+                    "workspace_name": workspace_name,
+                    "active_artifact_kind": hints.get("active_artifact_kind"),
+                    "active_artifact_ref": hints.get("active_artifact_ref"),
+                },
+            )
+
+        target_relative = _normalize_workspace_relative_path(relative_path)
+        target_path = (workspace_path / target_relative).resolve(strict=False)
+        if not _path_within_root(target_path, workspace_path):
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "relative_path escapes the current workspace",
+                {"relative_path": str(relative_path), "workspace_path": str(workspace_path)},
+            )
+
+        existed = target_path.exists()
+        if existed and target_path.is_dir():
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "file target exists but is a directory",
+                {"file_path": str(target_path)},
+            )
+        if existed and not bool(overwrite):
+            return _err(
+                tool_name,
+                "ALREADY_EXISTS",
+                "file target already exists and overwrite is disabled",
+                {"file_path": str(target_path)},
+            )
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        normalized_content = str(content or "")
+        if op == "append":
+            existing_text = target_path.read_text(encoding="utf-8", errors="ignore") if existed else ""
+            chunk = normalized_content
+            if ensure_newline and existing_text and not existing_text.endswith(("\n", "\r")) and chunk:
+                chunk = "\n" + chunk
+            target_path.write_text(existing_text + chunk, encoding="utf-8")
+            final_content = existing_text + chunk
+            bytes_written = len(chunk.encode("utf-8"))
+        else:
+            target_path.write_text(normalized_content, encoding="utf-8")
+            final_content = normalized_content
+            bytes_written = len(normalized_content.encode("utf-8"))
+
+        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=["write_workspace_file"],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        artifact_context = _file_artifact_context(
+            target_path,
+            content=final_content,
+            source_tool_name=tool_name,
+        )
+        if op == "append":
+            summary = f"已把内容续写进 {target_path.name}，这条文件工作面现在接上了。"
+        else:
+            summary = f"已把内容写入 {target_path.name}，这条文件工作面现在接上了。"
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(workspace_path),
+                "workspace_name": workspace_path.name,
+                "relative_path": str(target_relative).replace("\\", "/"),
+                "file_path": str(target_path),
+                "file_name": target_path.name,
+                "created_new": not existed,
+                "bytes_written": bytes_written,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+            },
+        )
+    except ValueError as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+
+
+@tool
+def append_workspace_file(
+    relative_path: str,
+    content: str,
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    ensure_newline: bool = False,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里真实续写一个文件。"""
+
+    return _mutate_workspace_file(
+        operation="append",
+        relative_path=relative_path,
+        content=content,
+        workspace_name=workspace_name,
+        access_hints=access_hints,
+        ensure_newline=ensure_newline,
+    )
+
+
+@tool
+def replace_workspace_text(
+    relative_path: str,
+    old_text: str,
+    new_text: str,
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    replace_all: bool = False,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里，对现有文件做一次精确文本替换。"""
+
+    tool_name = "replace_workspace_text"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        needle = str(old_text or "")
+        if not needle:
+            raise ValueError("old_text is required")
+
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            return _err(
+                tool_name,
+                "WORKSPACE_REQUIRED",
+                "no attached runtime workspace is available for file edits",
+                {
+                    "workspace_name": workspace_name,
+                    "active_artifact_kind": hints.get("active_artifact_kind"),
+                    "active_artifact_ref": hints.get("active_artifact_ref"),
+                },
+            )
+
+        target_relative = _normalize_workspace_relative_path(relative_path)
+        target_path = (workspace_path / target_relative).resolve(strict=False)
+        if not _path_within_root(target_path, workspace_path):
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "relative_path escapes the current workspace",
+                {"relative_path": str(relative_path), "workspace_path": str(workspace_path)},
+            )
+        if not target_path.exists() or not target_path.is_file():
+            return _err(
+                tool_name,
+                "MISSING_TARGET",
+                "file target does not exist inside the current workspace",
+                {"file_path": str(target_path)},
+            )
+
+        original_content = target_path.read_text(encoding="utf-8", errors="ignore")
+        match_count = int(original_content.count(needle))
+        if match_count <= 0:
+            return _err(
+                tool_name,
+                "TEXT_NOT_FOUND",
+                "old_text was not found in the target file",
+                {"file_path": str(target_path), "relative_path": str(target_relative).replace("\\", "/")},
+            )
+
+        replacement = str(new_text or "")
+        replace_count = match_count if bool(replace_all) else 1
+        updated_content = original_content.replace(needle, replacement, replace_count)
+        target_path.write_text(updated_content, encoding="utf-8")
+
+        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[tool_name],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        artifact_context = _file_artifact_context(
+            target_path,
+            content=updated_content,
+            source_tool_name=tool_name,
+        )
+        summary = f"已在 {target_path.name} 里精确替换 {replace_count} 处文本，这条文件工作面现在接上了。"
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(workspace_path),
+                "workspace_name": workspace_path.name,
+                "relative_path": str(target_relative).replace("\\", "/"),
+                "file_path": str(target_path),
+                "file_name": target_path.name,
+                "replace_all": bool(replace_all),
+                "match_count": match_count,
+                "replace_count": replace_count,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+            },
+        )
+    except ValueError as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+
+
+def _preferred_workspace_newline(text: str) -> str:
+    match = re.search(r"\r\n|\n|\r", str(text or ""))
+    if match:
+        return match.group(0)
+    return "\r\n" if os.linesep == "\r\n" else "\n"
+
+
+def _normalize_workspace_newlines(text: str, newline: str) -> str:
+    raw = str(text or "")
+    if "\r" not in raw and "\n" not in raw:
+        return raw
+    return newline.join(raw.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+
+
+def _replace_workspace_line_span(
+    *,
+    content: str,
+    start_line: int,
+    end_line: int,
+    replacement_text: str,
+) -> tuple[str, int, int]:
+    if start_line <= 0:
+        raise ValueError("start_line must be >= 1")
+    if end_line < start_line:
+        raise ValueError("end_line must be >= start_line")
+
+    lines = str(content or "").splitlines(keepends=True)
+    total_lines = len(lines)
+    if total_lines <= 0:
+        raise ValueError("target file is empty; use write_workspace_file instead")
+    if end_line > total_lines:
+        raise ValueError(f"line range {start_line}-{end_line} exceeds file length {total_lines}")
+
+    start_idx = sum(len(item) for item in lines[: start_line - 1])
+    end_idx = sum(len(item) for item in lines[:end_line])
+    newline = _preferred_workspace_newline(content)
+    normalized_replacement = _normalize_workspace_newlines(str(replacement_text or ""), newline)
+    selected_chunk = str(content or "")[start_idx:end_idx]
+    has_following_content = end_idx < len(str(content or ""))
+    preserve_trailing_newline = selected_chunk.endswith(("\n", "\r")) and (
+        has_following_content or str(content or "").endswith(("\n", "\r"))
+    )
+    if normalized_replacement and preserve_trailing_newline and not normalized_replacement.endswith(("\n", "\r")):
+        normalized_replacement += newline
+    updated = f"{str(content or '')[:start_idx]}{normalized_replacement}{str(content or '')[end_idx:]}"
+    inserted_line_count = len(str(replacement_text or "").splitlines()) if str(replacement_text or "") else 0
+    return updated, end_line - start_line + 1, inserted_line_count
+
+
+def preview_workspace_mutation(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    name = str(tool_name or "").strip()
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    if name not in {
+        "write_workspace_file",
+        "append_workspace_file",
+        "replace_workspace_text",
+        "replace_workspace_lines",
+    }:
+        return {}
+
+    hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    workspace_name = str(data.get("workspace_name") or "").strip()
+    mutation_mode = (
+        "append"
+        if name == "append_workspace_file"
+        else "replace"
+        if name in {"replace_workspace_text", "replace_workspace_lines"}
+        else "write"
+    )
+
+    def _error(code: str, message: str, *, relative_path: str = "", file_path: str = "") -> dict[str, Any]:
+        return {
+            "tool_name": name,
+            "can_apply": False,
+            "mutation_mode": mutation_mode,
+            "workspace_name": workspace_name,
+            "relative_path": relative_path,
+            "file_path": file_path,
+            "error_code": code,
+            "error_message": message[:220],
+            "summary": message[:220],
+        }
+
+    try:
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            return _error(
+                "WORKSPACE_REQUIRED",
+                "当前没有可用的 runtime workspace，预览无法对齐到真实落点。",
+            )
+
+        target_relative = _normalize_workspace_relative_path(data.get("relative_path"))
+        target_path = (workspace_path / target_relative).resolve(strict=False)
+        relative_path = str(target_relative).replace("\\", "/")
+        if not _path_within_root(target_path, workspace_path):
+            return _error(
+                "INVALID_TARGET",
+                "relative_path 超出了当前 workspace 边界。",
+                relative_path=relative_path,
+                file_path=str(target_path),
+            )
+
+        existed = target_path.exists()
+        if existed and target_path.is_dir():
+            return _error(
+                "INVALID_TARGET",
+                "目标路径当前是目录，不是可编辑文件。",
+                relative_path=relative_path,
+                file_path=str(target_path),
+            )
+
+        original_content = target_path.read_text(encoding="utf-8", errors="ignore") if existed else ""
+        updated_content = original_content
+        preview_fields: dict[str, Any] = {}
+
+        if name == "write_workspace_file":
+            if existed and not bool(data.get("overwrite", True)):
+                return _error(
+                    "ALREADY_EXISTS",
+                    "目标文件已经存在且 overwrite 被关闭。",
+                    relative_path=relative_path,
+                    file_path=str(target_path),
+                )
+            updated_content = str(data.get("content") or "")
+            preview_fields["created_new"] = not existed
+        elif name == "append_workspace_file":
+            chunk = str(data.get("content") or "")
+            if bool(data.get("ensure_newline")) and original_content and not original_content.endswith(("\n", "\r")) and chunk:
+                chunk = "\n" + chunk
+            updated_content = original_content + chunk
+            preview_fields["created_new"] = not existed
+            preview_fields["appended_bytes"] = len(chunk.encode("utf-8"))
+        elif name == "replace_workspace_text":
+            if not existed or not target_path.is_file():
+                return _error(
+                    "MISSING_TARGET",
+                    "目标文件不存在，无法做文本替换预览。",
+                    relative_path=relative_path,
+                    file_path=str(target_path),
+                )
+            needle = str(data.get("old_text") or "")
+            if not needle:
+                return _error(
+                    "BAD_INPUT",
+                    "old_text 不能为空。",
+                    relative_path=relative_path,
+                    file_path=str(target_path),
+                )
+            match_count = int(original_content.count(needle))
+            if match_count <= 0:
+                return _error(
+                    "TEXT_NOT_FOUND",
+                    "old_text 在目标文件里没有命中。",
+                    relative_path=relative_path,
+                    file_path=str(target_path),
+                )
+            replace_all = bool(data.get("replace_all"))
+            replace_count = match_count if replace_all else 1
+            updated_content = original_content.replace(needle, str(data.get("new_text") or ""), replace_count)
+            preview_fields["match_count"] = match_count
+            preview_fields["replace_count"] = replace_count
+        else:
+            if not existed or not target_path.is_file():
+                return _error(
+                    "MISSING_TARGET",
+                    "目标文件不存在，无法做按行替换预览。",
+                    relative_path=relative_path,
+                    file_path=str(target_path),
+                )
+            updated_content, replaced_line_count, inserted_line_count = _replace_workspace_line_span(
+                content=original_content,
+                start_line=int(data.get("start_line") or 0),
+                end_line=int(data.get("end_line") or 0),
+                replacement_text=str(data.get("new_text") or ""),
+            )
+            preview_fields["start_line"] = int(data.get("start_line") or 0)
+            preview_fields["end_line"] = int(data.get("end_line") or 0)
+            preview_fields["replaced_line_count"] = replaced_line_count
+            preview_fields["inserted_line_count"] = inserted_line_count
+
+        diff_text = "".join(
+            difflib.unified_diff(
+                original_content.splitlines(keepends=True),
+                updated_content.splitlines(keepends=True),
+                fromfile=f"a/{relative_path}",
+                tofile=f"b/{relative_path}",
+                n=3,
+            )
+        )
+        diff_preview, preview_truncated = _text_preview(diff_text or "(no textual diff)", limit=1600)
+        summary = (
+            f"{target_path.name} 的 patch 预览已生成，审批通过后会只在当前 workspace 内落地。"
+            if diff_text
+            else f"{target_path.name} 当前不会产生新的文本差异。"
+        )
+        return {
+            "tool_name": name,
+            "can_apply": True,
+            "mutation_mode": mutation_mode,
+            "workspace_name": workspace_path.name,
+            "relative_path": relative_path,
+            "file_path": str(target_path),
+            "file_name": target_path.name,
+            "target_exists": existed,
+            "summary": summary,
+            "diff_preview": diff_preview,
+            "preview_truncated": preview_truncated,
+            **preview_fields,
+        }
+    except ValueError as e:
+        return _error("BAD_INPUT", str(e))
+    except Exception as e:
+        return _error("INTERNAL", str(e))
+
+
+@tool
+def replace_workspace_lines(
+    relative_path: str,
+    start_line: int,
+    end_line: int,
+    new_text: str,
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里，对现有文件做一次受限的按行替换。"""
+
+    tool_name = "replace_workspace_lines"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        start = int(start_line)
+        end = int(end_line)
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            return _err(
+                tool_name,
+                "WORKSPACE_REQUIRED",
+                "no attached runtime workspace is available for file edits",
+                {
+                    "workspace_name": workspace_name,
+                    "active_artifact_kind": hints.get("active_artifact_kind"),
+                    "active_artifact_ref": hints.get("active_artifact_ref"),
+                },
+            )
+
+        target_relative = _normalize_workspace_relative_path(relative_path)
+        target_path = (workspace_path / target_relative).resolve(strict=False)
+        if not _path_within_root(target_path, workspace_path):
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "relative_path escapes the current workspace",
+                {"relative_path": str(relative_path), "workspace_path": str(workspace_path)},
+            )
+        if not target_path.exists() or not target_path.is_file():
+            return _err(
+                tool_name,
+                "MISSING_TARGET",
+                "file target does not exist inside the current workspace",
+                {"file_path": str(target_path)},
+            )
+
+        original_content = target_path.read_text(encoding="utf-8", errors="ignore")
+        updated_content, replaced_line_count, inserted_line_count = _replace_workspace_line_span(
+            content=original_content,
+            start_line=start,
+            end_line=end,
+            replacement_text=str(new_text or ""),
+        )
+        target_path.write_text(updated_content, encoding="utf-8")
+
+        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[tool_name],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        artifact_context = _file_artifact_context(
+            target_path,
+            content=updated_content,
+            source_tool_name=tool_name,
+        )
+        line_span = f"{start}" if start == end else f"{start}-{end}"
+        summary = f"已在 {target_path.name} 里替换第 {line_span} 行，这条文件工作面现在接上了。"
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(workspace_path),
+                "workspace_name": workspace_path.name,
+                "relative_path": str(target_relative).replace("\\", "/"),
+                "file_path": str(target_path),
+                "file_name": target_path.name,
+                "start_line": start,
+                "end_line": end,
+                "replaced_line_count": replaced_line_count,
+                "inserted_line_count": inserted_line_count,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+            },
+        )
+    except ValueError as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
+        )
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"relative_path": relative_path, "workspace_name": workspace_name},
         )
 
 

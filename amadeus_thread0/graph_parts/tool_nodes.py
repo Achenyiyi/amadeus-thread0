@@ -45,6 +45,7 @@ from .tool_runtime import (
     _invoke_tool,
     _memory_guard_check,
 )
+from ..utils.tools import preview_workspace_mutation
 
 _AUTO_EXECUTABLE_ARTIFACT_INTENTS = {
     "artifact:reopen_file",
@@ -58,6 +59,22 @@ _AUTO_EXECUTABLE_ARTIFACT_INTENTS = {
 _AUTO_EXECUTABLE_ACCESS_INTENTS = {
     "access:refresh_state",
 }
+
+_WORKSPACE_FILE_MUTATION_TOOLS = {
+    "write_workspace_file": "write",
+    "append_workspace_file": "append",
+    "replace_workspace_text": "replace",
+    "replace_workspace_lines": "replace_lines",
+}
+
+_WORKSPACE_FILE_MUTATION_INTENTS = {
+    "artifact:write_file": "write_workspace_file",
+    "artifact:append_file": "append_workspace_file",
+    "artifact:replace_text": "replace_workspace_text",
+    "artifact:replace_lines": "replace_workspace_lines",
+}
+
+_WORKSPACE_INSPECTION_TOOL_NAMES = {"inspect_workspace_path"}
 
 
 def _available_tools_for_state(state: ThreadState) -> list[BaseTool]:
@@ -146,6 +163,9 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         risk = risk_from_tool_name(name)
         order.append(tc_id)
         row = {"id": tc_id, "name": name, "args": args, "proposal_id": proposal_id}
+        mutation_preview = preview_workspace_mutation(name, args)
+        if mutation_preview:
+            row["mutation_preview"] = mutation_preview
         if name in auto_set and risk != "external_mutation":
             queued.append({**row, "action": "approve"})
         else:
@@ -205,6 +225,7 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
             status=packet_status,
             result_summary=str(row.get("reason") or ""),
             block_reason=str(row.get("reason") or "") if action == "reject" else "",
+            mutation_preview=row.get("mutation_preview") if isinstance(row.get("mutation_preview"), dict) else None,
         )
         action_packets = upsert_action_packet(action_packets, packet)
         action_trace.append(
@@ -311,19 +332,29 @@ def _artifact_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
     proposal_id = str(row.get("proposal_id") or "").strip()
     if not proposal_id:
         return {}
+    tool_name = str(row.get("tool_name") or "").strip().lower() or "reacquire_artifact"
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
     steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
     primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
-    target = str(primary_step.get("target") or "").strip() or str(row.get("result_summary") or "").strip()
-    mode = intent.split(":", 1)[1]
-    artifact_kind = (
-        "page"
-        if mode in {"reopen_page", "restore_page"}
-        else "workspace"
-        if mode == "reattach_workspace"
-        else "search_result"
-        if mode == "rerun_search"
-        else "file"
+    target = (
+        str(tool_args.get("artifact_ref") or "").strip()
+        or str(primary_step.get("target") or "").strip()
+        or str(row.get("result_summary") or "").strip()
     )
+    mode = str(tool_args.get("mode") or "").strip().lower() or intent.split(":", 1)[1]
+    artifact_kind = (
+        str(tool_args.get("artifact_kind") or "").strip().lower()
+        or (
+            "page"
+            if mode in {"reopen_page", "restore_page"}
+            else "workspace"
+            if mode == "reattach_workspace"
+            else "search_result"
+            if mode == "rerun_search"
+            else "file"
+        )
+    )
+    label = str(tool_args.get("artifact_label") or "").strip() or target
     return {
         "candidate_kind": "artifact",
         "proposal_id": proposal_id,
@@ -331,8 +362,10 @@ def _artifact_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
         "mode": mode,
         "artifact_kind": artifact_kind,
         "target": target,
-        "label": target,
+        "label": label,
         "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
     }
 
 
@@ -350,6 +383,8 @@ def _access_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
     proposal_id = str(row.get("proposal_id") or "").strip()
     if not proposal_id:
         return {}
+    tool_name = str(row.get("tool_name") or "").strip().lower() or "refresh_access_state"
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
     steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
     primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
     target = str(primary_step.get("target") or "").strip() or "runtime_access"
@@ -361,6 +396,8 @@ def _access_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
         "target": target,
         "label": target,
         "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
     }
 
 
@@ -381,11 +418,29 @@ def _workspace_access_mutation_candidate(
         return {}
     if str(selected.get("mode") or "").strip().lower() != "operator_create_workspace":
         return {}
-    hints = merge_digital_body_hints(
-        session_context=session_context,
-        current_event=current_event,
-    )
-    hints["selected_access_proposal"] = selected
+    tool_name = str(row.get("tool_name") or "").strip().lower() or "create_workspace_access"
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
+    if tool_args:
+        hints = (
+            dict(tool_args.get("access_hints") or {})
+            if isinstance(tool_args.get("access_hints"), dict)
+            else {}
+        )
+    else:
+        hints = merge_digital_body_hints(
+            session_context=session_context,
+            current_event=current_event,
+        )
+        access_proposals = normalize_access_acquire_proposals(row.get("access_acquire_proposals"))
+        if access_proposals:
+            hints["access_acquire_proposals"] = access_proposals
+        hints["selected_access_proposal"] = selected
+        tool_args = {
+            "workspace_name": str(selected.get("workspace_name") or row.get("workspace_name") or "").strip(),
+            "access_hints": hints,
+        }
+    if not isinstance(hints.get("selected_access_proposal"), dict):
+        hints["selected_access_proposal"] = selected
     if selected_access_proposal_resolved(hints=hints, proposal=selected):
         return {}
     return {
@@ -397,6 +452,113 @@ def _workspace_access_mutation_candidate(
         "label": str(selected.get("summary") or selected.get("operator_action") or "workspace").strip() or "workspace",
         "packet": row,
         "selected_access_proposal": selected,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+    }
+
+
+def _workspace_file_mutation_candidate(
+    packet: dict[str, Any],
+    *,
+    session_context: dict[str, Any],
+    current_event: dict[str, Any],
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    status = str(row.get("status") or "").strip().lower()
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if status != "approved" or not proposal_id:
+        return {}
+
+    tool_name = str(row.get("tool_name") or "").strip().lower()
+    if tool_name not in _WORKSPACE_FILE_MUTATION_TOOLS:
+        tool_name = _WORKSPACE_FILE_MUTATION_INTENTS.get(str(row.get("intent") or "").strip().lower(), "")
+    if tool_name not in _WORKSPACE_FILE_MUTATION_TOOLS:
+        return {}
+
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
+    steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
+    primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
+    relative_path = str(tool_args.get("relative_path") or primary_step.get("target") or "").strip()
+    if not relative_path:
+        return {}
+
+    mutation_mode = _WORKSPACE_FILE_MUTATION_TOOLS.get(tool_name, "")
+    if mutation_mode in {"write", "append"} and "content" not in tool_args:
+        return {}
+    if mutation_mode == "replace" and not str(tool_args.get("old_text") or ""):
+        return {}
+    if mutation_mode == "replace_lines":
+        try:
+            start_line = int(tool_args.get("start_line") or 0)
+            end_line = int(tool_args.get("end_line") or 0)
+        except Exception:
+            return {}
+        if start_line <= 0 or end_line < start_line:
+            return {}
+
+    merged_hints = merge_digital_body_hints(
+        session_context=session_context,
+        current_event=current_event,
+    )
+    provided_hints = dict(tool_args.get("access_hints") or {}) if isinstance(tool_args.get("access_hints"), dict) else {}
+    tool_args["access_hints"] = {**merged_hints, **provided_hints}
+
+    return {
+        "candidate_kind": "workspace_file_mutation",
+        "proposal_id": proposal_id,
+        "intent": str(row.get("intent") or "").strip().lower(),
+        "mode": mutation_mode,
+        "target": relative_path,
+        "label": relative_path,
+        "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+    }
+
+
+def _workspace_path_inspection_candidate(
+    packet: dict[str, Any],
+    *,
+    session_context: dict[str, Any],
+    current_event: dict[str, Any],
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    status = str(row.get("status") or "").strip().lower()
+    risk = str(row.get("risk") or "").strip().lower()
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if bool(row.get("requires_approval", False)) or risk not in {"", "read"}:
+        return {}
+    if status not in {"", "proposed", "queued", "approved"} or not proposal_id:
+        return {}
+
+    tool_name = str(row.get("tool_name") or "").strip().lower()
+    if tool_name not in _WORKSPACE_INSPECTION_TOOL_NAMES:
+        if str(row.get("intent") or "").strip().lower() != "artifact:inspect_path":
+            return {}
+        tool_name = "inspect_workspace_path"
+
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
+    steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
+    primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
+    relative_path = str(tool_args.get("relative_path") or primary_step.get("target") or ".").strip() or "."
+    merged_hints = merge_digital_body_hints(
+        session_context=session_context,
+        current_event=current_event,
+    )
+    provided_hints = dict(tool_args.get("access_hints") or {}) if isinstance(tool_args.get("access_hints"), dict) else {}
+    tool_args["access_hints"] = {**merged_hints, **provided_hints}
+    tool_args["relative_path"] = relative_path
+
+    return {
+        "candidate_kind": "workspace_path_inspection",
+        "proposal_id": proposal_id,
+        "intent": str(row.get("intent") or "").strip().lower(),
+        "mode": "inspect_workspace_path",
+        "target": relative_path,
+        "label": relative_path,
+        "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
     }
 
 
@@ -412,6 +574,20 @@ def _first_autonomy_execution_candidate(state: ThreadState) -> dict[str, Any]:
         if candidate:
             return candidate
         candidate = _workspace_access_mutation_candidate(
+            packet,
+            session_context=session_context,
+            current_event=current_event,
+        )
+        if candidate:
+            return candidate
+        candidate = _workspace_file_mutation_candidate(
+            packet,
+            session_context=session_context,
+            current_event=current_event,
+        )
+        if candidate:
+            return candidate
+        candidate = _workspace_path_inspection_candidate(
             packet,
             session_context=session_context,
             current_event=current_event,
@@ -633,11 +809,15 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
     origin = str(packet.get("origin") or "").strip().lower() or "motive_goal"
 
     if candidate_kind == "artifact":
-        tool_name = "reacquire_artifact"
+        tool_name = str(candidate.get("tool_name") or "").strip().lower() or "reacquire_artifact"
     elif candidate_kind == "workspace_access_mutation":
-        tool_name = "create_workspace_access"
+        tool_name = str(candidate.get("tool_name") or "").strip().lower() or "create_workspace_access"
+    elif candidate_kind == "workspace_file_mutation":
+        tool_name = str(candidate.get("tool_name") or "").strip().lower()
+    elif candidate_kind == "workspace_path_inspection":
+        tool_name = str(candidate.get("tool_name") or "").strip().lower() or "inspect_workspace_path"
     else:
-        tool_name = "refresh_access_state"
+        tool_name = str(candidate.get("tool_name") or "").strip().lower() or "refresh_access_state"
     tool = _tool_lookup(tool_name)
     action_packets = normalize_action_packets(state.get("action_packets"))
     action_trace = [
@@ -706,27 +886,53 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         }
 
     if candidate_kind == "artifact":
-        tool_args = {
-            "mode": mode,
-            "artifact_kind": str(candidate.get("artifact_kind") or "").strip().lower(),
-            "artifact_ref": target,
-            "artifact_label": label,
-        }
+        candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+        if candidate_tool_args:
+            tool_args = candidate_tool_args
+        else:
+            tool_args = {
+                "mode": mode,
+                "artifact_kind": str(candidate.get("artifact_kind") or "").strip().lower(),
+                "artifact_ref": target,
+                "artifact_label": label,
+            }
     elif candidate_kind == "workspace_access_mutation":
-        tool_args = {
-            "access_hints": merge_digital_body_hints(
-                session_context=session_context,
-                current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
-            ),
-            "workspace_name": str(candidate.get("workspace_name") or "").strip(),
-        }
+        candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+        if candidate_tool_args:
+            tool_args = candidate_tool_args
+        else:
+            tool_args = {
+                "access_hints": merge_digital_body_hints(
+                    session_context=session_context,
+                    current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+                ),
+                "workspace_name": str(candidate.get("workspace_name") or "").strip(),
+            }
+    elif candidate_kind == "workspace_file_mutation":
+        tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+    elif candidate_kind == "workspace_path_inspection":
+        candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+        if candidate_tool_args:
+            tool_args = candidate_tool_args
+        else:
+            tool_args = {
+                "relative_path": target or ".",
+                "access_hints": merge_digital_body_hints(
+                    session_context=session_context,
+                    current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+                ),
+            }
     else:
-        tool_args = {
-            "access_hints": merge_digital_body_hints(
-                session_context=session_context,
-                current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
-            )
-        }
+        candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+        if candidate_tool_args:
+            tool_args = candidate_tool_args
+        else:
+            tool_args = {
+                "access_hints": merge_digital_body_hints(
+                    session_context=session_context,
+                    current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+                )
+            }
     tool_call_id = f"auto-{proposal_id}"
     synthetic_ai = AIMessage(
         content="",
@@ -738,6 +944,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         {
             **packet,
             "status": "executing",
+            "tool_name": tool_name or str(packet.get("tool_name") or "").strip(),
+            "tool_args": tool_args,
             "result_summary": "",
             "block_reason": "",
             "writeback_ready": False,
@@ -760,6 +968,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         packet_update = {
             **packet,
             "status": "completed",
+            "tool_name": tool_name or str(packet.get("tool_name") or "").strip(),
+            "tool_args": tool_args,
             "result_summary": result_summary,
             "block_reason": "",
             "writeback_ready": True,
@@ -834,7 +1044,13 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         payload = {
             "ok": False,
             "error": {
-                "code": "AUTO_ARTIFACT_EXEC_ERROR" if candidate_kind == "artifact" else "AUTO_ACCESS_EXEC_ERROR",
+                "code": (
+                    "AUTO_ARTIFACT_EXEC_ERROR"
+                    if candidate_kind == "artifact"
+                    else "AUTO_WORKSPACE_MUTATION_EXEC_ERROR"
+                    if candidate_kind == "workspace_file_mutation"
+                    else "AUTO_ACCESS_EXEC_ERROR"
+                ),
                 "message": error_text,
             },
         }
@@ -844,6 +1060,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
             {
                 **packet,
                 "status": "blocked",
+                "tool_name": tool_name or str(packet.get("tool_name") or "").strip(),
+                "tool_args": tool_args,
                 "result_summary": error_text,
                 "block_reason": error_text,
                 "writeback_ready": False,
@@ -930,6 +1148,19 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             args = dict(decision.get("args"))
         proposal_id = str(decision.get("proposal_id") or _proposal_id_for_tool_call(tc_id, name, args)).strip()
         risk = risk_from_tool_name(name)
+        existing_packet = next(
+            (
+                dict(packet)
+                for packet in action_packets
+                if str(packet.get("proposal_id") or "").strip() == proposal_id
+            ),
+            {},
+        )
+        mutation_preview = (
+            dict(existing_packet.get("mutation_preview") or {})
+            if isinstance(existing_packet.get("mutation_preview"), dict)
+            else {}
+        )
 
         record: dict[str, Any] = {
             "tool": name,
@@ -955,6 +1186,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     status="rejected",
                     result_summary=reason,
                     block_reason=reason,
+                    mutation_preview=mutation_preview,
                 ),
             )
             action_trace.append(
@@ -992,6 +1224,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     status="blocked",
                     result_summary=reason,
                     block_reason=reason,
+                    mutation_preview=mutation_preview,
                 ),
             )
             action_trace.append(
@@ -1026,6 +1259,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     status="blocked",
                     result_summary=name,
                     block_reason=name,
+                    mutation_preview=mutation_preview,
                 ),
             )
             action_trace.append(
@@ -1053,6 +1287,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     args=args,
                     action=action,
                     status="executing",
+                    mutation_preview=mutation_preview,
                 ),
             )
             action_trace.append(
@@ -1096,26 +1331,35 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             _audit_jsonl("tool_audit.jsonl", record)
             result_summary = _tool_result_summary(result)
             tool_hints = _access_hints_from_refresh_result(result)
+            access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
+            artifact_context = _artifact_context_from_tool_result(result)
             if tool_hints:
                 hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
                 hints.update(tool_hints)
-                access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
                 hints["access_acquire_proposals"] = access_acquire_proposals
                 if selected_access_proposal:
                     hints["selected_access_proposal"] = selected_access_proposal
                 else:
                     hints.pop("selected_access_proposal", None)
                 session_context["digital_body_hints"] = hints
+            completed_packet = build_tool_action_packet(
+                tool_name=name,
+                proposal_id=proposal_id,
+                args=args,
+                action=action,
+                status="completed",
+                result_summary=result_summary,
+                mutation_preview=mutation_preview,
+            )
+            if access_acquire_proposals:
+                completed_packet["access_acquire_proposals"] = access_acquire_proposals
+            if selected_access_proposal:
+                completed_packet["selected_access_proposal"] = selected_access_proposal
+            if artifact_context:
+                completed_packet["artifact_context"] = artifact_context
             action_packets = upsert_action_packet(
                 action_packets,
-                build_tool_action_packet(
-                    tool_name=name,
-                    proposal_id=proposal_id,
-                    args=args,
-                    action=action,
-                    status="completed",
-                    result_summary=result_summary,
-                ),
+                completed_packet,
             )
             action_trace.append(
                 _action_trace_entry(
@@ -1145,6 +1389,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     status="blocked",
                     result_summary=error_text,
                     block_reason=error_text,
+                    mutation_preview=mutation_preview,
                 ),
             )
             action_trace.append(

@@ -172,6 +172,43 @@ class ToolApprovalPolicyTests(unittest.TestCase):
         self.assertEqual(preview.selected_access_proposal["path_kind"], "create_new")
         self.assertIn("不代表外部入口已经补齐", preview.note)
 
+    def test_summarize_tool_approval_request_surfaces_workspace_mutation_preview(self):
+        batch = summarize_tool_approval_request(
+            source="dialog",
+            tool_calls=[
+                {
+                    "name": "replace_workspace_lines",
+                    "args": {
+                        "relative_path": "notes/todo.md",
+                        "start_line": 2,
+                        "end_line": 2,
+                        "new_text": "beta v2",
+                    },
+                    "mutation_preview": {
+                        "tool_name": "replace_workspace_lines",
+                        "can_apply": True,
+                        "mutation_mode": "replace",
+                        "workspace_name": "lab",
+                        "relative_path": "notes/todo.md",
+                        "file_name": "todo.md",
+                        "summary": "todo.md 的 patch 预览已生成，审批通过后会只在当前 workspace 内落地。",
+                        "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "replace_workspace_lines")
+        self.assertEqual(preview.reason, "todo.md 的 patch 预览已生成，审批通过后会只在当前 workspace 内落地。")
+        self.assertEqual(preview.mutation_preview["mutation_mode"], "replace")
+        self.assertEqual(preview.mutation_preview["relative_path"], "notes/todo.md")
+        self.assertIn("-beta", preview.mutation_preview["diff_preview"])
+        self.assertIn("当前 runtime workspace", preview.note)
+
 
 if __name__ == "__main__":
     unittest.main()

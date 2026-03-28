@@ -158,12 +158,20 @@ This status does not change the intentional guardrails below:
   - when a prior file/work-surface is detached or missing
   - and the packet is low-risk `read`
   - the graph may execute reacquisition before the next model turn instead of only describing the need semantically
+  - this read-execution family may now also carry backend-owned runtime binding fields on the packet itself:
+    - `tool_name=reacquire_artifact`
+    - `tool_args={mode, artifact_kind, artifact_ref, artifact_label}`
+  - those fields exist so execution can stay packet-owned even if live carryover has already moved on
   - for browser/search-like surfaces, the current bounded carrier is `saved source_refs`, not a fake live browser session:
     - previously retrieved pages/search results may be reattached from stored `url/title/query/snippet`
     - true live browser reopening remains deferred until a real browser/runtime surface exists
 - The next bounded direct-execution slice is `access state refresh`:
   - when session/access conditions are present but the runtime can still do a truthful read-only recheck
   - the graph may execute a bounded `access:refresh_state` packet before the next model turn
+  - this read-execution family may now also carry backend-owned runtime binding fields on the packet itself:
+    - `tool_name=refresh_access_state`
+    - `tool_args={access_hints}`
+  - that binding is part of backend execution integrity, not a frontend autonomy contract surface
   - this slice only refreshes inspectable runtime truth such as:
     - API key presence
     - filesystem writability
@@ -253,11 +261,69 @@ This status does not change the intentional guardrails below:
     - if the approved selected proposal is `operator_create_workspace`
     - and the runtime can truthfully create that workspace inside its own `AMADEUS_DATA_DIR/workspaces/` boundary
     - it may execute `create_workspace_access`
+    - the approved packet may now also carry backend-owned execution binding for that step:
+      - `tool_name=create_workspace_access`
+      - `tool_args={workspace_name, access_hints}`
+    - execution should prefer that frozen packet binding over re-deriving arguments from live session state
     - then resolve the same access path from `approved` to `completed`
     - and clear stale `selected_access_proposal` residue once filesystem / workspace-write grants are actually satisfied
     - the frozen readback consequence should then be explicit at the embodied layer:
       - prefer `digital_body_consequence.kind=workspace_access_resolved`
       - rather than flattening the turn back into a generic `access_request_resolved`
+  - next bounded local mutation surface may build on that same workspace boundary:
+    - `write_workspace_file`
+    - it may only write relative paths under the currently resolved runtime workspace
+    - it must reject absolute paths and `..` escapes
+    - it updates the active artifact from `workspace` to the concrete written `file`
+    - frozen embodied readback should preserve this as a concrete file-surface update rather than collapsing it into generic growth:
+      - prefer `digital_body_consequence.kind=workspace_file_updated`
+      - carry `artifact_mutation_mode=write`
+    - follow-on bounded mutation may continue inside the same contract:
+      - `append_workspace_file`
+      - it may only append to a relative path under the currently resolved runtime workspace
+      - it keeps the same bounded host-write surface and concrete `file` artifact continuity
+      - the same frozen readback kind should remain concrete:
+        - `digital_body_consequence.kind=workspace_file_updated`
+        - `artifact_mutation_mode=append`
+      - `replace_workspace_text`
+      - it may only edit an existing relative file path under the currently resolved runtime workspace
+      - it performs explicit exact-text replacement rather than arbitrary host editing
+      - `replace_workspace_lines`
+      - it may only replace a bounded inclusive line span inside an existing relative file path under the currently resolved runtime workspace
+      - it provides a stronger structured edit surface than raw text replacement while still staying inside the same workspace/file boundary
+      - the same frozen readback family should remain concrete:
+        - `digital_body_consequence.kind=workspace_file_updated`
+        - `artifact_mutation_mode=replace`
+      - approved executable mutation packets may carry backend-owned execution binding fields:
+        - `tool_name`
+        - `tool_args`
+      - human approval for bounded workspace mutation should prefer a truthful preview-first contract:
+        - approval preview may carry a bounded diff / patch preview against the current runtime file surface
+        - approval still gates the external mutation itself, not the preview
+        - apply must continue using the same packet-owned runtime binding after approval rather than regenerating a new edit plan
+        - once generated, that preview should persist through the formal packet/backend envelope too:
+          - `action_packets[*].mutation_preview`
+          - `pending_action_proposal.mutation_preview`
+          - backend autonomy envelope should expose the same preview rather than keeping it trapped inside approval-only tool-call payloads
+      - these fields exist only so runtime can bind one approved packet to one truthful local tool invocation
+      - they must not replace the packet's semantic `intent` / `origin`, and they are not the frontend-facing autonomy contract
+      - when the active artifact is already a concrete file inside a workspace, workspace resolution must still recover the containing runtime workspace root rather than naively treating the file's parent directory as a new workspace boundary
+  - the same workspace boundary now also exposes a bounded read-only perception surface:
+    - `inspect_workspace_path`
+    - it may inspect the root workspace, a subdirectory, or a concrete file under the current runtime workspace
+    - it updates active artifact continuity truthfully without widening beyond that workspace boundary
+    - when that inspection completes against an attached workspace/file surface, frozen writeback may carry:
+      - `digital_body_consequence.kind=workspace_path_inspected`
+      - `procedural_growth=false`
+    - if the active artifact becomes a subdirectory path, later workspace-relative mutation must still resolve against the containing runtime workspace root rather than silently collapsing the write boundary to the subdirectory itself
+  - completed read-side reacquisition and access refresh should also survive as concrete digital-body facts instead of flattening back into generic state:
+    - `tool_name=reacquire_artifact` -> `digital_body_consequence.kind=artifact_reacquired`
+    - `tool_name=refresh_access_state` -> `digital_body_consequence.kind=access_state_refreshed`
+    - both are verification/reattachment facts, not procedural growth
+  - with `artifact reacquisition`, `access refresh`, `workspace creation`, and workspace file mutation now all aligned, the current direct-execution families share one contract:
+    - packet owns the runtime binding
+    - execution prefers packet binding
+    - live-state synthesis is compatibility fallback only
 - This is the digital analogue of real-world constraints rather than a static tool-gating table.
 - `resource_state` must now also track attached work surfaces as first-class runtime facts:
   - `artifact_continuity`

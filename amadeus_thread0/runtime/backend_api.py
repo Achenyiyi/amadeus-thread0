@@ -161,6 +161,39 @@ def _internal_state_trace(values: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _summary_state_values(
+    values: dict[str, Any] | None,
+    *,
+    behavior_action: dict[str, Any],
+    behavior_plan: dict[str, Any],
+    interaction_carryover: dict[str, Any],
+    counterpart_assessment: dict[str, Any],
+    agenda_lifecycle_residue: dict[str, Any],
+    autonomy: dict[str, Any],
+    digital_body: dict[str, Any],
+    digital_body_consequence: dict[str, Any],
+) -> dict[str, Any]:
+    summary_values = dict(values) if isinstance(values, dict) else {}
+    summary_values.update(
+        {
+            "behavior_action": dict(behavior_action or {}),
+            "behavior_plan": dict(behavior_plan or {}),
+            "interaction_carryover": dict(interaction_carryover or {}),
+            "counterpart_assessment": dict(counterpart_assessment or {}),
+            "agenda_lifecycle_residue": dict(agenda_lifecycle_residue or {}),
+            "digital_body_state": dict(digital_body or {}),
+            "digital_body_consequence": dict(digital_body_consequence or {}),
+            "autonomy_intent": dict((autonomy or {}).get("intent") or {}),
+            "pending_action_proposal": dict((autonomy or {}).get("pending_approval") or {}),
+            "action_trace": list((autonomy or {}).get("execution_trace") or []),
+            "autonomy_block_reason": str((autonomy or {}).get("block_reason") or ""),
+        }
+    )
+    if "action_packets" not in summary_values and isinstance((autonomy or {}).get("action_packets"), list):
+        summary_values["action_packets"] = list((autonomy or {}).get("action_packets") or [])
+    return summary_values
+
+
 def _record_field(record: dict[str, Any] | None, key: str, default: Any = "") -> Any:
     item = record if isinstance(record, dict) else {}
     if key in item:
@@ -471,6 +504,17 @@ class BackendAPI:
         digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
         writeback_trace = _writeback_trace_payload(self.backend_session, values)
+        summary_values = _summary_state_values(
+            values,
+            behavior_action=behavior_action,
+            behavior_plan=behavior_plan,
+            interaction_carryover=interaction_carryover,
+            counterpart_assessment=counterpart_assessment,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
+            autonomy=autonomy,
+            digital_body=digital_body,
+            digital_body_consequence=digital_body_consequence,
+        )
         payload = {
             "final_text": str(final_text or "").strip(),
             "emotion_label": _emotion_label_from_state(values),
@@ -483,7 +527,7 @@ class BackendAPI:
             "current_event": current_event,
             "session_context": resolve_readback_session_context(values, thread_id=self.thread_id, current_event=current_event),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
-            "turn_summary": self.backend_session.build_evolution_summary(state_values=values),
+            "turn_summary": self.backend_session.build_evolution_summary(state_values=summary_values),
             "autonomy": autonomy,
             "digital_body": digital_body,
             "digital_body_consequence": digital_body_consequence,
@@ -512,10 +556,21 @@ class BackendAPI:
         digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
         writeback_trace = _writeback_trace_payload(self.backend_session, values)
+        summary_values = _summary_state_values(
+            values,
+            behavior_action=behavior_action,
+            behavior_plan=behavior_plan,
+            interaction_carryover=interaction_carryover,
+            counterpart_assessment=counterpart_assessment,
+            agenda_lifecycle_residue=agenda_lifecycle_residue,
+            autonomy=autonomy,
+            digital_body=digital_body,
+            digital_body_consequence=digital_body_consequence,
+        )
         payload = {
             "final_text": final_text,
             "emotion_label": _emotion_label_from_state(values),
-            "turn_summary": self.backend_session.build_evolution_summary(state_values=values),
+            "turn_summary": self.backend_session.build_evolution_summary(state_values=summary_values),
             "behavior_action": behavior_action,
             "behavior_plan": behavior_plan,
             "interaction_carryover": interaction_carryover,

@@ -65,6 +65,101 @@ def _normalize_source_ref_ids(value: Any) -> list[int]:
     return out[:8]
 
 
+def _normalize_tool_args(value: Any, *, depth: int = 0) -> dict[str, Any]:
+    if not isinstance(value, dict) or depth > 4:
+        return {}
+    normalized: dict[str, Any] = {}
+    for raw_key, raw_value in value.items():
+        key = _clean_text(raw_key, limit=80)
+        if not key:
+            continue
+        if raw_value is None or isinstance(raw_value, (str, int, float, bool)):
+            normalized[key] = raw_value
+            continue
+        if isinstance(raw_value, dict):
+            child = _normalize_tool_args(raw_value, depth=depth + 1)
+            if child:
+                normalized[key] = child
+            continue
+        if isinstance(raw_value, list):
+            items: list[Any] = []
+            for item in raw_value[:32]:
+                if item is None or isinstance(item, (str, int, float, bool)):
+                    items.append(item)
+                elif isinstance(item, dict):
+                    child = _normalize_tool_args(item, depth=depth + 1)
+                    if child:
+                        items.append(child)
+                elif isinstance(item, list) and depth < 4:
+                    nested = []
+                    for nested_item in item[:32]:
+                        if nested_item is None or isinstance(nested_item, (str, int, float, bool)):
+                            nested.append(nested_item)
+                    if nested:
+                        items.append(nested)
+            if items:
+                normalized[key] = items
+            continue
+        normalized[key] = str(raw_value)
+    return normalized
+
+
+def normalize_mutation_preview(value: Any) -> dict[str, Any]:
+    row = _dict_or_empty(value)
+    if not row:
+        return {}
+    normalized = {
+        "tool_name": _clean_text(row.get("tool_name"), limit=80).lower(),
+        "can_apply": _coerce_bool(row.get("can_apply"), False),
+        "mutation_mode": _clean_text(row.get("mutation_mode"), limit=32).lower(),
+        "workspace_name": _clean_text(row.get("workspace_name"), limit=120),
+        "relative_path": _clean_text(row.get("relative_path"), limit=220),
+        "file_path": _clean_text(row.get("file_path"), limit=320),
+        "file_name": _clean_text(row.get("file_name"), limit=160),
+        "target_exists": _coerce_bool(row.get("target_exists"), False),
+        "created_new": _coerce_bool(row.get("created_new"), False),
+        "start_line": max(0, _coerce_int(row.get("start_line"), 0)),
+        "end_line": max(0, _coerce_int(row.get("end_line"), 0)),
+        "match_count": max(0, _coerce_int(row.get("match_count"), 0)),
+        "replace_count": max(0, _coerce_int(row.get("replace_count"), 0)),
+        "replaced_line_count": max(0, _coerce_int(row.get("replaced_line_count"), 0)),
+        "inserted_line_count": max(0, _coerce_int(row.get("inserted_line_count"), 0)),
+        "appended_bytes": max(0, _coerce_int(row.get("appended_bytes"), 0)),
+        "error_code": _clean_text(row.get("error_code"), limit=64).upper(),
+        "error_message": _clean_text(row.get("error_message")),
+        "summary": _clean_text(row.get("summary")),
+        "preview_truncated": _coerce_bool(row.get("preview_truncated"), False),
+        "diff_preview": _clean_text(row.get("diff_preview"), limit=1600),
+    }
+    if any(
+        (
+            normalized["tool_name"],
+            normalized["can_apply"],
+            normalized["mutation_mode"],
+            normalized["workspace_name"],
+            normalized["relative_path"],
+            normalized["file_path"],
+            normalized["file_name"],
+            normalized["target_exists"],
+            normalized["created_new"],
+            normalized["start_line"] > 0,
+            normalized["end_line"] > 0,
+            normalized["match_count"] > 0,
+            normalized["replace_count"] > 0,
+            normalized["replaced_line_count"] > 0,
+            normalized["inserted_line_count"] > 0,
+            normalized["appended_bytes"] > 0,
+            normalized["error_code"],
+            normalized["error_message"],
+            normalized["summary"],
+            normalized["preview_truncated"],
+            normalized["diff_preview"],
+        )
+    ):
+        return normalized
+    return {}
+
+
 def _normalize_access_grants(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -287,6 +382,10 @@ def action_packet_has_signal(packet: Any) -> bool:
         return True
     if normalize_access_acquire_proposal(packet.get("selected_access_proposal")):
         return True
+    if normalize_mutation_preview(packet.get("mutation_preview")):
+        return True
+    if _normalize_tool_args(packet.get("tool_args")):
+        return True
     return bool(normalize_capability_steps(packet.get("capability_steps")))
 
 
@@ -313,6 +412,8 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
     artifact_context = normalize_artifact_context(row.get("artifact_context"))
     access_acquire_proposals = normalize_access_acquire_proposals(row.get("access_acquire_proposals"))
     selected_access_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
+    mutation_preview = normalize_mutation_preview(row.get("mutation_preview"))
+    tool_args = _normalize_tool_args(row.get("tool_args"))
     requires_approval = _coerce_bool(row.get("requires_approval"), risk != "read")
     writeback_ready = _coerce_bool(row.get("writeback_ready"), status == "completed")
     proposal_id = _clean_text(row.get("proposal_id")) or make_proposal_id(
@@ -336,10 +437,12 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
         "writeback_ready": writeback_ready,
         "linked_queue_id": linked_queue_id,
         "tool_name": tool_name,
+        "tool_args": tool_args,
         "block_reason": block_reason,
         "artifact_context": artifact_context,
         "access_acquire_proposals": access_acquire_proposals,
         "selected_access_proposal": selected_access_proposal,
+        "mutation_preview": mutation_preview,
     }
 
 
@@ -481,7 +584,7 @@ def risk_from_tool_name(name: str) -> str:
     tool_name = _clean_text(name).lower()
     if tool_name in MEMORY_WRITE_TOOLS:
         return "memory_write"
-    if tool_name in {"request_toolset_upgrade", "reacquire_artifact", "refresh_access_state"}:
+    if tool_name in {"request_toolset_upgrade", "reacquire_artifact", "inspect_workspace_path", "refresh_access_state"}:
         return "read"
     return "external_mutation"
 
@@ -495,6 +598,7 @@ def build_tool_action_packet(
     status: str = "",
     result_summary: str = "",
     block_reason: str = "",
+    mutation_preview: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     name = _clean_text(tool_name)
     risk = risk_from_tool_name(name)
@@ -525,7 +629,9 @@ def build_tool_action_packet(
             "result_summary": result_summary,
             "writeback_ready": packet_status == "completed",
             "tool_name": name,
+            "tool_args": _dict_or_empty(args),
             "block_reason": block_reason,
+            "mutation_preview": normalize_mutation_preview(mutation_preview),
         }
     )
 
@@ -558,6 +664,7 @@ __all__ = [
     "normalize_action_packets",
     "normalize_artifact_context",
     "normalize_capability_steps",
+    "normalize_mutation_preview",
     "risk_from_tool_name",
     "upsert_action_packet",
 ]

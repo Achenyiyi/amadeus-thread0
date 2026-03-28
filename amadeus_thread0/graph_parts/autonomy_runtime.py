@@ -66,6 +66,16 @@ _ACCESS_HELP_TARGETS = {
     "api_quota",
 }
 
+_ARTIFACT_REACQUISITION_INTENTS = {
+    "artifact:reopen_file",
+    "artifact:restore_file",
+    "artifact:reattach_workspace",
+    "artifact:reattach_artifact",
+    "artifact:reopen_page",
+    "artifact:restore_page",
+    "artifact:rerun_search",
+}
+
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -174,7 +184,9 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
     origin = _normalized_intent_origin(embodied.get("primary_origin")) or "motive_goal"
     mode = _artifact_reacquisition_mode(embodied)
     label = _artifact_surface_label(embodied)
-    target = _clean_text(embodied.get("active_artifact_ref")) or label
+    artifact_ref = _clean_text(embodied.get("active_artifact_ref"))
+    artifact_kind = _clean_text(embodied.get("active_artifact_kind")).lower()
+    target = artifact_ref or label
     reason = _artifact_reacquisition_reason(embodied)
     return normalize_action_packet(
         {
@@ -184,6 +196,13 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
             "status": "proposed",
             "risk": "read",
             "requires_approval": False,
+            "tool_name": "reacquire_artifact",
+            "tool_args": {
+                "mode": mode,
+                "artifact_kind": artifact_kind,
+                "artifact_ref": artifact_ref or target,
+                "artifact_label": label,
+            },
             "capability_steps": [
                 {
                     "kind": "artifact",
@@ -317,6 +336,10 @@ def _access_refresh_packet(hints: dict[str, Any]) -> dict[str, Any]:
             "status": "proposed",
             "risk": "read",
             "requires_approval": False,
+            "tool_name": "refresh_access_state",
+            "tool_args": {
+                "access_hints": row,
+            },
             "capability_steps": [
                 {
                     "kind": "access",
@@ -794,6 +817,12 @@ def _derive_intent_mode(
         return "approval_pending"
     if tool_name and status in {"approved", "executing"}:
         return "autonomy_executing"
+    if status == "completed" and (intent == "access:refresh_state" or tool_name == "refresh_access_state"):
+        return "refresh_access_state"
+    if status == "completed" and (intent in _ARTIFACT_REACQUISITION_INTENTS or tool_name == "reacquire_artifact"):
+        return "reacquire_artifact"
+    if status == "completed" and tool_name == "inspect_workspace_path":
+        return "inspect_workspace_path"
     if tool_name and status == "completed":
         return "tool_completed"
     if intent.startswith("artifact:"):

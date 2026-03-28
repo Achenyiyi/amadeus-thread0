@@ -1331,6 +1331,8 @@ def main():
                         print("  access_acquire_proposals=" + json.dumps(preview.access_acquire_proposals, ensure_ascii=False))
                     if preview.selected_access_proposal:
                         print("  selected_access_proposal=" + json.dumps(preview.selected_access_proposal, ensure_ascii=False))
+                    if preview.mutation_preview:
+                        print("  mutation_preview=" + json.dumps(preview.mutation_preview, ensure_ascii=False))
                     if preview.reason:
                         print("  reason=" + preview.reason)
                     if preview.note:

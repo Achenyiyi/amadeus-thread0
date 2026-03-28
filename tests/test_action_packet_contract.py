@@ -63,6 +63,57 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertEqual(len(artifact_context["preview"]), 1200)
         self.assertTrue(artifact_context["preview_truncated"])
 
+    def test_normalize_action_packet_preserves_tool_args_for_backend_execution(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-file-write-1",
+                "origin": "counterpart_request",
+                "intent": "artifact:write_file",
+                "status": "approved",
+                "risk": "external_mutation",
+                "requires_approval": True,
+                "tool_name": "write_workspace_file",
+                "tool_args": {
+                    "relative_path": "notes/todo.md",
+                    "content": "buy bananas",
+                    "access_hints": {
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_label": "lab",
+                    },
+                },
+            }
+        )
+        self.assertEqual(packet["tool_name"], "write_workspace_file")
+        self.assertEqual(packet["tool_args"]["relative_path"], "notes/todo.md")
+        self.assertEqual(packet["tool_args"]["content"], "buy bananas")
+        self.assertEqual(packet["tool_args"]["access_hints"]["active_artifact_kind"], "workspace")
+
+    def test_normalize_action_packet_preserves_mutation_preview(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-file-lines-1",
+                "origin": "counterpart_request",
+                "intent": "artifact:replace_lines",
+                "status": "awaiting_approval",
+                "risk": "external_mutation",
+                "requires_approval": True,
+                "tool_name": "replace_workspace_lines",
+                "mutation_preview": {
+                    "tool_name": "replace_workspace_lines",
+                    "can_apply": True,
+                    "mutation_mode": "replace",
+                    "relative_path": "notes/todo.md",
+                    "summary": "审批通过后会把第二行替换成 beta v2。",
+                    "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                },
+            }
+        )
+        self.assertEqual(packet["mutation_preview"]["tool_name"], "replace_workspace_lines")
+        self.assertTrue(packet["mutation_preview"]["can_apply"])
+        self.assertEqual(packet["mutation_preview"]["mutation_mode"], "replace")
+        self.assertEqual(packet["mutation_preview"]["relative_path"], "notes/todo.md")
+        self.assertIn("+beta v2", packet["mutation_preview"]["diff_preview"])
+
     def test_normalize_action_packet_preserves_access_acquire_proposals(self):
         packet = normalize_action_packet(
             {
@@ -170,6 +221,11 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertEqual(risk_from_tool_name("set_profile"), "memory_write")
         self.assertEqual(risk_from_tool_name("request_toolset_upgrade"), "read")
         self.assertEqual(risk_from_tool_name("create_workspace_access"), "external_mutation")
+        self.assertEqual(risk_from_tool_name("inspect_workspace_path"), "read")
+        self.assertEqual(risk_from_tool_name("write_workspace_file"), "external_mutation")
+        self.assertEqual(risk_from_tool_name("append_workspace_file"), "external_mutation")
+        self.assertEqual(risk_from_tool_name("replace_workspace_text"), "external_mutation")
+        self.assertEqual(risk_from_tool_name("replace_workspace_lines"), "external_mutation")
         self.assertEqual(risk_from_tool_name("write_diary"), "external_mutation")
 
 

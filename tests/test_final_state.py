@@ -582,6 +582,294 @@ class FinalStateTests(unittest.TestCase):
         self.assertEqual(consequence["active_artifact_label"], "lab-notes")
         self.assertIn("lab-notes", consequence["summary"])
 
+    def test_resolve_digital_body_consequence_derives_workspace_file_updated_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "external_tool_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-file-write-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:write_file",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "write_workspace_file",
+                    "result_summary": "已把内容写入 today.md，这条文件工作面现在接上了。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "artifact_label": "today.md",
+                        "reacquisition_mode": "reopen_file",
+                        "exists": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_file_updated")
+        self.assertEqual(consequence["primary_tool_name"], "write_workspace_file")
+        self.assertEqual(consequence["artifact_mutation_mode"], "write")
+        self.assertEqual(consequence["active_artifact_kind"], "file")
+        self.assertEqual(consequence["active_artifact_label"], "today.md")
+        self.assertTrue(bool(consequence["procedural_growth"]))
+        self.assertIn("today.md", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_workspace_path_inspected_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-inspect-file-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:inspect_path",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "inspect_workspace_path",
+                    "result_summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "artifact_label": "today.md",
+                        "reacquisition_mode": "reopen_file",
+                        "exists": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_path_inspected")
+        self.assertEqual(consequence["primary_tool_name"], "inspect_workspace_path")
+        self.assertEqual(consequence["active_artifact_kind"], "file")
+        self.assertEqual(consequence["active_artifact_label"], "today.md")
+        self.assertFalse(bool(consequence["procedural_growth"]))
+        self.assertIn("today.md", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_artifact_reacquired_from_source_ref_surface(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-source-reattach-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:rerun_search",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "reacquire_artifact",
+                    "result_summary": "已重新接回检索结果 Persistence。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_label": "Persistence",
+                        "reacquisition_mode": "rerun_search",
+                        "source_ref_ids": [17],
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread",
+                        "source_title": "Persistence",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "artifact_reacquired")
+        self.assertEqual(consequence["primary_tool_name"], "reacquire_artifact")
+        self.assertEqual(consequence["active_artifact_kind"], "search_result")
+        self.assertEqual(consequence["artifact_carrier"], "source_ref")
+        self.assertEqual(consequence["artifact_source_ref_ids"], [17])
+        self.assertEqual(consequence["artifact_source_tool_name"], "search_web")
+        self.assertFalse(bool(consequence["procedural_growth"]))
+        self.assertIn("Persistence", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_access_state_refreshed_when_refresh_packet_stabilizes_runtime(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["network", "filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "api_key_state": "present",
+                    "filesystem_state": "writable",
+                    "network_access": "enabled",
+                    "session_continuity": "stable",
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-refresh-access-1",
+                    "origin": "motive_goal",
+                    "intent": "access:refresh_state",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "refresh_access_state",
+                    "result_summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                    "writeback_ready": True,
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "access_state_refreshed")
+        self.assertEqual(consequence["primary_tool_name"], "refresh_access_state")
+        self.assertEqual(consequence["access_mode"], "tool_enabled")
+        self.assertEqual(consequence["session_continuity"], "stable")
+        self.assertFalse(bool(consequence["procedural_growth"]))
+        self.assertIn("稳定", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_replace_mutation_mode_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "external_tool_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-file-replace-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:replace_text",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "replace_workspace_text",
+                    "result_summary": "已在 today.md 里精确替换 1 处文本，这条文件工作面现在接上了。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "artifact_label": "today.md",
+                        "reacquisition_mode": "reopen_file",
+                        "exists": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_file_updated")
+        self.assertEqual(consequence["primary_tool_name"], "replace_workspace_text")
+        self.assertEqual(consequence["artifact_mutation_mode"], "replace")
+        self.assertEqual(consequence["active_artifact_kind"], "file")
+        self.assertTrue(bool(consequence["procedural_growth"]))
+
+    def test_resolve_digital_body_consequence_derives_replace_mode_for_workspace_line_replace(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "external_tool_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-file-lines-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:replace_lines",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "replace_workspace_lines",
+                    "result_summary": "已在 today.md 里替换第 2 行，这条文件工作面现在接上了。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "artifact_label": "today.md",
+                        "reacquisition_mode": "reopen_file",
+                        "exists": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_file_updated")
+        self.assertEqual(consequence["primary_tool_name"], "replace_workspace_lines")
+        self.assertEqual(consequence["artifact_mutation_mode"], "replace")
+        self.assertEqual(consequence["active_artifact_kind"], "file")
+        self.assertTrue(bool(consequence["procedural_growth"]))
+
     def test_resolve_digital_body_consequence_derives_detached_artifact_reacquisition_from_live_body_state(self):
         consequence = resolve_digital_body_consequence(
             digital_body_state={

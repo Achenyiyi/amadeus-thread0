@@ -478,7 +478,15 @@ class BackendApiTests(unittest.TestCase):
                 "embodied_growth",
             )
             self.assertEqual(session.last_extract_args, (state_values, "ignored"))
-            self.assertIs(session.last_summary_state, state_values)
+            self.assertIsNot(session.last_summary_state, state_values)
+            self.assertEqual(
+                (session.last_summary_state.get("digital_body_consequence") or {}).get("kind"),
+                "embodied_growth",
+            )
+            self.assertEqual(
+                (session.last_summary_state.get("counterpart_assessment") or {}).get("scene"),
+                "repair_attempt",
+            )
 
     def test_turn_and_event_responses_preserve_digital_body_cooldown_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -758,6 +766,338 @@ class BackendApiTests(unittest.TestCase):
                 self.assertEqual(
                     payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
                     "workspace_access_resolved",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
+    def test_turn_and_event_responses_surface_workspace_file_updated_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "filesystem"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "filesystem_state": "writable",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "external_tool_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "active_artifact_label": "today.md",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-append-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:append_file",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "append_workspace_file",
+                        "result_summary": "已把内容续写进 today.md，这条文件工作面现在接上了。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "filesystem",
+                            "artifact_kind": "file",
+                            "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                            "artifact_label": "today.md",
+                            "reacquisition_mode": "reopen_file",
+                            "exists": True,
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把文件接着往下写了。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "today.md")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "workspace_file_updated")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "append_workspace_file")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_mutation_mode"], "append")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_label"], "today.md")
+                self.assertTrue(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "workspace_file_updated",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
+    def test_turn_and_event_responses_surface_workspace_line_replace_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "filesystem"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "filesystem_state": "writable",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "external_tool_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "active_artifact_label": "today.md",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-lines-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:replace_lines",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "replace_workspace_lines",
+                        "result_summary": "已在 today.md 里替换第 2 行，这条文件工作面现在接上了。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "filesystem",
+                            "artifact_kind": "file",
+                            "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                            "artifact_label": "today.md",
+                            "reacquisition_mode": "reopen_file",
+                            "exists": True,
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把第二行改掉了。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "today.md")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "workspace_file_updated")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "replace_workspace_lines")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_mutation_mode"], "replace")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_label"], "today.md")
+                self.assertTrue(bool(payload["digital_body_consequence"]["procedural_growth"]))
+
+    def test_turn_and_event_responses_surface_workspace_path_inspected_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "filesystem"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "filesystem_state": "writable",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "active_artifact_label": "today.md",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-inspect-file-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:inspect_path",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "inspect_workspace_path",
+                        "result_summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "filesystem",
+                            "artifact_kind": "file",
+                            "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                            "artifact_label": "today.md",
+                            "reacquisition_mode": "reopen_file",
+                            "exists": True,
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我先把这个文件重新看了一遍。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "today.md")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "workspace_path_inspected")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "inspect_workspace_path")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_label"], "today.md")
+                self.assertFalse(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "workspace_path_inspected",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
+    def test_turn_and_event_responses_surface_artifact_reacquired_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "browser"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["browser", "source_ref"],
+                    "access_state": {
+                        "mode": "native_only",
+                        "network_access": "enabled",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "search_result",
+                        "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "active_artifact_label": "Persistence",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [17],
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread",
+                        "artifact_source_title": "Persistence",
+                        "artifact_source_tool_name": "search_web",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-source-reattach-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:rerun_search",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "reacquire_artifact",
+                        "result_summary": "已重新接回检索结果 Persistence。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "source_ref",
+                            "artifact_kind": "search_result",
+                            "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_label": "Persistence",
+                            "reacquisition_mode": "rerun_search",
+                            "source_ref_ids": [17],
+                            "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "source_query": "langgraph persistence checkpointer thread",
+                            "source_title": "Persistence",
+                            "source_tool_name": "search_web",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把那条检索结果重新接回来看了一遍。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "search_result")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "Persistence")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "artifact_reacquired")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "reacquire_artifact")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_carrier"], "source_ref")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_ref_ids"], [17])
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_tool_name"], "search_web")
+                self.assertFalse(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "artifact_reacquired",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
+    def test_turn_and_event_responses_surface_access_state_refreshed_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "runtime"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["network", "filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "api_key_state": "present",
+                        "filesystem_state": "writable",
+                        "network_access": "enabled",
+                        "session_continuity": "stable",
+                        "session_recovery_mode": "refresh_session",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-refresh-access-1",
+                        "origin": "motive_goal",
+                        "intent": "access:refresh_state",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "refresh_access_state",
+                        "result_summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                        "writeback_ready": True,
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把当前入口状态重新核对过了。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["access_state"]["session_continuity"], "stable")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "access_state_refreshed")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "refresh_access_state")
+                self.assertEqual(payload["digital_body_consequence"]["session_continuity"], "stable")
+                self.assertFalse(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "access_state_refreshed",
                 )
                 self.assertEqual(
                     payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],

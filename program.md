@@ -11,7 +11,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-03-28`
+- Date: `2026-03-29`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
 - Mainline phase: `digital embodiment convergence on top of freeze_gate_ready + companion_autonomy_ready`
 - Immediate research focus:
@@ -5933,3 +5933,587 @@ This file is the live development ledger for `amadeus-thread0`.
   - continue the digital-body mainline from `workspace creation + explicit readback closure` toward the next truthful bounded execution slice:
     - either add the next safe local mutation surface under the same approval-gated rules
     - or expand embodied readback parity for more non-workspace mutation results without reopening fake browser/account execution
+
+## 2026-03-28 Run 151
+
+- Focus:
+  - land the next truthful bounded local mutation surface after workspace creation
+  - make the runtime able to write a concrete file inside the already attached workspace, without exposing arbitrary host writes
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_write_workspace_file_tool.py`
+  - `program.md`
+- Key changes:
+  - added `write_workspace_file` as the second bounded local mutation surface:
+    - writes only under `AMADEUS_DATA_DIR/workspaces/<workspace>/`
+    - rejects absolute paths
+    - rejects `..` workspace escapes
+    - requires an already resolved runtime workspace, or an explicit workspace name that resolves inside the runtime-owned workspace root
+  - writing a file now truthfully updates the active embodied surface from `workspace` to the concrete written `file`:
+    - `access_hints`
+    - `access_state`
+    - `resource_state`
+    - `artifact_context`
+  - registered the tool in the runtime tool bundle and marked it as non-auto-approved write risk
+  - fixed a direct-tool root-cause gap in `tool_nodes`:
+    - completed direct tool execution packets now preserve `artifact_context`
+    - so reconsolidation / readback no longer lose the concrete file/workspace surface on direct tool paths
+  - documented the new bounded local mutation contract in architecture + backend-handoff docs
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\config.py tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_action_packet_contract.py`
+  - `python -m pytest tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_action_packet_contract.py -q`
+  - `python -m pytest tests\test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0\graph_parts\tool_nodes.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the digital body now has a second truthful local execution surface after workspace creation:
+    - create a workspace
+    - then materialize a concrete file inside that workspace
+  - host-write scope is still tightly bounded to the runtime-owned workspace root
+  - direct tool execution and readback now keep concrete artifact surfaces instead of dropping them at packet level
+  - regression subsets stayed green:
+    - `32 passed`
+    - `7 passed`
+    - `738 passed, 35 subtests passed`
+    - `106 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from `workspace creation + bounded file write` toward the next truthful bounded slice:
+    - either add the next safe local mutation surface such as bounded file append/edit inside the same workspace contract
+    - or wire more of these bounded file actions into autonomy-derived packets instead of only direct tool execution
+
+## 2026-03-28 Run 152
+
+- Focus:
+  - continue the same bounded workspace-file contract without widening host-write scope
+  - add the next concrete local mutation surface: append to an existing workspace file
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_write_workspace_file_tool.py`
+  - `program.md`
+- Key changes:
+  - refactored workspace file mutation into one shared internal helper instead of letting `write` and future file actions drift into duplicate code paths
+  - added `append_workspace_file` as the third truthful local execution surface:
+    - still restricted to the resolved runtime workspace
+    - still rejects absolute paths
+    - still rejects parent-directory escape
+    - preserves the same concrete `file` artifact continuity after mutation
+  - registered the new tool and marked it as non-auto-approved write risk
+  - added regression coverage for:
+    - bounded append success inside the runtime workspace
+    - direct tool execution append path preserving concrete file artifact continuity
+    - action-packet risk classification for the new tool
+  - fixed the small regression introduced during refactor:
+    - `@tool` wrappers must keep explicit docstrings after delegating to the shared helper
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\config.py tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_action_packet_contract.py`
+  - `python -m pytest tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_action_packet_contract.py -q`
+  - `python -m py_compile amadeus_thread0\utils\tools.py`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the digital body now has a third truthful local execution surface under the same bounded filesystem body:
+    - create workspace
+    - write concrete file
+    - append concrete file
+  - the runtime still does not gain arbitrary host-write ability; all three stay inside the runtime-owned workspace root
+  - regression subsets stayed green:
+    - `34 passed`
+    - `739 passed, 35 subtests passed`
+    - `106 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from `workspace create/write/append` toward the next truthful bounded slice:
+    - either add bounded file edit/replace primitives inside the same workspace contract
+    - or start wiring these bounded file mutations into autonomy-derived execution packets instead of relying only on direct tool calls
+
+## 2026-03-28 Run 153
+
+- Focus:
+  - close the frozen readback gap after bounded workspace file mutation
+  - make `write_workspace_file` / `append_workspace_file` read back as concrete file-surface updates rather than collapsing into generic `embodied_growth`
+- Files changed:
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_cli_views.py`
+  - `program.md`
+- Key changes:
+  - added a more truthful frozen embodied consequence for completed bounded file mutation:
+    - `digital_body_consequence.kind=workspace_file_updated`
+    - `artifact_mutation_mode=write|append`
+  - preserved compatibility with the existing growth channel:
+    - concrete file mutation now reads back specifically
+    - `procedural_growth` still stays true so long-horizon embodied-growth traces do not regress
+  - fixed a summary-envelope consistency gap in `backend_api`:
+    - `turn_summary` is now built from the same resolved final semantics already computed for payload export
+    - this prevents top-level payload and summary views from disagreeing when consequence was derived live rather than already persisted
+  - extended final-state / CLI normalization so `artifact_mutation_mode` survives final-state resolution, summary compaction, and backend envelope export
+- Validation:
+  - `python -m py_compile amadeus_thread0\evolution_engine\reconsolidation.py amadeus_thread0\runtime\final_state.py amadeus_thread0\runtime\backend_api.py amadeus_thread0\utils\cli_views.py tests\test_final_state.py tests\test_cli_views.py tests\test_backend_api.py`
+  - `python -m pytest tests\test_final_state.py tests\test_cli_views.py tests\test_backend_api.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - completed bounded file writes/appends now survive into final-state / CLI / backend payloads as `workspace_file_updated`
+  - payload summary and top-level backend payload now agree on the same frozen embodied consequence even when it is derived from live state
+  - regression subsets stayed green:
+    - `71 passed`
+    - `739 passed, 35 subtests passed`
+    - `108 passed, 9 subtests passed`
+- Next:
+  - continue the same bounded filesystem body forward from `write/append + readback parity`
+  - add a safe in-file edit primitive under the same workspace-only trust boundary
+
+## 2026-03-28 Run 154
+
+- Focus:
+  - extend the bounded filesystem body beyond whole-file write/append
+  - add a truthful exact-text edit primitive for existing workspace files without widening into arbitrary host editing
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_write_workspace_file_tool.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_final_state.py`
+  - `program.md`
+- Key changes:
+  - added `replace_workspace_text` as the fourth truthful local execution surface:
+    - only works inside the currently resolved runtime workspace
+    - rejects missing workspace attachment
+    - rejects missing target files
+    - performs exact text replacement rather than arbitrary host editing
+  - fixed a lingering source-trace accuracy bug in file-surface hints:
+    - `_workspace_file_hints()` now accepts `source_tool_name`
+    - append/edit paths no longer misreport themselves as `write_workspace_file`
+  - extended frozen file-mutation readback to cover the new edit primitive:
+    - `digital_body_consequence.kind=workspace_file_updated`
+    - `artifact_mutation_mode=replace`
+  - added regression coverage for:
+    - bounded exact-text replacement success
+    - explicit `TEXT_NOT_FOUND` failure
+    - autonomy risk classification for the new tool
+    - final-state mapping from `replace_workspace_text` to `artifact_mutation_mode=replace`
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\config.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_write_workspace_file_tool.py tests\test_action_packet_contract.py tests\test_final_state.py`
+  - `python -m pytest tests\test_write_workspace_file_tool.py tests\test_action_packet_contract.py tests\test_final_state.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the bounded local filesystem body now has four truthful execution surfaces:
+    - create workspace
+    - write file
+    - append file
+    - replace exact text inside an existing file
+  - file-surface hint provenance now stays truthful across write / append / replace instead of flattening later actions back to `write_workspace_file`
+  - regression subsets stayed green:
+    - `59 passed`
+    - `739 passed, 35 subtests passed`
+    - `108 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from bounded local file mutation by closing the still-missing autonomy execution path for approved `write/append/replace` packets
+  - verify that file-surface mutation still resolves the correct runtime workspace when the currently attached artifact is already a concrete nested file
+
+## 2026-03-29 Run 155
+
+- Focus:
+  - close the gap between approved workspace file-mutation packets and real autonomy execution
+  - keep the digital-body file surface truthful when the currently attached artifact is already a concrete file
+- Files changed:
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_write_workspace_file_tool.py`
+  - `program.md`
+- Key changes:
+  - completed the pending autonomy-execution slice for approved workspace mutation packets:
+    - `normalize_action_packet()` now preserves backend-owned `tool_args`
+    - approved `write_workspace_file` / `append_workspace_file` / `replace_workspace_text` packets can now route through `_node_autonomy_execute()`
+    - execution writeback now preserves `tool_name` / `tool_args` on executing, completed, and blocked packet states
+  - fixed two real root causes found during validation:
+    - repaired a broken indentation block in `tool_nodes.py` that prevented the whole autonomy-execution module from importing
+    - corrected `_resolve_runtime_workspace()` so an attached file path inside `AMADEUS_DATA_DIR/workspaces/...` resolves back to the containing workspace root instead of incorrectly treating the file's parent directory as the workspace boundary
+  - tightened autonomy intent semantics after tool completion:
+    - completed `artifact reacquisition` keeps `autonomy_intent.mode=reacquire_artifact`
+    - completed `access:refresh_state` keeps `autonomy_intent.mode=refresh_access_state`
+    - generic tool completions still collapse to `tool_completed`
+  - added regression coverage for:
+    - preserving packet `tool_args`
+    - routing approved workspace mutation packets into autonomy execution
+    - autonomous write / replace execution against a real bounded workspace
+    - resolving workspace root correctly from active file hints
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\utils\tools.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_write_workspace_file_tool.py`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_write_workspace_file_tool.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_write_workspace_file_tool.py tests\test_final_state.py -q`
+  - `python evals\run_companion_autonomy_audit.py`
+- Result:
+  - approved workspace mutation packets now execute truthfully through the autonomy path instead of stalling as approval-only paperwork
+  - file-surface mutation remains bounded to the runtime workspace even when the active artifact is already a nested file rather than the workspace root itself
+  - autonomy audit passed on the updated codebase:
+    - `overall_status=passed`
+    - `readiness=companion_autonomy_ready`
+    - report: `evals/reports/companion-autonomy-audit-20260329-013703-c15efd29.{json,md}`
+  - regression subsets stayed green:
+    - `41 passed`
+    - `742 passed, 35 subtests passed`
+    - `137 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline by auditing whether other approved executable packet families still depend on ad hoc live arguments instead of packet-owned runtime binding
+  - if that stays closed, move to the next truthful bounded body surface rather than reopening reply-surface polish
+    - either add the next safe edit primitive such as structured line/block replacement inside the same workspace boundary
+    - or extend the same packet-owned execution contract to the next truthful bounded action family
+
+## 2026-03-29 Run 156
+
+- Focus:
+  - close the remaining live-argument dependency in the two read-executable autonomy families
+  - make `artifact reacquisition` and `access refresh` use packet-owned runtime binding just like approved workspace file mutation already does
+- Files changed:
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - extended `derive_autonomy_runtime()` packet builders so the two read-executable families now freeze their runtime binding at packet creation time:
+    - `artifact:*` packets now carry `tool_name=reacquire_artifact` plus `{mode, artifact_kind, artifact_ref, artifact_label}`
+    - `access:refresh_state` packets now carry `tool_name=refresh_access_state` plus `{access_hints}`
+  - updated autonomy candidate resolution and execution so `_node_autonomy_execute()` now prefers packet-owned `tool_name/tool_args` for:
+    - `artifact reacquisition`
+    - `access refresh`
+    - while keeping the older live-state assembly as a compatibility fallback for legacy packets
+  - added regression coverage for the actual closure condition:
+    - runtime-generated reacquisition/refresh packets now expose the frozen binding fields
+    - execution still succeeds even when live `interaction_carryover` / `session_context` is absent, as long as the approved packet itself still carries the binding
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\graph_parts\autonomy_runtime.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the three current direct-execution autonomy families are now aligned on one contract shape:
+    - packet owns the execution binding
+    - node execution prefers packet binding
+    - legacy live-state synthesis remains fallback-only
+  - this removes one more source of hidden live-state dependency from the digital-body backend
+  - regression subsets stayed green:
+    - `29 passed`
+    - `744 passed, 35 subtests passed`
+    - `108 passed, 9 subtests passed`
+- Next:
+  - audit whether `workspace_access_mutation` should receive the same explicit packet-owned execution binding, or whether its selected-proposal contract is already sufficient
+  - if that path is structurally closed, move to the next bounded body surface instead of reopening reply-tone or prompt-side polish
+
+## 2026-03-29 Run 157
+
+- Focus:
+  - close the last current direct-execution family that still depended on implicit live-state argument synthesis
+  - make approved workspace creation from `access:request_help` align with the same packet-owned execution contract already used by artifact reacquisition, access refresh, and workspace file mutation
+- Files changed:
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - updated `backend_session.resume_stream()` access approval shaping so when the approved selected path is:
+    - `path_kind=create_new`
+    - `mode=operator_create_workspace`
+    the approved packet now persists explicit execution binding:
+    - `tool_name=create_workspace_access`
+    - `tool_args={workspace_name, access_hints}`
+  - updated `_workspace_access_mutation_candidate()` and `_node_autonomy_execute()` so workspace creation now prefers packet-owned binding first and only falls back to live hint synthesis for legacy packets
+  - added regressions for the actual closure condition:
+    - access approval persists workspace-creation binding on the approved packet
+    - autonomy execution can create the workspace from packet binding even when live `session_context` hints are absent
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\runtime\backend_session.py tests\test_companion_autonomy_runtime.py tests\test_backend_session.py`
+  - `python -m pytest tests\test_companion_autonomy_runtime.py tests\test_backend_session.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the current four direct-execution autonomy families are now structurally aligned:
+    - artifact reacquisition
+    - access refresh
+    - workspace creation
+    - workspace file mutation
+  - direct execution no longer depends on hidden live-state argument synthesis for any of those current families
+  - regression subsets stayed green:
+    - `69 passed`
+    - `745 passed, 35 subtests passed`
+    - `109 passed, 9 subtests passed`
+- Next:
+  - move off execution-contract closure and continue the digital-body mainline on the next truthful bounded body surface
+  - the best next target is a richer but still bounded workspace edit surface, such as structured line/block replace inside the same workspace boundary, rather than reopening prompt-side tone work
+
+## 2026-03-29 Run 158
+
+- Focus:
+  - continue the digital-body mainline past execution-contract closure
+  - add one richer but still bounded workspace edit primitive instead of reopening prompt-side polish
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_write_workspace_file_tool.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_action_packet_contract.py`
+  - `program.md`
+- Key changes:
+  - added `replace_workspace_lines` as a truthful bounded file-edit surface:
+    - still constrained to the currently attached runtime workspace
+    - still rejects absolute-path / `..` escape
+    - edits an existing file only through an inclusive line span
+  - registered the new tool in config + registry so it participates in the same approval/risk surface as the other workspace mutation tools
+  - extended direct autonomy execution so approved packets with:
+    - `tool_name=replace_workspace_lines`
+    - `intent=artifact:replace_lines`
+    can execute through the same packet-owned binding contract as the existing file mutation family
+  - extended frozen consequence/writeback semantics so line-span replacement lands as:
+    - `digital_body_consequence.kind=workspace_file_updated`
+    - `primary_tool_name=replace_workspace_lines`
+    - `artifact_mutation_mode=replace`
+  - fixed a Windows-specific regression in the new tool test fixture:
+    - raw CRLF fixture content now uses `write_bytes(...)`
+    - this avoids `write_text()` doubling line endings under the Windows text layer
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\config.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_backend_api.py tests\test_action_packet_contract.py`
+  - `python -m pytest tests\test_write_workspace_file_tool.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_backend_api.py tests\test_action_packet_contract.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - workspace file mutation is no longer limited to write / append / brittle exact-text replace
+  - the digital body now has one stronger structured edit surface without widening beyond the bounded runtime workspace
+  - regression subsets stayed green:
+    - `94 passed`
+    - `746 passed, 35 subtests passed`
+    - `110 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline on the next truthful bounded body surface rather than reopening reply-tone work
+  - the best next target is a bounded `workspace diff/patch preview -> approve -> apply` surface or another equally truthful structured edit/execution surface inside the same workspace boundary
+
+## 2026-03-29 Run 159
+
+- Focus:
+  - continue the digital-body mainline on the same bounded workspace surface
+  - wire `preview -> approve -> apply` into the existing approval chain instead of inventing a second mutation workflow
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/runtime/tool_approval.py`
+  - `amadeus_thread0/cli.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_tool_approval_policy.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added `preview_workspace_mutation(...)` as the bounded preview helper for current workspace mutation families:
+    - `write_workspace_file`
+    - `append_workspace_file`
+    - `replace_workspace_text`
+    - `replace_workspace_lines`
+  - preview is truthful and runtime-bound:
+    - resolves against the same current runtime workspace boundary as the real mutation tools
+    - rejects missing workspace / bad relative path / missing file / out-of-range line span with explicit preview errors
+    - generates a bounded unified diff preview instead of mutating the host
+  - `_node_tool_gate()` now attaches `mutation_preview` to human-gated workspace mutation tool calls before interrupting for approval
+  - `runtime.tool_approval` now surfaces that preview through the existing approval summary contract instead of hiding it inside raw args
+  - CLI approval logs now print `mutation_preview`, so approval can inspect the concrete bounded diff before apply
+  - `BackendSession.invoke_stream()` approval payload now preserves the same preview field end-to-end because it rides the existing interrupt/approval contract unchanged
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\runtime\tool_approval.py amadeus_thread0\cli.py tests\test_tool_approval_policy.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_tool_approval_policy.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m py_compile amadeus_thread0\runtime\backend_session.py tests\test_backend_session.py`
+  - `python -m pytest tests\test_backend_session.py tests\test_tool_approval_policy.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the current bounded workspace mutation family now has a real `preview -> approve -> apply` path without opening a second orchestration layer
+  - mutation approval is more truthful:
+    - preview is read-only
+    - approval still governs the real mutation
+    - apply still uses the same packet/tool binding after approval
+  - regression subsets stayed green:
+    - `40 passed`
+    - `80 passed`
+    - `747 passed, 35 subtests passed`
+    - `112 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline on the next bounded execution surface instead of reopening prompt-side or tone work
+  - the best next target is either:
+    - bounded `workspace patch apply from preview artifact` continuity, or
+    - another truthful read/act/verify surface inside the same runtime body boundary
+
+## 2026-03-29 Run 160
+
+- Focus:
+  - close the `mutation_preview` packet/backend-contract slice instead of leaving preview only on raw approval tool calls
+- Files changed:
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_autonomy_backend_contract.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - locked `normalize_action_packet(...)` so workspace mutation previews are preserved as first-class packet data
+  - locked `BackendSession.invoke_stream()` so `pending_action_proposal` keeps the same `mutation_preview` carried by the approval request
+  - locked runtime execution so approved workspace mutation packets keep their preview after apply rather than dropping it at `completed`
+  - locked backend autonomy envelope so both:
+    - `autonomy.action_packets[*].mutation_preview`
+    - `autonomy.pending_approval.mutation_preview`
+    stay visible to downstream consumers
+  - documented that `mutation_preview` is inspection-only contract surface, not execution authority
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\runtime\backend_session.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_backend_session.py tests\test_autonomy_backend_contract.py`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_backend_session.py tests\test_autonomy_backend_contract.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - workspace mutation preview is now part of the stable packet/session/backend contract rather than an approval-only side payload
+  - the bounded `preview -> approve -> apply` path is contract-locked end to end
+  - regression subsets stayed green:
+    - `84 passed`
+    - `748 passed, 35 subtests passed`
+    - `112 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline on the next bounded body surface without reopening tone/naturalness work
+  - the best next target is still another truthful `read -> act -> verify -> reconsolidate` surface inside the same runtime boundary
+
+## 2026-03-29 Run 161
+
+- Focus:
+  - add a bounded read-only workspace perception surface so the digital body can inspect the same workspace it already knows how to create / mutate
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `tests/test_inspect_workspace_path_tool.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `inspect_workspace_path` as the new bounded read-only workspace inspection tool:
+    - can inspect the current workspace root
+    - can inspect a subdirectory inside that workspace
+    - can inspect a concrete file inside that workspace
+    - still rejects absolute paths and `..` escapes
+  - inspection now updates active artifact continuity truthfully through the same `artifact_context + access_hints` contract used by other digital-body surfaces
+  - extended direct autonomy execution so approved read packets with:
+    - `tool_name=inspect_workspace_path`
+    - `intent=artifact:inspect_path`
+    can execute through the same packet-owned binding path as other bounded body actions
+  - fixed the root-cause workspace-resolution bug exposed by subdirectory inspection:
+    - if the active artifact is a subdirectory inside a runtime workspace, later workspace-relative writes still resolve against the containing runtime workspace root
+    - the trust boundary no longer silently shrinks from `workspace/` to `workspace/subdir/`
+  - registered `inspect_workspace_path` as a read/auto-approved tool in config + registry, and locked action-packet risk classification accordingly
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\config.py amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\tool_nodes.py tests\test_inspect_workspace_path_tool.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_inspect_workspace_path_tool.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the digital body now has one truthful bounded `perceive -> inspect -> continue` filesystem surface instead of only create/reacquire/mutate
+  - workspace-root continuity is stricter and more honest when the active artifact is a nested subdirectory
+  - regression subsets stayed green:
+    - `48 passed`
+    - `750 passed, 35 subtests passed`
+    - `112 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline on the next bounded environment surface instead of reopening tone work
+  - the best next target is either:
+    - promote read-side artifact inspection into stronger continuity/writeback semantics, or
+    - open the next non-filesystem bounded body surface with the same `read -> act -> verify -> reconsolidate` contract
+
+## 2026-03-29 Run 162
+
+- Focus:
+  - close the read-side writeback gap after `inspect_workspace_path` landed:
+    - inspection must freeze as truthful perception, not procedural growth
+    - completed `reacquire_artifact` / `refresh_access_state` packets must survive into `digital_body_consequence` as concrete facts instead of disappearing into generic state
+- Files changed:
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `tests/test_final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_cli_views.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - root-fixed `procedural_growth` derivation so `inspect_workspace_path` no longer gets mislabeled as growth merely because active/granted tools exist in the environment
+  - inspection is now locked as a read-side perception fact:
+    - `digital_body_consequence.kind=workspace_path_inspected`
+    - `procedural_growth=false`
+  - added two missing completed read-side consequence families:
+    - `tool_name=reacquire_artifact` -> `digital_body_consequence.kind=artifact_reacquired`
+    - `tool_name=refresh_access_state` -> `digital_body_consequence.kind=access_state_refreshed`
+  - these new consequence families now preserve the same compact carrier/session facts already present in runtime state:
+    - source-ref artifact provenance for reacquired external material
+    - stable access/session state for refreshed runtime entry checks
+  - backend/CLI/docs are now aligned that `inspect / reacquire / refresh` are verification or reattachment facts, not procedural growth
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_final_state.py tests\test_companion_autonomy_runtime.py tests\test_backend_api.py tests\test_cli_views.py`
+  - `python -m pytest tests\test_final_state.py tests\test_companion_autonomy_runtime.py tests\test_backend_api.py tests\test_cli_views.py -q`
+  - `python -m py_compile amadeus_thread0\evolution_engine\reconsolidation.py tests\test_final_state.py tests\test_backend_api.py`
+  - `python -m pytest tests\test_final_state.py tests\test_backend_api.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0\agent.py amadeus_thread0\graph.py`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ...`
+  - `python -m py_compile tests\test_cli_views.py tests\test_final_state.py tests\test_backend_api.py amadeus_thread0\evolution_engine\reconsolidation.py`
+  - `python -m pytest tests\test_final_state.py tests\test_backend_api.py tests\test_cli_views.py -q`
+- Result:
+  - the inspection slice is now structurally closed end to end: runtime intent, frozen consequence, backend envelope, and CLI summary all agree that inspection is perception rather than growth
+  - completed read-side reattachment / access-refresh actions no longer vanish at writeback time; they now remain queryable facts in `digital_body_consequence`
+  - regression sets stayed green after the root-cause fix and the new consequence families:
+    - `112 passed`
+    - `52 passed`
+    - `750 passed, 35 subtests passed`
+    - `116 passed, 9 subtests passed`
+    - `83 passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the digital-body mainline on the next truthful non-filesystem body surface only if it can close the same full contract (`runtime -> consequence -> backend -> CLI -> writeback`) rather than stopping at tool existence
+  - the most likely next target is a bounded external-material/body slice that goes beyond reattachment, while still staying inside saved carriers / approved runtime boundaries rather than inventing a fake live browser

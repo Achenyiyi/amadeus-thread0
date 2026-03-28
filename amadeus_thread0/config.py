@@ -197,6 +197,7 @@ TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
     "search_langchain_docs": 0.88,
     "arxiv_search": 0.92,
     "reacquire_artifact": 0.9,
+    "inspect_workspace_path": 0.9,
     "refresh_access_state": 0.86,
 }
 CLAIM_REQUIRED_TOOLS = {"search_langchain_docs", "arxiv_search"}
@@ -245,10 +246,15 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "list_memory_quarantine": {"risk": "read", "auto_approve": True},
     "list_revision_traces": {"risk": "read", "auto_approve": True},
     "reacquire_artifact": {"risk": "read", "auto_approve": True},
+    "inspect_workspace_path": {"risk": "read", "auto_approve": True},
     "refresh_access_state": {"risk": "read", "auto_approve": True},
 
     # write / sensitive
     "create_workspace_access": {"risk": "write", "auto_approve": False},
+    "write_workspace_file": {"risk": "write", "auto_approve": False},
+    "append_workspace_file": {"risk": "write", "auto_approve": False},
+    "replace_workspace_text": {"risk": "write", "auto_approve": False},
+    "replace_workspace_lines": {"risk": "write", "auto_approve": False},
     "write_diary": {"risk": "write", "auto_approve": False},
     "set_profile": {"risk": "write", "auto_approve": False},
     "confirm_profile": {"risk": "write", "auto_approve": False},

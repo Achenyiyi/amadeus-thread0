@@ -986,6 +986,214 @@ class CliViewsTests(unittest.TestCase):
         line = build_evolution_summary_line(summary)
         self.assertIn("bodyfx=workspace_access_resolved", line)
 
+    def test_build_evolution_cli_summary_surfaces_workspace_file_updated_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "external_tool_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            digital_body_consequence={
+                "kind": "workspace_file_updated",
+                "summary": "已把内容写入 today.md，这条文件工作面现在接上了。",
+                "access_mode": "tool_enabled",
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                "active_artifact_label": "today.md",
+                "artifact_continuity": "attached",
+                "artifact_mutation_mode": "write",
+                "primary_status": "completed",
+                "primary_intent": "artifact:write_file",
+                "primary_tool_name": "write_workspace_file",
+                "procedural_growth": True,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "workspace_file_updated")
+        self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "file")
+        self.assertEqual(digital_body_consequence.get("active_artifact_label"), "today.md")
+        self.assertEqual(digital_body_consequence.get("artifact_mutation_mode"), "write")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "workspace_file_updated")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertTrue(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=workspace_file_updated", line)
+
+    def test_build_evolution_cli_summary_surfaces_workspace_path_inspected_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                },
+            },
+            digital_body_consequence={
+                "kind": "workspace_path_inspected",
+                "summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                "access_mode": "tool_enabled",
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                "active_artifact_label": "today.md",
+                "artifact_continuity": "attached",
+                "primary_status": "completed",
+                "primary_intent": "artifact:inspect_path",
+                "primary_tool_name": "inspect_workspace_path",
+                "procedural_growth": False,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "workspace_path_inspected")
+        self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "file")
+        self.assertEqual(digital_body_consequence.get("active_artifact_label"), "today.md")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "workspace_path_inspected")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=workspace_path_inspected", line)
+
+    def test_build_evolution_cli_summary_surfaces_artifact_reacquired_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            digital_body_consequence={
+                "kind": "artifact_reacquired",
+                "summary": "已重新接回检索结果 Persistence。",
+                "access_mode": "native_only",
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "active_artifact_kind": "search_result",
+                "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "active_artifact_label": "Persistence",
+                "artifact_continuity": "attached",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [17],
+                "artifact_source_title": "Persistence",
+                "artifact_source_tool_name": "search_web",
+                "primary_status": "completed",
+                "primary_intent": "artifact:rerun_search",
+                "primary_tool_name": "reacquire_artifact",
+                "procedural_growth": False,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "artifact_reacquired")
+        self.assertEqual(digital_body_consequence.get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body_consequence.get("artifact_source_ref_ids"), [17])
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "artifact_reacquired")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=artifact_reacquired", line)
+
+    def test_build_evolution_cli_summary_surfaces_access_state_refreshed_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["network", "filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "api_key_state": "present",
+                    "filesystem_state": "writable",
+                    "network_access": "enabled",
+                    "session_continuity": "stable",
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                },
+            },
+            digital_body_consequence={
+                "kind": "access_state_refreshed",
+                "summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                "access_mode": "tool_enabled",
+                "active_surface": "tooling",
+                "world_surfaces": ["network", "filesystem"],
+                "session_continuity": "stable",
+                "session_recovery_mode": "refresh_session",
+                "primary_status": "completed",
+                "primary_intent": "access:refresh_state",
+                "primary_tool_name": "refresh_access_state",
+                "procedural_growth": False,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "access_state_refreshed")
+        self.assertEqual(digital_body_consequence.get("session_continuity"), "stable")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "access_state_refreshed")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=access_state_refreshed", line)
+
     def test_build_evolution_cli_summary_prefers_frozen_counterpart_snapshot_over_runtime_copy(self):
         summary = build_evolution_cli_summary(
             counterpart_assessment={"stance": "open", "scene": "care_bid"},
