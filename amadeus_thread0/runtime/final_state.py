@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..graph_parts.action_packets import normalize_action_packet, normalize_action_packets
+from ..graph_parts.action_packets import (
+    normalize_access_acquire_proposal,
+    normalize_access_acquire_proposals,
+    normalize_action_packet,
+    normalize_action_packets,
+)
 from ..graph_parts.autonomy_runtime import (
     autonomy_intent_has_signal,
     normalize_autonomy_intent,
@@ -385,6 +390,8 @@ def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> b
             str(consequence.get("artifact_source_query") or "").strip(),
             str(consequence.get("artifact_source_title") or "").strip(),
             str(consequence.get("artifact_source_tool_name") or "").strip(),
+            isinstance(consequence.get("access_acquire_proposals"), list) and bool(consequence.get("access_acquire_proposals")),
+            isinstance(consequence.get("selected_access_proposal"), dict) and bool(consequence.get("selected_access_proposal")),
         )
     )
 
@@ -449,6 +456,8 @@ def _normalize_digital_body_consequence(consequence: dict[str, Any] | None) -> d
         "procedural_growth": bool(row.get("procedural_growth", False)),
         "environmental_friction": bool(row.get("environmental_friction", False)),
         "requested_help": bool(row.get("requested_help", False)),
+        "access_acquire_proposals": normalize_access_acquire_proposals(row.get("access_acquire_proposals")),
+        "selected_access_proposal": normalize_access_acquire_proposal(row.get("selected_access_proposal")),
     }
     return normalized if digital_body_consequence_has_signal(normalized) else {}
 

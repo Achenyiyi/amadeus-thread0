@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from ..graph_parts.action_packets import normalize_access_acquire_proposal, normalize_access_acquire_proposals
+
 
 SILENT_MEMORY_APPROVAL_TOOLS = frozenset(
     {
@@ -90,6 +92,8 @@ class ToolApprovalPreview:
     args: dict[str, Any]
     meta_preview: dict[str, Any]
     requested_tools: list[str]
+    access_acquire_proposals: list[dict[str, Any]]
+    selected_access_proposal: dict[str, Any]
     reason: str
     note: str
     needs_second_confirmation: bool
@@ -152,6 +156,8 @@ def build_tool_approval_preview(
     name = str(tool_call.get("name") or "").strip()
     args = _normalize_args(tool_call.get("args"))
     requested_tools: list[str] = []
+    access_acquire_proposals: list[dict[str, Any]] = []
+    selected_access_proposal: dict[str, Any] = {}
     reason = ""
     note = ""
     if name == "request_toolset_upgrade":
@@ -162,11 +168,21 @@ def build_tool_approval_preview(
         ttl_s = _coerce_positive_int(toolset_upgrade_ttl_s, default=0)
         if ttl_s > 0:
             note = f"approve 将临时解锁上述工具，预计有效期约 {ttl_s}s"
+    elif name == "access_request_help":
+        access_acquire_proposals = normalize_access_acquire_proposals(args.get("access_acquire_proposals"))
+        selected_access_proposal = normalize_access_acquire_proposal(args.get("selected_access_proposal"))
+        reason = str(args.get("expected_effect") or args.get("block_reason") or "").strip()
+        if selected_access_proposal:
+            note = "approve 只会确认当前 access 获取路径，不代表外部入口已经补齐。"
+        elif access_acquire_proposals:
+            note = "approve 后会先记录候选 access 获取路径，仍需后续真实补齐入口。"
     return ToolApprovalPreview(
         name=name,
         args=args,
         meta_preview=_build_meta_preview(args),
         requested_tools=requested_tools,
+        access_acquire_proposals=access_acquire_proposals,
+        selected_access_proposal=selected_access_proposal,
         reason=reason,
         note=note,
         needs_second_confirmation=needs_second_confirmation(source, name, args),

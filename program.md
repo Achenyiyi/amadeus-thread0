@@ -188,10 +188,12 @@ This file is the live development ledger for `amadeus-thread0`.
   - continue auditing any remaining persistence paths that still derive long-term memory from non-frozen runtime inputs
   - keep expanding own-rhythm / proactive continuity behavior without falling back to prompt-heavy repair
 - Immediate next step:
-  - continue the `digital body / artifact continuity` line from raw structured writeback into carried continuity:
-    - decide which compact parts of completed `artifact_context` should later feed `interaction_carryover` / `digital_body_consequence` without duplicating raw previews everywhere
+  - continue the `digital body / access / resource` mainline after closing `access:request_help` resolution:
+    - keep the current truthful request/resume contract stable
+    - decide the next bounded closure slice in the access lane, most likely:
+      - the first approval-gated `access provision / acquire` proposal path
+      - or broader carried continuity/writeback semantics for resolved access conditions
     - keep fixes at contract/state/writeback handoff, not prompt/rewrite polish
-    - preserve bounded carrier semantics (`filesystem` + saved `source_refs`) rather than inventing a fake live browser runtime
 
 ## Validation Baseline
 
@@ -5190,3 +5192,744 @@ This file is the live development ledger for `amadeus-thread0`.
     - `counterpart_assessment_preview`
     - `proactive_continuity_preview`
     - other `event_residue` / revision-export paths that may still flatten compact artifact provenance away even when the raw packet and carried continuity already have it
+
+## 2026-03-28 Run 137
+
+- Focus:
+  - close the remaining `cli_views`-side artifact provenance flattening that was still dropping compact source identity from summary/export surfaces after Run 136
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `program.md`
+- Key changes:
+  - extended `cli_views` summary shaping so compact artifact provenance now survives through the summary/export layer instead of stopping at raw runtime/final-state payloads:
+    - `digital_body.resources`
+    - `digital_body_consequence`
+    - carried `embodied_context`
+    - `event_residue.digital_body_consequence`
+    - `counterpart_assessment_preview[*].embodied_context`
+    - `proactive_continuity_preview[*].embodied_context`
+    - `agenda_lifecycle.embodied_context`
+  - added `_clean_int_list()` so `artifact_source_ref_ids` stays an integer list in summary surfaces instead of being stringified by the generic list cleaner
+  - updated the frontend/backend TypeScript contract mirrors so resource/consequence summaries explicitly type:
+    - `artifact_carrier`
+    - `artifact_source_ref_ids`
+    - `artifact_source_url`
+    - `artifact_source_query`
+    - `artifact_source_title`
+    - `artifact_source_tool_name`
+  - locked the widened contract with focused regression coverage across:
+    - direct `cli_views` summary helpers
+    - `BackendSession` worldline/persona/evolution summary readback
+    - `BackendAPI` turn/event payload artifact fields
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/cli_views.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_tool_approval_policy.py -q`
+  - `npm --prefix frontend run build`
+- Result:
+  - the compact artifact identity introduced in Run 136 no longer disappears when runtime data is read back through `cli_views`-based summaries
+  - preview/export consumers can now see not only that an embodied continuity trace exists, but also which saved source/carrier it came from, without widening to full artifact previews
+  - backend summary/readback and frontend contract typing are back in sync for these fields
+- Next:
+  - audit the remaining non-CLI export path(s), especially `revision_trace_export` or any other exporter that may still summarize `embodied_context` without the compact artifact provenance fields now preserved in `cli_views`
+
+## 2026-03-28 Run 138
+
+- Focus:
+  - finish the remaining non-CLI export audit by checking `revision_trace_export` and backend `writeback_trace` transport for compact artifact provenance loss
+- Files changed:
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - audited `amadeus_thread0/utils/revision_trace_export.py` and confirmed the export path already reuses `normalize_embodied_context()` rather than maintaining a second flattening path
+  - added direct regression coverage so revision-trace export now explicitly preserves compact artifact provenance through:
+    - `normalize_revision_trace_export()`
+    - `list_revision_traces` tool output
+    - `get_worldline_snapshot` tool output
+  - extended backend transport regression so `backend_api` `writeback_trace.revision_traces[*].embodied_context` also keeps:
+    - `artifact_carrier`
+    - `artifact_source_ref_ids`
+    - `artifact_source_url`
+    - `artifact_source_query`
+    - `artifact_source_title`
+    - `artifact_source_tool_name`
+  - verified that this slice required no production-code fix: the non-CLI export chain was already correct after Run 136; the missing piece was formal regression coverage
+- Validation:
+  - `python -m py_compile tests/test_revision_trace_export.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_revision_trace_export.py tests/test_backend_api.py -q`
+  - `python -m pytest tests/test_frontend_contract_sync.py -q`
+  - `npm --prefix frontend run build`
+- Result:
+  - the compact artifact provenance contract is now locked across both major readout families:
+    - `cli_views`-based summary/export surfaces
+    - `revision_trace_export` / `writeback_trace` non-CLI export surfaces
+  - the audit did not reveal another live flattening bug in production code
+  - note: pytest emitted a non-blocking LangSmith multipart ingest `429` warning due to account usage limits; local test results were still green
+- Next:
+  - leave the export-audit lane and return to the higher-leverage backend mainline, prioritizing the next concrete `digital body / access / resource` convergence issue rather than continuing contract widening by inertia
+
+## 2026-03-28 Run 139
+
+- Focus:
+  - return from export-audit cleanup to the main `digital body / access / resource` track by tightening the first direct-execution slice: `artifact reacquisition`
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_reacquire_artifact_tool.py`
+  - `program.md`
+- Key changes:
+  - corrected the `reacquire_artifact` tool docstring so it matches the actual bounded-runtime policy:
+    - local file/workspace reacquisition is supported
+    - browser/search-like reacquisition is allowed only through previously saved `source_refs`
+    - fake live browser state remains out of scope
+  - added a dedicated direct-tool regression suite for `reacquire_artifact` covering:
+    - local file reattachment
+    - workspace directory reattachment
+    - `source_ref`-backed search/page surface reuse
+    - explicit failure when browser/page reacquisition is attempted without a saved `source_ref` carrier
+  - kept the change minimal and mainline-correct:
+    - no persona/prompt behavior changes
+    - no graph contract changes
+    - no frontend work
+  - revalidated the existing autonomy integration path so the direct tool capability remains aligned with `autonomy_intent=reacquire_artifact` execution semantics
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/tools.py tests/test_reacquire_artifact_tool.py`
+  - `python -m pytest tests/test_reacquire_artifact_tool.py tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_revision_trace_export.py tests/test_reacquire_artifact_tool.py -q`
+- Result:
+  - `artifact reacquisition` is now a properly locked direct capability at the tool boundary, not just an autonomy/runtime assumption
+  - the bounded-runtime policy is now explicit in the tool surface itself and covered for both filesystem and saved-`source_ref` cases
+  - memory/session/CLI/backend subsets stayed green after the change:
+    - `16 passed`
+    - `95 passed, 9 subtests passed`
+    - `7 passed`
+  - note: some pytest runs emitted non-blocking LangSmith multipart ingest `429` warnings due to account usage limits; local test results were still green
+- Next:
+  - continue the same mainline by checking whether the next `digital body` direct-execution slice needs root-cause work in runtime state/writeback, rather than continuing with test-only or contract-only work
+
+## 2026-03-28 Run 140
+
+- Focus:
+  - close a real `digital body` state-loop gap in the first direct-execution slice: successful `reacquire_artifact` execution was not writing compact artifact identity back into `session_context.digital_body_hints`
+- Files changed:
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - root-caused the next mainline issue after the export/tool audits:
+    - `reacquire_artifact` execution already produced correct `artifact_context`
+    - `digital_body_state` could often recover identity from the completed packet in the same turn
+    - but `session_context.digital_body_hints` only stored continuity shell fields (`artifact_continuity`, `active_artifact_*`, `artifact_reacquisition_mode`)
+    - so cross-turn fallback via hints could still lose or stale-carry compact source identity
+  - fixed `_node_autonomy_execute()` so successful artifact reacquisition now also writes compact artifact identity into `session_context.digital_body_hints`:
+    - `artifact_carrier`
+    - `artifact_source_ref_ids`
+    - `artifact_source_url`
+    - `artifact_source_query`
+    - `artifact_source_title`
+    - `artifact_source_tool_name`
+  - this keeps the runtime loop honest:
+    - packet result
+    - session hints
+    - derived `digital_body_state.resource_state`
+    now converge on the same artifact identity surface instead of relying on same-turn packet presence only
+  - extended autonomy runtime regressions to lock both variants:
+    - local filesystem reacquisition writes `artifact_carrier=filesystem` and clears `artifact_source_ref_ids`
+    - saved-search/source-ref reacquisition writes `artifact_carrier=source_ref` with the saved source identity
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/tool_nodes.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - the first direct-execution `digital body` slice is now more structurally closed:
+    - artifact identity no longer depends on same-turn packet presence alone
+    - cross-turn hint-based recovery has the same compact provenance contract as the packet/runtime/export surfaces
+  - large regression subsets stayed green:
+    - `12 passed`
+    - `727 passed, 35 subtests passed`
+    - `95 passed, 9 subtests passed`
+- Next:
+  - move to the next concrete `digital body / access / resource` convergence target where runtime state still describes conditions but does not yet close the same way into direct behavior, likely in the session/access recovery lane rather than continuing artifact-only work
+
+## 2026-03-28 Run 141
+
+- Focus:
+  - close the next `digital body / access / resource` gap by turning `session/access recovery` from pure description into one bounded direct capability
+  - keep the slice truthful:
+    - no fake browser mutation
+    - no pretend relogin
+    - only read-safe runtime refresh of access/session state
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_refresh_access_state_tool.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/autonomy_runtime.py amadeus_thread0/graph_parts/prepare_turn_runtime.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/utils/tools.py amadeus_thread0/utils/tool_registry.py tests/test_companion_autonomy_runtime.py tests/test_refresh_access_state_tool.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py tests/test_refresh_access_state_tool.py tests/test_reacquire_artifact_tool.py -q`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_tool_approval_policy.py tests/test_autonomy_writeback.py tests/test_backend_session.py tests/test_backend_api.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_action_packet_contract.py tests/test_autonomy_backend_contract.py tests/test_companion_autonomy_runtime.py tests/test_refresh_access_state_tool.py -q`
+  - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - added a new bounded read-only tool: `refresh_access_state`
+  - the runtime can now auto-propose and auto-execute `access:refresh_state` packets when the environment exposes inspectable session/access friction such as:
+    - expiring/missing session lifecycle
+    - API key presence drift
+    - quota/cooldown visibility
+    - filesystem writability
+    - sandbox/network restriction state
+  - `derive_autonomy_runtime()` now accepts `session_context` and may emit an `access:refresh_state` packet from merged digital-body hints instead of only describing the friction semantically
+  - `autonomy_execute` now supports two bounded direct-read slices:
+    - `artifact:*` reacquisition
+    - `access:refresh_state`
+  - successful access refresh writes the normalized result back into `session_context.digital_body_hints`, so the next `digital_body_state` read is based on the refreshed truth surface rather than stale carried hints
+  - the direct capability remains honest:
+    - it refreshes runtime-visible truth
+    - it does not pretend to complete external relogin/browser/cookie mutation that this runtime cannot actually perform
+  - tool registration / risk policy were updated so `refresh_access_state` is treated as a low-risk read capability across the normal tool path too
+  - regressions stayed green:
+    - `20 passed`
+    - `66 passed`
+    - `730 passed, 35 subtests passed`
+    - `95 passed, 9 subtests passed`
+    - `23 passed`
+    - `CompiledStateGraph`
+- Next:
+  - continue the digital-body mainline by deciding whether the next closure slice should be:
+    - richer writeback/readback semantics for completed `access:refresh_state` packets
+    - or the first truthful `request/create/access-help` loop for uninspectable external conditions such as account/cookie/browser entry
+
+## 2026-03-28 Run 142
+
+- Focus:
+  - implement the first truthful `access request help` loop for uninspectable external conditions instead of leaving them as plain friction text
+  - keep the slice bounded:
+    - no fake relogin
+    - no fake cookie restore
+    - no background browser mutation
+    - only structured pending request semantics plus honest writeback
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `amadeus_thread0/graph_parts/nodes.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_autonomy_backend_contract.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/autonomy_runtime.py amadeus_thread0/graph_parts/prepare_turn_runtime.py amadeus_thread0/graph_parts/nodes.py tests/test_companion_autonomy_runtime.py tests/test_digital_body_runtime.py tests/test_autonomy_backend_contract.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py tests/test_digital_body_runtime.py tests/test_autonomy_backend_contract.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_tool_approval_policy.py tests/test_digital_body_runtime.py tests/test_autonomy_backend_contract.py -q`
+- Result:
+  - `derive_autonomy_runtime()` can now emit `access:request_help` when current-turn body hints expose external conditions that this runtime cannot truthfully self-repair, currently bounded to:
+    - `browser_session`
+    - `account_login`
+    - `cookies`
+    - `api_key`
+    - `api_quota`
+  - the new packet is intentionally non-executing:
+    - `status=awaiting_approval`
+    - `risk=external_mutation`
+    - `requires_approval=true`
+    - it does not pretend the login/cookie/key mutation already happened
+  - prepare-turn now writes this pending request back into `session_context.digital_body_hints`, including:
+    - `requested_help`
+    - merged `missing_access`
+    - merged `requestable_access`
+    - `primary_proposal_id`
+    - `primary_status`
+    - `primary_origin`
+    - `primary_intent`
+  - `_node_prepare_turn()` now preserves that updated `session_context`, so the live state, `digital_body_state`, reconsolidation snapshot, and backend autonomy envelope all read the same pending request semantics in the same turn
+  - the route stays honest:
+    - `access:request_help` does not go through `autonomy_execute`
+    - it remains on the normal model path while exposing `pending_action_proposal`
+    - later consumers see it as an outstanding request, not a completed fact
+  - regressions stayed green:
+    - `27 passed`
+    - `732 passed, 35 subtests passed`
+    - `66 passed`
+- Next:
+  - continue the digital-body mainline by deciding whether the next slice should be:
+    - explicit user-side resolution/resume mechanics for `access:request_help`
+    - or the first bounded “new access creation” proposal path that still stays truthful and approval-gated
+
+## 2026-03-28 Run 143
+
+- Focus:
+  - close the pending `access:request_help` slice by wiring explicit user-side resolution/resume mechanics into the existing session approval loop
+  - keep the implementation on the current LangGraph/session contract:
+    - no second orchestration layer
+    - no fake relogin or cookie restore
+    - no pretending external state changed when it did not
+- Files changed:
+  - `program.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_companion_autonomy_runtime.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/runtime/backend_session.py amadeus_thread0/graph_parts/autonomy_runtime.py tests/test_backend_session.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_backend_session.py tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_backend_api.py tests/test_autonomy_backend_contract.py tests/test_tool_approval_policy.py tests/test_cli_views.py -q`
+  - `python -m pytest tests/test_world_model_residue.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py -q`
+  - `python -m pytest tests/test_subjective_review_pack.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_cli_views.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_world_model_residue.py tests/test_autonomy_backend_contract.py -q`
+- Result:
+  - `BackendSession.invoke_stream()` now synthesizes a formal approval-like request when the live state contains a pending `access:request_help` packet but the graph itself did not emit a LangGraph interrupt:
+    - `approval_request.kind=access_request`
+    - `approval_request.source=access`
+    - `tool_calls[0].name=access_request_help`
+    - payloads stay bound to the packet `proposal_id`
+  - `BackendSession.resume_stream()` now resolves this synthetic access request directly against the latest state when no graph interrupt is pending:
+    - `edit` may merge `access_updates` into `session_context.digital_body_hints`
+    - the packet is marked `completed` or `rejected`
+    - `action_trace`, `autonomy_block_reason`, `digital_body_state`, and `reconsolidation_snapshot` are recomputed from the final resolved packet semantics before writeback
+  - completed `access:request_help` packets now read back honestly through autonomy semantics:
+    - `refresh_autonomy_intent_from_packets()` no longer preserves stale pending reasons once the same proposal has moved into a resolved final state
+    - completed access-help packets now surface as `autonomy_intent.mode=access_request_resolved`
+    - resolved packets prefer `result_summary` over the old `expected_effect` wording
+  - backend handoff docs now note that session-layer approval consumers must handle synthetic `access_request` flows in addition to ordinary graph `tool_approval` interrupts
+  - regressions stayed green:
+    - `52 passed`
+    - `51 passed`
+    - `145 passed`
+    - `557 passed, 35 subtests passed`
+    - `13 passed`
+    - `14 passed, 9 subtests passed`
+    - `248 passed`
+- Next:
+  - continue the digital-body/access mainline from the now-closed request/resume loop toward the next truthful closure slice, likely one of:
+    - the first approval-gated `access provision / acquire` proposal path
+    - stronger continuity/writeback semantics for resolved access conditions across later turns
+
+## 2026-03-28 Run 144
+
+- Focus:
+  - close `access acquisition proposal` readout/continuity gaps so accepted-but-not-yet-fixed access paths survive beyond the live packet layer
+  - keep the slice truthful:
+    - `approved` still means planned path accepted, not access already fixed
+    - proposal semantics must surface consistently in approval preview, backend contract, digital body readout, and carried embodied consequence
+- Files changed:
+  - `amadeus_thread0/runtime/tool_approval.py`
+  - `amadeus_thread0/cli.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `tests/test_tool_approval_policy.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_autonomy_backend_contract.py`
+- Key changes:
+  - completed the pending docs/contract sync for structured access acquisition proposals:
+    - backend handoff now documents `access_acquire_proposals` / `selected_access_proposal`
+    - architecture decisions now lock the `awaiting_approval -> approved -> completed` semantics explicitly
+    - frontend contract types now include access-acquisition proposal fields on both `ActionPacket` and `digital_body.access_state`
+  - upgraded approval/readout surfaces so `access_request_help` is no longer opaque outside runtime internals:
+    - `ToolApprovalPreview` now exposes `access_acquire_proposals` and `selected_access_proposal`
+    - CLI approval logs print those fields directly
+    - CLI evolution summaries now preserve them under `digital_body.access` and `digital_body_consequence`
+  - closed the next real continuity gap for digital embodiment:
+    - `normalize_embodied_context()` now preserves access-acquisition proposals instead of dropping them
+    - `derive_digital_body_state()` now recovers proposals from three sources, in order of reality:
+      - live session hints
+      - current action packets
+      - carried embodied context
+    - this means an accepted access path can survive into later turns even when only the embodied carryover remains
+  - strengthened truthful writeback for planned-but-not-yet-fixed access:
+    - `derive_digital_body_consequence()` now emits `access_acquire_proposals` / `selected_access_proposal`
+    - `final_state` normalization preserves those fields through backend envelopes and carried embodied context
+    - `memory_evolution` revision-trace metadata now keeps the selected acquisition path, so writeback no longer flattens that state into a generic pending-access shell
+  - added targeted regression coverage for:
+    - approval preview access proposal surfaces
+    - CLI summary access proposal surfaces
+    - carried embodied-context recovery of selected proposals
+    - backend turn/event envelopes preserving access proposal fields in both `digital_body` and `digital_body_consequence`
+- Validation:
+  - `python -m py_compile amadeus_thread0\runtime\tool_approval.py amadeus_thread0\cli.py amadeus_thread0\utils\cli_views.py amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\evolution_engine\reconsolidation.py amadeus_thread0\runtime\final_state.py amadeus_thread0\graph_parts\memory_evolution.py tests\test_tool_approval_policy.py tests\test_cli_views.py tests\test_digital_body_runtime.py tests\test_backend_api.py tests\test_autonomy_backend_contract.py`
+  - `python -m pytest tests\test_tool_approval_policy.py tests\test_cli_views.py tests\test_digital_body_runtime.py tests\test_backend_api.py tests\test_autonomy_backend_contract.py tests\test_frontend_contract_sync.py tests\test_autonomy_writeback.py tests\test_world_model_residue.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+  - `npm --prefix frontend run build`
+- Result:
+  - access-acquisition planning is now a first-class backend contract, not just an internal session hint
+  - `approved but not fixed yet` survives through:
+    - action packet
+    - digital body access state
+    - digital body consequence
+    - carried embodied context
+    - revision-trace metadata
+  - targeted and AGENTS-required regressions stayed green:
+    - `212 passed`
+    - `733 passed, 35 subtests passed`
+    - `101 passed, 9 subtests passed`
+    - frontend build passed
+- Next:
+  - continue the digital-body mainline by moving from `accepted acquisition path continuity` toward the next truthful access slice:
+    - either explicit `operator-provided access arrival` consolidation across later turns
+    - or the first bounded `create/request new access` path that still remains approval-gated and non-fake
+
+## 2026-03-28 Run 145
+
+- Focus:
+  - close the next truthful access slice after `approved-but-not-fixed-yet`: later-turn `access arrival consolidation`
+  - ensure the backend no longer lets accepted access paths hang forever in `planned` once runtime-visible conditions actually become true
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_final_state.py`
+  - `program.md`
+- Key changes:
+  - introduced shared access-resolution helpers in `digital_body_runtime`:
+    - `access_grant_satisfied()`
+    - `selected_access_proposal_resolved()`
+    - `prune_resolved_access_hints()`
+  - this removes the old one-off pruning logic from `backend_session` and makes later-turn access resolution use the same source of truth as digital-body derivation
+  - fixed the first stale-state root cause in the synthetic approval resume path:
+    - when `resume_stream(edit access_updates=...)` completes an `access:request_help` packet
+    - and the selected proposal is genuinely satisfied by the resulting hints
+    - the live `session_context.digital_body_hints` now clears stale `selected_access_proposal` / proposal-list residue instead of leaving the system permanently stuck in a fake `planned` shell
+  - added real later-turn arrival consolidation in `autonomy_runtime`:
+    - if a previously accepted `selected_access_proposal` is now actually satisfied by runtime-visible state in a later turn
+    - the backend synthesizes one bounded completed packet for that same access request
+    - emits `autonomy_intent.mode=access_request_resolved`
+    - writes one truthful completion trace instead of silently carrying stale approval state forever
+  - tightened digital-body readback semantics so planned-state residue does not leak after completion:
+    - carried completed embodied context no longer re-seeds `selected_access_proposal` back into live `digital_body.access_state`
+    - `access_acquire_planned` is no longer re-added when the current packet already represents completed arrival
+  - extended `derive_digital_body_consequence()` with a new explicit resolved outcome:
+    - `kind=access_request_resolved`
+    - this lets reconsolidation / writeback preserve “the access really arrived” as a first-class embodied consequence instead of collapsing to nothing once friction disappears
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\runtime\backend_session.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_companion_autonomy_runtime.py tests\test_backend_session.py tests\test_digital_body_runtime.py tests\test_final_state.py`
+  - `python -m pytest tests\test_companion_autonomy_runtime.py tests\test_backend_session.py tests\test_digital_body_runtime.py tests\test_final_state.py -q`
+  - `python -m pytest tests\test_backend_api.py tests\test_autonomy_backend_contract.py tests\test_autonomy_writeback.py tests\test_world_model_residue.py tests\test_tool_approval_policy.py tests\test_cli_views.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_cli_views.py -q`
+  - `npm --prefix frontend run build`
+- Result:
+  - later-turn access arrival now has a truthful closure path:
+    - `approved` no longer hangs forever if the required access later appears
+    - the system can emit one real `completed` semantic closure
+    - then clear stale live planning residue
+  - the resolved state is now visible across:
+    - autonomy intent
+    - digital body state
+    - digital body consequence
+    - reconsolidation / final state
+  - regression subsets stayed green:
+    - `85 passed`
+    - `199 passed`
+    - `589 passed, 35 subtests passed`
+    - `101 passed, 9 subtests passed`
+    - frontend build passed
+- Next:
+  - continue the digital-body/access mainline toward the next bounded truth slice:
+    - either multi-grant / partial-arrival handling for more complex access plans
+    - or the first explicit `create/request new access` path that remains approval-gated and never fakes world mutation
+
+## 2026-03-28 Run 146
+
+- Focus:
+  - close the next truthful digital-body slice after later-turn arrival: `multi-grant / partial-arrival handling`
+  - ensure partial access updates no longer get flattened into fake `completed`
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_digital_body_runtime.py`
+  - `program.md`
+- Key changes:
+  - fixed the real resume-path truth bug in `backend_session`:
+    - `resume_stream(edit access_updates=...)` no longer marks an `access:request_help` packet as `completed` just because *some* access fields changed
+    - completion now requires the selected proposal's grant set to be genuinely satisfied
+  - added shared multi-grant progress helpers in `digital_body_runtime`:
+    - `access_proposal_identity()`
+    - `access_proposal_progress()`
+    - `enrich_access_acquire_proposal()`
+  - access-acquisition proposals can now carry bounded progress metadata without inventing new packet statuses:
+    - `resolved_grants`
+    - `pending_grants`
+    - `completion_ratio`
+  - `digital_body.access_state` now surfaces those progress fields directly on selected/visible access proposals, so partial arrival is visible as body-state truth instead of a binary hidden internal
+  - `autonomy_runtime` now synthesizes a truthful later-turn `approved` packet when:
+    - an accepted multi-grant path has only partially arrived
+    - the missing grants are still real
+    - the packet remains `approved`, `writeback_ready=false`, and `autonomy_intent.mode=access_acquire_planned`
+  - full later-turn arrival still upgrades to the existing `completed` / `access_request_resolved` path unchanged
+  - synced the handoff/contract docs and frontend type surfaces so proposal-progress metadata is now part of the documented backend envelope
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\runtime\backend_session.py tests\test_action_packet_contract.py tests\test_backend_session.py tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_backend_session.py tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_autonomy_backend_contract.py tests\test_digital_body_runtime.py tests\test_final_state.py -q`
+- Result:
+  - multi-grant access proposals now preserve truthful partial progress instead of collapsing into `approved vs completed` with no middle truth
+  - immediate operator edits and later-turn runtime rechecks now agree on the same semantics:
+    - partial arrival stays `approved`
+    - full grant satisfaction becomes `completed`
+  - the new progress fields are visible across:
+    - action packets
+    - digital body access state
+    - autonomy intent reasoning
+    - backend/frontend contract types
+  - regression subsets stayed green:
+    - `75 passed`
+    - `735 passed, 35 subtests passed`
+    - `102 passed, 9 subtests passed`
+    - `41 passed`
+- Next:
+  - continue the digital-body mainline by moving from truthful multi-grant progress toward the next bounded capability slice:
+    - either explicit `create/request new access` under approval-gated rules
+    - or the first non-fake bounded resource-creation path inside the digital body
+
+## 2026-03-28 Run 147
+
+- Focus:
+  - land the first bounded `create/request new access` slice without opening fake execution
+  - make `access:request_help` capable of proposing truthful `create_new` access paths alongside ordinary acquisition paths
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_tool_approval_policy.py`
+  - `program.md`
+- Key changes:
+  - extended `AccessAcquireProposal` semantics with `path_kind`:
+    - `acquire_existing`
+    - `create_new`
+  - `derive_access_acquire_proposals()` can now emit bounded `create_new` candidates where the runtime has a truthful creation-shaped next step but cannot claim execution:
+    - `operator_register_account`
+    - `operator_create_api_key`
+    - `operator_create_workspace`
+  - these candidates remain inside the same `access:request_help` proposal/approval path:
+    - no fake browser/login/filesystem mutation was added
+    - no new execution status was invented
+    - they are still just explicit operator-facing access paths
+  - action-packet normalization, tool-approval preview, and frontend contract typing now preserve `path_kind` so `create_new` is visible end-to-end rather than hidden inside mode strings
+  - added regression coverage that locks:
+    - access proposals preserving `path_kind`
+    - runtime access-request packets surfacing a fresh-account candidate
+    - digital-body access-state surfacing a fresh-workspace candidate
+    - tool-approval previews preserving `create_new`
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\action_packets.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py tests\test_tool_approval_policy.py`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py tests\test_tool_approval_policy.py -q`
+  - `python -m pytest tests\test_frontend_contract_sync.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the digital body can now truthfully say not only “this access is missing” but also “there is a bounded way to create a fresh access path”
+  - the current runtime still does not pretend it has already created that account/key/workspace
+  - `create_new` remains a proposal-layer autonomy step, which matches the current approval-gated architecture
+  - regression subsets stayed green:
+    - `47 passed`
+    - `3 passed`
+    - `735 passed, 35 subtests passed`
+    - `102 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from proposal-only `create_new` paths toward the next bounded closure:
+    - either explicit operator selection / selection persistence among multiple access proposals
+    - or the first real approved execution surface for safe local resource creation inside bounded environments
+
+## 2026-03-28 Run 148
+
+- Focus:
+  - close the next bounded access slice after `create_new` proposals: explicit operator selection and selection persistence across multi-proposal access paths
+  - ensure the backend keeps one stable chosen path instead of letting `selected_access_proposal` drift or disappear
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added a shared selection helper in `digital_body_runtime`:
+    - `select_access_acquire_proposal()`
+  - selection semantics are now explicit and stable:
+    - if a preferred proposal already exists and is still present, keep it
+    - otherwise choose a deterministic default from the proposal list
+    - `create_new` candidates do not steal selection from the primary existing-path proposal unless the operator explicitly switches to them
+  - `autonomy_runtime` now sets `selected_access_proposal` directly on newly created `access:request_help` packets, instead of emitting only a proposal list and leaving selection implicit
+  - `session_context.digital_body_hints` now receives that selected path during request creation, so the chosen access path is carried forward before approval even happens
+  - `backend_session` approval/readout flow now preserves the same selected path across:
+    - approval payload generation
+    - operator override via `args.selected_access_proposal`
+    - later approved / partial / completed states
+  - rejected access paths no longer leave stale `selected_access_proposal` residue behind, preventing false `planned` carryover after rejection
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\runtime\backend_session.py tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py tests\test_backend_session.py`
+  - `python -m pytest tests\test_companion_autonomy_runtime.py tests\test_digital_body_runtime.py tests\test_backend_session.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - multi-proposal access paths now have a real current-choice concept rather than only an unordered candidate list
+  - operator override is now first-class and persists through the approval lifecycle
+  - default selection no longer oscillates toward auxiliary proposals like `browser_session` just because they have fewer grants
+  - regression subsets stayed green:
+    - `71 passed`
+    - `735 passed, 35 subtests passed`
+    - `104 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from stable proposal selection toward the next bounded closure:
+    - either attach explicit operator-side proposal selection surfaces into CLI summaries / evaluation artifacts more directly
+    - or start the first real safe execution surface for bounded local resource creation under approval-gated rules
+
+## 2026-03-28 Run 149
+
+- Focus:
+  - land the first real bounded execution surface after proposal-only `create_new` access paths
+  - make approved `operator_create_workspace` access paths truthfully executable inside the runtime-owned filesystem boundary
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_create_workspace_access_tool.py`
+  - `program.md`
+- Key changes:
+  - added `create_workspace_access` as the first truthful local resource-creation tool:
+    - bounded to `AMADEUS_DATA_DIR/workspaces/`
+    - never accepts arbitrary absolute write targets
+    - returns real `access_hints`, `access_state`, `resource_state`, and `artifact_context`
+  - registered the new tool in the runtime tool registry and marked it as non-auto-approved external mutation
+  - extended `tool_nodes` so approved `access:request_help` packets can now close through a real execution path when:
+    - `selected_access_proposal.mode == operator_create_workspace`
+    - `path_kind == create_new`
+    - the selected proposal is not already resolved
+  - that execution now:
+    - calls `create_workspace_access`
+    - upgrades the same access packet from `approved` to `completed`
+    - clears stale `selected_access_proposal` residue once the grants are genuinely satisfied
+    - writes back attached workspace artifact facts into `digital_body_hints`
+  - direct tool execution now also merges tool-returned `access_hints` back into `session_context`, so local creation tools no longer mutate the world without updating backend readback state
+  - documented the new bounded exception to the earlier proposal-only `create_new` rule:
+    - local workspace creation is now executable
+    - browser/account/key creation remains proposal-only
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/utils/tool_registry.py amadeus_thread0/config.py`
+  - `python -m py_compile tests/test_create_workspace_access_tool.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_create_workspace_access_tool.py tests/test_action_packet_contract.py tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_action_packet_contract.py tests/test_digital_body_runtime.py tests/test_create_workspace_access_tool.py -q`
+- Result:
+  - `create_new` is no longer purely notional for the filesystem surface
+  - the backend now has one real, bounded, approval-gated digital-body mutation path that:
+    - changes the local world truthfully
+    - updates `digital_body.access_state`
+    - updates `digital_body.resource_state`
+    - resolves the corresponding access path instead of leaving it permanently `planned`
+  - regression subsets stayed green:
+    - `30 passed`
+    - `737 passed, 35 subtests passed`
+    - `125 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from `local workspace creation` toward the next truthful bounded execution slice:
+    - either make operator-provided access arrival and local creation share one more explicit closure/reporting surface in CLI/backend summaries
+    - or add the next safe local mutation surface under the same approval-gated rules without reopening fake browser/account execution
+
+## 2026-03-28 Run 150
+
+- Focus:
+  - close the first readback gap after truthful local workspace creation
+  - make final-state / CLI / backend envelope explicitly show that a workspace was really created and attached, instead of flattening that outcome into generic access recovery
+- Files changed:
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_final_state.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - tightened `derive_digital_body_consequence()` so completed workspace-creation closures no longer read back as generic `access_request_resolved`
+  - added a more specific frozen embodied consequence:
+    - `kind=workspace_access_resolved`
+    - triggers only when the completed access-help path is genuinely the workspace-creation surface
+    - does not misclassify unrelated future `create_new` paths such as account/API-key creation
+  - the consequence summary now has a workspace-specific fallback when the completed packet has no explicit result text:
+    - reflects that the writable workspace was created or reattached
+    - keeps the readback grounded in the actual attached artifact label
+  - documented the contract change so frontend/readback consumers know that truthful workspace creation may surface as `workspace_access_resolved`
+  - added regression coverage across:
+    - final-state derivation
+    - CLI summary / summary-line rendering
+    - backend turn/event envelopes
+- Validation:
+  - `python -m py_compile amadeus_thread0\evolution_engine\reconsolidation.py tests\test_final_state.py tests\test_cli_views.py tests\test_backend_api.py`
+  - `python -m pytest tests\test_final_state.py tests\test_cli_views.py tests\test_backend_api.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - truthful local workspace creation now survives into the frozen embodied consequence layer as a distinct outcome rather than being flattened back into generic access recovery
+  - CLI `bodyfx` / current-turn summary / backend turn-event envelopes now all agree on the same workspace-specific closure semantics
+  - regression subsets stayed green:
+    - `68 passed`
+    - `737 passed, 35 subtests passed`
+    - `106 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body mainline from `workspace creation + explicit readback closure` toward the next truthful bounded execution slice:
+    - either add the next safe local mutation surface under the same approval-gated rules
+    - or expand embodied readback parity for more non-workspace mutation results without reopening fake browser/account execution

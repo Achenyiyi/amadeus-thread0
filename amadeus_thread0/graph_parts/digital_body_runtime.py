@@ -25,6 +25,11 @@ _EVENT_SURFACE_BY_KIND = {
 _SESSION_PRESENT_STATES = {"present", "active", "ready", "available"}
 _ACCOUNT_PRESENT_STATES = {"present", "active", "logged_in", "ready", "available"}
 _COOKIE_PRESENT_STATES = {"present", "active", "ready", "available"}
+_API_KEY_PRESENT_STATES = {"present", "active", "ready", "available", "ok"}
+_QUOTA_PRESENT_STATES = {"present", "active", "ready", "available", "ok", "sufficient", "low"}
+_FILESYSTEM_PRESENT_STATES = {"present", "active", "ready", "available", "ok", "writable"}
+_NETWORK_PRESENT_STATES = {"present", "active", "ready", "available", "ok", "enabled"}
+_SANDBOX_PRESENT_STATES = {"present", "active", "ready", "available", "ok", "enabled"}
 _SESSION_EXPIRING_SOON_S = 900
 _ARTIFACT_BROWSER_KINDS = {"page", "tab", "site", "browser_page", "search_result"}
 _ARTIFACT_FILESYSTEM_KINDS = {"file", "workspace", "document", "buffer", "notebook"}
@@ -200,6 +205,416 @@ def _merge_unique_lists(*values: Any, limit: int = 12) -> list[str]:
     return merged
 
 
+def normalize_access_acquire_proposal(value: Any) -> dict[str, Any]:
+    row = _dict_or_empty(value)
+    if not row:
+        return {}
+    target = _clean_state_label(row.get("target"))
+    mode = _clean_state_label(row.get("mode"))
+    path_kind = _clean_state_label(row.get("path_kind"))
+    if path_kind not in {"acquire_existing", "create_new"}:
+        path_kind = "acquire_existing"
+    summary = _clean_text(row.get("summary"), limit=220)
+    operator_action = _clean_text(row.get("operator_action"), limit=220)
+    grants = _merge_unique_lists(row.get("grants"), [target] if target else [], limit=8)
+    requires_operator = bool(row.get("requires_operator", True))
+    resolved_grants = [item for item in _merge_unique_lists(row.get("resolved_grants"), limit=8) if item in grants]
+    pending_grants = [
+        item
+        for item in _merge_unique_lists(row.get("pending_grants"), limit=8)
+        if item in grants and item not in resolved_grants
+    ]
+    try:
+        completion_ratio = max(0.0, min(1.0, float(row.get("completion_ratio"))))
+    except Exception:
+        completion_ratio = float(len(resolved_grants)) / float(len(grants)) if grants else 0.0
+    if not any((target, mode, summary, operator_action, grants, requires_operator)):
+        return {}
+    normalized = {
+        "target": target,
+        "mode": mode,
+        "path_kind": path_kind,
+        "summary": summary,
+        "operator_action": operator_action,
+        "grants": grants,
+        "requires_operator": requires_operator,
+    }
+    if grants and (resolved_grants or pending_grants or "completion_ratio" in row):
+        normalized.update(
+            {
+                "resolved_grants": resolved_grants,
+                "pending_grants": pending_grants,
+                "completion_ratio": round(completion_ratio, 3),
+            }
+        )
+    return normalized
+
+
+def access_proposal_identity(proposal: Any) -> tuple[str, str]:
+    selected = normalize_access_acquire_proposal(proposal)
+    return (
+        str(selected.get("target") or "").strip(),
+        str(selected.get("mode") or "").strip(),
+    )
+
+
+def select_access_acquire_proposal(
+    *,
+    proposals: Any = None,
+    preferred: Any = None,
+) -> dict[str, Any]:
+    normalized_proposals = normalize_access_acquire_proposals(proposals)
+    preferred_proposal = normalize_access_acquire_proposal(preferred)
+    if preferred_proposal:
+        preferred_key = access_proposal_identity(preferred_proposal)
+        for item in normalized_proposals:
+            if access_proposal_identity(item) == preferred_key:
+                return item
+        if not normalized_proposals:
+            return preferred_proposal
+    if not normalized_proposals:
+        return {}
+
+    def _priority(item: dict[str, Any]) -> tuple[int, int]:
+        path_kind = str(item.get("path_kind") or "").strip().lower()
+        return (
+            1 if path_kind == "create_new" else 0,
+            normalized_proposals.index(item),
+        )
+
+    return min(normalized_proposals, key=_priority)
+
+
+def normalize_access_acquire_proposals(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        proposal = normalize_access_acquire_proposal(item)
+        if not proposal:
+            continue
+        key = access_proposal_identity(proposal)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(proposal)
+        if len(merged) >= 8:
+            break
+    return merged
+
+
+def _merge_access_acquire_proposals(*values: Any, limit: int = 8) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for value in values:
+        proposals = normalize_access_acquire_proposals(value if isinstance(value, list) else [value] if isinstance(value, dict) else [])
+        for item in proposals:
+            key = access_proposal_identity(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item)
+            if len(merged) >= max(1, int(limit)):
+                return merged
+    return merged
+
+
+def _proposal_grants(proposal: Any) -> list[str]:
+    selected = normalize_access_acquire_proposal(proposal)
+    if not selected:
+        return []
+    return _merge_unique_lists(selected.get("grants"), [selected.get("target")] if selected.get("target") else [], limit=8)
+
+
+def access_grant_satisfied(*, grant: Any, hints: dict[str, Any] | None = None) -> bool:
+    row = _dict_or_empty(hints)
+    key = _clean_state_label(grant)
+    if not key:
+        return False
+
+    browser_session = _clean_state_label(row.get("browser_session"))
+    account_state = _clean_state_label(row.get("account_state"))
+    cookie_state = _clean_state_label(row.get("cookie_state"))
+    api_key_state = _clean_state_label(row.get("api_key_state"))
+    quota_state = _clean_state_label(row.get("quota_state"))
+    filesystem_state = _clean_state_label(row.get("filesystem_state"))
+    sandbox_mode = _clean_state_label(row.get("sandbox_mode"))
+    network_access = _clean_state_label(row.get("network_access"))
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+    )
+    session_continuity = _clean_state_label(session_lifecycle.get("session_continuity"))
+
+    if key == "browser_session":
+        return browser_session in _SESSION_PRESENT_STATES
+    if key == "account_login":
+        return account_state in _ACCOUNT_PRESENT_STATES
+    if key == "cookies":
+        return cookie_state in _COOKIE_PRESENT_STATES
+    if key == "api_key":
+        return api_key_state in _API_KEY_PRESENT_STATES
+    if key == "api_quota":
+        return quota_state in _QUOTA_PRESENT_STATES
+    if key == "workspace_write":
+        return filesystem_state in _FILESYSTEM_PRESENT_STATES
+    if key == "filesystem":
+        return filesystem_state not in {"", "missing", "unavailable", "required"}
+    if key == "sandbox":
+        return sandbox_mode in _SANDBOX_PRESENT_STATES
+    if key == "network":
+        return network_access in _NETWORK_PRESENT_STATES
+    if key == "session_refresh":
+        return session_continuity in {"stable", "expiring"} or browser_session in _SESSION_PRESENT_STATES
+    return False
+
+
+def access_proposal_progress(
+    *,
+    hints: dict[str, Any] | None = None,
+    proposal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    row = _dict_or_empty(hints)
+    selected = normalize_access_acquire_proposal(proposal if isinstance(proposal, dict) else row.get("selected_access_proposal"))
+    grants = _proposal_grants(selected)
+    resolved_grants = [grant for grant in grants if access_grant_satisfied(grant=grant, hints=row)]
+    pending_grants = [grant for grant in grants if grant not in resolved_grants]
+    grant_count = len(grants)
+    resolved_count = len(resolved_grants)
+    return {
+        "grants": grants,
+        "resolved_grants": resolved_grants,
+        "pending_grants": pending_grants,
+        "grant_count": grant_count,
+        "resolved_count": resolved_count,
+        "completion_ratio": round(float(resolved_count) / float(grant_count), 3) if grant_count else 0.0,
+        "resolved": grant_count > 0 and resolved_count == grant_count,
+        "partial": resolved_count > 0 and resolved_count < grant_count,
+    }
+
+
+def enrich_access_acquire_proposal(
+    *,
+    hints: dict[str, Any] | None = None,
+    proposal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    selected = normalize_access_acquire_proposal(proposal if isinstance(proposal, dict) else _dict_or_empty(hints).get("selected_access_proposal"))
+    if not selected:
+        return {}
+    progress = access_proposal_progress(hints=hints, proposal=selected)
+    if progress["grant_count"] <= 0:
+        return selected
+    return {
+        **selected,
+        "resolved_grants": progress["resolved_grants"],
+        "pending_grants": progress["pending_grants"],
+        "completion_ratio": progress["completion_ratio"],
+    }
+
+
+def selected_access_proposal_resolved(
+    *,
+    hints: dict[str, Any] | None = None,
+    proposal: dict[str, Any] | None = None,
+) -> bool:
+    progress = access_proposal_progress(hints=hints, proposal=proposal)
+    return bool(progress.get("resolved", False))
+
+
+def prune_resolved_access_hints(hints: dict[str, Any] | None) -> dict[str, Any]:
+    data = dict(hints or {})
+    missing = [str(item).strip().lower() for item in _list_or_empty(data.get("missing_access")) if str(item or "").strip()]
+    requestable = [str(item).strip().lower() for item in _list_or_empty(data.get("requestable_access")) if str(item or "").strip()]
+    removal_keys = {
+        item
+        for item in [*missing, *requestable]
+        if access_grant_satisfied(grant=item, hints=data)
+    }
+    if removal_keys:
+        missing = [item for item in missing if item not in removal_keys]
+        requestable = [item for item in requestable if item not in removal_keys]
+    data["missing_access"] = missing
+    data["requestable_access"] = requestable
+    return data
+
+
+def derive_access_acquire_proposals(*, hints: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    row = _dict_or_empty(hints)
+    if not row:
+        return []
+    browser_session = _clean_state_label(row.get("browser_session"))
+    account_state = _clean_state_label(row.get("account_state"))
+    cookie_state = _clean_state_label(row.get("cookie_state"))
+    api_key_state = _clean_state_label(row.get("api_key_state"))
+    quota_state = _clean_state_label(row.get("quota_state"))
+    filesystem_state = _clean_state_label(row.get("filesystem_state"))
+    sandbox_mode = _clean_state_label(row.get("sandbox_mode"))
+    network_access = _clean_state_label(row.get("network_access"))
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+    )
+    session_continuity = _clean_state_label(session_lifecycle.get("session_continuity"))
+    requestable_access = _merge_unique_lists(row.get("requestable_access"), limit=12)
+    missing_access = _merge_unique_lists(row.get("missing_access"), limit=12)
+    proposals: list[dict[str, Any]] = []
+
+    def _add(
+        target: str,
+        mode: str,
+        summary: str,
+        operator_action: str,
+        grants: list[str] | None = None,
+        path_kind: str = "acquire_existing",
+    ) -> None:
+        proposal = normalize_access_acquire_proposal(
+            {
+                "target": target,
+                "mode": mode,
+                "path_kind": path_kind,
+                "summary": summary,
+                "operator_action": operator_action,
+                "grants": list(grants or []),
+                "requires_operator": True,
+            }
+        )
+        if proposal:
+            proposals.append(proposal)
+
+    if account_state in {"missing", "logged_out", "required"}:
+        _add(
+            "account_login",
+            "operator_login",
+            "先把账号登录补回来，这条外部入口才接得上后面。",
+            "登录目标账号，或把现成登录态交给我。",
+            ["account_login", "browser_session"],
+        )
+        if network_access not in {"disabled", "blocked"}:
+            _add(
+                "account_login",
+                "operator_register_account",
+                "如果没有现成账号，也可以先注册一个新的可用入口，再把这条路径接起来。",
+                "注册一个新的账号入口，或确认让我沿着新账号路径继续。",
+                ["account_login", "browser_session"],
+                path_kind="create_new",
+            )
+    if cookie_state in {"missing", "expired", "required"}:
+        _add(
+            "cookies",
+            "operator_restore_cookies",
+            "当前 cookies / session token 还没补回来，这条路径还续不上。",
+            "补回可用 cookies 或 session token。",
+            ["cookies", "browser_session"],
+        )
+    if browser_session in {"missing", "expired", "required"}:
+        _add(
+            "browser_session",
+            "operator_restore_session",
+            "浏览器会话本身还没接回去，我还进不到那条外部表面。",
+            "补回可复用的浏览器会话或对应入口。",
+            ["browser_session"],
+        )
+    if session_continuity in {"expiring", "expired"}:
+        _add(
+            "session_refresh",
+            "operator_refresh_session",
+            "这段会话连续性已经不稳了，最好先补一次可复用的刷新路径。",
+            "提供新的会话刷新条件，或确认让我按刷新后的入口继续。",
+            ["session_refresh", "browser_session"],
+        )
+    if api_key_state in {"missing", "required", "unset", "invalid", "expired"}:
+        _add(
+            "api_key",
+            "operator_provide_api_key",
+            "当前模型/API 入口还缺着，我没法直接继续这条链路。",
+            "提供可用 API key，或切换到已有可用入口。",
+            ["api_key"],
+        )
+        _add(
+            "api_key",
+            "operator_create_api_key",
+            "如果没有现成 key，也可以新建一个可用入口再继续这条链路。",
+            "新建一个可用 API key，或确认改接新的服务入口。",
+            ["api_key"],
+            path_kind="create_new",
+        )
+    if quota_state in {"exhausted", "blocked"}:
+        _add(
+            "api_quota",
+            "operator_replenish_quota",
+            "额度已经把这条路径卡住了，得先补额度或等额度恢复。",
+            "补可用额度，或明确告诉我改走别的路径。",
+            ["api_quota"],
+        )
+    elif quota_state in {"low", "missing", "required", "unavailable"}:
+        _add(
+            "api_quota",
+            "operator_confirm_quota",
+            "这条入口的额度状态还不稳，我需要先确认能不能继续用。",
+            "确认当前额度可用，或提供新的服务入口。",
+            ["api_quota"],
+        )
+    if filesystem_state == "read_only":
+        _add(
+            "workspace_write",
+            "operator_grant_workspace_write",
+            "当前工作区只能读不能写，后面的落盘动作接不上。",
+            "给我可写工作区，或指定一个允许写入的位置。",
+            ["workspace_write"],
+        )
+    elif filesystem_state in {"missing", "unavailable", "required"}:
+        _add(
+            "filesystem",
+            "operator_attach_filesystem",
+            "当前文件系统入口还不完整，我还拿不到稳定的工作表面。",
+            "挂接可访问的文件系统入口，或把目标文件放到当前工作区里。",
+            ["filesystem"],
+        )
+        _add(
+            "filesystem",
+            "operator_create_workspace",
+            "如果当前没有现成工作区，也可以先新建一个可写工作区，再把这条路径接起来。",
+            "新建一个可写工作区，或确认新的落点目录。",
+            ["filesystem", "workspace_write"],
+            path_kind="create_new",
+        )
+    if sandbox_mode in {"restricted", "blocked"}:
+        _add(
+            "sandbox",
+            "operator_enable_sandbox",
+            "执行环境限制还没放开，这条需要运行时动作的路径继续不了。",
+            "授予合适的沙箱权限，或明确限制我不要走这条路径。",
+            ["sandbox"],
+        )
+    if network_access in {"disabled", "blocked", "restricted"}:
+        _add(
+            "network",
+            "operator_enable_network",
+            "当前网络入口受限，外部检索/连接这条路径接不上。",
+            "开放可用网络入口，或提供离线替代材料。",
+            ["network"],
+        )
+
+    if requestable_access or missing_access:
+        target_set = set(requestable_access) | set(missing_access)
+        proposals = [
+            item
+            for item in proposals
+            if str(item.get("target") or "").strip() in target_set
+            or bool(set(item.get("grants") or []) & target_set)
+        ] or proposals
+    return _merge_access_acquire_proposals(proposals, limit=8)
+
+
 def _tool_surface_tags(name: Any) -> list[str]:
     text = _clean_text(name).lower()
     if not text:
@@ -248,6 +663,14 @@ def _merged_hint_payload(
     return hints
 
 
+def merge_digital_body_hints(
+    *,
+    session_context: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return _merged_hint_payload(session_context=session_context, current_event=current_event)
+
+
 def digital_body_state_has_signal(state: Any) -> bool:
     if not isinstance(state, dict) or not state:
         return False
@@ -279,6 +702,8 @@ def digital_body_state_has_signal(state: Any) -> bool:
             _clean_text(access_state.get("filesystem_state")),
             _clean_text(access_state.get("sandbox_mode")),
             _clean_text(access_state.get("network_access")),
+            isinstance(access_state.get("access_acquire_proposals"), list) and bool(access_state.get("access_acquire_proposals")),
+            isinstance(access_state.get("selected_access_proposal"), dict) and bool(access_state.get("selected_access_proposal")),
         )
     ):
         return True
@@ -318,6 +743,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     missing_access = _merge_unique_lists(row.get("missing_access"), limit=12)
     granted_toolsets = _merge_unique_lists(row.get("granted_toolsets"), limit=12)
     active_tools = _merge_unique_lists(row.get("active_tools"), limit=8)
+    access_acquire_proposals = _merge_access_acquire_proposals(row.get("access_acquire_proposals"), limit=8)
+    selected_access_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
     world_surfaces = _merge_unique_lists(
         row.get("world_surfaces"),
         [row.get("active_surface")] if _clean_text(row.get("active_surface")) else [],
@@ -394,6 +821,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "procedural_growth": procedural_growth,
         "environmental_friction": environmental_friction,
         "requested_help": requested_help,
+        "access_acquire_proposals": access_acquire_proposals,
+        "selected_access_proposal": selected_access_proposal,
     }
     if not any(
         (
@@ -430,6 +859,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["procedural_growth"],
             normalized["environmental_friction"],
             normalized["requested_help"],
+            normalized["access_acquire_proposals"],
+            normalized["selected_access_proposal"],
         )
     ):
         return {}
@@ -455,6 +886,8 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
     granted_toolsets = list(dict.fromkeys(granted_toolsets))[:12]
     missing_access = _merge_unique_lists(access_state.get("missing_access"), limit=12)
     requestable_access = _merge_unique_lists(access_state.get("requestable_access"), limit=12)
+    access_acquire_proposals = _merge_access_acquire_proposals(access_state.get("access_acquire_proposals"), limit=8)
+    selected_access_proposal = normalize_access_acquire_proposal(access_state.get("selected_access_proposal"))
     browser_session = _clean_state_label(access_state.get("browser_session"))
     account_state = _clean_state_label(access_state.get("account_state"))
     cookie_state = _clean_state_label(access_state.get("cookie_state"))
@@ -504,6 +937,8 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "granted_toolsets": granted_toolsets,
             "missing_access": missing_access,
             "requestable_access": requestable_access,
+            "access_acquire_proposals": access_acquire_proposals,
+            "selected_access_proposal": selected_access_proposal,
             "browser_session": browser_session,
             "account_state": account_state,
             "cookie_state": cookie_state,
@@ -567,6 +1002,16 @@ def derive_digital_body_state(
     carried_active_tools = _merge_unique_lists(carried_embodied.get("active_tools"), limit=8)
     carried_missing_access = _merge_unique_lists(carried_embodied.get("missing_access"), limit=12)
     carried_requested_access = _merge_unique_lists(carried_embodied.get("requested_access"), limit=12)
+    carried_access_acquire_proposals = (
+        _merge_access_acquire_proposals(carried_embodied.get("access_acquire_proposals"), limit=8)
+        if carried_primary_status not in {"completed", "rejected", "blocked"}
+        else []
+    )
+    carried_selected_access_proposal = (
+        normalize_access_acquire_proposal(carried_embodied.get("selected_access_proposal"))
+        if carried_primary_status not in {"completed", "rejected", "blocked"}
+        else {}
+    )
     carried_world_surfaces = _merge_unique_lists(
         carried_embodied.get("world_surfaces"),
         [carried_embodied.get("active_surface")] if _clean_text(carried_embodied.get("active_surface")) else [],
@@ -635,10 +1080,19 @@ def derive_digital_body_state(
     completed_packet_count = 0
     blocked_packet_count = 0
     external_mutation_pending = False
+    packet_access_acquire_proposals: list[dict[str, Any]] = []
+    packet_selected_access_proposal: dict[str, Any] = {}
     for packet in packets:
         status = _clean_text(packet.get("status")).lower()
         risk = _clean_text(packet.get("risk")).lower()
         requires_approval = bool(packet.get("requires_approval", False))
+        packet_access_acquire_proposals = _merge_access_acquire_proposals(
+            packet_access_acquire_proposals,
+            packet.get("access_acquire_proposals"),
+            limit=8,
+        )
+        if not packet_selected_access_proposal:
+            packet_selected_access_proposal = normalize_access_acquire_proposal(packet.get("selected_access_proposal"))
         if status in {"awaiting_approval"} or (requires_approval and status in {"proposed", "approved"}):
             pending_approval_count += 1
         if status in {"proposed", "queued", "approved"}:
@@ -750,6 +1204,55 @@ def derive_digital_body_state(
 
     missing_access = _merge_unique_lists(hints.get("missing_access"), carried_missing_access, limit=12)
     requestable_access = _merge_unique_lists(hints.get("requestable_access"), carried_requested_access, limit=12)
+    access_acquire_proposals = _merge_access_acquire_proposals(
+        hints.get("access_acquire_proposals"),
+        carried_access_acquire_proposals,
+        packet_access_acquire_proposals,
+        derive_access_acquire_proposals(
+            hints={
+                **hints,
+                "missing_access": missing_access,
+                "requestable_access": requestable_access,
+            }
+        ),
+        limit=8,
+    )
+    selected_access_proposal = (
+        normalize_access_acquire_proposal(hints.get("selected_access_proposal"))
+        or packet_selected_access_proposal
+        or carried_selected_access_proposal
+    )
+    proposal_progress_hints = {
+        **hints,
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+    }
+    access_acquire_proposals = [
+        enrich_access_acquire_proposal(hints=proposal_progress_hints, proposal=proposal) or proposal
+        for proposal in access_acquire_proposals
+    ]
+    selected_access_proposal = (
+        enrich_access_acquire_proposal(
+            hints=proposal_progress_hints,
+            proposal=select_access_acquire_proposal(
+                proposals=access_acquire_proposals,
+                preferred=selected_access_proposal,
+            ),
+        )
+        or select_access_acquire_proposal(
+            proposals=access_acquire_proposals,
+            preferred=selected_access_proposal,
+        )
+    )
 
     if browser_session in {"missing", "expired", "required"}:
         conditions.append("browser_session_missing")
@@ -804,6 +1307,13 @@ def derive_digital_body_state(
     if carried_requested_help:
         requestable_access = _merge_unique_lists(requestable_access, ["human_approval"], limit=12)
     conditions = _merge_unique_lists(hints.get("constraints"), conditions, limit=12)
+    has_completed_selected_access = any(
+        _clean_text(packet.get("status")).lower() == "completed"
+        and bool(normalize_access_acquire_proposal(packet.get("selected_access_proposal")))
+        for packet in packets
+    )
+    if selected_access_proposal and not has_completed_selected_access:
+        conditions = _merge_unique_lists(conditions, ["access_acquire_planned"], limit=12)
 
     if blocked_packet_count > 0 and not cooldown_active and block_reason:
         access_mode = "blocked"
@@ -865,6 +1375,8 @@ def derive_digital_body_state(
                 "granted_toolsets": granted_toolsets,
                 "missing_access": missing_access,
                 "requestable_access": requestable_access,
+                "access_acquire_proposals": access_acquire_proposals,
+                "selected_access_proposal": selected_access_proposal,
                 "browser_session": browser_session,
                 "account_state": account_state,
                 "cookie_state": cookie_state,
@@ -902,12 +1414,23 @@ def derive_digital_body_state(
 
 
 __all__ = [
+    "access_proposal_identity",
+    "access_proposal_progress",
+    "access_grant_satisfied",
+    "derive_access_acquire_proposals",
     "derive_artifact_identity",
     "derive_artifact_continuity",
     "derive_session_lifecycle",
     "derive_digital_body_state",
     "embodied_context_has_signal",
     "digital_body_state_has_signal",
+    "enrich_access_acquire_proposal",
+    "merge_digital_body_hints",
+    "prune_resolved_access_hints",
+    "normalize_access_acquire_proposal",
+    "normalize_access_acquire_proposals",
     "normalize_embodied_context",
     "normalize_digital_body_state",
+    "select_access_acquire_proposal",
+    "selected_access_proposal_resolved",
 ]

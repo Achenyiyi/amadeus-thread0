@@ -460,6 +460,128 @@ class FinalStateTests(unittest.TestCase):
         self.assertTrue(bool(consequence["environmental_friction"]))
         self.assertIn("刷新", consequence["summary"])
 
+    def test_resolve_digital_body_consequence_derives_access_request_resolved_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["network"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "api_key_state": "present",
+                    "access_acquire_proposals": [
+                        {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                },
+                "resource_state": {"completed_packet_count": 1},
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-live-arrival-1",
+                    "origin": "counterpart_request",
+                    "intent": "access:request_help",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": False,
+                    "result_summary": "模型入口已经补回来了，这条路径现在可以继续。",
+                    "writeback_ready": True,
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "access_request_resolved")
+        self.assertEqual(consequence["primary_status"], "completed")
+        self.assertEqual(consequence["selected_access_proposal"]["target"], "api_key")
+        self.assertIn("可以继续", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_workspace_access_resolved_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                    "access_acquire_proposals": [
+                        {
+                            "target": "filesystem",
+                            "mode": "operator_create_workspace",
+                            "path_kind": "create_new",
+                            "summary": "先新建一个可写工作区。",
+                            "operator_action": "新建一个可写工作区。",
+                            "grants": ["filesystem", "workspace_write"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "path_kind": "create_new",
+                        "summary": "先新建一个可写工作区。",
+                        "operator_action": "新建一个可写工作区。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    },
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                    "active_artifact_label": "lab-notes",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-workspace-create-1",
+                    "origin": "counterpart_request",
+                    "intent": "access:request_help",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "create_workspace_access",
+                    "writeback_ready": True,
+                    "selected_access_proposal": {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "path_kind": "create_new",
+                        "summary": "先新建一个可写工作区。",
+                        "operator_action": "新建一个可写工作区。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_access_resolved")
+        self.assertEqual(consequence["primary_tool_name"], "create_workspace_access")
+        self.assertEqual(consequence["active_artifact_kind"], "workspace")
+        self.assertEqual(consequence["active_artifact_label"], "lab-notes")
+        self.assertIn("lab-notes", consequence["summary"])
+
     def test_resolve_digital_body_consequence_derives_detached_artifact_reacquisition_from_live_body_state(self):
         consequence = resolve_digital_body_consequence(
             digital_body_state={

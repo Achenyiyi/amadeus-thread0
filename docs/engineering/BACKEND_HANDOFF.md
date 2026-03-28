@@ -82,6 +82,63 @@ Interpretation rules:
   - `source_tool_name`
 - `digital_body` is the current runtime/body condition.
 - `digital_body.access_state` may now also carry provider-side world conditions such as `api_key_state`, `quota_state`, reusable session lifecycle metadata like `session_continuity` / `session_expires_in_s` / `session_recovery_mode`, and time-bound retry metadata like `retry_after_s` / `cooldown_scope` when the runtime knows them.
+- `digital_body.access_state` may now also carry structured access-acquisition guidance:
+  - `access_acquire_proposals`
+  - `selected_access_proposal`
+  - each proposal may distinguish:
+    - `path_kind=acquire_existing`
+    - `path_kind=create_new`
+  - when multiple proposals exist, `selected_access_proposal` is the current active choice:
+    - backend should expose one deterministic default selection
+    - approval consumers may override that choice explicitly
+    - later approved / partial / completed states should keep referencing the same chosen path until it is truthfully cleared
+- completed `access:refresh_state` packets are read-only runtime rechecks:
+  - they may refresh `session_context.digital_body_hints`
+  - they may tighten the visible `digital_body.access_state`
+  - they do not claim that external login / browser / cookie mutation has already happened when no such runtime exists
+- pending `access:request_help` packets are truthful external-entry requests:
+  - they may bind `requested_help`, `requested_access`, and `primary_proposal_id` into `session_context.digital_body_hints`
+  - they should surface through `autonomy.pending_approval` and `digital_body.access_state.mode=approval_pending`
+  - they must not be rendered as a completed external action
+  - they represent missing operator-provided conditions such as:
+    - browser/session entry
+    - account login
+    - cookies
+    - API key / quota help when the runtime itself cannot resolve the condition
+  - proposal lists may now include bounded `create_new` candidates such as:
+    - fresh account registration
+    - fresh writable workspace creation
+    - fresh API key / service entry creation
+  - these are still proposal/approval surfaces, not claims that creation already happened
+  - current bounded exception:
+    - if the selected approved path is `operator_create_workspace`
+    - backend may truthfully execute local workspace creation through `create_workspace_access`
+    - but only inside the runtime-owned `AMADEUS_DATA_DIR/workspaces/` boundary
+    - after that execution:
+      - the same access path may close as `status=completed`
+      - `digital_body.access_state.filesystem_state` should become `writable`
+      - `digital_body.resource_state.active_artifact_kind` should become `workspace`
+      - stale `selected_access_proposal` should be cleared
+  - when a proposal path has already been accepted but the real access update has not yet happened:
+    - packet `status=approved` means `acquisition path accepted`
+    - packet `status=completed` means `concrete access updates actually arrived`
+    - for multi-grant paths, `status=approved` may still surface truthful partial progress rather than binary all-or-nothing completion:
+      - `selected_access_proposal.resolved_grants`
+      - `selected_access_proposal.pending_grants`
+      - `selected_access_proposal.completion_ratio`
+    - the accepted-but-not-yet-fixed path should still surface through:
+      - `action_packets[*].selected_access_proposal`
+      - `digital_body.access_state.selected_access_proposal`
+      - `autonomy.intent.mode=access_acquire_planned`
+    - if operator approval explicitly chooses another candidate path, backend should persist that new `selected_access_proposal` rather than silently snapping back to an earlier default
+  - when those accepted conditions later become true in runtime-visible state, backend may emit one later-turn resolution packet:
+    - `intent=access:request_help`
+    - `status=completed`
+    - `autonomy.intent.mode=access_request_resolved`
+    - after that turn, stale live `selected_access_proposal` state should be cleared rather than lingering as `planned`
+    - if that completed path actually created and attached a writable workspace through `create_workspace_access`, `digital_body_consequence.kind` may be more specific than generic access recovery:
+      - `workspace_access_resolved`
+      - this means the workspace was truthfully created or reattached, not merely proposed
 - `digital_body.resource_state` may now also carry work-surface continuity facts such as:
   - `artifact_continuity`
   - `active_artifact_kind`
@@ -99,12 +156,23 @@ Interpretation rules:
 - `digital_body_consequence` may preserve the same session lifecycle fields when a turn ends in broken or blocked session continuity rather than a completed action.
 - `digital_body_consequence` may also preserve frozen artifact continuity when a turn ended with a stale/detached/missing work surface and the reacquisition path matters for later continuation.
 - when artifact continuity is driven by a completed `artifact:*` packet, `digital_body_consequence` / carried `embodied_context` may also preserve the same compact artifact identity fields above so later turns know what carrier/source is being reattached without copying full previews.
+- when access help has already advanced into an accepted-but-not-yet-fixed acquisition path, `digital_body_consequence` / carried `embodied_context` may also preserve:
+  - `access_acquire_proposals`
+  - `selected_access_proposal`
+  so later turns can remember which path was accepted without pretending the access is already fixed.
 - `digital_body_consequence` is the frozen embodied consequence of this turn, not a generic capability inventory.
 - `behavior_action.embodied_context` and `behavior_plan.embodied_context` expose body/access continuity only; they must not be reinterpreted into relationship stance shifts.
 - `interaction_carryover.embodied_context` is a carried-forward continuity trace, not a mirror of the current turn's runtime body state.
 - embodied context must not be inferred into relationship previews when it was never written there; the preview-level `embodied_context` fields are optional and provenance-bound.
 - frontend should consume these payloads as-is and must not infer backend internals from file layout or node names.
 - approval UX should bind by `proposal_id`, not by list position alone.
+- session-layer approval consumers should also handle synthetic `BackendSession.invoke_stream()` / `resume_stream()` requests with:
+  - `approval_request.kind="access_request"`
+  - `approval_request.source="access"`
+  - `tool_calls[0].name="access_request_help"`
+  - `tool_calls[0].args.access_acquire_proposals`
+  - `tool_calls[0].args.selected_access_proposal`
+  - edits/resolution bound to the same `proposal_id`
 
 ## Contract Assets
 

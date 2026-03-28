@@ -110,6 +110,97 @@ class AutonomyBackendContractTests(unittest.TestCase):
                 self.assertEqual(autonomy["execution_trace"][0]["event"], "tool_gate_decision")
                 self.assertEqual(autonomy["block_reason"], "")
 
+    def test_turn_envelope_keeps_non_tool_access_request_pending_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            session = _FakeSession()
+            runtime_bundle = SimpleNamespace(
+                thread_id="thread-b",
+                backend_session=session,
+                memory_admin=_FakeMemoryAdmin(),
+                settings=SimpleNamespace(
+                    checkpoint_db_path=checkpoint_db,
+                    data_dir=root,
+                    model_provider="dashscope",
+                    model_name="qwen3.5-plus",
+                    model_base_url="",
+                    runtime_mode="cli",
+                ),
+            )
+            api = BackendAPI(runtime_bundle=runtime_bundle, base_data_dir=root, cwd=root)
+            packet = {
+                "proposal_id": "ap-access-help-1",
+                "origin": "counterpart_request",
+                "intent": "access:request_help",
+                "status": "awaiting_approval",
+                "risk": "external_mutation",
+                "requires_approval": True,
+                "capability_steps": [
+                    {
+                        "kind": "access",
+                        "name": "request_help",
+                        "target": "account_login / cookies",
+                        "status": "awaiting_approval",
+                        "requires_approval": True,
+                    }
+                ],
+                "expected_effect": "这一步需要先向你请求账号入口和 cookies。",
+                "access_acquire_proposals": [
+                    {
+                        "target": "account_login",
+                        "mode": "operator_login",
+                        "summary": "先把账号登录补回来。",
+                        "operator_action": "登录目标账号。",
+                        "grants": ["account_login", "browser_session"],
+                        "requires_operator": True,
+                    }
+                ],
+            }
+            state_values = {
+                "final_text": "这一步我得先向你要入口。",
+                "current_event": {"kind": "user_utterance"},
+                "autonomy_intent": {
+                    "mode": "approval_pending",
+                    "origin": "counterpart_request",
+                    "reason": "这一步需要先向你请求账号入口和 cookies。",
+                    "confidence": 0.71,
+                    "primary_proposal_id": "ap-access-help-1",
+                },
+                "action_packets": [packet],
+                "pending_action_proposal": dict(packet),
+                "action_trace": [
+                    {
+                        "proposal_id": "ap-access-help-1",
+                        "intent": "access:request_help",
+                        "origin": "counterpart_request",
+                        "status": "awaiting_approval",
+                        "event": "derived_from_access_request",
+                        "risk": "external_mutation",
+                        "source": "prepare_turn_runtime",
+                        "requires_approval": True,
+                    }
+                ],
+                "autonomy_block_reason": "",
+            }
+
+            turn = api.build_turn_response(state_values=state_values, streamed_text="")
+            autonomy = turn.payload["autonomy"]
+            access_state = turn.payload["digital_body"]["access_state"]
+
+            self.assertEqual(autonomy["intent"]["mode"], "approval_pending")
+            self.assertEqual(autonomy["action_packets"][0]["intent"], "access:request_help")
+            proposals = autonomy["action_packets"][0].get("access_acquire_proposals") if isinstance(autonomy["action_packets"][0].get("access_acquire_proposals"), list) else []
+            self.assertTrue(proposals)
+            self.assertEqual(proposals[0]["target"], "account_login")
+            body_proposals = access_state.get("access_acquire_proposals") if isinstance(access_state.get("access_acquire_proposals"), list) else []
+            self.assertTrue(body_proposals)
+            self.assertEqual(body_proposals[0]["mode"], "operator_login")
+            self.assertEqual(autonomy["pending_approval"]["proposal_id"], "ap-access-help-1")
+            self.assertEqual(autonomy["execution_trace"][0]["event"], "derived_from_access_request")
+            self.assertEqual(autonomy["block_reason"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

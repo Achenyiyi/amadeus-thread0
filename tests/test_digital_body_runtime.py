@@ -161,6 +161,248 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertIn("session_refresh", body["access_state"]["requestable_access"])
         self.assertEqual(body["access_state"]["mode"], "native_only")
 
+    def test_derive_digital_body_state_surfaces_access_request_help_packet(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[
+                {
+                    "proposal_id": "ap-access-help-1",
+                    "origin": "counterpart_request",
+                    "intent": "access:request_help",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "capability_steps": [
+                        {
+                            "kind": "access",
+                            "name": "request_help",
+                            "target": "browser_session / account_login / cookies",
+                            "status": "awaiting_approval",
+                            "requires_approval": True,
+                        }
+                    ],
+                }
+            ],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-help",
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "expired",
+                    "missing_access": ["browser_session", "account_login", "cookies"],
+                    "requestable_access": ["browser_session", "account_login", "cookies"],
+                    "requested_help": True,
+                },
+            },
+        )
+
+        self.assertEqual(body["active_surface"], "approval_gate")
+        self.assertEqual(body["access_state"]["mode"], "approval_pending")
+        self.assertEqual(body["access_state"]["pending_approval_count"], 1)
+        self.assertTrue(body["access_state"]["external_mutation_pending"])
+        self.assertIn("browser_session", body["access_state"]["missing_access"])
+        self.assertIn("account_login", body["access_state"]["requestable_access"])
+        self.assertIn("human_approval", body["access_state"]["requestable_access"])
+        self.assertIn("human_approval_required", body["access_state"]["conditions"])
+        proposals = body["access_state"].get("access_acquire_proposals") if isinstance(body["access_state"].get("access_acquire_proposals"), list) else []
+        selected = body["access_state"].get("selected_access_proposal") if isinstance(body["access_state"].get("selected_access_proposal"), dict) else {}
+        self.assertTrue(proposals)
+        self.assertEqual(proposals[0]["target"], "account_login")
+        self.assertEqual(proposals[0]["mode"], "operator_login")
+        self.assertEqual(selected.get("target"), "account_login")
+        self.assertEqual(selected.get("mode"), "operator_login")
+        self.assertTrue(any(item.get("mode") == "operator_register_account" and item.get("path_kind") == "create_new" for item in proposals))
+
+    def test_derive_digital_body_state_preserves_selected_access_acquire_proposal(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-plan",
+                "digital_body_hints": {
+                    "api_key_state": "missing",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key"],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                },
+            },
+        )
+
+        selected = body["access_state"].get("selected_access_proposal") if isinstance(body["access_state"].get("selected_access_proposal"), dict) else {}
+        self.assertEqual(selected.get("target"), "api_key")
+        self.assertEqual(selected.get("mode"), "operator_provide_api_key")
+        self.assertIn("access_acquire_planned", body["access_state"]["conditions"])
+
+    def test_derive_digital_body_state_recovers_selected_access_proposal_from_carried_embodied_context(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            interaction_carryover={
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "requested_help": True,
+                    "requested_access": ["api_key", "human_approval"],
+                    "access_acquire_proposals": [
+                        {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                }
+            },
+            session_context={"thread_id": "thread-access-carry"},
+        )
+
+        selected = body["access_state"].get("selected_access_proposal") if isinstance(body["access_state"].get("selected_access_proposal"), dict) else {}
+        proposals = body["access_state"].get("access_acquire_proposals") if isinstance(body["access_state"].get("access_acquire_proposals"), list) else []
+        self.assertEqual(selected.get("target"), "api_key")
+        self.assertEqual(selected.get("mode"), "operator_provide_api_key")
+        self.assertTrue(proposals)
+        self.assertIn("human_approval", body["access_state"]["requestable_access"])
+        self.assertIn("access_acquire_planned", body["access_state"]["conditions"])
+
+    def test_derive_digital_body_state_does_not_keep_planned_access_after_completed_arrival(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[
+                {
+                    "proposal_id": "ap-access-arrived-1",
+                    "origin": "counterpart_request",
+                    "intent": "access:request_help",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": False,
+                    "result_summary": "模型入口已经补回来了，这条路径现在可以继续。",
+                    "writeback_ready": True,
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                }
+            ],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-arrived",
+                "digital_body_hints": {
+                    "api_key_state": "present",
+                    "primary_status": "completed",
+                },
+            },
+        )
+
+        self.assertNotIn("access_acquire_planned", body["access_state"]["conditions"])
+        self.assertEqual(body["access_state"]["selected_access_proposal"]["target"], "api_key")
+
+    def test_derive_digital_body_state_surfaces_partial_access_progress(self):
+        proposal = {
+            "target": "account_login",
+            "mode": "operator_login",
+            "summary": "先把账号登录补回来，这条外部入口才接得上后面。",
+            "operator_action": "登录目标账号，或把现成登录态交给我。",
+            "grants": ["account_login", "browser_session"],
+            "requires_operator": True,
+        }
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-partial",
+                "digital_body_hints": {
+                    "account_state": "logged_in",
+                    "browser_session": "missing",
+                    "missing_access": ["browser_session"],
+                    "requestable_access": ["browser_session"],
+                    "requested_help": False,
+                    "primary_status": "approved",
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                },
+            },
+        )
+
+        selected = body["access_state"].get("selected_access_proposal") if isinstance(body["access_state"].get("selected_access_proposal"), dict) else {}
+        proposals = body["access_state"].get("access_acquire_proposals") if isinstance(body["access_state"].get("access_acquire_proposals"), list) else []
+        self.assertIn("access_acquire_planned", body["access_state"]["conditions"])
+        self.assertEqual(selected.get("resolved_grants"), ["account_login"])
+        self.assertEqual(selected.get("pending_grants"), ["browser_session"])
+        self.assertEqual(selected.get("completion_ratio"), 0.5)
+        self.assertEqual(proposals[0].get("resolved_grants"), ["account_login"])
+
+    def test_derive_digital_body_state_surfaces_create_workspace_candidate(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-create-workspace",
+                "digital_body_hints": {
+                    "filesystem_state": "missing",
+                    "missing_access": ["filesystem", "workspace_write"],
+                    "requestable_access": ["filesystem", "workspace_write"],
+                },
+            },
+        )
+
+        proposals = body["access_state"].get("access_acquire_proposals") if isinstance(body["access_state"].get("access_acquire_proposals"), list) else []
+        self.assertTrue(any(item.get("mode") == "operator_create_workspace" and item.get("path_kind") == "create_new" for item in proposals))
+
     def test_derive_digital_body_state_surfaces_detached_artifact_and_reacquisition_path(self):
         body = derive_digital_body_state(
             current_event={

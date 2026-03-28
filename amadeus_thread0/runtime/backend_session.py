@@ -5,7 +5,18 @@ from typing import Any, Callable
 
 from langgraph.types import Command
 
-from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..evolution_engine.reconsolidation import build_reconsolidation_snapshot
+from ..graph_parts.digital_body_runtime import (
+    access_proposal_identity,
+    access_proposal_progress,
+    derive_access_acquire_proposals,
+    derive_digital_body_state,
+    enrich_access_acquire_proposal,
+    normalize_access_acquire_proposal,
+    prune_resolved_access_hints,
+    select_access_acquire_proposal,
+    selected_access_proposal_resolved,
+)
 from ..graph_parts.action_packets import build_tool_action_packet, normalize_action_packets
 from ..graph_parts.autonomy_runtime import refresh_autonomy_intent_from_packets
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
@@ -125,6 +136,13 @@ def _list_or_empty(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _snapshot_has_pending_graph_interrupt(snapshot: Any) -> bool:
+    next_items = getattr(snapshot, "next", None)
+    if isinstance(next_items, tuple):
+        next_items = list(next_items)
+    return bool(next_items)
+
+
 @dataclass
 class StreamInvocationResult:
     values: dict[str, Any]
@@ -170,6 +188,99 @@ def _approval_request_from_output(output: Any) -> ToolApprovalRequest | None:
     )
 
 
+_ACCESS_REQUEST_INTENT = "access:request_help"
+_ACCESS_HINT_KEYS = {
+    "browser_session",
+    "account_state",
+    "cookie_state",
+    "api_key_state",
+    "quota_state",
+    "filesystem_state",
+    "sandbox_mode",
+    "network_access",
+    "session_continuity",
+    "session_expires_in_s",
+    "session_recovery_mode",
+    "retry_after_s",
+    "cooldown_scope",
+    "missing_access",
+    "requestable_access",
+    "constraints",
+    "world_surfaces",
+    "selected_access_proposal",
+}
+
+
+def _pending_access_request_packet(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    packet = resolve_pending_action_proposal(
+        pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
+        action_packets=data.get("action_packets"),
+        reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
+    )
+    if str(packet.get("intent") or "").strip().lower() != _ACCESS_REQUEST_INTENT:
+        return {}
+    return packet
+
+
+def _approval_request_from_pending_access(values: dict[str, Any] | None) -> ToolApprovalRequest | None:
+    data = values if isinstance(values, dict) else {}
+    packet = _pending_access_request_packet(data)
+    if not packet:
+        return None
+    digital_body = _resolved_digital_body(data)
+    access_state = _dict_or_empty(digital_body.get("access_state"))
+    access_acquire_proposals = (
+        list(access_state.get("access_acquire_proposals") or [])
+        if isinstance(access_state.get("access_acquire_proposals"), list)
+        else []
+    )
+    if not access_acquire_proposals:
+        access_acquire_proposals = (
+            list(packet.get("access_acquire_proposals") or [])
+            if isinstance(packet.get("access_acquire_proposals"), list)
+            else []
+        )
+    if not access_acquire_proposals:
+        access_acquire_proposals = derive_access_acquire_proposals(hints=access_state)
+    selected_access_proposal = select_access_acquire_proposal(
+        proposals=access_acquire_proposals,
+        preferred=access_state.get("selected_access_proposal") if isinstance(access_state.get("selected_access_proposal"), dict) else packet.get("selected_access_proposal"),
+    )
+    payload = {
+        "kind": "access_request",
+        "source": "access",
+        "proposal_id": str(packet.get("proposal_id") or "").strip(),
+        "tool_calls": [
+            {
+                "name": "access_request_help",
+                "proposal_id": str(packet.get("proposal_id") or "").strip(),
+                "args": {
+                    "requested_access": list(access_state.get("requestable_access") or []),
+                    "missing_access": list(access_state.get("missing_access") or []),
+                    "access_acquire_proposals": access_acquire_proposals,
+                    "selected_access_proposal": selected_access_proposal,
+                    "session_recovery_mode": str(access_state.get("session_recovery_mode") or ""),
+                    "browser_session": str(access_state.get("browser_session") or ""),
+                    "account_state": str(access_state.get("account_state") or ""),
+                    "cookie_state": str(access_state.get("cookie_state") or ""),
+                    "api_key_state": str(access_state.get("api_key_state") or ""),
+                    "quota_state": str(access_state.get("quota_state") or ""),
+                    "block_reason": str(access_state.get("block_reason") or ""),
+                    "expected_effect": str(packet.get("expected_effect") or ""),
+                    "access_updates": {},
+                },
+            }
+        ],
+    }
+    return ToolApprovalRequest(
+        kind="access_request",
+        source="access",
+        tool_calls=[dict(item) for item in payload["tool_calls"]],
+        payload=payload,
+    )
+
+
 def _approval_trace_entry(
     *,
     proposal_id: str,
@@ -198,6 +309,8 @@ def _merge_pending_approval_state(
 ) -> dict[str, Any]:
     data = dict(values or {})
     if approval_request is None:
+        return data
+    if str(approval_request.kind or "").strip().lower() != "tool_approval":
         return data
 
     existing_packets = normalize_action_packets(data.get("action_packets"))
@@ -275,6 +388,242 @@ def _merge_pending_approval_state(
         block_reason=str(data.get("autonomy_block_reason") or ""),
     )
     return data
+
+
+def _normalize_access_updates(args: dict[str, Any] | None) -> dict[str, Any]:
+    data = _dict_or_empty(args)
+    raw_updates = data.get("access_updates")
+    updates = _dict_or_empty(raw_updates) if isinstance(raw_updates, dict) else data
+    normalized: dict[str, Any] = {}
+    for key in _ACCESS_HINT_KEYS:
+        if key not in updates:
+            continue
+        value = updates.get(key)
+        if value is None:
+            continue
+        if key in {"missing_access", "requestable_access", "constraints", "world_surfaces"}:
+            normalized[key] = [str(item).strip().lower() for item in _list_or_empty(value) if str(item or "").strip()]
+        elif key == "selected_access_proposal":
+            proposal = normalize_access_acquire_proposal(value)
+            if proposal:
+                normalized[key] = proposal
+        else:
+            normalized[key] = value
+    return normalized
+
+
+def _prune_resolved_access_lists(hints: dict[str, Any]) -> dict[str, Any]:
+    return prune_resolved_access_hints(hints)
+
+
+def _access_request_trace_entry(
+    *,
+    proposal_id: str,
+    status: str,
+    event: str,
+    result_summary: str = "",
+    block_reason: str = "",
+) -> dict[str, Any]:
+    return {
+        "proposal_id": str(proposal_id or "").strip(),
+        "intent": _ACCESS_REQUEST_INTENT,
+        "origin": "counterpart_request",
+        "status": str(status or "").strip().lower(),
+        "event": str(event or "").strip().lower(),
+        "risk": "external_mutation",
+        "source": "access_resume",
+        "result_summary": str(result_summary or "").strip()[:220],
+        "block_reason": str(block_reason or "").strip()[:220],
+        "requires_approval": True,
+    }
+
+
+def _apply_access_request_resolution(
+    values: dict[str, Any] | None,
+    decision: dict[str, Any] | None,
+) -> dict[str, Any]:
+    data = dict(values or {})
+    packet = _pending_access_request_packet(data)
+    if not packet:
+        return data
+
+    proposal_id = str(packet.get("proposal_id") or "").strip()
+    action = str(_dict_or_empty(decision).get("action") or "reject").strip().lower()
+    if action not in {"approve", "edit", "reject"}:
+        action = "reject"
+    decision_args = _normalize_access_updates(_dict_or_empty(decision).get("args"))
+    decision_reason = str(_dict_or_empty(decision).get("reason") or "").strip()
+
+    session_context = _dict_or_empty(data.get("session_context"))
+    hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
+    if decision_args:
+        hints.update(decision_args)
+    hints = _prune_resolved_access_lists(hints)
+    proposal_source = (
+        list(hints.get("access_acquire_proposals") or [])
+        if isinstance(hints.get("access_acquire_proposals"), list)
+        else list(packet.get("access_acquire_proposals") or [])
+        if isinstance(packet.get("access_acquire_proposals"), list)
+        else []
+    )
+    selected_access_proposal = select_access_acquire_proposal(
+        proposals=proposal_source,
+        preferred=hints.get("selected_access_proposal") if isinstance(hints.get("selected_access_proposal"), dict) else packet.get("selected_access_proposal"),
+    )
+    proposal_progress = access_proposal_progress(hints=hints, proposal=selected_access_proposal)
+
+    if action == "reject":
+        packet_status = "rejected"
+        result_summary = decision_reason or "access request rejected by operator"
+        block_reason = result_summary
+    elif decision_args:
+        has_access_updates = any(
+            key in decision_args
+            for key in (
+                "browser_session",
+                "account_state",
+                "cookie_state",
+                "api_key_state",
+                "quota_state",
+                "filesystem_state",
+                "sandbox_mode",
+                "network_access",
+                "session_continuity",
+                "session_expires_in_s",
+                "session_recovery_mode",
+                "retry_after_s",
+                "cooldown_scope",
+                "missing_access",
+                "requestable_access",
+                "constraints",
+                "world_surfaces",
+            )
+        )
+        if has_access_updates and (not selected_access_proposal or selected_access_proposal_resolved(hints=hints, proposal=selected_access_proposal)):
+            packet_status = "completed"
+        else:
+            packet_status = "approved"
+        if packet_status == "completed":
+            result_summary = decision_reason or "operator supplied access updates"
+        elif has_access_updates and proposal_progress.get("partial", False):
+            result_summary = decision_reason or (
+                " / ".join(str(item) for item in proposal_progress.get("resolved_grants", [])[:2])
+                + " 已经补回一部分，但这条访问路径还没完全接通。"
+            )
+        else:
+            result_summary = decision_reason or (
+                str(selected_access_proposal.get("summary") or "").strip()
+                or "operator accepted the access acquisition path"
+            )
+        block_reason = ""
+    else:
+        packet_status = "approved"
+        result_summary = decision_reason or (
+            str(selected_access_proposal.get("summary") or "").strip()
+            or "operator accepted the access acquisition path"
+        )
+        block_reason = ""
+
+    hints["requested_help"] = False
+    hints["primary_proposal_id"] = proposal_id
+    hints["primary_status"] = packet_status
+    hints["primary_origin"] = str(packet.get("origin") or "").strip().lower() or "counterpart_request"
+    hints["primary_intent"] = _ACCESS_REQUEST_INTENT
+    if packet_status == "rejected":
+        hints.pop("selected_access_proposal", None)
+    elif selected_access_proposal:
+        hints["selected_access_proposal"] = selected_access_proposal
+    if packet_status == "completed" and selected_access_proposal_resolved(hints=hints, proposal=selected_access_proposal):
+        hints.pop("selected_access_proposal", None)
+        hints["access_acquire_proposals"] = [
+            proposal
+            for proposal in list(hints.get("access_acquire_proposals") or [])
+            if isinstance(proposal, dict) and access_proposal_identity(proposal) != access_proposal_identity(selected_access_proposal)
+        ]
+    selected_access_proposal = enrich_access_acquire_proposal(hints=hints, proposal=selected_access_proposal)
+    session_context["digital_body_hints"] = hints
+
+    action_packets = normalize_action_packets(data.get("action_packets"))
+    updated_packets: list[dict[str, Any]] = []
+    for row in action_packets:
+        if str(row.get("proposal_id") or "").strip() == proposal_id:
+            updated_packets.append(
+                {
+                    **row,
+                    "status": packet_status,
+                    "result_summary": result_summary,
+                    "block_reason": block_reason,
+                    "writeback_ready": packet_status == "completed",
+                    "selected_access_proposal": selected_access_proposal,
+                }
+            )
+        else:
+            updated_packets.append(dict(row))
+
+    action_trace = [dict(item) for item in _list_or_empty(data.get("action_trace")) if isinstance(item, dict)]
+    action_trace.append(
+        _access_request_trace_entry(
+            proposal_id=proposal_id,
+            status=packet_status,
+            event=(
+                "resolved_by_user"
+                if packet_status == "completed"
+                else "approved_by_user"
+                if packet_status == "approved"
+                else "rejected_by_user"
+            ),
+            result_summary=result_summary,
+            block_reason=block_reason,
+        )
+    )
+
+    autonomy_block_reason = block_reason if packet_status == "rejected" else ""
+    autonomy_intent = refresh_autonomy_intent_from_packets(
+        data.get("autonomy_intent"),
+        updated_packets,
+        current_event=_dict_or_empty(data.get("current_event")),
+        block_reason=autonomy_block_reason,
+    )
+    digital_body_state = derive_digital_body_state(
+        current_event=_dict_or_empty(data.get("current_event")),
+        behavior_queue=data.get("behavior_queue") if isinstance(data.get("behavior_queue"), list) else data.get("behavior_agenda"),
+        action_packets=updated_packets,
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        toolset_unlocks=_dict_or_empty(data.get("toolset_unlocks")),
+        autonomy_block_reason=autonomy_block_reason,
+        session_context=session_context,
+        last_external_tools=data.get("last_external_tools"),
+    )
+    reconsolidation_snapshot = build_reconsolidation_snapshot(
+        current_event=_dict_or_empty(data.get("current_event")),
+        appraisal=_dict_or_empty(data.get("turn_appraisal")),
+        world_model_state=_dict_or_empty(data.get("world_model_state")),
+        semantic_narrative_profile=_dict_or_empty(data.get("semantic_narrative_profile")),
+        latent_state=_dict_or_empty(data.get("evolution_state")),
+        emotion_state=_dict_or_empty(data.get("emotion_state")),
+        bond_state=_dict_or_empty(data.get("bond_state")),
+        counterpart_assessment=_dict_or_empty(data.get("counterpart_assessment")),
+        behavior_action=_dict_or_empty(data.get("behavior_action")),
+        behavior_plan=_dict_or_empty(data.get("behavior_plan")),
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        agenda_lifecycle_residue=_dict_or_empty(data.get("agenda_lifecycle_residue")),
+        autonomy_intent=autonomy_intent,
+        action_packets=updated_packets,
+        action_trace=action_trace,
+        autonomy_block_reason=autonomy_block_reason,
+        digital_body_state=digital_body_state,
+    )
+    return {
+        **data,
+        "session_context": session_context,
+        "action_packets": updated_packets,
+        "pending_action_proposal": {},
+        "action_trace": action_trace,
+        "autonomy_block_reason": autonomy_block_reason,
+        "autonomy_intent": autonomy_intent,
+        "digital_body_state": digital_body_state,
+        "reconsolidation_snapshot": reconsolidation_snapshot,
+    }
 
 
 def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
@@ -451,7 +800,11 @@ class BackendSession:
         config: dict[str, Any] | None = None,
         on_text: Callable[[str], None] | None = None,
     ) -> StreamInvocationResult:
-        cfg = config or self.config()
+        cfg = _normalized_graph_config(
+            config or self.config(),
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
         last_values: dict[str, Any] | None = None
         buf = ""
         for mode, chunk in self.graph.stream(payload, config=cfg, stream_mode=["messages", "values"]):
@@ -474,6 +827,8 @@ class BackendSession:
         values = last_values or {}
         approval_request = _approval_request_from_output(values)
         values = _merge_pending_approval_state(values, approval_request)
+        if approval_request is None:
+            approval_request = _approval_request_from_pending_access(values)
         return StreamInvocationResult(
             values=values,
             streamed_text=buf,
@@ -487,9 +842,26 @@ class BackendSession:
         config: dict[str, Any] | None = None,
         on_text: Callable[[str], None] | None = None,
     ) -> StreamInvocationResult:
+        cfg = _normalized_graph_config(
+            config or self.config(),
+            fallback_thread_id=self.thread_id,
+            fallback_user_id=self.user_id,
+        )
+        snapshot = self.graph.get_state(cfg)
+        current_values = _coerce_values(snapshot)
+        pending_access = _approval_request_from_pending_access(current_values)
+        if pending_access is not None and not _snapshot_has_pending_graph_interrupt(snapshot):
+            decision = next((dict(item) for item in decisions if isinstance(item, dict)), {})
+            resolved_values = _apply_access_request_resolution(current_values, decision)
+            self.graph.update_state(cfg, resolved_values, as_node="prepare_turn")
+            return StreamInvocationResult(
+                values=resolved_values,
+                streamed_text="",
+                approval_request=_approval_request_from_pending_access(resolved_values),
+            )
         return self.invoke_stream(
             Command(resume={"decisions": decisions}),
-            config=config,
+            config=cfg,
             on_text=on_text,
         )
 

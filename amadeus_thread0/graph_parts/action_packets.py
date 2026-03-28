@@ -65,6 +65,90 @@ def _normalize_source_ref_ids(value: Any) -> list[int]:
     return out[:8]
 
 
+def _normalize_access_grants(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _clean_text(item, limit=64).lower()
+        if text and text not in out:
+            out.append(text)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _coerce_ratio(value: Any) -> float:
+    try:
+        cast = float(value)
+    except Exception:
+        cast = 0.0
+    return round(max(0.0, min(1.0, cast)), 3)
+
+
+def normalize_access_acquire_proposal(value: Any) -> dict[str, Any]:
+    row = _dict_or_empty(value)
+    if not row:
+        return {}
+    target = _clean_text(row.get("target"), limit=64).lower()
+    mode = _clean_text(row.get("mode"), limit=64).lower()
+    path_kind = _clean_text(row.get("path_kind"), limit=32).lower()
+    if path_kind not in {"acquire_existing", "create_new"}:
+        path_kind = "acquire_existing"
+    summary = _clean_text(row.get("summary"))
+    operator_action = _clean_text(row.get("operator_action"))
+    grants = _normalize_access_grants(row.get("grants"))
+    requires_operator = _coerce_bool(row.get("requires_operator"), True)
+    resolved_grants = [item for item in _normalize_access_grants(row.get("resolved_grants")) if item in grants]
+    pending_grants = [
+        item
+        for item in _normalize_access_grants(row.get("pending_grants"))
+        if item in grants and item not in resolved_grants
+    ]
+    if not any((target, mode, summary, operator_action, grants, requires_operator)):
+        return {}
+    normalized = {
+        "target": target,
+        "mode": mode,
+        "path_kind": path_kind,
+        "summary": summary,
+        "operator_action": operator_action,
+        "grants": grants,
+        "requires_operator": requires_operator,
+    }
+    if grants and (resolved_grants or pending_grants or "completion_ratio" in row):
+        normalized.update(
+            {
+                "resolved_grants": resolved_grants,
+                "pending_grants": pending_grants,
+                "completion_ratio": _coerce_ratio(row.get("completion_ratio")),
+            }
+        )
+    return normalized
+
+
+def normalize_access_acquire_proposals(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in value:
+        proposal = normalize_access_acquire_proposal(item)
+        if not proposal:
+            continue
+        key = (
+            str(proposal.get("target") or "").strip(),
+            str(proposal.get("mode") or "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(proposal)
+        if len(merged) >= 8:
+            break
+    return merged
+
+
 def normalize_artifact_context(value: Any) -> dict[str, Any]:
     row = _dict_or_empty(value)
     if not row:
@@ -199,6 +283,10 @@ def action_packet_has_signal(packet: Any) -> bool:
         return True
     if normalize_artifact_context(packet.get("artifact_context")):
         return True
+    if normalize_access_acquire_proposals(packet.get("access_acquire_proposals")):
+        return True
+    if normalize_access_acquire_proposal(packet.get("selected_access_proposal")):
+        return True
     return bool(normalize_capability_steps(packet.get("capability_steps")))
 
 
@@ -223,6 +311,8 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
     tool_name = _clean_text(row.get("tool_name"))
     block_reason = _clean_text(row.get("block_reason"))
     artifact_context = normalize_artifact_context(row.get("artifact_context"))
+    access_acquire_proposals = normalize_access_acquire_proposals(row.get("access_acquire_proposals"))
+    selected_access_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
     requires_approval = _coerce_bool(row.get("requires_approval"), risk != "read")
     writeback_ready = _coerce_bool(row.get("writeback_ready"), status == "completed")
     proposal_id = _clean_text(row.get("proposal_id")) or make_proposal_id(
@@ -248,6 +338,8 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
         "tool_name": tool_name,
         "block_reason": block_reason,
         "artifact_context": artifact_context,
+        "access_acquire_proposals": access_acquire_proposals,
+        "selected_access_proposal": selected_access_proposal,
     }
 
 
@@ -389,7 +481,7 @@ def risk_from_tool_name(name: str) -> str:
     tool_name = _clean_text(name).lower()
     if tool_name in MEMORY_WRITE_TOOLS:
         return "memory_write"
-    if tool_name == "request_toolset_upgrade":
+    if tool_name in {"request_toolset_upgrade", "reacquire_artifact", "refresh_access_state"}:
         return "read"
     return "external_mutation"
 
@@ -460,6 +552,8 @@ __all__ = [
     "derive_action_packet_intent",
     "derive_action_packet_origin",
     "make_proposal_id",
+    "normalize_access_acquire_proposal",
+    "normalize_access_acquire_proposals",
     "normalize_action_packet",
     "normalize_action_packets",
     "normalize_artifact_context",

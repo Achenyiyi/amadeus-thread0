@@ -49,6 +49,83 @@ def _clean_list(values: Any, *, limit: int = 4) -> list[str]:
     return out
 
 
+def _clean_int_list(values: Any, *, limit: int = 8) -> list[int]:
+    if not isinstance(values, list):
+        return []
+    out: list[int] = []
+    for item in values:
+        try:
+            number = int(item)
+        except Exception:
+            continue
+        if number <= 0:
+            continue
+        out.append(number)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
+def _clean_access_grants(values: Any, *, limit: int = 8) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    out: list[str] = []
+    for item in values:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in out:
+            continue
+        out.append(lowered)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
+def _clean_access_acquire_proposal(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    target = str(value.get("target") or "").strip().lower()
+    mode = str(value.get("mode") or "").strip().lower()
+    summary = str(value.get("summary") or "").strip()
+    operator_action = str(value.get("operator_action") or "").strip()
+    grants = _clean_access_grants(value.get("grants"), limit=8)
+    requires_operator = bool(value.get("requires_operator", False))
+    if not any((target, mode, summary, operator_action, grants, requires_operator)):
+        return {}
+    return {
+        "target": target,
+        "mode": mode,
+        "summary": summary[:220],
+        "operator_action": operator_action[:220],
+        "grants": grants,
+        "requires_operator": requires_operator,
+    }
+
+
+def _clean_access_acquire_proposals(values: Any, *, limit: int = 8) -> list[dict[str, Any]]:
+    if not isinstance(values, list):
+        return []
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in values:
+        proposal = _clean_access_acquire_proposal(item)
+        if not proposal:
+            continue
+        key = (
+            str(proposal.get("target") or "").strip(),
+            str(proposal.get("mode") or "").strip(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(proposal)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
 def _focus_preview_text(item: Any) -> str:
     if not isinstance(item, dict):
         return ""
@@ -290,6 +367,12 @@ def _embodied_context_summary(state: Any) -> dict[str, Any]:
         "active_artifact_label": str(normalized.get("active_artifact_label") or "").strip(),
         "artifact_age_s": _int_metric(normalized.get("artifact_age_s"), 0),
         "artifact_reacquisition_mode": str(normalized.get("artifact_reacquisition_mode") or "").strip(),
+        "artifact_carrier": str(normalized.get("artifact_carrier") or "").strip(),
+        "artifact_source_ref_ids": _clean_int_list(normalized.get("artifact_source_ref_ids"), limit=8),
+        "artifact_source_url": str(normalized.get("artifact_source_url") or "").strip(),
+        "artifact_source_query": str(normalized.get("artifact_source_query") or "").strip(),
+        "artifact_source_title": str(normalized.get("artifact_source_title") or "").strip(),
+        "artifact_source_tool_name": str(normalized.get("artifact_source_tool_name") or "").strip(),
         "primary_proposal_id": str(normalized.get("primary_proposal_id") or "").strip(),
         "primary_status": str(normalized.get("primary_status") or "").strip(),
         "procedural_growth": bool(normalized.get("procedural_growth", False)),
@@ -534,6 +617,8 @@ def _digital_body_summary(state: Any) -> dict[str, Any]:
             "filesystem_state": str(access_state.get("filesystem_state") or "").strip(),
             "sandbox_mode": str(access_state.get("sandbox_mode") or "").strip(),
             "network_access": str(access_state.get("network_access") or "").strip(),
+            "access_acquire_proposals": _clean_access_acquire_proposals(access_state.get("access_acquire_proposals"), limit=8),
+            "selected_access_proposal": _clean_access_acquire_proposal(access_state.get("selected_access_proposal")),
         },
         "resources": {
             "behavior_queue_depth": _int_metric(resource_state.get("behavior_queue_depth"), 0),
@@ -550,6 +635,12 @@ def _digital_body_summary(state: Any) -> dict[str, Any]:
             "active_artifact_label": str(resource_state.get("active_artifact_label") or "").strip(),
             "artifact_age_s": _int_metric(resource_state.get("artifact_age_s"), 0),
             "artifact_reacquisition_mode": str(resource_state.get("artifact_reacquisition_mode") or "").strip(),
+            "artifact_carrier": str(resource_state.get("artifact_carrier") or "").strip(),
+            "artifact_source_ref_ids": _clean_int_list(resource_state.get("artifact_source_ref_ids"), limit=8),
+            "artifact_source_url": str(resource_state.get("artifact_source_url") or "").strip(),
+            "artifact_source_query": str(resource_state.get("artifact_source_query") or "").strip(),
+            "artifact_source_title": str(resource_state.get("artifact_source_title") or "").strip(),
+            "artifact_source_tool_name": str(resource_state.get("artifact_source_tool_name") or "").strip(),
         },
         "constraints": _clean_list(state.get("body_constraints"), limit=8),
     }
@@ -582,6 +673,8 @@ def _digital_body_summary(state: Any) -> dict[str, Any]:
             summary["access"]["filesystem_state"],
             summary["access"]["sandbox_mode"],
             summary["access"]["network_access"],
+            summary["access"]["access_acquire_proposals"],
+            summary["access"]["selected_access_proposal"],
             summary["resources"]["behavior_queue_depth"] > 0,
             summary["resources"]["action_packet_count"] > 0,
             summary["resources"]["pending_approval_count"] > 0,
@@ -596,6 +689,12 @@ def _digital_body_summary(state: Any) -> dict[str, Any]:
             summary["resources"]["active_artifact_label"],
             summary["resources"]["artifact_age_s"] > 0,
             summary["resources"]["artifact_reacquisition_mode"],
+            summary["resources"]["artifact_carrier"],
+            summary["resources"]["artifact_source_ref_ids"],
+            summary["resources"]["artifact_source_url"],
+            summary["resources"]["artifact_source_query"],
+            summary["resources"]["artifact_source_title"],
+            summary["resources"]["artifact_source_tool_name"],
             summary["constraints"],
         )
     ):
@@ -628,6 +727,12 @@ def _digital_body_consequence_summary(state: Any) -> dict[str, Any]:
         "active_artifact_label": str(state.get("active_artifact_label") or "").strip()[:160],
         "artifact_age_s": _int_metric(state.get("artifact_age_s"), 0),
         "artifact_reacquisition_mode": str(state.get("artifact_reacquisition_mode") or "").strip(),
+        "artifact_carrier": str(state.get("artifact_carrier") or "").strip(),
+        "artifact_source_ref_ids": _clean_int_list(state.get("artifact_source_ref_ids"), limit=8),
+        "artifact_source_url": str(state.get("artifact_source_url") or "").strip()[:320],
+        "artifact_source_query": str(state.get("artifact_source_query") or "").strip()[:220],
+        "artifact_source_title": str(state.get("artifact_source_title") or "").strip()[:160],
+        "artifact_source_tool_name": str(state.get("artifact_source_tool_name") or "").strip(),
         "primary_proposal_id": str(state.get("primary_proposal_id") or "").strip(),
         "primary_status": str(state.get("primary_status") or "").strip(),
         "primary_origin": str(state.get("primary_origin") or "").strip(),
@@ -636,6 +741,8 @@ def _digital_body_consequence_summary(state: Any) -> dict[str, Any]:
         "procedural_growth": bool(state.get("procedural_growth", False)),
         "environmental_friction": bool(state.get("environmental_friction", False)),
         "requested_help": bool(state.get("requested_help", False)),
+        "access_acquire_proposals": _clean_access_acquire_proposals(state.get("access_acquire_proposals"), limit=8),
+        "selected_access_proposal": _clean_access_acquire_proposal(state.get("selected_access_proposal")),
     }
     if any(
         (
@@ -660,6 +767,12 @@ def _digital_body_consequence_summary(state: Any) -> dict[str, Any]:
             summary["active_artifact_label"],
             summary["artifact_age_s"] > 0,
             summary["artifact_reacquisition_mode"],
+            summary["artifact_carrier"],
+            summary["artifact_source_ref_ids"],
+            summary["artifact_source_url"],
+            summary["artifact_source_query"],
+            summary["artifact_source_title"],
+            summary["artifact_source_tool_name"],
             summary["primary_proposal_id"],
             summary["primary_status"],
             summary["primary_origin"],
@@ -668,6 +781,8 @@ def _digital_body_consequence_summary(state: Any) -> dict[str, Any]:
             summary["procedural_growth"],
             summary["environmental_friction"],
             summary["requested_help"],
+            summary["access_acquire_proposals"],
+            summary["selected_access_proposal"],
         )
     ):
         return summary

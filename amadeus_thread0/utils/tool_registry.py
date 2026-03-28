@@ -90,6 +90,8 @@ def _iter_builtin_tools() -> Iterable[BaseTool]:
         builtin_tools.list_memory_ledger,
         builtin_tools.list_memory_quarantine,
         builtin_tools.reacquire_artifact,
+        builtin_tools.refresh_access_state,
+        builtin_tools.create_workspace_access,
         builtin_tools.search_langchain_docs,
         builtin_tools.list_skills,
         builtin_tools.add_skill,

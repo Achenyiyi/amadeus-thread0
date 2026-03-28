@@ -17,14 +17,21 @@ from ..config import (
 from ..evolution_engine.reconsolidation import build_reconsolidation_snapshot
 from .action_packets import (
     build_tool_action_packet,
+    compact_artifact_identity,
     make_proposal_id,
+    normalize_access_acquire_proposal,
+    normalize_access_acquire_proposals,
     normalize_action_packets,
     normalize_artifact_context,
     risk_from_tool_name,
     upsert_action_packet,
 )
 from .autonomy_runtime import refresh_autonomy_intent_from_packets
-from .digital_body_runtime import derive_digital_body_state
+from .digital_body_runtime import (
+    derive_digital_body_state,
+    merge_digital_body_hints,
+    selected_access_proposal_resolved,
+)
 from .common import _now_ts, _safe_json
 from .generation_profile import _ensure_response_structure
 from .messages import _last_user_text, _latest_ai, _messages
@@ -46,6 +53,10 @@ _AUTO_EXECUTABLE_ARTIFACT_INTENTS = {
     "artifact:reopen_page",
     "artifact:restore_page",
     "artifact:rerun_search",
+}
+
+_AUTO_EXECUTABLE_ACCESS_INTENTS = {
+    "access:refresh_state",
 }
 
 
@@ -314,6 +325,7 @@ def _artifact_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
         else "file"
     )
     return {
+        "candidate_kind": "artifact",
         "proposal_id": proposal_id,
         "intent": intent,
         "mode": mode,
@@ -324,10 +336,86 @@ def _artifact_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _access_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
+    row = dict(packet or {})
+    intent = str(row.get("intent") or "").strip().lower()
+    status = str(row.get("status") or "").strip().lower()
+    risk = str(row.get("risk") or "").strip().lower()
+    if intent not in _AUTO_EXECUTABLE_ACCESS_INTENTS:
+        return {}
+    if bool(row.get("requires_approval", False)) or risk not in {"", "read"}:
+        return {}
+    if status not in {"", "proposed", "queued", "approved"}:
+        return {}
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if not proposal_id:
+        return {}
+    steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
+    primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
+    target = str(primary_step.get("target") or "").strip() or "runtime_access"
+    return {
+        "candidate_kind": "access",
+        "proposal_id": proposal_id,
+        "intent": intent,
+        "mode": "refresh_state",
+        "target": target,
+        "label": target,
+        "packet": row,
+    }
+
+
+def _workspace_access_mutation_candidate(
+    packet: dict[str, Any],
+    *,
+    session_context: dict[str, Any],
+    current_event: dict[str, Any],
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    intent = str(row.get("intent") or "").strip().lower()
+    status = str(row.get("status") or "").strip().lower()
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    selected = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
+    if intent != "access:request_help" or status != "approved" or not proposal_id or not selected:
+        return {}
+    if str(selected.get("path_kind") or "").strip().lower() != "create_new":
+        return {}
+    if str(selected.get("mode") or "").strip().lower() != "operator_create_workspace":
+        return {}
+    hints = merge_digital_body_hints(
+        session_context=session_context,
+        current_event=current_event,
+    )
+    hints["selected_access_proposal"] = selected
+    if selected_access_proposal_resolved(hints=hints, proposal=selected):
+        return {}
+    return {
+        "candidate_kind": "workspace_access_mutation",
+        "proposal_id": proposal_id,
+        "intent": intent,
+        "mode": "create_workspace_access",
+        "target": str(selected.get("target") or "filesystem").strip() or "filesystem",
+        "label": str(selected.get("summary") or selected.get("operator_action") or "workspace").strip() or "workspace",
+        "packet": row,
+        "selected_access_proposal": selected,
+    }
+
+
 def _first_autonomy_execution_candidate(state: ThreadState) -> dict[str, Any]:
     packets = normalize_action_packets(state.get("action_packets"))
+    session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
+    current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     for packet in packets:
         candidate = _artifact_execution_candidate(packet)
+        if candidate:
+            return candidate
+        candidate = _access_execution_candidate(packet)
+        if candidate:
+            return candidate
+        candidate = _workspace_access_mutation_candidate(
+            packet,
+            session_context=session_context,
+            current_event=current_event,
+        )
         if candidate:
             return candidate
     return {}
@@ -388,6 +476,30 @@ def _artifact_trace_entry(
     }
 
 
+def _autonomy_execution_trace_entry(
+    *,
+    packet: dict[str, Any],
+    status: str,
+    event: str,
+    source: str,
+    result_summary: str = "",
+    block_reason: str = "",
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    return {
+        "proposal_id": str(row.get("proposal_id") or "").strip(),
+        "intent": str(row.get("intent") or "").strip().lower(),
+        "origin": str(row.get("origin") or "").strip().lower() or "motive_goal",
+        "status": str(status or "").strip().lower(),
+        "event": str(event or "").strip().lower(),
+        "risk": str(row.get("risk") or "").strip().lower() or "read",
+        "source": str(source or "").strip().lower(),
+        "result_summary": str(result_summary or "").strip()[:220],
+        "block_reason": str(block_reason or "").strip()[:220],
+        "requires_approval": bool(row.get("requires_approval", False)),
+    }
+
+
 def _artifact_context_from_reacquisition_result(
     *,
     result: Any,
@@ -418,6 +530,56 @@ def _artifact_context_from_reacquisition_result(
             "source_tool_name": str(row.get("tool_name") or "").strip(),
         }
     )
+
+
+def _access_hints_from_refresh_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    hints = dict(row.get("access_hints") or {}) if isinstance(row.get("access_hints"), dict) else {}
+    access_state = dict(row.get("access_state") or {}) if isinstance(row.get("access_state"), dict) else {}
+    for key in (
+        "browser_session",
+        "account_state",
+        "cookie_state",
+        "api_key_state",
+        "quota_state",
+        "filesystem_state",
+        "sandbox_mode",
+        "network_access",
+        "session_continuity",
+        "session_expires_in_s",
+        "session_recovery_mode",
+        "retry_after_s",
+        "cooldown_scope",
+        "missing_access",
+        "requestable_access",
+        "conditions",
+    ):
+        if key in access_state and access_state.get(key) not in (None, ""):
+            hints[key] = access_state.get(key)
+    if "conditions" in hints and "constraints" not in hints:
+        hints["constraints"] = hints.pop("conditions")
+    return hints
+
+
+def _access_packet_fields_from_tool_result(result: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    row = dict(result) if isinstance(result, dict) else {}
+    access_hints = dict(row.get("access_hints") or {}) if isinstance(row.get("access_hints"), dict) else {}
+    access_state = dict(row.get("access_state") or {}) if isinstance(row.get("access_state"), dict) else {}
+    access_acquire_proposals = access_state.get("access_acquire_proposals")
+    if not isinstance(access_acquire_proposals, list):
+        access_acquire_proposals = access_hints.get("access_acquire_proposals")
+    selected_access_proposal = access_state.get("selected_access_proposal")
+    if not isinstance(selected_access_proposal, dict):
+        selected_access_proposal = access_hints.get("selected_access_proposal")
+    return (
+        normalize_access_acquire_proposals(access_acquire_proposals),
+        normalize_access_acquire_proposal(selected_access_proposal),
+    )
+
+
+def _artifact_context_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    return normalize_artifact_context(row.get("artifact_context"))
 
 
 def _rebuild_reconsolidation_with_autonomy(
@@ -461,16 +623,22 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
     if not candidate:
         return {}
 
+    candidate_kind = str(candidate.get("candidate_kind") or "").strip().lower()
     proposal_id = str(candidate.get("proposal_id") or "").strip()
     intent = str(candidate.get("intent") or "").strip().lower()
     mode = str(candidate.get("mode") or "").strip().lower()
-    artifact_kind = str(candidate.get("artifact_kind") or "").strip().lower()
-    artifact_target = str(candidate.get("target") or "").strip()
-    artifact_label = str(candidate.get("label") or artifact_target).strip()
+    target = str(candidate.get("target") or "").strip()
+    label = str(candidate.get("label") or target).strip()
     packet = dict(candidate.get("packet") or {})
     origin = str(packet.get("origin") or "").strip().lower() or "motive_goal"
 
-    tool = _tool_lookup("reacquire_artifact")
+    if candidate_kind == "artifact":
+        tool_name = "reacquire_artifact"
+    elif candidate_kind == "workspace_access_mutation":
+        tool_name = "create_workspace_access"
+    else:
+        tool_name = "refresh_access_state"
+    tool = _tool_lookup(tool_name)
     action_packets = normalize_action_packets(state.get("action_packets"))
     action_trace = [
         dict(item)
@@ -482,7 +650,7 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
     autonomy_block_reason = ""
 
     if tool is None:
-        reason = "reacquire_artifact"
+        reason = tool_name
         action_packets = upsert_action_packet(
             action_packets,
             {
@@ -494,10 +662,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
             },
         )
         action_trace.append(
-            _artifact_trace_entry(
-                proposal_id=proposal_id,
-                intent=intent,
-                origin=origin,
+            _autonomy_execution_trace_entry(
+                packet=packet,
                 status="blocked",
                 event="tool_not_found",
                 source="autonomy_execute",
@@ -539,16 +705,32 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
             ),
         }
 
-    tool_args = {
-        "mode": mode,
-        "artifact_kind": artifact_kind,
-        "artifact_ref": artifact_target,
-        "artifact_label": artifact_label,
-    }
+    if candidate_kind == "artifact":
+        tool_args = {
+            "mode": mode,
+            "artifact_kind": str(candidate.get("artifact_kind") or "").strip().lower(),
+            "artifact_ref": target,
+            "artifact_label": label,
+        }
+    elif candidate_kind == "workspace_access_mutation":
+        tool_args = {
+            "access_hints": merge_digital_body_hints(
+                session_context=session_context,
+                current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+            ),
+            "workspace_name": str(candidate.get("workspace_name") or "").strip(),
+        }
+    else:
+        tool_args = {
+            "access_hints": merge_digital_body_hints(
+                session_context=session_context,
+                current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+            )
+        }
     tool_call_id = f"auto-{proposal_id}"
     synthetic_ai = AIMessage(
         content="",
-        tool_calls=[{"id": tool_call_id, "name": "reacquire_artifact", "args": dict(tool_args)}],
+        tool_calls=[{"id": tool_call_id, "name": tool_name, "args": dict(tool_args)}],
     )
     messages: list[Any] = [synthetic_ai]
     action_packets = upsert_action_packet(
@@ -562,10 +744,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         },
     )
     action_trace.append(
-        _artifact_trace_entry(
-            proposal_id=proposal_id,
-            intent=intent,
-            origin=origin,
+        _autonomy_execution_trace_entry(
+            packet=packet,
             status="executing",
             event="started",
             source="autonomy_execute",
@@ -577,63 +757,87 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
         payload = {"ok": True, "data": result}
         messages.append(ToolMessage(content=_safe_json(payload), tool_call_id=tool_call_id))
         result_summary = _tool_result_summary(result)
-        artifact_context = _artifact_context_from_reacquisition_result(
-            result=result,
-            artifact_kind=artifact_kind,
-            artifact_target=artifact_target,
-            artifact_label=artifact_label,
-            mode=mode,
-        )
-        action_packets = upsert_action_packet(
-            action_packets,
-            {
-                **packet,
-                "status": "completed",
-                "result_summary": result_summary,
-                "block_reason": "",
-                "writeback_ready": True,
-                "artifact_context": artifact_context,
-            },
-        )
+        packet_update = {
+            **packet,
+            "status": "completed",
+            "result_summary": result_summary,
+            "block_reason": "",
+            "writeback_ready": True,
+        }
+        hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
+        if candidate_kind == "artifact":
+            artifact_kind = str(candidate.get("artifact_kind") or "").strip().lower()
+            artifact_context = _artifact_context_from_reacquisition_result(
+                result=result,
+                artifact_kind=artifact_kind,
+                artifact_target=target,
+                artifact_label=label,
+                mode=mode,
+            )
+            artifact_identity = compact_artifact_identity(artifact_context)
+            packet_update["artifact_context"] = artifact_context
+            hints.update(
+                {
+                    "artifact_continuity": str((result or {}).get("artifact_continuity") or "attached"),
+                    "active_artifact_kind": str((result or {}).get("artifact_kind") or artifact_kind),
+                    "active_artifact_ref": str((result or {}).get("artifact_ref") or target),
+                    "active_artifact_label": str((result or {}).get("artifact_label") or label),
+                    "artifact_age_s": 0,
+                    "artifact_reacquisition_mode": mode,
+                    "artifact_carrier": str(artifact_identity.get("artifact_carrier") or ""),
+                    "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or []),
+                    "artifact_source_url": str(artifact_identity.get("artifact_source_url") or ""),
+                    "artifact_source_query": str(artifact_identity.get("artifact_source_query") or ""),
+                    "artifact_source_title": str(artifact_identity.get("artifact_source_title") or ""),
+                    "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or ""),
+                }
+            )
+            preview = str((result or {}).get("artifact_preview") or "").strip()
+            if preview:
+                evidence_pack.append(
+                    {
+                        "tool_name": "reacquire_artifact",
+                        "title": str((result or {}).get("artifact_label") or label or target)[:140],
+                        "snippet": preview[:1200],
+                        "query": result_summary or f"artifact:{mode}",
+                        "source_id": int(((result or {}).get("source_ref_ids") or [0])[0] or 0),
+                        "url": str((result or {}).get("source_url") or (result or {}).get("artifact_ref") or ""),
+                        "span_hint": "artifact_reacquired",
+                    }
+                )
+        else:
+            hints.update(_access_hints_from_refresh_result(result))
+            access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
+            hints["access_acquire_proposals"] = access_acquire_proposals
+            if selected_access_proposal:
+                hints["selected_access_proposal"] = selected_access_proposal
+            else:
+                hints.pop("selected_access_proposal", None)
+            packet_update["access_acquire_proposals"] = access_acquire_proposals
+            packet_update["selected_access_proposal"] = selected_access_proposal
+            artifact_context = _artifact_context_from_tool_result(result)
+            if artifact_context:
+                packet_update["artifact_context"] = artifact_context
+        session_context["digital_body_hints"] = hints
+        action_packets = upsert_action_packet(action_packets, packet_update)
         action_trace.append(
-            _artifact_trace_entry(
-                proposal_id=proposal_id,
-                intent=intent,
-                origin=origin,
+            _autonomy_execution_trace_entry(
+                packet=packet_update,
                 status="completed",
                 event="completed",
                 source="autonomy_execute",
                 result_summary=result_summary,
             )
         )
-        hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
-        hints.update(
-            {
-                "artifact_continuity": str((result or {}).get("artifact_continuity") or "attached"),
-                "active_artifact_kind": str((result or {}).get("artifact_kind") or artifact_kind),
-                "active_artifact_ref": str((result or {}).get("artifact_ref") or artifact_target),
-                "active_artifact_label": str((result or {}).get("artifact_label") or artifact_label),
-                "artifact_age_s": 0,
-                "artifact_reacquisition_mode": mode,
-            }
-        )
-        session_context["digital_body_hints"] = hints
-        preview = str((result or {}).get("artifact_preview") or "").strip()
-        if preview:
-            evidence_pack.append(
-                {
-                    "tool_name": "reacquire_artifact",
-                    "title": str((result or {}).get("artifact_label") or artifact_label or artifact_target)[:140],
-                    "snippet": preview[:1200],
-                    "query": result_summary or f"artifact:{mode}",
-                    "source_id": int(((result or {}).get("source_ref_ids") or [0])[0] or 0),
-                    "url": str((result or {}).get("source_url") or (result or {}).get("artifact_ref") or ""),
-                    "span_hint": "artifact_reacquired",
-                }
-            )
     except Exception as e:
         error_text = str(e)
-        payload = {"ok": False, "error": {"code": "AUTO_ARTIFACT_EXEC_ERROR", "message": error_text}}
+        payload = {
+            "ok": False,
+            "error": {
+                "code": "AUTO_ARTIFACT_EXEC_ERROR" if candidate_kind == "artifact" else "AUTO_ACCESS_EXEC_ERROR",
+                "message": error_text,
+            },
+        }
         messages.append(ToolMessage(content=_safe_json(payload), tool_call_id=tool_call_id))
         action_packets = upsert_action_packet(
             action_packets,
@@ -646,10 +850,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
             },
         )
         action_trace.append(
-            _artifact_trace_entry(
-                proposal_id=proposal_id,
-                intent=intent,
-                origin=origin,
+            _autonomy_execution_trace_entry(
+                packet=packet,
                 status="blocked",
                 event="tool_error",
                 source="autonomy_execute",
@@ -710,6 +912,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
     unlocks = dict(state.get("toolset_unlocks") or {})
     evidence_pack = list(state.get("evidence_pack") or [])
     external_tools = set(state.get("last_external_tools") or [])
+    session_context = dict(state.get("session_context") or {}) if isinstance(state.get("session_context"), dict) else {}
     guard_checked = int(state.get("memory_guard_checked", 0) or 0)
     guard_blocked = int(state.get("memory_guard_blocked", 0) or 0)
     action_packets = normalize_action_packets(state.get("action_packets"))
@@ -892,6 +1095,17 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
             result_summary = _tool_result_summary(result)
+            tool_hints = _access_hints_from_refresh_result(result)
+            if tool_hints:
+                hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
+                hints.update(tool_hints)
+                access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
+                hints["access_acquire_proposals"] = access_acquire_proposals
+                if selected_access_proposal:
+                    hints["selected_access_proposal"] = selected_access_proposal
+                else:
+                    hints.pop("selected_access_proposal", None)
+                session_context["digital_body_hints"] = hints
             action_packets = upsert_action_packet(
                 action_packets,
                 build_tool_action_packet(
@@ -969,7 +1183,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
         interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
         toolset_unlocks=unlocks,
         autonomy_block_reason=autonomy_block_reason,
-        session_context=state.get("session_context") if isinstance(state.get("session_context"), dict) else {},
+        session_context=session_context,
         last_external_tools=sorted(list(external_tools)),
     )
 
@@ -988,6 +1202,7 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
         "autonomy_block_reason": autonomy_block_reason,
         "autonomy_intent": autonomy_intent,
         "digital_body_state": digital_body_state,
+        "session_context": session_context,
         "reconsolidation_snapshot": _rebuild_reconsolidation_with_autonomy(
             state,
             autonomy_intent=autonomy_intent,

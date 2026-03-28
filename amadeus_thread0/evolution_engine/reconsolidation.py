@@ -6,6 +6,8 @@ from .appraisal import normalize_appraisal_payload
 from .schemas import clamp01
 from ..graph_parts.action_packets import (
     compact_artifact_identity,
+    normalize_access_acquire_proposal,
+    normalize_access_acquire_proposals,
     normalize_action_packet,
     normalize_action_packets,
     normalize_artifact_context,
@@ -767,6 +769,8 @@ def derive_digital_body_consequence(
     session_continuity = str(access_state.get("session_continuity") or "").strip().lower()
     session_expires_in_s = max(0, int(access_state.get("session_expires_in_s") or 0))
     session_recovery_mode = str(access_state.get("session_recovery_mode") or "").strip().lower()
+    access_acquire_proposals = normalize_access_acquire_proposals(access_state.get("access_acquire_proposals"))
+    selected_access_proposal = normalize_access_acquire_proposal(access_state.get("selected_access_proposal"))
     filesystem_state = str(access_state.get("filesystem_state") or "").strip().lower()
     sandbox_mode = str(access_state.get("sandbox_mode") or "").strip().lower()
     network_access = str(access_state.get("network_access") or "").strip().lower()
@@ -797,6 +801,9 @@ def derive_digital_body_consequence(
     artifact_source_title = str(resource_state.get("artifact_source_title") or primary_artifact_identity.get("artifact_source_title") or "").strip()[:160]
     artifact_source_tool_name = str(resource_state.get("artifact_source_tool_name") or primary_artifact_identity.get("artifact_source_tool_name") or "").strip().lower()[:80]
 
+    selected_access_target = str(selected_access_proposal.get("target") or "").strip().lower()
+    selected_access_mode = str(selected_access_proposal.get("mode") or "").strip().lower()
+    selected_access_path_kind = str(selected_access_proposal.get("path_kind") or "").strip().lower()
     growth_capabilities = list(dict.fromkeys([*granted_toolsets, *active_tools, primary_tool_name]))[:12]
     growth_signal = bool(
         completed_packet_count > 0
@@ -806,6 +813,16 @@ def derive_digital_body_consequence(
             or "upgrade" in primary_intent
             or bool(growth_capabilities)
             or external_tool_count > 0
+        )
+    )
+    access_resolution_signal = bool(primary_intent == "access:request_help" and primary_status == "completed")
+    workspace_resolution_signal = bool(
+        access_resolution_signal
+        and (
+            primary_tool_name == "create_workspace_access"
+            or active_artifact_kind == "workspace"
+            or selected_access_mode == "operator_create_workspace"
+            or (selected_access_target == "filesystem" and selected_access_path_kind == "create_new")
         )
     )
     approval_signal = bool(
@@ -839,7 +856,35 @@ def derive_digital_body_consequence(
         "reattach_workspace": "先把工作面重新接回当前上下文",
     }.get(artifact_reacquisition_mode, "先把前面的工作面重新接回来")
 
-    if growth_signal and not approval_signal and not friction_signal:
+    if access_resolution_signal:
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if workspace_resolution_signal:
+            kind = "workspace_access_resolved"
+            workspace_label = active_artifact_label or active_artifact_ref or "当前工作区"
+            if not summary:
+                if selected_access_path_kind == "create_new" or primary_tool_name == "create_workspace_access":
+                    summary = f"可写工作区 {workspace_label} 已经真的创建好并接入当前上下文，后面的落盘动作现在可以继续。"
+                else:
+                    summary = f"可写工作区 {workspace_label} 已经重新接回当前上下文，后面的落盘动作现在可以继续。"
+            category_summaries = {
+                "agency_style": "她会把真正创建出来并接入的工作区当成已经发生的环境变化记下来，而不是继续挂在“待创建”的计划状态上。",
+                "presence_style": "一旦工作区真的落地并接回上下文，她会把它记成已经能继续工作的现实表面，而不是停在门口等待。",
+                "boundary_style": "她不会把尚未创建的工作区冒充成已有路径；但一旦真的落地，也不会继续假装自己还被卡在门外。",
+            }
+        else:
+            kind = "access_request_resolved"
+            if not summary:
+                selected_phrase = str(selected_access_proposal.get("summary") or "").strip()
+                if selected_phrase:
+                    summary = f"{selected_phrase} 现在已经真的补齐了。"
+                else:
+                    summary = "之前卡住的外部入口现在已经补齐，这条路径可以继续了。"
+            category_summaries = {
+                "agency_style": "她会把真正补齐的外部入口当成已经发生的世界变化记下来，而不是永远停留在“还差一步”的计划状态。",
+                "presence_style": "一旦入口真的补回来了，她会把这件事写成已经恢复的连续性，而不是继续挂在门口等待。",
+                "boundary_style": "她不会把尚未完成的 access 冒充成已完成；但一旦真的补齐，也不会继续假装自己还被卡在原地。",
+            }
+    elif growth_signal and not approval_signal and not friction_signal:
         kind = "embodied_growth"
         capability_phrase = "、".join(growth_capabilities[:3]) if growth_capabilities else "新的入口"
         if primary_origin == "capability_upgrade" or "upgrade" in primary_intent:
@@ -1004,6 +1049,8 @@ def derive_digital_body_consequence(
         "procedural_growth": growth_signal,
         "environmental_friction": approval_signal or friction_signal,
         "requested_help": approval_signal,
+        "access_acquire_proposals": access_acquire_proposals,
+        "selected_access_proposal": selected_access_proposal,
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,
     }

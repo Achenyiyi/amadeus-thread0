@@ -4257,6 +4257,14 @@ def _record_digital_body_consequence(
         "procedural_growth": bool(consequence.get("procedural_growth", False)),
         "environmental_friction": bool(consequence.get("environmental_friction", False)),
         "requested_help": bool(consequence.get("requested_help", False)),
+        "access_acquire_proposals": [
+            dict(item)
+            for item in (consequence.get("access_acquire_proposals") if isinstance(consequence.get("access_acquire_proposals"), list) else [])
+            if isinstance(item, dict)
+        ][:8],
+        "selected_access_proposal": dict(consequence.get("selected_access_proposal") or {})
+        if isinstance(consequence.get("selected_access_proposal"), dict)
+        else {},
     }
 
     recent = [

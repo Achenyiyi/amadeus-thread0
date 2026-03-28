@@ -657,6 +657,12 @@ class CliViewsTests(unittest.TestCase):
                     "active_artifact_label": "plan.md",
                     "artifact_age_s": 7200,
                     "artifact_reacquisition_mode": "reopen_file",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                 },
                 "body_constraints": ["network_available"],
             }
@@ -683,6 +689,18 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(digital_body.get("resources", {}).get("active_artifact_kind"), "file")
         self.assertEqual(digital_body.get("resources", {}).get("active_artifact_label"), "plan.md")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_reacquisition_mode"), "reopen_file")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(
+            digital_body.get("resources", {}).get("artifact_source_url"),
+            "https://docs.langchain.com/oss/python/langgraph/persistence",
+        )
+        self.assertEqual(
+            digital_body.get("resources", {}).get("artifact_source_query"),
+            "langgraph persistence checkpointer thread",
+        )
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_title"), "Persistence")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_tool_name"), "search_web")
         self.assertEqual(digital_body.get("constraints"), ["network_available"])
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_surface"), "tooling")
@@ -771,6 +789,48 @@ class CliViewsTests(unittest.TestCase):
         line = build_evolution_summary_line(summary)
         self.assertIn("session=expiring:600s:refresh_session", line)
 
+    def test_build_evolution_cli_summary_surfaces_access_acquire_proposals(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "approval_gate",
+                "access_state": {
+                    "mode": "approval_pending",
+                    "conditions": ["human_approval_required", "access_acquire_planned"],
+                    "pending_approval_count": 1,
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "access_acquire_proposals": [
+                        {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                },
+                "resource_state": {},
+            }
+        )
+
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        access = digital_body.get("access", {}) if isinstance(digital_body.get("access"), dict) else {}
+        proposals = access.get("access_acquire_proposals") if isinstance(access.get("access_acquire_proposals"), list) else []
+        selected = access.get("selected_access_proposal") if isinstance(access.get("selected_access_proposal"), dict) else {}
+        self.assertEqual(proposals[0]["target"], "api_key")
+        self.assertEqual(proposals[0]["grants"], ["api_key"])
+        self.assertEqual(selected.get("mode"), "operator_provide_api_key")
+        self.assertTrue(selected.get("requires_operator"))
+
     def test_build_evolution_cli_summary_surfaces_digital_body_consequence_section(self):
         summary = build_evolution_cli_summary(
             digital_body_state={
@@ -797,6 +857,12 @@ class CliViewsTests(unittest.TestCase):
                 "active_artifact_label": "plan.md",
                 "artifact_age_s": 7200,
                 "artifact_reacquisition_mode": "reopen_file",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [17],
+                "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "artifact_source_query": "langgraph persistence checkpointer thread",
+                "artifact_source_title": "Persistence",
+                "artifact_source_tool_name": "search_web",
                 "primary_proposal_id": "ap-body-1",
                 "primary_status": "awaiting_approval",
                 "primary_origin": "counterpart_request",
@@ -805,6 +871,24 @@ class CliViewsTests(unittest.TestCase):
                 "procedural_growth": False,
                 "environmental_friction": False,
                 "requested_help": True,
+                "access_acquire_proposals": [
+                    {
+                        "target": "workspace_write",
+                        "mode": "operator_grant_workspace_write",
+                        "summary": "先补上工作区写权限。",
+                        "operator_action": "给当前工作区开放写入权限。",
+                        "grants": ["workspace_write"],
+                        "requires_operator": True,
+                    }
+                ],
+                "selected_access_proposal": {
+                    "target": "workspace_write",
+                    "mode": "operator_grant_workspace_write",
+                    "summary": "先补上工作区写权限。",
+                    "operator_action": "给当前工作区开放写入权限。",
+                    "grants": ["workspace_write"],
+                    "requires_operator": True,
+                },
             },
         )
         digital_body_consequence = (
@@ -819,15 +903,88 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "file")
         self.assertEqual(digital_body_consequence.get("active_artifact_label"), "plan.md")
         self.assertEqual(digital_body_consequence.get("artifact_reacquisition_mode"), "reopen_file")
+        self.assertEqual(digital_body_consequence.get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body_consequence.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(
+            digital_body_consequence.get("artifact_source_url"),
+            "https://docs.langchain.com/oss/python/langgraph/persistence",
+        )
+        self.assertEqual(
+            digital_body_consequence.get("artifact_source_query"),
+            "langgraph persistence checkpointer thread",
+        )
+        self.assertEqual(digital_body_consequence.get("artifact_source_title"), "Persistence")
+        self.assertEqual(digital_body_consequence.get("artifact_source_tool_name"), "search_web")
         self.assertEqual(digital_body_consequence.get("primary_proposal_id"), "ap-body-1")
         self.assertEqual(digital_body_consequence.get("primary_status"), "awaiting_approval")
         self.assertTrue(bool(digital_body_consequence.get("requested_help")))
+        self.assertEqual(digital_body_consequence.get("access_acquire_proposals", [])[0]["target"], "workspace_write")
+        self.assertEqual(
+            digital_body_consequence.get("selected_access_proposal", {}).get("mode"),
+            "operator_grant_workspace_write",
+        )
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_consequence_kind"), "access_request_pending")
         self.assertEqual(current_turn.get("digital_body_consequence_summary"), "她已经把动作推进到审批门口了。")
         self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
         self.assertTrue(bool(current_turn.get("digital_body_requested_help")))
         self.assertFalse(bool(current_turn.get("digital_body_environmental_friction")))
+
+    def test_build_evolution_cli_summary_surfaces_workspace_access_resolved_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                },
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                    "active_artifact_label": "lab-notes",
+                },
+            },
+            digital_body_consequence={
+                "kind": "workspace_access_resolved",
+                "summary": "可写工作区 lab-notes 已经真的创建好并接入当前上下文，后面的落盘动作现在可以继续。",
+                "access_mode": "tool_enabled",
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "active_artifact_kind": "workspace",
+                "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                "active_artifact_label": "lab-notes",
+                "artifact_continuity": "attached",
+                "primary_status": "completed",
+                "primary_intent": "access:request_help",
+                "primary_tool_name": "create_workspace_access",
+                "selected_access_proposal": {
+                    "target": "filesystem",
+                    "mode": "operator_create_workspace",
+                    "path_kind": "create_new",
+                    "summary": "先新建一个可写工作区。",
+                    "operator_action": "新建一个可写工作区。",
+                    "grants": ["filesystem", "workspace_write"],
+                    "requires_operator": True,
+                },
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "workspace_access_resolved")
+        self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "workspace")
+        self.assertEqual(digital_body_consequence.get("active_artifact_label"), "lab-notes")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "workspace_access_resolved")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=workspace_access_resolved", line)
 
     def test_build_evolution_cli_summary_prefers_frozen_counterpart_snapshot_over_runtime_copy(self):
         summary = build_evolution_cli_summary(
@@ -920,6 +1077,12 @@ class CliViewsTests(unittest.TestCase):
                     "kind": "access_request_pending",
                     "summary": "她已经把动作推进到审批门口了。",
                     "requested_access": ["workspace_write", "human_approval"],
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                     "requested_help": True,
                     "primary_status": "awaiting_approval",
                 },
@@ -930,6 +1093,10 @@ class CliViewsTests(unittest.TestCase):
         embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
         self.assertEqual(embodied.get("kind"), "access_request_pending")
         self.assertEqual(embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertEqual(embodied.get("artifact_carrier"), "source_ref")
+        self.assertEqual(embodied.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(embodied.get("artifact_source_title"), "Persistence")
+        self.assertEqual(embodied.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(embodied.get("requested_help")))
 
         rendered = render_counterpart_assessment_cli_text(history, limit=5)
@@ -1009,6 +1176,12 @@ class CliViewsTests(unittest.TestCase):
                     "kind": "access_request_pending",
                     "summary": "她已经把动作推进到审批门口了。",
                     "requested_access": ["workspace_write"],
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                     "requested_help": True,
                     "primary_status": "awaiting_approval",
                 },
@@ -1019,6 +1192,10 @@ class CliViewsTests(unittest.TestCase):
         embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
         self.assertEqual(embodied.get("kind"), "access_request_pending")
         self.assertEqual(embodied.get("requested_access"), ["workspace_write"])
+        self.assertEqual(embodied.get("artifact_carrier"), "source_ref")
+        self.assertEqual(embodied.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(embodied.get("artifact_source_title"), "Persistence")
+        self.assertEqual(embodied.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(embodied.get("requested_help")))
 
         rendered = render_proactive_continuity_cli_text(history, limit=5)
@@ -1191,6 +1368,12 @@ class CliViewsTests(unittest.TestCase):
                 "embodied_context": {
                     "kind": "access_request_pending",
                     "requested_access": ["workspace_write", "human_approval"],
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                     "requested_help": True,
                     "primary_status": "awaiting_approval",
                 },
@@ -1199,6 +1382,12 @@ class CliViewsTests(unittest.TestCase):
                 "kind": "access_request_pending",
                 "summary": "她已经把动作推进到审批门口了。",
                 "requested_access": ["workspace_write", "human_approval"],
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [17],
+                "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "artifact_source_query": "langgraph persistence checkpointer thread",
+                "artifact_source_title": "Persistence",
+                "artifact_source_tool_name": "search_web",
                 "requested_help": True,
                 "primary_status": "awaiting_approval",
             },
@@ -1247,6 +1436,10 @@ class CliViewsTests(unittest.TestCase):
         )
         self.assertEqual(event_bodyfx.get("kind"), "access_request_pending")
         self.assertEqual(event_bodyfx.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertEqual(event_bodyfx.get("artifact_carrier"), "source_ref")
+        self.assertEqual(event_bodyfx.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(event_bodyfx.get("artifact_source_title"), "Persistence")
+        self.assertEqual(event_bodyfx.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(event_bodyfx.get("requested_help")))
         lifecycle = summary.get("agenda_lifecycle") if isinstance(summary.get("agenda_lifecycle"), dict) else {}
         self.assertEqual(lifecycle.get("kind"), "released_to_self_activity")
@@ -1258,6 +1451,10 @@ class CliViewsTests(unittest.TestCase):
         lifecycle_embodied = lifecycle.get("embodied_context") if isinstance(lifecycle.get("embodied_context"), dict) else {}
         self.assertEqual(lifecycle_embodied.get("kind"), "access_request_pending")
         self.assertEqual(lifecycle_embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertEqual(lifecycle_embodied.get("artifact_carrier"), "source_ref")
+        self.assertEqual(lifecycle_embodied.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(lifecycle_embodied.get("artifact_source_title"), "Persistence")
+        self.assertEqual(lifecycle_embodied.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(lifecycle_embodied.get("requested_help")))
         self.assertEqual(lifecycle.get("semantic_identity_gravity"), 0.64)
         self.assertEqual(lifecycle.get("lineage_gravity"), 0.7)

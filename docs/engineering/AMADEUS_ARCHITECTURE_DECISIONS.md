@@ -161,6 +161,55 @@ This status does not change the intentional guardrails below:
   - for browser/search-like surfaces, the current bounded carrier is `saved source_refs`, not a fake live browser session:
     - previously retrieved pages/search results may be reattached from stored `url/title/query/snippet`
     - true live browser reopening remains deferred until a real browser/runtime surface exists
+- The next bounded direct-execution slice is `access state refresh`:
+  - when session/access conditions are present but the runtime can still do a truthful read-only recheck
+  - the graph may execute a bounded `access:refresh_state` packet before the next model turn
+  - this slice only refreshes inspectable runtime truth such as:
+    - API key presence
+    - filesystem writability
+    - session lifecycle recomputation from the current hints
+    - requestable/missing access normalization
+  - it does not pretend to complete external login/browser/cookie mutation that the runtime cannot actually perform
+- The first truthful non-executing access-help slice is `access request help`:
+  - when current-turn body hints show missing external conditions such as:
+    - browser session entry
+    - account login
+    - cookies
+    - API key / quota conditions that need operator intervention
+  - the graph may emit a bounded `access:request_help` packet before the next model turn
+  - this packet stays `awaiting_approval` with `external_mutation` risk:
+    - it is a request/proposal surface
+    - it is not a fake completed login, cookie restore, or account mutation
+  - the packet must write through the same live/runtime/frozen surfaces as other action packets:
+    - `pending_action_proposal`
+    - `digital_body_state`
+    - `reconsolidation_snapshot`
+    - backend autonomy envelope
+  - when multiple acquisition paths are available, the runtime must keep one stable current selection:
+    - `selected_access_proposal` is the current active path
+    - default selection should be deterministic and prefer the already-listed primary path rather than oscillating across turns
+    - operator override may replace that selection, and the chosen path should persist through later approved/partial/resolved states until truthfully cleared
+  - the current resolved semantics are intentionally split:
+    - `awaiting_approval` = requesting operator help / approval for the missing access path
+    - `approved` = operator accepted an acquisition path, but the real external access is still not fixed
+    - `completed` = concrete access updates actually arrived in runtime state
+    - for multi-grant acquisition plans, `approved` may also carry truthful partial progress:
+      - some grants may already be satisfied
+      - others may still be pending
+      - this must not be flattened into fake `completed`
+  - later-turn arrival must also close truthfully:
+    - if a previously accepted `selected_access_proposal` is now actually satisfied by runtime-visible world state
+    - the backend may synthesize one bounded `completed` resolution packet/writeback for that same proposal
+    - then clear the stale planned state from live hints instead of letting `approved` hang forever
+  - accepted-but-not-yet-fixed access paths must stay explicit through:
+    - `action_packets[*].selected_access_proposal`
+    - `digital_body.access_state.selected_access_proposal`
+    - `autonomy_intent.mode=access_acquire_planned`
+    - `digital_body_consequence` / carried `embodied_context` when that accepted path is the frozen state of the turn
+    - when partial progress exists, those proposal surfaces may also expose:
+      - `resolved_grants`
+      - `pending_grants`
+      - `completion_ratio`
 
 ### 7d. Bounded Capability Expansion
 
@@ -191,6 +240,24 @@ This status does not change the intentional guardrails below:
   - she may ask the operator for credentials or approval
   - she may create bounded new access such as a fresh account where appropriate
   - she may choose an alternate path when direct access is unavailable
+- the current bounded implementation path is still proposal-first:
+  - `access:request_help` may now surface both:
+    - `path_kind=acquire_existing`
+    - `path_kind=create_new`
+  - `create_new` means a truthful candidate path such as:
+    - register a fresh account
+    - create a fresh writable workspace
+    - create a new API key / service entry
+  - it does not mean the runtime has already executed that creation
+  - first bounded execution exception now exists for the local filesystem surface only:
+    - if the approved selected proposal is `operator_create_workspace`
+    - and the runtime can truthfully create that workspace inside its own `AMADEUS_DATA_DIR/workspaces/` boundary
+    - it may execute `create_workspace_access`
+    - then resolve the same access path from `approved` to `completed`
+    - and clear stale `selected_access_proposal` residue once filesystem / workspace-write grants are actually satisfied
+    - the frozen readback consequence should then be explicit at the embodied layer:
+      - prefer `digital_body_consequence.kind=workspace_access_resolved`
+      - rather than flattening the turn back into a generic `access_request_resolved`
 - This is the digital analogue of real-world constraints rather than a static tool-gating table.
 - `resource_state` must now also track attached work surfaces as first-class runtime facts:
   - `artifact_continuity`
