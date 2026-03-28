@@ -11,7 +11,14 @@ from .turn_events import _is_silent_behavior_event
 from .nodes import _node_call_model, _node_prepare_turn
 from .runtime_services import _get_store, _get_tool_bundle
 from .state import ThreadState
-from .tool_nodes import _node_tool_execute, _node_tool_gate, _node_tool_limit, _route_after_model
+from .tool_nodes import (
+    _has_direct_autonomy_execution_candidate,
+    _node_autonomy_execute,
+    _node_tool_execute,
+    _node_tool_gate,
+    _node_tool_limit,
+    _route_after_model,
+)
 
 _CHECKPOINT_CONN: sqlite3.Connection | None = None
 
@@ -21,6 +28,8 @@ def _route_after_prepare(state: ThreadState) -> str:
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
     if _is_silent_behavior_event(current_event, behavior_action):
         return END
+    if _has_direct_autonomy_execution_candidate(state):
+        return "autonomy_execute"
     return "call_model"
 
 
@@ -55,6 +64,7 @@ def build_graph():
 
     builder = StateGraph(ThreadState)
     builder.add_node("prepare_turn", _node_prepare_turn)
+    builder.add_node("autonomy_execute", _node_autonomy_execute)
     builder.add_node("call_model", _node_call_model)
     builder.add_node("tool_gate", _node_tool_gate)
     builder.add_node("tool_execute", _node_tool_execute)
@@ -65,10 +75,12 @@ def build_graph():
         "prepare_turn",
         _route_after_prepare,
         {
+            "autonomy_execute": "autonomy_execute",
             "call_model": "call_model",
             END: END,
         },
     )
+    builder.add_edge("autonomy_execute", "call_model")
     builder.add_conditional_edges(
         "call_model",
         _route_after_model,

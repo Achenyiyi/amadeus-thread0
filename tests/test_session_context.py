@@ -20,3 +20,23 @@ def test_resolve_session_context_prefers_configurable_identity_and_rebuilds_turn
     assert context["turn_started_at"] == 123
     assert context["user_id"] == "okabe"
     assert context["checkpoint_id"] == "cp-9"
+
+
+def test_resolve_session_context_preserves_digital_body_hints():
+    context = resolve_session_context(
+        state={
+            "session_context": {
+                "thread_id": "older-thread",
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "filesystem_state": "read_only",
+                },
+            },
+        },
+        config={"configurable": {"thread_id": "thread-live"}},
+        turn_now_ts=123,
+    )
+
+    assert context["thread_id"] == "thread-live"
+    assert context["digital_body_hints"]["browser_session"] == "missing"
+    assert context["digital_body_hints"]["filesystem_state"] == "read_only"

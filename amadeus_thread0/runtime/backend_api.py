@@ -6,13 +6,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..utils.revision_trace_export import normalize_revision_trace_export
 from ..utils.runtime_audit import audit_runtime_layout
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
     resolve_agenda_lifecycle_residue,
+    resolve_action_packets,
+    resolve_action_trace,
+    resolve_autonomy_block_reason,
+    resolve_autonomy_intent,
     resolve_behavior_payloads,
     resolve_counterpart_assessment,
+    resolve_digital_body_consequence,
+    resolve_digital_body_state,
     resolve_interaction_carryover,
+    resolve_pending_action_proposal,
 )
 from .thread_runtime import list_threads
 
@@ -64,6 +73,79 @@ def _resolved_agenda_lifecycle_residue(values: dict[str, Any] | None) -> dict[st
     return resolve_agenda_lifecycle_residue(
         agenda_lifecycle_residue=_dict_or_empty(data.get("agenda_lifecycle_residue")),
         reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
+    )
+
+
+def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    action_packets = resolve_action_packets(
+        action_packets=data.get("action_packets"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    return {
+        "intent": resolve_autonomy_intent(
+            autonomy_intent=_dict_or_empty(data.get("autonomy_intent")),
+            reconsolidation_snapshot=reconsolidation_snapshot,
+            action_packets=action_packets,
+            current_event=_dict_or_empty(data.get("current_event")),
+            autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+        ),
+        "action_packets": action_packets,
+        "pending_approval": resolve_pending_action_proposal(
+            pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
+            action_packets=action_packets,
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+        "execution_trace": resolve_action_trace(
+            action_trace=data.get("action_trace"),
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+        "block_reason": resolve_autonomy_block_reason(
+            autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+            action_packets=action_packets,
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+    }
+
+
+def _resolved_digital_body(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    body = resolve_digital_body_state(
+        digital_body_state=_dict_or_empty(data.get("digital_body_state")),
+        reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
+    )
+    if body:
+        return body
+    return derive_digital_body_state(
+        current_event=_dict_or_empty(data.get("current_event")),
+        behavior_queue=data.get("behavior_queue") if isinstance(data.get("behavior_queue"), list) else data.get("behavior_agenda"),
+        action_packets=data.get("action_packets"),
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        toolset_unlocks=_dict_or_empty(data.get("toolset_unlocks")),
+        autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+        session_context=_dict_or_empty(data.get("session_context")),
+        last_external_tools=data.get("last_external_tools"),
+    )
+
+
+def _resolved_digital_body_consequence(
+    values: dict[str, Any] | None,
+    *,
+    digital_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    resolved_body = digital_body if isinstance(digital_body, dict) and digital_body else _resolved_digital_body(data)
+    action_packets = resolve_action_packets(
+        action_packets=data.get("action_packets"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    return resolve_digital_body_consequence(
+        digital_body_consequence=_dict_or_empty(data.get("digital_body_consequence")),
+        digital_body_state=resolved_body,
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
     )
 
 
@@ -167,7 +249,7 @@ def _writeback_trace_payload(backend_session: Any, values: dict[str, Any] | None
             continue
         if anchor_ts > 0 and item_ts < anchor_ts:
             continue
-        traces.append(dict(item))
+        traces.append(normalize_revision_trace_export(item))
         if len(traces) >= 12:
             break
 
@@ -222,7 +304,6 @@ def _writeback_trace_payload(backend_session: Any, values: dict[str, Any] | None
         "counterpart_assessment_history": counterpart_history,
         "proactive_continuity_history": proactive_history,
     }
-
 
 @dataclass(frozen=True)
 class BackendApiEnvelope:
@@ -385,6 +466,9 @@ class BackendAPI:
         interaction_carryover = _resolved_interaction_carryover(values)
         counterpart_assessment = _resolved_counterpart_assessment(values)
         agenda_lifecycle_residue = _resolved_agenda_lifecycle_residue(values)
+        autonomy = _resolved_autonomy(values)
+        digital_body = _resolved_digital_body(values)
+        digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
         writeback_trace = _writeback_trace_payload(self.backend_session, values)
         payload = {
@@ -400,6 +484,9 @@ class BackendAPI:
             "session_context": resolve_readback_session_context(values, thread_id=self.thread_id, current_event=current_event),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
             "turn_summary": self.backend_session.build_evolution_summary(state_values=values),
+            "autonomy": autonomy,
+            "digital_body": digital_body,
+            "digital_body_consequence": digital_body_consequence,
             "writeback_trace": writeback_trace,
             **internal_state,
         }
@@ -420,6 +507,9 @@ class BackendAPI:
         interaction_carryover = _resolved_interaction_carryover(values)
         counterpart_assessment = _resolved_counterpart_assessment(values)
         agenda_lifecycle_residue = _resolved_agenda_lifecycle_residue(values)
+        autonomy = _resolved_autonomy(values)
+        digital_body = _resolved_digital_body(values)
+        digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
         writeback_trace = _writeback_trace_payload(self.backend_session, values)
         payload = {
@@ -438,6 +528,9 @@ class BackendAPI:
             "claim_links": _list_or_empty(values.get("claim_links")),
             "sources": _list_or_empty(values.get("evidence_pack")),
             "pending_utterance_fragment": str(values.get("pending_utterance_fragment") or "").strip(),
+            "autonomy": autonomy,
+            "digital_body": digital_body,
+            "digital_body_consequence": digital_body_consequence,
             "writeback_trace": writeback_trace,
             **internal_state,
         }

@@ -111,6 +111,13 @@ class FakeMemoryStore:
                     "reciprocity": 0.72,
                     "boundary_pressure": 0.08,
                     "reliability_read": 0.80,
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她已经把动作推进到了审批门口。",
+                        "requested_access": ["workspace_write", "human_approval"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    },
                 }
             ],
             "proactive_continuity_history": [
@@ -135,6 +142,13 @@ class FakeMemoryStore:
                     "primary_motive": "preserve_self_rhythm",
                     "motive_tension": "self_rhythm_vs_contact",
                     "goal_frame": "先让这段窗口自然过去，把注意力收回自己的节奏。",
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她已经把动作推进到了审批门口。",
+                        "requested_access": ["workspace_write"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    },
                 }
             ],
             "semantic_self_narratives": [{"id": 5, "text": "她保留自己的判断。"}],
@@ -207,17 +221,21 @@ class BackendSessionTests(unittest.TestCase):
                 (
                     "values",
                     {
-                        "__interrupt__": [
+                        "__interrupt__": (
                             {
                                 "value": {
                                     "kind": "tool_approval",
                                     "source": "memory",
                                     "tool_calls": [
-                                        {"name": "set_profile", "args": {"key": "timezone", "value": "Asia/Shanghai"}}
+                                        {
+                                            "name": "set_profile",
+                                            "args": {"key": "timezone", "value": "Asia/Shanghai"},
+                                            "proposal_id": "ap-memory-1",
+                                        }
                                     ],
                                 }
-                            }
-                        ]
+                            },
+                        )
                     },
                 )
             ],
@@ -230,6 +248,13 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(result.approval_request.kind, "tool_approval")
         self.assertEqual(result.approval_request.source, "memory")
         self.assertEqual(result.approval_request.tool_calls[0]["name"], "set_profile")
+        self.assertEqual(result.approval_request.tool_calls[0]["proposal_id"], "ap-memory-1")
+        self.assertEqual(result.values["pending_action_proposal"]["proposal_id"], "ap-memory-1")
+        self.assertEqual(result.values["pending_action_proposal"]["status"], "awaiting_approval")
+        self.assertEqual(result.values["pending_action_proposal"]["risk"], "memory_write")
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "approval_pending")
+        self.assertEqual(result.values["autonomy_intent"]["primary_proposal_id"], "ap-memory-1")
+        self.assertEqual(result.values["action_packets"][0]["proposal_id"], "ap-memory-1")
 
     def test_extract_final_text_prefers_explicit_final_text_field(self):
         session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
@@ -394,11 +419,13 @@ class BackendSessionTests(unittest.TestCase):
         )
         self.assertEqual(worldline["counterpart_assessment_history"][0]["scene"], "care_bid")
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["created_at"], 1710000003)
+        self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(worldline["proactive_continuity_history"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["trace_family"], "own_rhythm_busy_window")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
         self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
         self.assertEqual(worldline["proactive_continuity_preview"][0]["created_at"], 1710000004)
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
 
         persona = session.persona_view()
         self.assertEqual(persona["persona_state"]["role"], "kurisu_amadeus")
@@ -410,10 +437,12 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(bond["counterpart_assessment_history"][0]["scene"], "care_bid")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["stance"], "open")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["created_at"], 1710000003)
+        self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(bond["proactive_continuity_history"][0]["kind"], "released_to_self_activity")
         self.assertEqual(bond["proactive_continuity_preview"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
         self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
+        self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
 
         sources = session.sources_view()
         self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
@@ -610,6 +639,13 @@ class BackendSessionTests(unittest.TestCase):
                 "presence_residue": 0.4,
                 "ambient_resonance": 0.2,
                 "self_activity_momentum": 0.3,
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "这一步还卡在审批门口。",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
             },
             "interaction_carryover": {
                 "source": "reconsolidation",
@@ -617,6 +653,13 @@ class BackendSessionTests(unittest.TestCase):
                 "carryover_mode": "warm_residue",
                 "relationship_weather": "steady_warmth",
                 "note": "final carryover should win",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "她把动作推进到了审批门口。",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
             },
             "counterpart": {
                 "summary": "她会先把这次开口当成带着摩擦感的重新靠近，不会直接判成已经完全放松下来了。",
@@ -637,6 +680,12 @@ class BackendSessionTests(unittest.TestCase):
             "behavior_consequence": {
                 "kind": "leave_small_opening",
                 "summary": "她回头了，但只留了一个轻一点的小开口。",
+                "embodied_context": {
+                    "kind": "environmental_friction",
+                    "summary": "浏览器会话还没准备好。",
+                    "missing_access": ["browser_session"],
+                    "environmental_friction": True,
+                },
             },
             "agenda_lifecycle_consequence": {
                 "kind": "released_to_self_activity",
@@ -695,6 +744,14 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["relationship_weather"], "steady_warmth")
         self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["attention_target"], "counterpart_state")
         self.assertEqual(worldline["worldline_summary"]["behavior_plan"]["nonverbal_signal"], "quiet_glance")
+        self.assertEqual(
+            (worldline["worldline_summary"]["behavior_plan"].get("embodied_context") or {}).get("kind"),
+            "access_request_pending",
+        )
+        self.assertEqual(
+            (worldline["worldline_summary"].get("behavior_consequence") or {}).get("embodied_context", {}).get("kind"),
+            "environmental_friction",
+        )
         self.assertEqual(persona["counterpart_assessment"]["scene"], "relationship_degradation")
         self.assertEqual(persona["counterpart_assessment"]["stance"], "guarded")
         self.assertIn("重新靠近", persona["counterpart_assessment"]["summary"])
@@ -714,6 +771,29 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(persona["agenda_lifecycle_residue"]["carryover_mode"], "own_rhythm")
         self.assertEqual(persona["interaction_carryover"]["source"], "reconsolidation")
         self.assertEqual(persona["interaction_carryover"]["relationship_weather"], "steady_warmth")
+        persona_carryover_embodied = (
+            persona["interaction_carryover"].get("embodied_context")
+            if isinstance(persona["interaction_carryover"].get("embodied_context"), dict)
+            else {}
+        )
+        self.assertEqual(persona_carryover_embodied.get("kind"), "access_request_pending")
+        self.assertEqual(persona_carryover_embodied.get("requested_access"), ["workspace_write"])
+        summary_carryover = (
+            persona["evolution_summary"].get("interaction_carryover")
+            if isinstance(persona["evolution_summary"].get("interaction_carryover"), dict)
+            else {}
+        )
+        self.assertEqual(summary_carryover.get("carryover_mode"), "warm_residue")
+        self.assertEqual((summary_carryover.get("embodied_context") or {}).get("kind"), "access_request_pending")
+        self.assertEqual(
+            (
+                persona["evolution_summary"]
+                .get("current_turn", {})
+                .get("behavior_consequence_embodied_context", {})
+                .get("kind")
+            ),
+            "environmental_friction",
+        )
 
     def test_persona_and_worldline_views_prefer_final_persisted_behavior_plan_over_derived_plan(self):
         values = {
@@ -848,6 +928,13 @@ class BackendSessionTests(unittest.TestCase):
                     "disclosure_posture": "measured",
                     "note": "顺着余温看一眼，但不立刻把距离拉近。",
                     "relationship_weather": "warm_residue",
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她把动作推进到了审批门口。",
+                        "requested_access": ["workspace_write"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    },
                     "window_profile": {
                         "profile_type": "self_opening",
                         "event_kind": "self_activity_state",
@@ -891,6 +978,14 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline["worldline_summary"]["current_turn"]["engagement_level"], 0.61)
         self.assertEqual(worldline["worldline_summary"]["current_turn"]["disclosure_posture"], "measured")
         self.assertEqual(worldline["worldline_summary"]["current_turn"]["behavior_note"], "顺着余温看一眼，但不立刻把距离拉近。")
+        self.assertEqual(
+            (
+                worldline["worldline_summary"]["current_turn"]
+                .get("behavior_action_embodied_context", {})
+                .get("kind")
+            ),
+            "access_request_pending",
+        )
         self.assertEqual(persona["behavior_action"]["primary_motive"], "honor_continuity")
         self.assertEqual(persona["behavior_action"]["timing_window_min"], 30)
         self.assertEqual(persona["behavior_action"]["initiative_shape"], "micro_opening")
@@ -900,6 +995,7 @@ class BackendSessionTests(unittest.TestCase):
         self.assertTrue(persona["behavior_action"]["silence_ok"])
         self.assertEqual(persona["behavior_action"]["task_focus"], "relationship")
         self.assertEqual(persona["behavior_action"]["note"], "顺着余温看一眼，但不立刻把距离拉近。")
+        self.assertEqual((persona["behavior_action"].get("embodied_context") or {}).get("kind"), "access_request_pending")
         window = worldline["worldline_summary"]["opening_window"]
         self.assertEqual(window["profile_type"], "self_opening")
         self.assertEqual(window["decision"], "wait_and_recheck")
@@ -909,6 +1005,14 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(persona["behavior_action"]["window_profile"]["decision"], "wait_and_recheck")
         self.assertEqual(persona["behavior_action"]["window_profile"]["own_rhythm_load"], 0.63)
         self.assertEqual(persona["evolution_summary"]["behavior_plan"]["kind"], "deferred_checkin")
+        self.assertEqual(
+            (
+                persona["evolution_summary"]["current_turn"]
+                .get("behavior_action_embodied_context", {})
+                .get("kind")
+            ),
+            "access_request_pending",
+        )
 
     def test_persona_and_worldline_views_derive_plan_from_frozen_action_before_live_plan(self):
         values = {
@@ -1078,6 +1182,156 @@ class BackendSessionTests(unittest.TestCase):
             self.assertAlmostEqual(float(relationship_state["affinity_score"]), 0.81, places=3)
             self.assertAlmostEqual(float(relationship_state["trust_score"]), 0.85, places=3)
             self.assertIn("稳定信赖", relationship_state["notes"])
+
+    def test_build_evolution_summary_surfaces_resolved_digital_body(self):
+        values = {
+            "current_event": {
+                "kind": "user_utterance",
+                "perception": {"channel": "dialogue", "modality": "text"},
+            },
+            "action_packets": [
+                {
+                    "proposal_id": "ap-1",
+                    "tool_name": "search_web",
+                    "status": "queued",
+                    "risk": "read",
+                    "requires_approval": False,
+                }
+            ],
+            "toolset_unlocks": {"browser": 1},
+            "reconsolidation_snapshot": {
+                "digital_body_consequence": {
+                    "kind": "access_request_pending",
+                    "summary": "这轮留下的是一个待审批入口。",
+                    "requested_help": True,
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("active_surface"), "tooling")
+        self.assertEqual(digital_body.get("available_toolsets"), ["browser"])
+        self.assertEqual(digital_body.get("active_tools"), ["search_web"])
+        self.assertEqual(digital_body.get("access", {}).get("mode"), "tool_enabled")
+        self.assertEqual(digital_body.get("resources", {}).get("action_packet_count"), 1)
+        summary_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(summary_consequence.get("kind"), "access_request_pending")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_surface"), "tooling")
+        self.assertEqual(current_turn.get("digital_body_access_mode"), "tool_enabled")
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "access_request_pending")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), "这轮留下的是一个待审批入口。")
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+        event_bodyfx = (
+            event_residue.get("digital_body_consequence")
+            if isinstance(event_residue.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(event_bodyfx.get("kind"), "access_request_pending")
+        self.assertTrue(bool(event_bodyfx.get("requested_help")))
+
+        persona = session.persona_view()
+        digital_body_consequence = (
+            persona.get("digital_body_consequence")
+            if isinstance(persona.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "access_request_pending")
+        self.assertTrue(bool(digital_body_consequence.get("requested_help")))
+
+    def test_build_evolution_summary_reuses_carried_embodied_context_for_digital_body(self):
+        values = {
+            "current_event": {
+                "kind": "user_utterance",
+                "perception": {"channel": "dialogue", "modality": "text"},
+            },
+            "interaction_carryover": {
+                "source": "reconsolidation",
+                "carryover_mode": "own_rhythm",
+                "strength": 0.53,
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "她把动作推进到了审批门口。",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("active_surface"), "approval_gate")
+        self.assertEqual(digital_body.get("access", {}).get("mode"), "approval_pending")
+        self.assertIn("workspace_write", digital_body.get("access", {}).get("missing_access") or [])
+        self.assertIn("human_approval", digital_body.get("access", {}).get("requestable_access") or [])
+
+    def test_build_evolution_summary_surfaces_digital_body_cooldown(self):
+        values = {
+            "current_event": {
+                "kind": "user_utterance",
+                "perception": {"channel": "dialogue", "modality": "text"},
+            },
+            "session_context": {
+                "thread_id": "thread-a",
+                "digital_body_hints": {
+                    "quota_state": "exhausted",
+                    "retry_after_s": 300,
+                    "cooldown_scope": "provider",
+                },
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("active_surface"), "cooldown_gate")
+        self.assertEqual(digital_body.get("access", {}).get("mode"), "cooldown")
+        self.assertEqual(digital_body.get("access", {}).get("retry_after_s"), 300)
+        self.assertEqual(digital_body.get("access", {}).get("cooldown_scope"), "provider")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_retry_after_s"), 300)
+        self.assertEqual(current_turn.get("digital_body_cooldown_scope"), "provider")
+
+    def test_build_evolution_summary_surfaces_digital_body_session_lifecycle(self):
+        values = {
+            "current_event": {
+                "kind": "user_utterance",
+                "perception": {"channel": "dialogue", "modality": "text"},
+            },
+            "session_context": {
+                "thread_id": "thread-a",
+                "digital_body_hints": {
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_expires_in_s": 600,
+                },
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("access", {}).get("session_continuity"), "expiring")
+        self.assertEqual(digital_body.get("access", {}).get("session_expires_in_s"), 600)
+        self.assertEqual(digital_body.get("access", {}).get("session_recovery_mode"), "refresh_session")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_session_continuity"), "expiring")
+        self.assertEqual(current_turn.get("digital_body_session_expires_in_s"), 600)
+        self.assertEqual(current_turn.get("digital_body_session_recovery_mode"), "refresh_session")
 
     def test_checkpoint_and_behavior_queue_views_use_backend_session_surface(self):
         values = {

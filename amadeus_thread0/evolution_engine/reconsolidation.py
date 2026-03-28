@@ -4,6 +4,14 @@ from typing import Any
 
 from .appraisal import normalize_appraisal_payload
 from .schemas import clamp01
+from ..graph_parts.action_packets import (
+    compact_artifact_identity,
+    normalize_action_packet,
+    normalize_action_packets,
+    normalize_artifact_context,
+)
+from ..graph_parts.autonomy_runtime import normalize_autonomy_intent
+from ..graph_parts.digital_body_runtime import normalize_digital_body_state, normalize_embodied_context
 from ..utils.counterpart_profile import compact_counterpart_profile
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
@@ -21,6 +29,17 @@ _SEMANTIC_ANCHOR_FLOAT_KEYS = (
     "selfhood_lineage",
     "agency_lineage",
 )
+
+_DIGITAL_BODY_PACKET_PRIORITY = {
+    "blocked": 6,
+    "rejected": 5,
+    "awaiting_approval": 4,
+    "executing": 3,
+    "completed": 2,
+    "approved": 1,
+    "queued": 1,
+    "proposed": 1,
+}
 
 
 def _normalized_event_tags(current_event: dict[str, Any] | None) -> set[str]:
@@ -257,6 +276,129 @@ def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any
     ):
         return snapshot
     return {}
+
+
+def _compact_autonomy_intent_snapshot(autonomy_intent: dict[str, Any] | None) -> dict[str, Any]:
+    intent = normalize_autonomy_intent(autonomy_intent)
+    if not intent:
+        return {}
+    if any(
+        (
+            str(intent.get("mode") or "").strip(),
+            str(intent.get("origin") or "").strip(),
+            str(intent.get("reason") or "").strip(),
+            str(intent.get("primary_proposal_id") or "").strip(),
+            clamp01(intent.get("confidence"), 0.0) > 0.0,
+            clamp01(intent.get("own_rhythm_weight"), 0.0) > 0.0,
+            clamp01(intent.get("continuity_weight"), 0.0) > 0.0,
+            bool(intent.get("requires_approval", False)),
+        )
+    ):
+        return intent
+    return {}
+
+
+def _compact_action_packets_snapshot(action_packets: Any) -> list[dict[str, Any]]:
+    packets = normalize_action_packets(action_packets)
+    out: list[dict[str, Any]] = []
+    for packet in packets[:8]:
+        artifact_context = normalize_artifact_context(packet.get("artifact_context"))
+        if artifact_context:
+            preview = str(artifact_context.get("preview") or "").strip()
+            compact_artifact_context = {
+                **artifact_context,
+                "preview": preview[:600],
+                "preview_truncated": bool(artifact_context.get("preview_truncated", False) or len(preview) > 600),
+            }
+        else:
+            compact_artifact_context = {}
+        out.append(
+            {
+                "proposal_id": str(packet.get("proposal_id") or "").strip(),
+                "origin": str(packet.get("origin") or "").strip().lower(),
+                "intent": str(packet.get("intent") or "").strip().lower(),
+                "status": str(packet.get("status") or "").strip().lower(),
+                "risk": str(packet.get("risk") or "").strip().lower(),
+                "requires_approval": bool(packet.get("requires_approval", False)),
+                "capability_steps": [
+                    {
+                        "kind": str(step.get("kind") or "").strip().lower(),
+                        "name": str(step.get("name") or "").strip(),
+                        "target": str(step.get("target") or "").strip()[:160],
+                        "status": str(step.get("status") or "").strip().lower(),
+                        "requires_approval": bool(step.get("requires_approval", False)),
+                        "note": str(step.get("note") or "").strip()[:160],
+                    }
+                    for step in (packet.get("capability_steps") if isinstance(packet.get("capability_steps"), list) else [])
+                    if isinstance(step, dict)
+                ][:4],
+                "expected_effect": str(packet.get("expected_effect") or "").strip()[:220],
+                "result_summary": str(packet.get("result_summary") or "").strip()[:220],
+                "writeback_ready": bool(packet.get("writeback_ready", False)),
+                "linked_queue_id": str(packet.get("linked_queue_id") or "").strip(),
+                "tool_name": str(packet.get("tool_name") or "").strip(),
+                "block_reason": str(packet.get("block_reason") or "").strip()[:220],
+                "artifact_context": compact_artifact_context,
+            }
+        )
+    return out
+
+
+def _compact_action_trace_snapshot(action_trace: Any) -> list[dict[str, Any]]:
+    if not isinstance(action_trace, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in action_trace[:12]:
+        if not isinstance(item, dict):
+            continue
+        proposal_id = str(item.get("proposal_id") or "").strip()
+        status = str(item.get("status") or "").strip().lower()
+        event = str(item.get("event") or "").strip().lower()
+        if not any((proposal_id, status, event)):
+            continue
+        out.append(
+            {
+                "proposal_id": proposal_id,
+                "status": status,
+                "event": event,
+                "origin": str(item.get("origin") or "").strip().lower(),
+                "intent": str(item.get("intent") or "").strip().lower(),
+                "risk": str(item.get("risk") or "").strip().lower(),
+                "source": str(item.get("source") or "").strip(),
+                "result_summary": str(item.get("result_summary") or "").strip()[:220],
+                "block_reason": str(item.get("block_reason") or "").strip()[:220],
+                "requires_approval": bool(item.get("requires_approval", False)),
+            }
+        )
+    return out
+
+
+def _compact_digital_body_state_snapshot(digital_body_state: dict[str, Any] | None) -> dict[str, Any]:
+    return normalize_digital_body_state(digital_body_state)
+
+
+def _primary_digital_body_packet(action_packets: Any) -> dict[str, Any]:
+    packets = normalize_action_packets(action_packets)
+    if not packets:
+        return {}
+
+    def _score(packet: dict[str, Any]) -> tuple[int, int, int]:
+        status = str(packet.get("status") or "").strip().lower()
+        origin = str(packet.get("origin") or "").strip().lower()
+        intent = str(packet.get("intent") or "").strip().lower()
+        tool_name = str(packet.get("tool_name") or "").strip()
+        score = _DIGITAL_BODY_PACKET_PRIORITY.get(status, 0)
+        if origin == "capability_upgrade":
+            score += 3
+        if "upgrade" in intent:
+            score += 2
+        if bool(packet.get("writeback_ready", False)):
+            score += 1
+        if tool_name:
+            score += 1
+        return (score, len(tool_name), len(intent))
+
+    return normalize_action_packet(max(packets, key=_score))
 
 
 def _compact_semantic_anchor_bundle(semantic_narrative_profile: dict[str, Any] | None) -> dict[str, Any]:
@@ -536,7 +678,7 @@ def derive_agenda_lifecycle_consequence(
     if ambient_resonance >= 0.18:
         category_summaries["ambient_style"] = "窗口落下之后，周围那点没散掉的气氛还会留着，不会一下子彻底归零。"
 
-    return {
+    consequence = {
         "kind": kind,
         "summary": summary,
         "source_event_kind": source_event_kind,
@@ -572,6 +714,299 @@ def derive_agenda_lifecycle_consequence(
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,
     }
+    embodied_context = normalize_embodied_context(residue.get("embodied_context"))
+    if embodied_context:
+        consequence["embodied_context"] = embodied_context
+    return consequence
+
+
+def derive_digital_body_consequence(
+    *,
+    digital_body_state: dict[str, Any] | None,
+    action_packets: Any = None,
+) -> dict[str, Any]:
+    body = normalize_digital_body_state(digital_body_state)
+    if not body:
+        return {}
+
+    access_state = body.get("access_state") if isinstance(body.get("access_state"), dict) else {}
+    resource_state = body.get("resource_state") if isinstance(body.get("resource_state"), dict) else {}
+    access_mode = str(access_state.get("mode") or "").strip().lower()
+    active_surface = str(body.get("active_surface") or "").strip().lower()
+    block_reason = str(access_state.get("block_reason") or "").strip()[:220]
+    missing_access = [
+        str(item).strip().lower()
+        for item in (access_state.get("missing_access") if isinstance(access_state.get("missing_access"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    requested_access = [
+        str(item).strip().lower()
+        for item in (access_state.get("requestable_access") if isinstance(access_state.get("requestable_access"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    granted_toolsets = [
+        str(item).strip().lower()
+        for item in (access_state.get("granted_toolsets") if isinstance(access_state.get("granted_toolsets"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    active_tools = [
+        str(item).strip().lower()
+        for item in (body.get("active_tools") if isinstance(body.get("active_tools"), list) else [])
+        if str(item or "").strip()
+    ][:8]
+    world_surfaces = [
+        str(item).strip().lower()
+        for item in (body.get("world_surfaces") if isinstance(body.get("world_surfaces"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    browser_session = str(access_state.get("browser_session") or "").strip().lower()
+    account_state = str(access_state.get("account_state") or "").strip().lower()
+    cookie_state = str(access_state.get("cookie_state") or "").strip().lower()
+    retry_after_s = max(0, int(access_state.get("retry_after_s") or 0))
+    cooldown_scope = str(access_state.get("cooldown_scope") or "").strip().lower()
+    session_continuity = str(access_state.get("session_continuity") or "").strip().lower()
+    session_expires_in_s = max(0, int(access_state.get("session_expires_in_s") or 0))
+    session_recovery_mode = str(access_state.get("session_recovery_mode") or "").strip().lower()
+    filesystem_state = str(access_state.get("filesystem_state") or "").strip().lower()
+    sandbox_mode = str(access_state.get("sandbox_mode") or "").strip().lower()
+    network_access = str(access_state.get("network_access") or "").strip().lower()
+    artifact_continuity = str(resource_state.get("artifact_continuity") or "").strip().lower()
+    active_artifact_kind = str(resource_state.get("active_artifact_kind") or "").strip().lower()
+    active_artifact_ref = str(resource_state.get("active_artifact_ref") or "").strip()[:220]
+    active_artifact_label = str(resource_state.get("active_artifact_label") or "").strip()[:160]
+    artifact_age_s = max(0, int(resource_state.get("artifact_age_s") or 0))
+    artifact_reacquisition_mode = str(resource_state.get("artifact_reacquisition_mode") or "").strip().lower()
+    pending_approval_count = max(0, int(access_state.get("pending_approval_count") or resource_state.get("pending_approval_count") or 0))
+    blocked_packet_count = max(0, int(resource_state.get("blocked_packet_count") or 0))
+    completed_packet_count = max(0, int(resource_state.get("completed_packet_count") or 0))
+    external_tool_count = max(0, int(resource_state.get("external_tool_count") or 0))
+    if pending_approval_count > 0 and "human_approval" not in requested_access:
+        requested_access = list(dict.fromkeys([*requested_access, "human_approval"]))[:12]
+
+    primary_packet = _primary_digital_body_packet(action_packets)
+    primary_proposal_id = str(primary_packet.get("proposal_id") or "").strip()
+    primary_status = str(primary_packet.get("status") or "").strip().lower()
+    primary_origin = str(primary_packet.get("origin") or "").strip().lower()
+    primary_intent = str(primary_packet.get("intent") or "").strip().lower()
+    primary_tool_name = str(primary_packet.get("tool_name") or "").strip().lower()
+    primary_artifact_identity = compact_artifact_identity(primary_packet.get("artifact_context"))
+    artifact_carrier = str(resource_state.get("artifact_carrier") or primary_artifact_identity.get("artifact_carrier") or "").strip().lower()
+    artifact_source_ref_ids = list(resource_state.get("artifact_source_ref_ids") or primary_artifact_identity.get("artifact_source_ref_ids") or [])[:8]
+    artifact_source_url = str(resource_state.get("artifact_source_url") or primary_artifact_identity.get("artifact_source_url") or "").strip()[:320]
+    artifact_source_query = str(resource_state.get("artifact_source_query") or primary_artifact_identity.get("artifact_source_query") or "").strip()[:220]
+    artifact_source_title = str(resource_state.get("artifact_source_title") or primary_artifact_identity.get("artifact_source_title") or "").strip()[:160]
+    artifact_source_tool_name = str(resource_state.get("artifact_source_tool_name") or primary_artifact_identity.get("artifact_source_tool_name") or "").strip().lower()[:80]
+
+    growth_capabilities = list(dict.fromkeys([*granted_toolsets, *active_tools, primary_tool_name]))[:12]
+    growth_signal = bool(
+        completed_packet_count > 0
+        and (
+            primary_status == "completed"
+            or primary_origin == "capability_upgrade"
+            or "upgrade" in primary_intent
+            or bool(growth_capabilities)
+            or external_tool_count > 0
+        )
+    )
+    approval_signal = bool(
+        access_mode == "approval_pending"
+        or pending_approval_count > 0
+        or "human_approval" in requested_access
+    )
+    artifact_friction = artifact_continuity in {"missing", "detached"}
+    cooldown_active = retry_after_s > 0
+    friction_signal = bool(
+        cooldown_active
+        or
+        session_continuity in {"expired", "missing"}
+        or
+        artifact_friction
+        or
+        access_mode in {"blocked", "limited"}
+        or blocked_packet_count > 0
+        or bool(block_reason)
+        or bool(missing_access)
+    )
+
+    kind = ""
+    summary = ""
+    category_summaries: dict[str, str] = {}
+    artifact_label = active_artifact_label or active_artifact_ref or active_artifact_kind or "前面的工作面"
+    artifact_reacquire_phrase = {
+        "reopen_page": "先把页面重新打开",
+        "reopen_file": "先把文件重新打开",
+        "rerun_search": "先把检索结果重新拿回来",
+        "reattach_workspace": "先把工作面重新接回当前上下文",
+    }.get(artifact_reacquisition_mode, "先把前面的工作面重新接回来")
+
+    if growth_signal and not approval_signal and not friction_signal:
+        kind = "embodied_growth"
+        capability_phrase = "、".join(growth_capabilities[:3]) if growth_capabilities else "新的入口"
+        if primary_origin == "capability_upgrade" or "upgrade" in primary_intent:
+            summary = (
+                f"这次她把{capability_phrase}真正接进了自己的数字身体里，"
+                "之后再遇到类似事情时，不用每次都从零摸索。"
+            )
+        else:
+            summary = (
+                "这次她不只是临时碰了一下工具，而是把一条能反复使用的环境路径摸顺了，"
+                "之后处理类似事情会更稳。"
+            )
+        category_summaries = {
+            "agency_style": "一旦把某条环境路径真正摸顺，她会把它留进之后的判断里，而不是把能力永远停在一次性的临时调用上。",
+            "presence_style": "对她来说，新拿到的入口会变成之后还能继续接上的身体部分，不会只在这一轮短暂亮一下。",
+            "boundary_style": "她会把已经被允许、已经摸通的路径留在边界之内继续使用，而不是每次重新试探同一条门。",
+        }
+    elif approval_signal:
+        kind = "access_request_pending"
+        request_phrase = "、".join(requested_access[:3]) if requested_access else "额外入口"
+        missing_phrase = "、".join(missing_access[:3]) if missing_access else request_phrase
+        if block_reason:
+            summary = (
+                f"这次她已经把动作推进到了门口，但数字身体还差{request_phrase}，"
+                f"{block_reason}。她会把这记成待申请条件，而不是假装事情已经做完。"
+            )
+        elif missing_access:
+            summary = (
+                f"这次她先看清了自己还缺什么入口：{missing_phrase}。"
+                "这些条件没补齐前，她不会把事情冒充成已经完成。"
+            )
+        else:
+            summary = "这次她已经把动作推进到了审批门口，但真正动手前还得先把额外入口拿到。"
+        category_summaries = {
+            "agency_style": "碰到入口不够的情况时，她会先把缺口辨认清楚，再申请或换路，不会装作自己已经能做。",
+            "boundary_style": "涉及审批、账号、cookies 或外部改动时，她会把这些限制当成真实边界，不会越过去假执行。",
+            "presence_style": "没完成的动作会被她留成待申请、待继续的意图，而不是被冒充成已经发生的事实。",
+        }
+    elif friction_signal:
+        kind = "environmental_friction"
+        friction_phrase = "、".join(missing_access[:3]) if missing_access else "环境条件"
+        if artifact_friction and not (
+            cooldown_active
+            or session_continuity in {"expired", "missing"}
+            or access_mode in {"blocked", "limited"}
+            or blocked_packet_count > 0
+            or bool(block_reason)
+            or bool(missing_access)
+        ):
+            continuity_phrase = "脱开了" if artifact_continuity == "detached" else "断了"
+            summary = (
+                f"这次不是她不想继续，而是和{artifact_label}的连续性已经{continuity_phrase}。"
+                f"{artifact_reacquire_phrase}，事情才接得上后面。"
+            )
+        elif cooldown_active:
+            scope_phrase = {
+                "provider": "上游服务",
+                "network": "网络入口",
+                "browser": "浏览器入口",
+                "filesystem": "文件系统入口",
+                "sandbox": "执行环境",
+                "account": "账号入口",
+            }.get(cooldown_scope, "某个环境入口")
+            retry_phrase = f"大约{retry_after_s}秒后" if retry_after_s > 0 else "稍后"
+            if block_reason:
+                summary = (
+                    f"这次不是缺入口，而是{scope_phrase}临时冷却：{block_reason}。"
+                    f"{retry_phrase}再试会更合适。"
+                )
+            else:
+                summary = (
+                    f"这次不是缺入口，而是{scope_phrase}暂时不可用。"
+                    f"{retry_phrase}再试会更合适。"
+                )
+        elif block_reason:
+            summary = (
+                f"这次拦住她的不是意愿，而是数字身体当下的环境摩擦：{block_reason}。"
+                "她得先绕开或补齐这些条件，事情才真正做得成。"
+            )
+        elif session_continuity in {"expired", "missing"}:
+            if session_recovery_mode == "refresh_session":
+                summary = (
+                    "这次不是她不想继续，而是当前会话连续性已经断开了。"
+                    "先把会话刷新好，再往下推进才稳。"
+                )
+            elif session_recovery_mode == "restore_cookies":
+                summary = (
+                    "这次不是她不想继续，而是这条登录路径上的 cookies 已经失效了。"
+                    "先把 cookies 恢复好，再往下推进才稳。"
+                )
+            elif session_recovery_mode == "relogin":
+                summary = (
+                    "这次不是她不想继续，而是当前账号登录态已经断了。"
+                    "先重新登录，再往下推进才稳。"
+                )
+            else:
+                continuity_phrase = "已经过期" if session_continuity == "expired" else "目前不连续"
+                summary = (
+                    f"这次不是她不想继续，而是当前会话{continuity_phrase}。"
+                    "得先把这条会话路径补回来，事情才真正做得成。"
+                )
+        else:
+            summary = (
+                f"这次卡住她的不是意愿，而是数字身体当下还缺着{friction_phrase}这类条件。"
+                "她会先把这些摩擦看清楚，再决定怎么继续。"
+            )
+        category_summaries = {
+            "agency_style": "当环境本身不允许时，她会先辨认摩擦来自哪里，再换路或补条件，不会把受限误装成能力本身。",
+            "boundary_style": "她会把数字环境里的权限、账号和外部限制都当成真实边界来处理，而不是用话术把边界抹掉。",
+        }
+    else:
+        return {}
+
+    category_summaries = {
+        key: value.strip()
+        for key, value in category_summaries.items()
+        if str(key or "").strip() and str(value or "").strip()
+    }
+    return {
+        "kind": kind,
+        "summary": summary[:220],
+        "access_mode": access_mode,
+        "active_surface": active_surface,
+        "world_surfaces": world_surfaces,
+        "missing_access": missing_access,
+        "requested_access": requested_access,
+        "granted_toolsets": granted_toolsets,
+        "active_tools": active_tools,
+        "block_reason": block_reason,
+        "retry_after_s": retry_after_s,
+        "cooldown_scope": cooldown_scope,
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+        "artifact_continuity": artifact_continuity,
+        "active_artifact_kind": active_artifact_kind,
+        "active_artifact_ref": active_artifact_ref,
+        "active_artifact_label": active_artifact_label,
+        "artifact_age_s": artifact_age_s,
+        "artifact_reacquisition_mode": artifact_reacquisition_mode,
+        "artifact_carrier": artifact_carrier,
+        "artifact_source_ref_ids": artifact_source_ref_ids,
+        "artifact_source_url": artifact_source_url,
+        "artifact_source_query": artifact_source_query,
+        "artifact_source_title": artifact_source_title,
+        "artifact_source_tool_name": artifact_source_tool_name,
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
+        "pending_approval_count": pending_approval_count,
+        "blocked_packet_count": blocked_packet_count,
+        "completed_packet_count": completed_packet_count,
+        "external_tool_count": external_tool_count,
+        "primary_proposal_id": primary_proposal_id,
+        "primary_status": primary_status,
+        "primary_origin": primary_origin,
+        "primary_intent": primary_intent,
+        "primary_tool_name": primary_tool_name,
+        "procedural_growth": growth_signal,
+        "environmental_friction": approval_signal or friction_signal,
+        "requested_help": approval_signal,
+        "narrative_categories": list(category_summaries),
+        "category_summaries": category_summaries,
+    }
 
 
 def build_reconsolidation_snapshot(
@@ -588,6 +1023,11 @@ def build_reconsolidation_snapshot(
     behavior_plan: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
+    autonomy_intent: dict[str, Any] | None = None,
+    action_packets: Any = None,
+    action_trace: Any = None,
+    autonomy_block_reason: str | None = None,
+    digital_body_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
     behavior = behavior_action if isinstance(behavior_action, dict) else {}
@@ -609,6 +1049,15 @@ def build_reconsolidation_snapshot(
     emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
     counterpart = _compact_counterpart_snapshot(counterpart_assessment)
+    autonomy_intent_snapshot = _compact_autonomy_intent_snapshot(autonomy_intent)
+    action_packets_snapshot = _compact_action_packets_snapshot(action_packets)
+    action_trace_snapshot = _compact_action_trace_snapshot(action_trace)
+    block_reason = str(autonomy_block_reason or "").strip()[:220]
+    digital_body_snapshot = _compact_digital_body_state_snapshot(digital_body_state)
+    digital_body_consequence = derive_digital_body_consequence(
+        digital_body_state=digital_body_snapshot,
+        action_packets=action_packets,
+    )
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
     lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
     semantic_anchor_bundle = _compact_semantic_anchor_bundle(semantic)
@@ -625,6 +1074,12 @@ def build_reconsolidation_snapshot(
         "interaction_carryover": carryover_snapshot,
         "behavior_consequence": behavior_consequence,
         "agenda_lifecycle_consequence": agenda_lifecycle_consequence,
+        "autonomy_intent": autonomy_intent_snapshot,
+        "action_packets": action_packets_snapshot,
+        "action_trace": action_trace_snapshot,
+        "autonomy_block_reason": block_reason,
+        "digital_body_state": digital_body_snapshot,
+        "digital_body_consequence": digital_body_consequence,
         "semantic_anchor_bundle": semantic_anchor_bundle,
         "salience": dict(salience),
         "world_model": {

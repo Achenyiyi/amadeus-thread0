@@ -5,6 +5,9 @@ from typing import Any, Callable
 
 from langgraph.types import Command
 
+from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..graph_parts.action_packets import build_tool_action_packet, normalize_action_packets
+from ..graph_parts.autonomy_runtime import refresh_autonomy_intent_from_packets
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
 from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state, _worldline_focus
 from ..memory_store import MemoryStore
@@ -17,10 +20,17 @@ from ..utils.cli_views import (
 from .event_identity import resolve_readback_current_event
 from .final_state import (
     resolve_agenda_lifecycle_residue,
+    resolve_action_packets,
+    resolve_action_trace,
+    resolve_autonomy_block_reason,
+    resolve_autonomy_intent,
     resolve_behavior_payloads,
     resolve_behavior_queue,
     resolve_counterpart_assessment,
+    resolve_digital_body_consequence,
+    resolve_digital_body_state,
     resolve_interaction_carryover,
+    resolve_pending_action_proposal,
 )
 
 
@@ -53,6 +63,10 @@ def _normalized_graph_config(
 
 def _message_content(message: Any) -> str:
     return str(getattr(message, "content", "") or "").strip()
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _resolved_relationship_state(
@@ -107,6 +121,10 @@ def _payload_value(interrupt_payload: Any) -> dict[str, Any]:
     return dict(payload or {}) if isinstance(payload, dict) else {}
 
 
+def _list_or_empty(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
 @dataclass
 class StreamInvocationResult:
     values: dict[str, Any]
@@ -132,6 +150,8 @@ def _approval_request_from_output(output: Any) -> ToolApprovalRequest | None:
     if not isinstance(output, dict):
         return None
     interrupts = output.get("__interrupt__")
+    if isinstance(interrupts, tuple):
+        interrupts = list(interrupts)
     if not isinstance(interrupts, list) or not interrupts:
         return None
     payload = _payload_value(interrupts[0])
@@ -147,6 +167,186 @@ def _approval_request_from_output(output: Any) -> ToolApprovalRequest | None:
         source=str(payload.get("source") or "").strip().lower(),
         tool_calls=normalized_calls,
         payload=payload,
+    )
+
+
+def _approval_trace_entry(
+    *,
+    proposal_id: str,
+    tool_name: str,
+    source: str,
+    risk: str,
+) -> dict[str, Any]:
+    name = str(tool_name or "").strip()
+    return {
+        "proposal_id": str(proposal_id or "").strip(),
+        "intent": "toolset_upgrade_proposal" if name == "request_toolset_upgrade" else f"tool:{name.lower()}",
+        "origin": "capability_upgrade" if name == "request_toolset_upgrade" else "motive_goal",
+        "status": "awaiting_approval",
+        "event": "approval_requested",
+        "risk": str(risk or "").strip().lower() or "read",
+        "source": str(source or "").strip().lower() or "tool_gate",
+        "result_summary": "",
+        "block_reason": "",
+        "requires_approval": True,
+    }
+
+
+def _merge_pending_approval_state(
+    values: dict[str, Any] | None,
+    approval_request: ToolApprovalRequest | None,
+) -> dict[str, Any]:
+    data = dict(values or {})
+    if approval_request is None:
+        return data
+
+    existing_packets = normalize_action_packets(data.get("action_packets"))
+    existing_trace = [
+        dict(item)
+        for item in (_list_or_empty(data.get("action_trace")))
+        if isinstance(item, dict)
+    ]
+    pending_packets: list[dict[str, Any]] = []
+    pending_trace: list[dict[str, Any]] = []
+    for tool_call in approval_request.tool_calls:
+        if not isinstance(tool_call, dict):
+            continue
+        name = str(tool_call.get("name") or "").strip()
+        proposal_id = str(tool_call.get("proposal_id") or "").strip()
+        args = dict(tool_call.get("args") or {}) if isinstance(tool_call.get("args"), dict) else {}
+        if not name or not proposal_id:
+            continue
+        packet = build_tool_action_packet(
+            tool_name=name,
+            proposal_id=proposal_id,
+            args=args,
+            status="awaiting_approval",
+        )
+        if not packet:
+            continue
+        pending_packets.append(packet)
+        pending_trace.append(
+            _approval_trace_entry(
+                proposal_id=proposal_id,
+                tool_name=name,
+                source=approval_request.source,
+                risk=str(packet.get("risk") or ""),
+            )
+        )
+
+    if not pending_packets:
+        return data
+
+    pending_ids = {
+        str(packet.get("proposal_id") or "").strip()
+        for packet in pending_packets
+        if str(packet.get("proposal_id") or "").strip()
+    }
+    merged_packets = list(pending_packets)
+    merged_packets.extend(
+        packet
+        for packet in existing_packets
+        if str(packet.get("proposal_id") or "").strip() not in pending_ids
+    )
+    existing_trace_keys = {
+        (
+            str(item.get("proposal_id") or "").strip(),
+            str(item.get("event") or "").strip(),
+            str(item.get("status") or "").strip(),
+        )
+        for item in existing_trace
+    }
+    for item in pending_trace:
+        key = (
+            str(item.get("proposal_id") or "").strip(),
+            str(item.get("event") or "").strip(),
+            str(item.get("status") or "").strip(),
+        )
+        if key not in existing_trace_keys:
+            existing_trace.append(item)
+
+    data["action_packets"] = merged_packets
+    data["pending_action_proposal"] = dict(pending_packets[0])
+    data["action_trace"] = existing_trace
+    data["autonomy_intent"] = refresh_autonomy_intent_from_packets(
+        data.get("autonomy_intent"),
+        merged_packets,
+        current_event=_dict_or_empty(data.get("current_event")),
+        block_reason=str(data.get("autonomy_block_reason") or ""),
+    )
+    return data
+
+
+def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    action_packets = resolve_action_packets(
+        action_packets=data.get("action_packets"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    return {
+        "intent": resolve_autonomy_intent(
+            autonomy_intent=_dict_or_empty(data.get("autonomy_intent")),
+            reconsolidation_snapshot=reconsolidation_snapshot,
+            action_packets=action_packets,
+            current_event=_dict_or_empty(data.get("current_event")),
+            autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+        ),
+        "action_packets": action_packets,
+        "pending_approval": resolve_pending_action_proposal(
+            pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
+            action_packets=action_packets,
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+        "execution_trace": resolve_action_trace(
+            action_trace=data.get("action_trace"),
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+        "block_reason": resolve_autonomy_block_reason(
+            autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+            action_packets=action_packets,
+            reconsolidation_snapshot=reconsolidation_snapshot,
+        ),
+    }
+
+
+def _resolved_digital_body(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    body = resolve_digital_body_state(
+        digital_body_state=_dict_or_empty(data.get("digital_body_state")),
+        reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
+    )
+    if body:
+        return body
+    return derive_digital_body_state(
+        current_event=_dict_or_empty(data.get("current_event")),
+        behavior_queue=data.get("behavior_queue") if isinstance(data.get("behavior_queue"), list) else data.get("behavior_agenda"),
+        action_packets=data.get("action_packets"),
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        toolset_unlocks=_dict_or_empty(data.get("toolset_unlocks")),
+        autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
+        session_context=_dict_or_empty(data.get("session_context")),
+        last_external_tools=data.get("last_external_tools"),
+    )
+
+
+def _resolved_digital_body_consequence(
+    values: dict[str, Any] | None,
+    *,
+    digital_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    resolved_body = digital_body if isinstance(digital_body, dict) and digital_body else _resolved_digital_body(data)
+    action_packets = resolve_action_packets(
+        action_packets=data.get("action_packets"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    return resolve_digital_body_consequence(
+        digital_body_consequence=_dict_or_empty(data.get("digital_body_consequence")),
+        digital_body_state=resolved_body,
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
     )
 
 
@@ -272,10 +472,12 @@ class BackendSession:
             if callable(on_text):
                 on_text(str(text))
         values = last_values or {}
+        approval_request = _approval_request_from_output(values)
+        values = _merge_pending_approval_state(values, approval_request)
         return StreamInvocationResult(
             values=values,
             streamed_text=buf,
-            approval_request=_approval_request_from_output(values),
+            approval_request=approval_request,
         )
 
     def resume_stream(
@@ -375,6 +577,9 @@ class BackendSession:
             behavior_queue=vals.get("behavior_queue"),
             behavior_agenda=vals.get("behavior_agenda"),
         )
+        autonomy = _resolved_autonomy(vals)
+        digital_body = _resolved_digital_body(vals)
+        digital_body_consequence = _resolved_digital_body_consequence(vals, digital_body=digital_body)
         return build_evolution_cli_summary(
             relationship=_resolved_relationship_state(self.memory_store, vals),
             semantic_narrative_profile=vals.get("semantic_narrative_profile")
@@ -392,6 +597,13 @@ class BackendSession:
             worldline_focus=_resolved_worldline_focus(self.memory_store, vals),
             reconsolidation_snapshot=reconsolidation_snapshot,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
+            autonomy_intent=autonomy.get("intent"),
+            action_packets=autonomy.get("action_packets"),
+            pending_approval=autonomy.get("pending_approval"),
+            action_trace=autonomy.get("execution_trace"),
+            autonomy_block_reason=autonomy.get("block_reason"),
+            digital_body_state=digital_body,
+            digital_body_consequence=digital_body_consequence,
         )
 
     def worldline_view(self) -> dict[str, Any]:
@@ -399,12 +611,14 @@ class BackendSession:
         vals = self.get_state_values()
         counterpart_history = snap.get("counterpart_assessment_history", [])
         proactive_history = snap.get("proactive_continuity_history", [])
+        autonomy = _resolved_autonomy(vals)
         return {
             "worldline_summary": self.build_evolution_summary(state_values=vals),
             "worldline_events": snap.get("worldline_events", []),
             "commitments": snap.get("commitments", []),
             "conflict_repair": snap.get("conflict_repair", []),
             "unresolved_tensions": snap.get("unresolved_tensions", []),
+            "autonomy": autonomy,
             "counterpart_assessment_history": counterpart_history,
             "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
             "proactive_continuity_history": proactive_history,
@@ -418,9 +632,11 @@ class BackendSession:
         relationship_state = _resolved_relationship_state(self.memory_store, vals)
         counterpart_history = list(reversed(self.memory_store.list_counterpart_assessment_history(limit=30)))
         proactive_history = list(reversed(self.memory_store.list_proactive_continuity_history(limit=30)))
+        autonomy = _resolved_autonomy(vals)
         return {
             "relationship_state": relationship_state,
             "bond_state": vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
+            "autonomy": autonomy,
             "relationship_timeline": list(reversed(self.memory_store.list_relationship_timeline(limit=30))),
             "counterpart_assessment_history": counterpart_history,
             "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
@@ -471,6 +687,9 @@ class BackendSession:
             else {},
             reconsolidation_snapshot=reconsolidation_snapshot,
         )
+        autonomy = _resolved_autonomy(vals)
+        digital_body = _resolved_digital_body(vals)
+        digital_body_consequence = _resolved_digital_body_consequence(vals, digital_body=digital_body)
         return {
             "evolution_summary": self.build_evolution_summary(state_values=vals),
             "persona_state": vals.get("persona_state") if isinstance(vals.get("persona_state"), dict) else {},
@@ -492,6 +711,9 @@ class BackendSession:
             "behavior_plan": behavior_plan,
             "behavior_queue": queue_vals,
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue_vals, limit=3),
+            "autonomy": autonomy,
+            "digital_body": digital_body,
+            "digital_body_consequence": digital_body_consequence,
             "science_mode": bool(vals.get("science_mode", False)),
             "tsundere_intensity": vals.get("tsundere_intensity", 0.5),
             "ooc_detector": vals.get("ooc_detector") if isinstance(vals.get("ooc_detector"), dict) else {},
@@ -558,9 +780,11 @@ class BackendSession:
             behavior_queue=vals.get("behavior_queue"),
             behavior_agenda=vals.get("behavior_agenda"),
         )
+        autonomy = _resolved_autonomy(vals)
         return {
             "behavior_queue": queue,
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue, limit=3),
+            "autonomy": autonomy,
         }
 
 

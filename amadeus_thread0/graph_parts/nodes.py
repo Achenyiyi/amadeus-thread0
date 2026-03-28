@@ -87,6 +87,16 @@ def _node_prepare_turn(state: ThreadState, config: RunnableConfig | None = None)
     behavior_action = runtime_state["behavior_action"]
     behavior_plan = runtime_state["behavior_plan"]
     behavior_agenda = runtime_state["behavior_agenda"]
+    autonomy_intent = runtime_state.get("autonomy_intent") if isinstance(runtime_state.get("autonomy_intent"), dict) else {}
+    action_packets = runtime_state.get("action_packets") if isinstance(runtime_state.get("action_packets"), list) else []
+    pending_action_proposal = (
+        runtime_state.get("pending_action_proposal")
+        if isinstance(runtime_state.get("pending_action_proposal"), dict)
+        else {}
+    )
+    action_trace = runtime_state.get("action_trace") if isinstance(runtime_state.get("action_trace"), list) else []
+    autonomy_block_reason = str(runtime_state.get("autonomy_block_reason") or "")
+    digital_body_state = runtime_state.get("digital_body_state") if isinstance(runtime_state.get("digital_body_state"), dict) else {}
     tsundere = runtime_state["tsundere"]
 
     return {
@@ -113,6 +123,12 @@ def _node_prepare_turn(state: ThreadState, config: RunnableConfig | None = None)
         "behavior_plan": behavior_plan,
         "behavior_agenda": behavior_agenda,
         "behavior_queue": behavior_agenda,
+        "autonomy_intent": autonomy_intent,
+        "action_packets": action_packets,
+        "pending_action_proposal": pending_action_proposal,
+        "action_trace": action_trace,
+        "autonomy_block_reason": autonomy_block_reason,
+        "digital_body_state": digital_body_state,
         "turn_appraisal": appraisal,
         "session_context": _sanitize_obj(session_context),
         "current_event": _sanitize_obj(current_event),

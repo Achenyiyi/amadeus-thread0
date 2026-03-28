@@ -73,6 +73,10 @@ amadeus_thread0/
   LangGraph assembly and runtime cache lifecycle.
 - `tool_nodes.py`
   tool gate, tool execution, tool-limit handling, and post-model routing.
+- `autonomy_runtime.py`
+  derives bounded companion autonomy from frozen runtime state into `autonomy_intent`.
+- `action_packets.py`
+  packet normalization, proposal ids, risk classification, and structured action contract helpers.
 - `implicit_idle.py`
   idle-time event override construction and idle-seeded state-update entry.
 - `prepare_turn_context.py`
@@ -140,12 +144,14 @@ Rule:
 
 - canonical `behavior_action` / `behavior_plan` resolution for backend views and turn envelopes
 - behavior queue fallback normalization
+- autonomy envelope resolution (`intent`, `action_packets`, `pending_approval`, `execution_trace`, `block_reason`)
 - the shared rule that persisted final plan wins, and plan derivation from action is fallback-only
 
 `backend_api.py` is the transport-neutral frontend schema surface:
 
 - wraps backend session and memory-admin views in stable envelopes
 - exposes thread inventory, runtime layout, environment summary, turn/event response payloads
+- exposes the unified autonomy envelope for turn/event/view payloads
 - provides the interface future frontend shells should consume before any CLI formatting
 
 `event_identity.py` holds shared readback identity normalization:
@@ -188,6 +194,7 @@ They are thin facades implemented through `amadeus_thread0/_compat.py`.
 
 - `tool_registry.py`
 - `runtime_audit.py`
+- `revision_trace_export.py`
 - `cli_views.py`
 - `counterpart_profile.py`
 - `perception_events.py`
@@ -199,6 +206,12 @@ Rule:
 
 - if a module is generic support or compatibility-facing, it belongs here
 - if a module directly shapes graph execution semantics, it belongs in `graph_parts/`
+
+`revision_trace_export.py` is the shared export-normalization surface for persisted revision traces:
+
+- promotes provenance-bound `embodied_context` from nested final semantics (`behavior_action`, `behavior_plan`, `behavior_consequence`, `interaction_carryover`)
+- keeps read-only export surfaces aligned across backend API envelopes and tool-facing memory inspectors
+- must not reinterpret body/access continuity into relationship stance or other persona judgments
 
 ## Frontend Workspace
 

@@ -14,6 +14,17 @@ from ..config import (
     TOOL_CALLS_MAX,
     auto_approve_tool_names,
 )
+from ..evolution_engine.reconsolidation import build_reconsolidation_snapshot
+from .action_packets import (
+    build_tool_action_packet,
+    make_proposal_id,
+    normalize_action_packets,
+    normalize_artifact_context,
+    risk_from_tool_name,
+    upsert_action_packet,
+)
+from .autonomy_runtime import refresh_autonomy_intent_from_packets
+from .digital_body_runtime import derive_digital_body_state
 from .common import _now_ts, _safe_json
 from .generation_profile import _ensure_response_structure
 from .messages import _last_user_text, _latest_ai, _messages
@@ -27,6 +38,15 @@ from .tool_runtime import (
     _invoke_tool,
     _memory_guard_check,
 )
+
+_AUTO_EXECUTABLE_ARTIFACT_INTENTS = {
+    "artifact:reopen_file",
+    "artifact:restore_file",
+    "artifact:reattach_workspace",
+    "artifact:reopen_page",
+    "artifact:restore_page",
+    "artifact:rerun_search",
+}
 
 
 def _available_tools_for_state(state: ThreadState) -> list[BaseTool]:
@@ -101,6 +121,9 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
     queued: list[dict[str, Any]] = []
     need_human: list[dict[str, Any]] = []
     order: list[str] = []
+    action_packets = normalize_action_packets(state.get("action_packets"))
+    action_trace = [dict(item) for item in (state.get("action_trace") if isinstance(state.get("action_trace"), list) else []) if isinstance(item, dict)]
+    autonomy_block_reason = str(state.get("autonomy_block_reason") or "").strip()
 
     for tc in tool_calls:
         tc_id = str(tc.get("id") or "")
@@ -108,9 +131,11 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         args = tc.get("args") if isinstance(tc.get("args"), dict) else {}
         if not tc_id:
             tc_id = f"call_{len(order)}"
+        proposal_id = _proposal_id_for_tool_call(tc_id, name, args)
+        risk = risk_from_tool_name(name)
         order.append(tc_id)
-        row = {"id": tc_id, "name": name, "args": args}
-        if name in auto_set:
+        row = {"id": tc_id, "name": name, "args": args, "proposal_id": proposal_id}
+        if name in auto_set and risk != "external_mutation":
             queued.append({**row, "action": "approve"})
         else:
             need_human.append(row)
@@ -126,6 +151,7 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
                 "kind": "tool_approval",
                 "source": source,
                 "tool_calls": need_human,
+                "proposal_ids": [str(item.get("proposal_id") or "").strip() for item in need_human],
             }
         )
 
@@ -152,7 +178,75 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
 
     rank = {tc_id: idx for idx, tc_id in enumerate(order)}
     queued.sort(key=lambda x: rank.get(str(x.get("id")), 10_000))
-    return {"approval_actions": queued}
+    pending_action_proposal: dict[str, Any] = {}
+    for row in queued:
+        name = str(row.get("name") or "")
+        proposal_id = str(row.get("proposal_id") or "").strip()
+        args = row.get("args") if isinstance(row.get("args"), dict) else {}
+        action = str(row.get("action") or "").strip().lower()
+        risk = risk_from_tool_name(name)
+        packet_status = "approved" if action in {"approve", "edit"} else "rejected"
+        packet = build_tool_action_packet(
+            tool_name=name,
+            proposal_id=proposal_id,
+            args=args,
+            action=action,
+            status=packet_status,
+            result_summary=str(row.get("reason") or ""),
+            block_reason=str(row.get("reason") or "") if action == "reject" else "",
+        )
+        action_packets = upsert_action_packet(action_packets, packet)
+        action_trace.append(
+            _action_trace_entry(
+                proposal_id=proposal_id,
+                name=name,
+                status=packet_status,
+                event="tool_gate_decision",
+                risk=risk,
+                source="tool_gate",
+                result_summary=str(row.get("reason") or ""),
+                block_reason=str(row.get("reason") or "") if action == "reject" else "",
+                requires_approval=risk != "read",
+            )
+        )
+        if risk != "read" and packet_status in {"proposed", "awaiting_approval"}:
+            pending_action_proposal = dict(packet)
+        if action == "reject" and str(row.get("reason") or "").strip():
+            autonomy_block_reason = str(row.get("reason") or "").strip()
+
+    autonomy_intent = refresh_autonomy_intent_from_packets(
+        state.get("autonomy_intent"),
+        action_packets,
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        block_reason=autonomy_block_reason,
+    )
+    digital_body_state = derive_digital_body_state(
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        behavior_queue=state.get("behavior_queue"),
+        action_packets=action_packets,
+        interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+        toolset_unlocks=state.get("toolset_unlocks") if isinstance(state.get("toolset_unlocks"), dict) else {},
+        autonomy_block_reason=autonomy_block_reason,
+        session_context=state.get("session_context") if isinstance(state.get("session_context"), dict) else {},
+        last_external_tools=state.get("last_external_tools"),
+    )
+    return {
+        "approval_actions": queued,
+        "action_packets": action_packets,
+        "pending_action_proposal": pending_action_proposal,
+        "action_trace": action_trace,
+        "autonomy_block_reason": autonomy_block_reason,
+        "autonomy_intent": autonomy_intent,
+        "digital_body_state": digital_body_state,
+        "reconsolidation_snapshot": _rebuild_reconsolidation_with_autonomy(
+            state,
+            autonomy_intent=autonomy_intent,
+            action_packets=action_packets,
+            action_trace=action_trace,
+            autonomy_block_reason=autonomy_block_reason,
+            digital_body_state=digital_body_state,
+        ),
+    }
 
 
 def _tool_lookup(name: str) -> BaseTool | None:
@@ -163,6 +257,443 @@ def _tool_lookup(name: str) -> BaseTool | None:
         if str(getattr(t, "name", "") or "") == name:
             return t
     return None
+
+
+def _tool_result_summary(result: Any) -> str:
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result.strip()[:220]
+    if isinstance(result, dict):
+        for key in ("message", "summary", "reason", "status", "title", "text"):
+            text = str(result.get(key) or "").strip()
+            if text:
+                return text[:220]
+        if "requested_tools" in result and isinstance(result.get("requested_tools"), list):
+            requested = [str(item).strip() for item in result.get("requested_tools", []) if str(item or "").strip()]
+            if requested:
+                return ("requested_tools=" + ",".join(requested))[:220]
+    return str(result).strip()[:220]
+
+
+def _proposal_id_for_tool_call(tc_id: str, name: str, args: dict[str, Any]) -> str:
+    return make_proposal_id(
+        tc_id,
+        name,
+        str(args.get("target") or "").strip(),
+        str(args.get("query") or "").strip(),
+        str(args.get("reason") or "").strip(),
+    )
+
+
+def _artifact_execution_candidate(packet: dict[str, Any]) -> dict[str, Any]:
+    row = dict(packet or {})
+    intent = str(row.get("intent") or "").strip().lower()
+    status = str(row.get("status") or "").strip().lower()
+    risk = str(row.get("risk") or "").strip().lower()
+    if intent not in _AUTO_EXECUTABLE_ARTIFACT_INTENTS:
+        return {}
+    if bool(row.get("requires_approval", False)) or risk not in {"", "read"}:
+        return {}
+    if status not in {"", "proposed", "queued", "approved"}:
+        return {}
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if not proposal_id:
+        return {}
+    steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
+    primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
+    target = str(primary_step.get("target") or "").strip() or str(row.get("result_summary") or "").strip()
+    mode = intent.split(":", 1)[1]
+    artifact_kind = (
+        "page"
+        if mode in {"reopen_page", "restore_page"}
+        else "workspace"
+        if mode == "reattach_workspace"
+        else "search_result"
+        if mode == "rerun_search"
+        else "file"
+    )
+    return {
+        "proposal_id": proposal_id,
+        "intent": intent,
+        "mode": mode,
+        "artifact_kind": artifact_kind,
+        "target": target,
+        "label": target,
+        "packet": row,
+    }
+
+
+def _first_autonomy_execution_candidate(state: ThreadState) -> dict[str, Any]:
+    packets = normalize_action_packets(state.get("action_packets"))
+    for packet in packets:
+        candidate = _artifact_execution_candidate(packet)
+        if candidate:
+            return candidate
+    return {}
+
+
+def _has_direct_autonomy_execution_candidate(state: ThreadState) -> bool:
+    return bool(_first_autonomy_execution_candidate(state))
+
+
+def _action_trace_entry(
+    *,
+    proposal_id: str,
+    name: str,
+    status: str,
+    event: str,
+    risk: str,
+    source: str,
+    result_summary: str = "",
+    block_reason: str = "",
+    requires_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "proposal_id": proposal_id,
+        "intent": "toolset_upgrade_proposal" if name == "request_toolset_upgrade" else f"tool:{str(name or '').strip().lower()}",
+        "origin": "capability_upgrade" if name == "request_toolset_upgrade" else "motive_goal",
+        "status": str(status or "").strip().lower(),
+        "event": str(event or "").strip().lower(),
+        "risk": str(risk or "").strip().lower(),
+        "source": source,
+        "result_summary": str(result_summary or "").strip()[:220],
+        "block_reason": str(block_reason or "").strip()[:220],
+        "requires_approval": bool(requires_approval),
+    }
+
+
+def _artifact_trace_entry(
+    *,
+    proposal_id: str,
+    intent: str,
+    origin: str,
+    status: str,
+    event: str,
+    source: str,
+    result_summary: str = "",
+    block_reason: str = "",
+) -> dict[str, Any]:
+    return {
+        "proposal_id": str(proposal_id or "").strip(),
+        "intent": str(intent or "").strip().lower(),
+        "origin": str(origin or "").strip().lower() or "motive_goal",
+        "status": str(status or "").strip().lower(),
+        "event": str(event or "").strip().lower(),
+        "risk": "read",
+        "source": str(source or "").strip().lower(),
+        "result_summary": str(result_summary or "").strip()[:220],
+        "block_reason": str(block_reason or "").strip()[:220],
+        "requires_approval": False,
+    }
+
+
+def _artifact_context_from_reacquisition_result(
+    *,
+    result: Any,
+    artifact_kind: str,
+    artifact_target: str,
+    artifact_label: str,
+    mode: str,
+) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    source_ref_ids = row.get("source_ref_ids") if isinstance(row.get("source_ref_ids"), list) else []
+    carrier = "source_ref" if source_ref_ids or str(row.get("source_url") or "").strip() else "filesystem"
+    return normalize_artifact_context(
+        {
+            "carrier": carrier,
+            "artifact_kind": str(row.get("artifact_kind") or artifact_kind or "").strip().lower(),
+            "artifact_ref": str(row.get("artifact_ref") or artifact_target or "").strip(),
+            "artifact_label": str(row.get("artifact_label") or artifact_label or artifact_target or "").strip(),
+            "reacquisition_mode": str(row.get("artifact_reacquisition_mode") or mode or "").strip().lower(),
+            "preview": str(row.get("artifact_preview") or "").strip(),
+            "preview_truncated": bool(row.get("artifact_preview_truncated", False)),
+            "exists": bool(row.get("artifact_exists", False)),
+            "size_bytes": row.get("artifact_size_bytes"),
+            "updated_at": row.get("artifact_updated_at"),
+            "source_ref_ids": source_ref_ids,
+            "source_url": str(row.get("source_url") or "").strip(),
+            "source_query": str(row.get("source_query") or "").strip(),
+            "source_title": str(row.get("artifact_label") or artifact_label or "").strip(),
+            "source_tool_name": str(row.get("tool_name") or "").strip(),
+        }
+    )
+
+
+def _rebuild_reconsolidation_with_autonomy(
+    state: ThreadState,
+    *,
+    autonomy_intent: dict[str, Any],
+    action_packets: list[dict[str, Any]],
+    action_trace: list[dict[str, Any]],
+    autonomy_block_reason: str,
+    digital_body_state: dict[str, Any],
+) -> dict[str, Any]:
+    return build_reconsolidation_snapshot(
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        appraisal=state.get("turn_appraisal") if isinstance(state.get("turn_appraisal"), dict) else {},
+        world_model_state=state.get("world_model_state") if isinstance(state.get("world_model_state"), dict) else {},
+        semantic_narrative_profile=state.get("semantic_narrative_profile")
+        if isinstance(state.get("semantic_narrative_profile"), dict)
+        else {},
+        latent_state=state.get("evolution_state") if isinstance(state.get("evolution_state"), dict) else {},
+        emotion_state=state.get("emotion_state") if isinstance(state.get("emotion_state"), dict) else {},
+        bond_state=state.get("bond_state") if isinstance(state.get("bond_state"), dict) else {},
+        counterpart_assessment=state.get("counterpart_assessment")
+        if isinstance(state.get("counterpart_assessment"), dict)
+        else {},
+        behavior_action=state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {},
+        behavior_plan=state.get("behavior_plan") if isinstance(state.get("behavior_plan"), dict) else {},
+        interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+        agenda_lifecycle_residue=state.get("agenda_lifecycle_residue")
+        if isinstance(state.get("agenda_lifecycle_residue"), dict)
+        else {},
+        autonomy_intent=autonomy_intent,
+        action_packets=action_packets,
+        action_trace=action_trace,
+        autonomy_block_reason=autonomy_block_reason,
+        digital_body_state=digital_body_state,
+    )
+
+
+def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
+    candidate = _first_autonomy_execution_candidate(state)
+    if not candidate:
+        return {}
+
+    proposal_id = str(candidate.get("proposal_id") or "").strip()
+    intent = str(candidate.get("intent") or "").strip().lower()
+    mode = str(candidate.get("mode") or "").strip().lower()
+    artifact_kind = str(candidate.get("artifact_kind") or "").strip().lower()
+    artifact_target = str(candidate.get("target") or "").strip()
+    artifact_label = str(candidate.get("label") or artifact_target).strip()
+    packet = dict(candidate.get("packet") or {})
+    origin = str(packet.get("origin") or "").strip().lower() or "motive_goal"
+
+    tool = _tool_lookup("reacquire_artifact")
+    action_packets = normalize_action_packets(state.get("action_packets"))
+    action_trace = [
+        dict(item)
+        for item in (state.get("action_trace") if isinstance(state.get("action_trace"), list) else [])
+        if isinstance(item, dict)
+    ]
+    evidence_pack = list(state.get("evidence_pack") or [])
+    session_context = dict(state.get("session_context") or {}) if isinstance(state.get("session_context"), dict) else {}
+    autonomy_block_reason = ""
+
+    if tool is None:
+        reason = "reacquire_artifact"
+        action_packets = upsert_action_packet(
+            action_packets,
+            {
+                **packet,
+                "status": "blocked",
+                "result_summary": reason,
+                "block_reason": reason,
+                "writeback_ready": False,
+            },
+        )
+        action_trace.append(
+            _artifact_trace_entry(
+                proposal_id=proposal_id,
+                intent=intent,
+                origin=origin,
+                status="blocked",
+                event="tool_not_found",
+                source="autonomy_execute",
+                result_summary=reason,
+                block_reason=reason,
+            )
+        )
+        autonomy_block_reason = reason
+        autonomy_intent = refresh_autonomy_intent_from_packets(
+            state.get("autonomy_intent"),
+            action_packets,
+            current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+            block_reason=autonomy_block_reason,
+        )
+        digital_body_state = derive_digital_body_state(
+            current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+            behavior_queue=state.get("behavior_queue"),
+            action_packets=action_packets,
+            interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+            toolset_unlocks=state.get("toolset_unlocks") if isinstance(state.get("toolset_unlocks"), dict) else {},
+            autonomy_block_reason=autonomy_block_reason,
+            session_context=session_context,
+            last_external_tools=state.get("last_external_tools"),
+        )
+        return {
+            "action_packets": action_packets,
+            "pending_action_proposal": {},
+            "action_trace": action_trace,
+            "autonomy_block_reason": autonomy_block_reason,
+            "autonomy_intent": autonomy_intent,
+            "digital_body_state": digital_body_state,
+            "reconsolidation_snapshot": _rebuild_reconsolidation_with_autonomy(
+                state,
+                autonomy_intent=autonomy_intent,
+                action_packets=action_packets,
+                action_trace=action_trace,
+                autonomy_block_reason=autonomy_block_reason,
+                digital_body_state=digital_body_state,
+            ),
+        }
+
+    tool_args = {
+        "mode": mode,
+        "artifact_kind": artifact_kind,
+        "artifact_ref": artifact_target,
+        "artifact_label": artifact_label,
+    }
+    tool_call_id = f"auto-{proposal_id}"
+    synthetic_ai = AIMessage(
+        content="",
+        tool_calls=[{"id": tool_call_id, "name": "reacquire_artifact", "args": dict(tool_args)}],
+    )
+    messages: list[Any] = [synthetic_ai]
+    action_packets = upsert_action_packet(
+        action_packets,
+        {
+            **packet,
+            "status": "executing",
+            "result_summary": "",
+            "block_reason": "",
+            "writeback_ready": False,
+        },
+    )
+    action_trace.append(
+        _artifact_trace_entry(
+            proposal_id=proposal_id,
+            intent=intent,
+            origin=origin,
+            status="executing",
+            event="started",
+            source="autonomy_execute",
+        )
+    )
+
+    try:
+        result = _invoke_tool(tool, tool_args)
+        payload = {"ok": True, "data": result}
+        messages.append(ToolMessage(content=_safe_json(payload), tool_call_id=tool_call_id))
+        result_summary = _tool_result_summary(result)
+        artifact_context = _artifact_context_from_reacquisition_result(
+            result=result,
+            artifact_kind=artifact_kind,
+            artifact_target=artifact_target,
+            artifact_label=artifact_label,
+            mode=mode,
+        )
+        action_packets = upsert_action_packet(
+            action_packets,
+            {
+                **packet,
+                "status": "completed",
+                "result_summary": result_summary,
+                "block_reason": "",
+                "writeback_ready": True,
+                "artifact_context": artifact_context,
+            },
+        )
+        action_trace.append(
+            _artifact_trace_entry(
+                proposal_id=proposal_id,
+                intent=intent,
+                origin=origin,
+                status="completed",
+                event="completed",
+                source="autonomy_execute",
+                result_summary=result_summary,
+            )
+        )
+        hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
+        hints.update(
+            {
+                "artifact_continuity": str((result or {}).get("artifact_continuity") or "attached"),
+                "active_artifact_kind": str((result or {}).get("artifact_kind") or artifact_kind),
+                "active_artifact_ref": str((result or {}).get("artifact_ref") or artifact_target),
+                "active_artifact_label": str((result or {}).get("artifact_label") or artifact_label),
+                "artifact_age_s": 0,
+                "artifact_reacquisition_mode": mode,
+            }
+        )
+        session_context["digital_body_hints"] = hints
+        preview = str((result or {}).get("artifact_preview") or "").strip()
+        if preview:
+            evidence_pack.append(
+                {
+                    "tool_name": "reacquire_artifact",
+                    "title": str((result or {}).get("artifact_label") or artifact_label or artifact_target)[:140],
+                    "snippet": preview[:1200],
+                    "query": result_summary or f"artifact:{mode}",
+                    "source_id": int(((result or {}).get("source_ref_ids") or [0])[0] or 0),
+                    "url": str((result or {}).get("source_url") or (result or {}).get("artifact_ref") or ""),
+                    "span_hint": "artifact_reacquired",
+                }
+            )
+    except Exception as e:
+        error_text = str(e)
+        payload = {"ok": False, "error": {"code": "AUTO_ARTIFACT_EXEC_ERROR", "message": error_text}}
+        messages.append(ToolMessage(content=_safe_json(payload), tool_call_id=tool_call_id))
+        action_packets = upsert_action_packet(
+            action_packets,
+            {
+                **packet,
+                "status": "blocked",
+                "result_summary": error_text,
+                "block_reason": error_text,
+                "writeback_ready": False,
+            },
+        )
+        action_trace.append(
+            _artifact_trace_entry(
+                proposal_id=proposal_id,
+                intent=intent,
+                origin=origin,
+                status="blocked",
+                event="tool_error",
+                source="autonomy_execute",
+                result_summary=error_text,
+                block_reason=error_text,
+            )
+        )
+        autonomy_block_reason = error_text
+
+    autonomy_intent = refresh_autonomy_intent_from_packets(
+        state.get("autonomy_intent"),
+        action_packets,
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        block_reason=autonomy_block_reason,
+    )
+    digital_body_state = derive_digital_body_state(
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        behavior_queue=state.get("behavior_queue"),
+        action_packets=action_packets,
+        interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+        toolset_unlocks=state.get("toolset_unlocks") if isinstance(state.get("toolset_unlocks"), dict) else {},
+        autonomy_block_reason=autonomy_block_reason,
+        session_context=session_context,
+        last_external_tools=state.get("last_external_tools"),
+    )
+    return {
+        "messages": messages,
+        "evidence_pack": evidence_pack[-50:],
+        "action_packets": action_packets,
+        "pending_action_proposal": {},
+        "action_trace": action_trace,
+        "autonomy_block_reason": autonomy_block_reason,
+        "autonomy_intent": autonomy_intent,
+        "digital_body_state": digital_body_state,
+        "session_context": session_context,
+        "reconsolidation_snapshot": _rebuild_reconsolidation_with_autonomy(
+            state,
+            autonomy_intent=autonomy_intent,
+            action_packets=action_packets,
+            action_trace=action_trace,
+            autonomy_block_reason=autonomy_block_reason,
+            digital_body_state=digital_body_state,
+        ),
+    }
 
 
 def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
@@ -181,6 +712,9 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
     external_tools = set(state.get("last_external_tools") or [])
     guard_checked = int(state.get("memory_guard_checked", 0) or 0)
     guard_blocked = int(state.get("memory_guard_blocked", 0) or 0)
+    action_packets = normalize_action_packets(state.get("action_packets"))
+    action_trace = [dict(item) for item in (state.get("action_trace") if isinstance(state.get("action_trace"), list) else []) if isinstance(item, dict)]
+    autonomy_block_reason = str(state.get("autonomy_block_reason") or "").strip()
 
     tool_msgs: list[ToolMessage] = []
     for tc in tool_calls:
@@ -191,10 +725,13 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
         action = str(decision.get("action") or "reject").strip().lower()
         if action == "edit" and isinstance(decision.get("args"), dict):
             args = dict(decision.get("args"))
+        proposal_id = str(decision.get("proposal_id") or _proposal_id_for_tool_call(tc_id, name, args)).strip()
+        risk = risk_from_tool_name(name)
 
         record: dict[str, Any] = {
             "tool": name,
             "tool_call_id": tc_id,
+            "proposal_id": proposal_id,
             "action": action,
             "args": args,
         }
@@ -205,6 +742,32 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="rejected",
+                    result_summary=reason,
+                    block_reason=reason,
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="rejected",
+                    event="rejected",
+                    risk=risk,
+                    source="tool_execute",
+                    result_summary=reason,
+                    block_reason=reason,
+                    requires_approval=risk != "read",
+                )
+            )
+            autonomy_block_reason = reason
             continue
 
         if name in MEMORY_WRITE_TOOLS:
@@ -216,6 +779,32 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="blocked",
+                    result_summary=reason,
+                    block_reason=reason,
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="blocked",
+                    event="memory_guard_blocked",
+                    risk=risk,
+                    source="tool_execute",
+                    result_summary=reason,
+                    block_reason=reason,
+                    requires_approval=risk != "read",
+                )
+            )
+            autonomy_block_reason = reason
             continue
 
         tool = _tool_lookup(name)
@@ -224,9 +813,56 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="blocked",
+                    result_summary=name,
+                    block_reason=name,
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="blocked",
+                    event="tool_not_found",
+                    risk=risk,
+                    source="tool_execute",
+                    result_summary=name,
+                    block_reason=name,
+                    requires_approval=risk != "read",
+                )
+            )
+            autonomy_block_reason = name
             continue
 
         try:
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="executing",
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="executing",
+                    event="started",
+                    risk=risk,
+                    source="tool_execute",
+                    requires_approval=risk != "read",
+                )
+            )
             result = _invoke_tool(tool, args)
             _auto_reconsolidate_after_tool(
                 store,
@@ -255,11 +891,87 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
 
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
+            result_summary = _tool_result_summary(result)
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="completed",
+                    result_summary=result_summary,
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="completed",
+                    event="completed",
+                    risk=risk,
+                    source="tool_execute",
+                    result_summary=result_summary,
+                    requires_approval=risk != "read",
+                )
+            )
         except Exception as e:
             payload = {"ok": False, "error": {"code": "TOOL_EXEC_ERROR", "message": str(e)}}
             tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
             record["result"] = payload
             _audit_jsonl("tool_audit.jsonl", record)
+            error_text = str(e)
+            action_packets = upsert_action_packet(
+                action_packets,
+                build_tool_action_packet(
+                    tool_name=name,
+                    proposal_id=proposal_id,
+                    args=args,
+                    action=action,
+                    status="blocked",
+                    result_summary=error_text,
+                    block_reason=error_text,
+                ),
+            )
+            action_trace.append(
+                _action_trace_entry(
+                    proposal_id=proposal_id,
+                    name=name,
+                    status="blocked",
+                    event="tool_error",
+                    risk=risk,
+                    source="tool_execute",
+                    result_summary=error_text,
+                    block_reason=error_text,
+                    requires_approval=risk != "read",
+                )
+            )
+            autonomy_block_reason = error_text
+
+    pending_action_proposal = {}
+    for packet in action_packets:
+        if bool(packet.get("requires_approval", False)) and str(packet.get("status") or "").strip().lower() in {
+            "proposed",
+            "awaiting_approval",
+        }:
+            pending_action_proposal = dict(packet)
+            break
+    autonomy_intent = refresh_autonomy_intent_from_packets(
+        state.get("autonomy_intent"),
+        action_packets,
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        block_reason=autonomy_block_reason,
+    )
+    digital_body_state = derive_digital_body_state(
+        current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        behavior_queue=state.get("behavior_queue"),
+        action_packets=action_packets,
+        interaction_carryover=state.get("interaction_carryover") if isinstance(state.get("interaction_carryover"), dict) else {},
+        toolset_unlocks=unlocks,
+        autonomy_block_reason=autonomy_block_reason,
+        session_context=state.get("session_context") if isinstance(state.get("session_context"), dict) else {},
+        last_external_tools=sorted(list(external_tools)),
+    )
 
     return {
         "messages": tool_msgs,
@@ -270,6 +982,20 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
         "last_external_tools": sorted(list(external_tools)),
         "memory_guard_checked": guard_checked,
         "memory_guard_blocked": guard_blocked,
+        "action_packets": action_packets,
+        "pending_action_proposal": pending_action_proposal,
+        "action_trace": action_trace,
+        "autonomy_block_reason": autonomy_block_reason,
+        "autonomy_intent": autonomy_intent,
+        "digital_body_state": digital_body_state,
+        "reconsolidation_snapshot": _rebuild_reconsolidation_with_autonomy(
+            state,
+            autonomy_intent=autonomy_intent,
+            action_packets=action_packets,
+            action_trace=action_trace,
+            autonomy_block_reason=autonomy_block_reason,
+            digital_body_state=digital_body_state,
+        ),
     }
 
 

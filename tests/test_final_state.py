@@ -6,6 +6,8 @@ from unittest.mock import patch
 from amadeus_thread0.runtime.final_state import (
     resolve_behavior_payloads,
     resolve_counterpart_assessment,
+    resolve_digital_body_consequence,
+    resolve_agenda_lifecycle_residue,
     resolve_interaction_carryover,
 )
 
@@ -172,6 +174,52 @@ class FinalStateTests(unittest.TestCase):
         self.assertNotIn("legacy_hint", plan)
         mock_derive.assert_called_once()
 
+    def test_resolve_behavior_payloads_preserves_frozen_behavior_action_embodied_context_only_signal(self):
+        action, plan = resolve_behavior_payloads(
+            behavior_action={},
+            behavior_plan={},
+            reconsolidation_snapshot={
+                "behavior_action": {
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "这一步还在等审批。",
+                        "requested_access": ["workspace_write"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    }
+                }
+            },
+        )
+
+        embodied = action.get("embodied_context") if isinstance(action.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+        self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
+        self.assertEqual(plan, {})
+
+    def test_resolve_behavior_payloads_preserves_frozen_behavior_plan_embodied_context_only_signal(self):
+        action, plan = resolve_behavior_payloads(
+            behavior_action={},
+            behavior_plan={},
+            reconsolidation_snapshot={
+                "behavior_plan": {
+                    "embodied_context": {
+                        "kind": "environmental_friction",
+                        "summary": "浏览器会话还没准备好。",
+                        "missing_access": ["browser_session"],
+                        "environmental_friction": True,
+                    }
+                }
+            },
+        )
+
+        embodied = plan.get("embodied_context") if isinstance(plan.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "environmental_friction")
+        self.assertEqual(embodied.get("missing_access"), ["browser_session"])
+        self.assertTrue(bool(embodied.get("environmental_friction")))
+        self.assertEqual(action, {})
+
     def test_resolve_interaction_carryover_prefers_frozen_reconsolidation_snapshot(self):
         live_carryover = {
             "source": "live",
@@ -198,6 +246,55 @@ class FinalStateTests(unittest.TestCase):
         self.assertEqual(carryover["carryover_mode"], "own_rhythm")
         self.assertEqual(carryover["strength"], 0.53)
         self.assertEqual(carryover["relationship_weather"], "warm_residue")
+
+    def test_resolve_interaction_carryover_preserves_embodied_context_signal(self):
+        carryover = resolve_interaction_carryover(
+            interaction_carryover={},
+            reconsolidation_snapshot={
+                "interaction_carryover": {
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她把窗口推进到了需要审批的位置。",
+                        "requested_access": ["workspace_write", "human_approval"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    }
+                }
+            },
+        )
+
+        embodied = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+        self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
+
+    def test_resolve_agenda_lifecycle_residue_preserves_embodied_context_signal(self):
+        residue = resolve_agenda_lifecycle_residue(
+            agenda_lifecycle_residue={},
+            reconsolidation_snapshot={
+                "agenda_lifecycle_consequence": {
+                    "kind": "released_to_self_activity",
+                    "summary": "她把注意力收回到了自己的节奏里。",
+                    "carryover_mode": "own_rhythm",
+                    "carryover_strength": 0.58,
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她把窗口推进到了需要审批的位置。",
+                        "requested_access": ["workspace_write", "human_approval"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    },
+                }
+            },
+        )
+
+        self.assertEqual(residue["kind"], "released_to_self_activity")
+        embodied = residue.get("embodied_context") if isinstance(residue.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+        self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
 
     def test_resolve_counterpart_assessment_normalizes_extended_profile_axes(self):
         assessment = resolve_counterpart_assessment(
@@ -240,6 +337,235 @@ class FinalStateTests(unittest.TestCase):
         self.assertEqual(profile["dominant_scene_signal"], "repair")
         self.assertIn("repairability", profile)
         self.assertIn("dependency_risk", profile)
+
+    def test_resolve_digital_body_consequence_prefers_frozen_reconsolidation_snapshot(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "access_state": {
+                    "mode": "approval_pending",
+                    "requestable_access": ["workspace_write"],
+                    "pending_approval_count": 1,
+                },
+                "resource_state": {"pending_approval_count": 1},
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-live-1",
+                    "origin": "counterpart_request",
+                    "intent": "write_file",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                }
+            ],
+            reconsolidation_snapshot={
+                "digital_body_consequence": {
+                    "kind": "environmental_friction",
+                    "summary": "这轮真正留下的是环境阻力，不是待审批入口。",
+                    "environmental_friction": True,
+                    "missing_access": ["cookies"],
+                    "block_reason": "browser session missing",
+                }
+            },
+        )
+
+        self.assertEqual(consequence["kind"], "environmental_friction")
+        self.assertEqual(consequence["summary"], "这轮真正留下的是环境阻力，不是待审批入口。")
+        self.assertTrue(bool(consequence["environmental_friction"]))
+        self.assertEqual(consequence["missing_access"], ["cookies"])
+        self.assertEqual(consequence["block_reason"], "browser session missing")
+
+    def test_resolve_digital_body_consequence_derives_pending_access_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "approval_gate",
+                "world_surfaces": ["filesystem", "network"],
+                "active_tools": ["write_file"],
+                "access_state": {
+                    "mode": "approval_pending",
+                    "requestable_access": ["workspace_write"],
+                    "pending_approval_count": 1,
+                    "block_reason": "waiting for approval",
+                },
+                "resource_state": {"pending_approval_count": 1},
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-live-2",
+                    "origin": "counterpart_request",
+                    "intent": "write_file",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "write_file",
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "access_request_pending")
+        self.assertIn("human_approval", consequence["requested_access"])
+        self.assertEqual(consequence["primary_proposal_id"], "ap-live-2")
+        self.assertEqual(consequence["primary_status"], "awaiting_approval")
+        self.assertEqual(consequence["primary_tool_name"], "write_file")
+        self.assertTrue(bool(consequence["requested_help"]))
+
+    def test_resolve_digital_body_consequence_derives_cooldown_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "cooldown_gate",
+                "world_surfaces": ["network"],
+                "access_state": {
+                    "mode": "cooldown",
+                    "quota_state": "exhausted",
+                    "retry_after_s": 300,
+                    "cooldown_scope": "provider",
+                    "block_reason": "provider rate limited",
+                    "requestable_access": ["api_quota"],
+                    "missing_access": ["api_quota"],
+                },
+                "resource_state": {},
+            },
+            action_packets=[],
+        )
+
+        self.assertEqual(consequence["kind"], "environmental_friction")
+        self.assertEqual(consequence["retry_after_s"], 300)
+        self.assertEqual(consequence["cooldown_scope"], "provider")
+        self.assertTrue(bool(consequence["environmental_friction"]))
+        self.assertIn("300秒后", consequence["summary"])
+        self.assertEqual(consequence["block_reason"], "provider rate limited")
+
+    def test_resolve_digital_body_consequence_derives_session_expiry_recovery_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "dialogue",
+                "world_surfaces": ["browser"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "browser_session": "expired",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_continuity": "expired",
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {},
+            },
+            action_packets=[],
+        )
+
+        self.assertEqual(consequence["kind"], "environmental_friction")
+        self.assertEqual(consequence["session_continuity"], "expired")
+        self.assertEqual(consequence["session_recovery_mode"], "refresh_session")
+        self.assertTrue(bool(consequence["environmental_friction"]))
+        self.assertIn("刷新", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_detached_artifact_reacquisition_from_live_body_state(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "dialogue",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "native_only",
+                },
+                "resource_state": {
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/plan.md",
+                    "active_artifact_label": "plan.md",
+                    "artifact_age_s": 7200,
+                    "artifact_reacquisition_mode": "reopen_file",
+                },
+            },
+            action_packets=[],
+        )
+
+        self.assertEqual(consequence["kind"], "environmental_friction")
+        self.assertEqual(consequence["artifact_continuity"], "detached")
+        self.assertEqual(consequence["active_artifact_kind"], "file")
+        self.assertEqual(consequence["active_artifact_label"], "plan.md")
+        self.assertEqual(consequence["artifact_reacquisition_mode"], "reopen_file")
+        self.assertIn("重新打开", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_preserves_compact_artifact_identity(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "approval_gate",
+                "access_state": {
+                    "mode": "approval_pending",
+                    "requestable_access": ["human_approval"],
+                    "pending_approval_count": 1,
+                },
+                "resource_state": {},
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-source-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:rerun_search",
+                    "status": "awaiting_approval",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_label": "Persistence",
+                        "reacquisition_mode": "rerun_search",
+                        "source_ref_ids": [17],
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread",
+                        "source_title": "Persistence",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["artifact_carrier"], "source_ref")
+        self.assertEqual(consequence["artifact_source_ref_ids"], [17])
+        self.assertIn("docs.langchain.com", consequence["artifact_source_url"])
+        self.assertEqual(consequence["artifact_source_title"], "Persistence")
+        self.assertEqual(consequence["artifact_source_tool_name"], "search_web")
+
+    def test_resolve_digital_body_consequence_does_not_materialize_expiring_session_only(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "native_only",
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_continuity": "expiring",
+                    "session_expires_in_s": 600,
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {},
+            },
+            action_packets=[],
+        )
+
+        self.assertEqual(consequence, {})
+
+    def test_resolve_digital_body_consequence_does_not_materialize_stale_artifact_only(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "native_only",
+                },
+                "resource_state": {
+                    "artifact_continuity": "stale",
+                    "active_artifact_kind": "page",
+                    "active_artifact_label": "lab-notes",
+                    "artifact_age_s": 600,
+                    "artifact_reacquisition_mode": "reopen_page",
+                },
+            },
+            action_packets=[],
+        )
+
+        self.assertEqual(consequence, {})
 
 
 if __name__ == "__main__":

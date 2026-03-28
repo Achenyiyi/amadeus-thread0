@@ -485,6 +485,46 @@ def _has_window_technical_self_activity(text: str) -> bool:
 
 
 
+def _has_embodied_access_constraint(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact:
+        return False
+    general_access_anchor = re.search(
+        r"(workspace_write|workspace_read|cookie(?:s)?|session|browser|access token|credential|login|登录|注册|账号|会话|权限|审批|批准|批下来|入口|门口|浏览器|只读)",
+        compact,
+        re.I,
+    )
+    blocked_access_state = re.search(
+        r"(没|未|还没|尚未|不给|缺|卡在|卡住|停在|停住|进不去|进不来|走不动|打不开|没建立|没开|没拿到|没注册好|不能|只能|暂时|得先|之前|门外|外面|先看[^。！？!?]{0,6}不能(?:改|动)|只读[^。！？!?]{0,6}不能(?:写|改|碰))",
+        compact,
+        re.I,
+    )
+    if general_access_anchor and blocked_access_state:
+        return True
+    return bool(
+        re.search(
+            r"((?:入口(?:的)?|登录)?连接[^。！？!?]{0,8}(?:还没|没|未)(?:建立|打通|起来|连上)|连接[^。！？!?]{0,8}(?:还没|没|未)(?:建立|打通|起来|连上)|(?:那边|入口|页面|浏览器|会话|登录|刷新|伸过去|探过去|接过去|碰过去)[^。！？!?]{0,12}(?:掉线|断了|断开|断掉)|(?:掉线|断了|断开|断掉)[^。！？!?]{0,12}(?:那边|入口|页面|浏览器|会话|登录|刷新|过不去|进不去|伸过去|探过去)|(?:那边|入口|页面|浏览器|会话|登录)[^。！？!?]{0,8}(?:还没|没|未)上线|(?:还没|没|未)上线[^。！？!?]{0,8}(?:那边|入口|页面|浏览器|会话|登录|所以现在还是进不去))",
+            compact,
+            re.I,
+        )
+    )
+
+
+def _has_embodied_everyday_runtime_note(text: str) -> bool:
+    compact = str(text or "").strip()
+    if not compact or not _has_embodied_access_constraint(compact):
+        return False
+    if not re.search(r"(后台|报错)", compact, re.I):
+        return False
+    return not bool(
+        re.search(
+            r"(日志|状态机|任务队列|参数|协议|模块|同步|调度|缓存|数据流|线程|回路|自检|运算资源|处理负载|实验室|重要的实验|实验台|仪器|散热风扇|电流声|风扇转速|误差来源|临界数据|数据样本|研究者|过载|重新校准|校准|认知回路|CPU|化学物质|过热)",
+            compact,
+            re.I,
+        )
+    )
+
+
 def _is_goodnight_closing(user_text: str) -> bool:
     text = str(user_text or "").strip()
     if not text:
@@ -3986,10 +4026,14 @@ def _dialogue_surface_issues(
         text,
     ):
         issues.append("meta_self_explainer")
-    if _looks_like_light_smalltalk(user_text) and re.search(
-        r"(停机|停机维护|待机|唤醒|掉线|上线|连接|电量|过载|负载|运算资源|处理负载|算力|热寂|观测者|设定)",
-        text,
-        re.I,
+    if (
+        _looks_like_light_smalltalk(user_text)
+        and re.search(
+            r"(停机|停机维护|待机|唤醒|掉线|上线|连接|电量|过载|负载|运算资源|处理负载|算力|热寂|观测者|设定)",
+            text,
+            re.I,
+        )
+        and not _has_embodied_access_constraint(text)
     ):
         issues.append("meta_self_explainer")
     if _is_self_rhythm_smalltalk_request(user_text) and re.search(
@@ -4002,7 +4046,7 @@ def _dialogue_surface_issues(
         r"(短期记忆|缓存|数据流|线程|回路|模块|协议|参数|变量|链路|同步|调度|日志|状态机|任务队列|自检|负载|运算资源|处理负载|处理数据|实验室|重要的实验|实验台|仪器|散热风扇|电流声|风扇转速|低噪环境|误差来源|排查一遍|临界数据|数据样本|研究者|过载|重新校准|校准|思维进程|认知回路|数据层面的|自我缓住|做缓住自己|缓住自己|缓住过程|必要的缓住过程|死机|CPU|化学物质|过热|后台|逻辑漏洞|逻辑故障|报错)",
         text,
         re.I,
-    ):
+    ) and not _has_embodied_everyday_runtime_note(text):
         issues.append("technical_self_activity")
     if re.search(r"(我只是陈述事实|我没有在说你|我不是在说你|按设定|按规则|根据系统)", text):
         issues.append("defensive_meta")
@@ -4347,6 +4391,7 @@ def _dialogue_surface_issues(
                 or current_event_kind in {"scheduled_checkin_due", "scheduled_life_due"}
             )
             and re.search(r"(后台|进度|流程|任务|整理完|处理完|未完成的进程|白费)", text)
+            and not _has_embodied_access_constraint(text)
         ):
             issues.append("event_window_task_reframe")
     if hint != "structured" and not _needs_structured_answer(user_text, text):
@@ -4407,7 +4452,12 @@ def _light_dialog_drift_markers(answer: str) -> list[str]:
     text = str(answer or "").strip()
     if not text:
         return []
-    hits = [marker for marker in DAILY_SURFACE_DRIFT_MARKERS if marker in text]
+    embodied_access = _has_embodied_access_constraint(text)
+    hits = [
+        marker
+        for marker in DAILY_SURFACE_DRIFT_MARKERS
+        if marker in text and not (embodied_access and marker in {"连接", "掉线", "上线"})
+    ]
     deduped: list[str] = []
     for item in hits:
         if item not in deduped:

@@ -57,6 +57,8 @@ Final-state normalization:
 - `amadeus_thread0.runtime.final_state.resolve_interaction_carryover(...)`
 - `amadeus_thread0.runtime.final_state.resolve_counterpart_assessment(...)`
 - `amadeus_thread0.runtime.final_state.resolve_agenda_lifecycle_residue(...)`
+- `amadeus_thread0.runtime.final_state.resolve_digital_body_state(...)`
+- `amadeus_thread0.runtime.final_state.resolve_digital_body_consequence(...)`
 
 ## Common Envelope Schema
 
@@ -160,6 +162,9 @@ Authoritative fields:
 - `interaction_carryover`
 - `counterpart_assessment`
 - `agenda_lifecycle_residue`
+- `autonomy`
+- `digital_body`
+- `digital_body_consequence`
 - `reconsolidation_snapshot`
 - `turn_appraisal`
 - `claim_links`
@@ -176,6 +181,9 @@ Important provenance:
 - `sources` comes from current-turn `evidence_pack`, not from persisted history
 - `claim_links` comes from current-turn claim attribution
 - `behavior_action`, `behavior_plan`, `counterpart_assessment`, and `agenda_lifecycle_residue` come from final-state resolution, not from raw live fields
+- `interaction_carryover` also comes from final-state resolution; when it contains `embodied_context`, that nested block is provenance-bound carryover memory rather than a frontend-recomputed body snapshot
+- `digital_body` is the resolved current runtime/body state
+- `digital_body_consequence` is the resolved embodied consequence of this turn; it should be treated as frozen final semantics, not recomputed in the frontend
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
 
 ### `event_round.payload`
@@ -196,6 +204,9 @@ Authoritative fields:
 - `interaction_carryover`
 - `counterpart_assessment`
 - `agenda_lifecycle_residue`
+- `autonomy`
+- `digital_body`
+- `digital_body_consequence`
 - `reconsolidation_snapshot`
 - `current_event`
 - `turn_appraisal`
@@ -215,6 +226,9 @@ Traceability note:
   - `turn_appraisal` for appraisal
   - `emotion_state / bond_state / allostasis_state / semantic_narrative_profile / world_model_state / evolution_state` for internal state
   - `behavior_action / behavior_plan` for motive-goal and behavior packet
+  - `interaction_carryover` for the currently active continuity residue, including optional provenance-bound `embodied_context`
+- `digital_body / digital_body_consequence` for embodied runtime state plus frozen embodied consequence
+- `turn_summary.event_residue.digital_body_consequence` when the finished turn left a meaningful embodied consequence at the event-residue layer
   - `reconsolidation_snapshot` for frozen final semantics
   - `writeback_trace` for the just-written self-narrative / revision-trace / counterpart-assessment / proactive-continuity persistence delta
 
@@ -240,6 +254,9 @@ Key fields:
 - `behavior_plan`
 - `behavior_queue`
 - `behavior_queue_summary`
+- `autonomy`
+- `digital_body`
+- `digital_body_consequence`
 - `interaction_carryover`
 - `agenda_lifecycle_residue`
 - `science_mode`
@@ -277,6 +294,13 @@ Key fields:
 - `proactive_continuity_preview`
 - `semantic_self_narratives`
 - `revision_traces`
+
+Preview note:
+
+- `counterpart_assessment_preview[*].embodied_context` and `proactive_continuity_preview[*].embodied_context` are optional provenance-bound fields. They appear only when persisted history explicitly carried embodied context; frontend must not synthesize them from unrelated runtime body state.
+- `behavior_action.embodied_context` and `behavior_plan.embodied_context` follow the same provenance rule: consume when present, but do not reinterpret them as relationship stance or bond-state deltas.
+- `interaction_carryover.embodied_context` and `turn_summary.interaction_carryover.embodied_context` follow the same rule: consume when present, but do not infer them from `digital_body` or `digital_body_consequence`.
+- `writeback_trace.revision_traces[*].embodied_context` is optional and only appears when the exported revision trace came from final `behavior_action` / `behavior_plan` / `behavior_consequence` / `interaction_carryover` semantics that explicitly carried embodied continuity.
 
 ### `bond_view.payload`
 
@@ -374,6 +398,8 @@ These are non-negotiable frontend rules.
 - Do not reconstruct reply text from `messages[-1]`.
 - Do not derive `behavior_action`, `behavior_plan`, or `interaction_carryover` in the frontend.
 - Treat `turn_summary`, `behavior_action`, `behavior_plan`, and `reconsolidation_snapshot` as one coherent final-turn packet.
+- Treat `digital_body` as current body state and `digital_body_consequence` as frozen turn consequence; do not collapse them into one field.
+- `digital_body.resource_state` and `digital_body_consequence` may both carry artifact continuity facts such as `artifact_continuity`, `active_artifact_kind`, `active_artifact_label`, and `artifact_reacquisition_mode`; these are backend-owned world-state traces and should be rendered as environment continuity, not as relationship stance.
 - Unknown additive keys must be ignored, not stripped by strict parsing.
 
 ## Turn Execution Contract

@@ -147,6 +147,7 @@ export interface CurrentTurnSummary {
   motive_tension: string;
   goal_frame: string;
   behavior_note?: string;
+  behavior_action_embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
   timing_window_min?: number;
   behavior_weather: string;
   carryover_mode: string;
@@ -156,7 +157,227 @@ export interface CurrentTurnSummary {
   recon_interaction_frame: string;
   behavior_consequence_kind: string;
   behavior_consequence_summary: string;
+  behavior_consequence_embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
   semantic_anchor_bundle?: JsonRecord;
+  autonomy_mode?: string;
+  autonomy_origin?: string;
+  autonomy_reason?: string;
+  autonomy_confidence?: number;
+  autonomy_requires_approval?: boolean;
+  action_packet_count?: number;
+  autonomy_block_reason?: string;
+  digital_body_surface?: string;
+  digital_body_access_mode?: string;
+  digital_body_pending_approval_count?: number;
+  digital_body_retry_after_s?: number;
+  digital_body_cooldown_scope?: string;
+  digital_body_session_continuity?: string;
+  digital_body_session_expires_in_s?: number;
+  digital_body_session_recovery_mode?: string;
+  digital_body_artifact_continuity?: string;
+  digital_body_active_artifact_kind?: string;
+  digital_body_active_artifact_label?: string;
+  digital_body_artifact_reacquisition_mode?: string;
+  digital_body_consequence_kind?: string;
+  digital_body_consequence_summary?: string;
+  digital_body_procedural_growth?: boolean;
+  digital_body_requested_help?: boolean;
+  digital_body_environmental_friction?: boolean;
+}
+
+export interface CapabilityStep extends JsonRecord {
+  kind?: string;
+  name?: string;
+  target?: string;
+  status?: string;
+  requires_approval?: boolean;
+  note?: string;
+}
+
+export interface ActionPacket extends JsonRecord {
+  proposal_id?: string;
+  origin?: string;
+  intent?: string;
+  status?: string;
+  risk?: string;
+  requires_approval?: boolean;
+  capability_steps?: CapabilityStep[];
+  expected_effect?: string;
+  result_summary?: string;
+  writeback_ready?: boolean;
+  linked_queue_id?: string;
+  tool_name?: string;
+  block_reason?: string;
+}
+
+export interface AutonomyIntent extends JsonRecord {
+  mode?: string;
+  origin?: string;
+  reason?: string;
+  confidence?: number;
+  own_rhythm_weight?: number;
+  continuity_weight?: number;
+  requires_approval?: boolean;
+  primary_proposal_id?: string;
+}
+
+export interface ActionTraceItem extends JsonRecord {
+  proposal_id?: string;
+  origin?: string;
+  intent?: string;
+  status?: string;
+  event?: string;
+  risk?: string;
+  source?: string;
+  result_summary?: string;
+  block_reason?: string;
+  requires_approval?: boolean;
+}
+
+export interface AutonomyEnvelope {
+  intent: AutonomyIntent;
+  action_packets: ActionPacket[];
+  pending_approval: ActionPacket | JsonRecord;
+  execution_trace: ActionTraceItem[];
+  block_reason: string;
+}
+
+export interface DigitalBodyAccessPayload extends JsonRecord {
+  mode?: string;
+  conditions?: string[];
+  block_reason?: string;
+  retry_after_s?: number;
+  cooldown_scope?: string;
+  session_continuity?: string;
+  session_expires_in_s?: number;
+  session_recovery_mode?: string;
+  pending_approval_count?: number;
+  external_mutation_pending?: boolean;
+  granted_toolsets?: string[];
+  missing_access?: string[];
+  requestable_access?: string[];
+  browser_session?: string;
+  account_state?: string;
+  cookie_state?: string;
+  api_key_state?: string;
+  quota_state?: string;
+  filesystem_state?: string;
+  sandbox_mode?: string;
+  network_access?: string;
+}
+
+export interface DigitalBodyResourcePayload extends JsonRecord {
+  behavior_queue_depth?: number;
+  action_packet_count?: number;
+  pending_approval_count?: number;
+  queued_packet_count?: number;
+  executing_packet_count?: number;
+  completed_packet_count?: number;
+  blocked_packet_count?: number;
+  external_tool_count?: number;
+  artifact_continuity?: string;
+  active_artifact_kind?: string;
+  active_artifact_ref?: string;
+  active_artifact_label?: string;
+  artifact_age_s?: number;
+  artifact_reacquisition_mode?: string;
+}
+
+export interface DigitalBodyPayload extends JsonRecord {
+  active_surface?: string;
+  perception_channels?: string[];
+  action_channels?: string[];
+  world_surfaces?: string[];
+  available_toolsets?: string[];
+  active_tools?: string[];
+  access_state?: DigitalBodyAccessPayload;
+  resource_state?: DigitalBodyResourcePayload;
+  body_constraints?: string[];
+}
+
+export interface DigitalBodyAccessSummary extends JsonRecord {
+  mode: string;
+  conditions: string[];
+  block_reason: string;
+  retry_after_s: number;
+  cooldown_scope: string;
+  session_continuity: string;
+  session_expires_in_s: number;
+  session_recovery_mode: string;
+  pending_approval_count: number;
+  external_mutation_pending: boolean;
+  granted_toolsets: string[];
+  missing_access: string[];
+  requestable_access: string[];
+  browser_session: string;
+  account_state: string;
+  cookie_state: string;
+  api_key_state: string;
+  quota_state: string;
+  filesystem_state: string;
+  sandbox_mode: string;
+  network_access: string;
+}
+
+export interface DigitalBodyResourceSummary extends JsonRecord {
+  behavior_queue_depth: number;
+  action_packet_count: number;
+  pending_approval_count: number;
+  queued_packet_count: number;
+  executing_packet_count: number;
+  completed_packet_count: number;
+  blocked_packet_count: number;
+  external_tool_count: number;
+  artifact_continuity: string;
+  active_artifact_kind: string;
+  active_artifact_ref: string;
+  active_artifact_label: string;
+  artifact_age_s: number;
+  artifact_reacquisition_mode: string;
+}
+
+export interface DigitalBodySummary extends JsonRecord {
+  active_surface: string;
+  perception_channels: string[];
+  action_channels: string[];
+  world_surfaces: string[];
+  available_toolsets: string[];
+  active_tools: string[];
+  access: DigitalBodyAccessSummary;
+  resources: DigitalBodyResourceSummary;
+  constraints: string[];
+}
+
+export interface DigitalBodyConsequenceSummary extends JsonRecord {
+  kind: string;
+  summary: string;
+  access_mode: string;
+  active_surface: string;
+  world_surfaces: string[];
+  missing_access: string[];
+  requested_access: string[];
+  granted_toolsets: string[];
+  active_tools: string[];
+  block_reason: string;
+  retry_after_s: number;
+  cooldown_scope: string;
+  session_continuity: string;
+  session_expires_in_s: number;
+  session_recovery_mode: string;
+  artifact_continuity: string;
+  active_artifact_kind: string;
+  active_artifact_ref: string;
+  active_artifact_label: string;
+  artifact_age_s: number;
+  artifact_reacquisition_mode: string;
+  primary_proposal_id: string;
+  primary_status: string;
+  primary_origin: string;
+  primary_intent: string;
+  primary_tool_name: string;
+  procedural_growth: boolean;
+  environmental_friction: boolean;
+  requested_help: boolean;
 }
 
 export interface EventResidueSummary {
@@ -196,6 +417,7 @@ export interface EventResidueSummary {
   nonverbal_signal_hint?: string;
   scheduled_after_min: number;
   idle_minutes: number;
+  digital_body_consequence?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface AgendaLifecycleSummary {
@@ -366,6 +588,7 @@ export interface ProactiveContinuityPreviewItem extends JsonRecord {
   primary_motive?: string;
   motive_tension?: string;
   goal_frame?: string;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface CounterpartAssessmentPreviewItem extends JsonRecord {
@@ -384,6 +607,7 @@ export interface CounterpartAssessmentPreviewItem extends JsonRecord {
   motive_tension?: string;
   goal_frame?: string;
   assessment_profile?: JsonRecord;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface WorldlineFocusItem extends JsonRecord {
@@ -423,6 +647,7 @@ export interface BehaviorActionPayload extends JsonRecord {
   note?: string;
   timing_window_min?: number;
   window_profile?: OpeningWindowSummary;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface BehaviorPlanPayload extends JsonRecord {
@@ -443,6 +668,29 @@ export interface BehaviorPlanPayload extends JsonRecord {
   presence_residue?: number;
   ambient_resonance?: number;
   self_activity_momentum?: number;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
+}
+
+export interface InteractionCarryoverPayload extends JsonRecord {
+  source?: string;
+  source_event_kind?: string;
+  source_behavior_mode?: string;
+  source_action_target?: string;
+  source_primary_motive?: string;
+  source_motive_tension?: string;
+  source_goal_frame?: string;
+  source_text?: string;
+  source_tags?: string[];
+  carryover_mode?: string;
+  strength?: number;
+  relationship_weather?: string;
+  idle_minutes?: number;
+  source_turn_gap?: number;
+  attention_target?: string;
+  nonverbal_signal?: string;
+  note?: string;
+  created_at?: number;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface EvolutionSummary {
@@ -457,10 +705,14 @@ export interface EvolutionSummary {
   world_dynamics: WorldDynamicsSummary;
   current_turn: CurrentTurnSummary;
   event_residue: EventResidueSummary;
+  interaction_carryover: InteractionCarryoverPayload | {};
   agenda_lifecycle: AgendaLifecycleSummary;
   opening_window: OpeningWindowSummary | {};
   behavior_plan: BehaviorPlanSummary;
   behavior_queue_preview: BehaviorQueueItem[];
+  autonomy: AutonomyEnvelope;
+  digital_body: DigitalBodySummary | {};
+  digital_body_consequence: DigitalBodyConsequenceSummary | {};
   worldline_focus_preview: string[];
   worldline_focus_items: WorldlineFocusItem[];
 }
@@ -473,11 +725,14 @@ export interface AssistantTurnPayload {
   turn_summary: EvolutionSummary;
   behavior_action: BehaviorActionPayload;
   behavior_plan: BehaviorPlanPayload;
-  interaction_carryover: JsonRecord;
+  interaction_carryover: InteractionCarryoverPayload | JsonRecord;
   counterpart_assessment: JsonRecord;
   agenda_lifecycle_residue: JsonRecord;
   reconsolidation_snapshot: JsonRecord;
   turn_appraisal: JsonRecord;
+  autonomy: AutonomyEnvelope;
+  digital_body: DigitalBodyPayload | JsonRecord;
+  digital_body_consequence: DigitalBodyConsequenceSummary | JsonRecord;
   emotion_state?: JsonRecord;
   bond_state?: JsonRecord;
   allostasis_state?: JsonRecord;
@@ -496,12 +751,15 @@ export interface EventRoundPayload {
   session_context: JsonRecord;
   behavior_action: BehaviorActionPayload;
   behavior_plan: BehaviorPlanPayload;
-  interaction_carryover: JsonRecord;
+  interaction_carryover: InteractionCarryoverPayload | JsonRecord;
   counterpart_assessment: JsonRecord;
   agenda_lifecycle_residue: JsonRecord;
   reconsolidation_snapshot: JsonRecord;
   current_event: JsonRecord;
   turn_appraisal: JsonRecord;
+  autonomy: AutonomyEnvelope;
+  digital_body: DigitalBodyPayload | JsonRecord;
+  digital_body_consequence: DigitalBodyConsequenceSummary | JsonRecord;
   emotion_state?: JsonRecord;
   bond_state?: JsonRecord;
   allostasis_state?: JsonRecord;
@@ -515,9 +773,21 @@ export interface EventRoundPayload {
 export interface WritebackTracePayload {
   turn_started_at: number;
   semantic_self_narratives: JsonRecord[];
-  revision_traces: JsonRecord[];
+  revision_traces: RevisionTraceItem[];
   counterpart_assessment_history: JsonRecord[];
   proactive_continuity_history: JsonRecord[];
+}
+
+export interface RevisionTraceItem extends JsonRecord {
+  namespace?: string;
+  target_id?: string;
+  reason?: string;
+  source?: string;
+  after_summary?: string;
+  summary?: string;
+  created_at?: number;
+  updated_at?: number;
+  embodied_context?: DigitalBodyConsequenceSummary | JsonRecord;
 }
 
 export interface PersonaViewPayload {
@@ -534,11 +804,14 @@ export interface PersonaViewPayload {
   turn_appraisal: JsonRecord;
   behavior_policy: JsonRecord;
   behavior_action: BehaviorActionPayload;
-  interaction_carryover: JsonRecord;
+  interaction_carryover: InteractionCarryoverPayload | JsonRecord;
   agenda_lifecycle_residue: JsonRecord;
   behavior_plan: BehaviorPlanPayload;
   behavior_queue: BehaviorQueueItem[];
   behavior_queue_summary: BehaviorQueueItem[];
+  autonomy: AutonomyEnvelope;
+  digital_body: DigitalBodyPayload | JsonRecord;
+  digital_body_consequence: DigitalBodyConsequenceSummary | JsonRecord;
   science_mode: boolean;
   tsundere_intensity: number;
   ooc_detector: JsonRecord;
@@ -551,17 +824,19 @@ export interface WorldlineViewPayload {
   commitments: JsonRecord[];
   conflict_repair: JsonRecord[];
   unresolved_tensions: JsonRecord[];
+  autonomy: AutonomyEnvelope;
   counterpart_assessment_history: JsonRecord[];
   counterpart_assessment_preview: CounterpartAssessmentPreviewItem[];
   proactive_continuity_history: JsonRecord[];
   proactive_continuity_preview: ProactiveContinuityPreviewItem[];
   semantic_self_narratives: JsonRecord[];
-  revision_traces: JsonRecord[];
+  revision_traces: RevisionTraceItem[];
 }
 
 export interface BondViewPayload {
   relationship_state: JsonRecord;
   bond_state: JsonRecord;
+  autonomy: AutonomyEnvelope;
   relationship_timeline: JsonRecord[];
   counterpart_assessment_history: JsonRecord[];
   counterpart_assessment_preview: CounterpartAssessmentPreviewItem[];
@@ -582,6 +857,7 @@ export interface AppraisalViewPayload {
 export interface BehaviorQueueViewPayload {
   behavior_queue: BehaviorQueueItem[];
   behavior_queue_summary: BehaviorQueueItem[];
+  autonomy: AutonomyEnvelope;
 }
 
 export interface CheckpointHistoryRow {

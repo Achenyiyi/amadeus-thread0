@@ -7,6 +7,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .common import _clamp01, _norm_text
+from .digital_body_runtime import normalize_embodied_context
 from .dialogue_guidance import (
     _event_behavior_preference_lines,
     _semantic_motive_state_hint,
@@ -70,6 +71,117 @@ def _counterpart_scene_rewrite_guidance(counterpart_assessment: dict[str, Any] |
     if scene in {"friction", "relationship_degradation", "boundary_non_compliance"}:
         return "那点摩擦和边界余波还在，不要把这句写成已经没事、自动回暖或重新热络。"
     return ""
+
+
+def _append_unique_lower(items: list[str], value: Any) -> None:
+    text = str(value or "").strip().lower()
+    if text and text not in items:
+        items.append(text)
+
+
+def _embodied_rewrite_continuity_terms(
+    *,
+    behavior_action: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+) -> list[str]:
+    action = dict(behavior_action or {})
+    event = dict(current_event or {})
+    embodied = normalize_embodied_context(action.get("embodied_context"))
+    terms: list[str] = []
+
+    for key in ("requested_access", "missing_access", "granted_toolsets", "active_tools"):
+        values = embodied.get(key)
+        if isinstance(values, list):
+            for item in values[:4]:
+                _append_unique_lower(terms, item)
+
+    block_reason = str(embodied.get("block_reason") or "").strip()
+    if block_reason:
+        _append_unique_lower(terms, block_reason)
+
+    perception = event.get("perception") if isinstance(event.get("perception"), dict) else {}
+    merged_hints: dict[str, Any] = {}
+    if isinstance(perception.get("digital_body_hints"), dict):
+        merged_hints.update(dict(perception.get("digital_body_hints") or {}))
+    if isinstance(event.get("digital_body_hints"), dict):
+        merged_hints.update(dict(event.get("digital_body_hints") or {}))
+
+    browser_session = str(merged_hints.get("browser_session") or "").strip().lower()
+    account_state = str(merged_hints.get("account_state") or "").strip().lower()
+    cookie_state = str(merged_hints.get("cookie_state") or "").strip().lower()
+    filesystem_state = str(merged_hints.get("filesystem_state") or "").strip().lower()
+    sandbox_mode = str(merged_hints.get("sandbox_mode") or "").strip().lower()
+    network_access = str(merged_hints.get("network_access") or "").strip().lower()
+
+    if browser_session in {"missing", "expired", "required"}:
+        _append_unique_lower(terms, "browser_session")
+    if account_state in {"missing", "logged_out", "required"}:
+        _append_unique_lower(terms, "account_login")
+    if cookie_state in {"missing", "expired", "required"}:
+        _append_unique_lower(terms, "cookies")
+    if filesystem_state == "read_only":
+        _append_unique_lower(terms, "workspace_write")
+    elif filesystem_state in {"missing", "unavailable", "required"}:
+        _append_unique_lower(terms, "filesystem")
+    if sandbox_mode in {"restricted", "blocked"}:
+        _append_unique_lower(terms, "sandbox")
+    if network_access in {"disabled", "blocked", "restricted"}:
+        _append_unique_lower(terms, "network")
+    try:
+        if int(merged_hints.get("pending_approval_count") or 0) > 0:
+            _append_unique_lower(terms, "human_approval")
+    except Exception:
+        pass
+
+    return terms[:6]
+
+
+def _embodied_rewrite_guidance(
+    *,
+    behavior_action: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+) -> str:
+    terms = _embodied_rewrite_continuity_terms(
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
+    if not terms:
+        return ""
+    label = "、".join(terms[:3])
+    return (
+        f"如果草稿里本来还挂着像 {label} 这样的环境入口、权限条件或实际卡点，"
+        "改写时把它当成真实世界状态保留下来，别抹成泛泛情绪，也别直接省掉。"
+    )
+
+
+def _rewrite_embodied_continuity_adjustment(
+    text: str,
+    *,
+    behavior_action: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
+) -> float:
+    terms = _embodied_rewrite_continuity_terms(
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
+    if not terms:
+        return 0.0
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return -0.52
+
+    matched = 0
+    for term in terms:
+        if term and term in lowered:
+            matched += 1
+    if matched <= 0:
+        return -0.52
+
+    coverage = matched / max(1, len(terms))
+    score = 0.12 + 0.22 * coverage
+    if coverage < 0.5:
+        score -= 0.10
+    return round(score, 4)
 
 
 _NATURAL_DIALOG_REWRITE_NOTE_MAP = {
@@ -671,6 +783,10 @@ def _rewrite_light_dialog_answer(
         strength=relationship_weather_strength,
     )
     counterpart_scene_guidance = _counterpart_scene_rewrite_guidance(counterpart_assessment)
+    embodied_guidance = _embodied_rewrite_guidance(
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
     motive_state_hint = _semantic_motive_state_hint(
         semantic_narrative_profile,
         light_touch=True,
@@ -709,6 +825,8 @@ def _rewrite_light_dialog_answer(
             request_parts.append(f"关系余波：{relationship_weather_guidance}\n")
         if counterpart_scene_guidance:
             request_parts.append(f"你对这句的当前判断：{counterpart_scene_guidance}\n")
+        if embodied_guidance:
+            request_parts.append(f"{embodied_guidance}\n")
         if motive_state_hint:
             request_parts.append(f"当前更自然的主动倾向：{motive_state_hint}\n")
         if user_turn_behavior_pref_lines:
@@ -854,6 +972,11 @@ def _rewrite_light_dialog_answer(
         score += _rewrite_behavior_consistency_adjustment(
             candidate,
             behavior_action=behavior_action,
+        )
+        score += _rewrite_embodied_continuity_adjustment(
+            candidate,
+            behavior_action=behavior_action,
+            current_event=current_event,
         )
         return round(score, 4)
 
@@ -1190,6 +1313,10 @@ def _rewrite_natural_dialog_answer(
         strength=relationship_weather_strength,
     )
     counterpart_scene_guidance = _counterpart_scene_rewrite_guidance(counterpart_assessment)
+    embodied_guidance = _embodied_rewrite_guidance(
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
     motive_state_hint = _semantic_motive_state_hint(
         semantic_narrative_profile,
         light_touch=False,
@@ -1355,6 +1482,11 @@ def _rewrite_natural_dialog_answer(
             candidate,
             behavior_action=behavior_action,
         )
+        score += _rewrite_embodied_continuity_adjustment(
+            candidate,
+            behavior_action=behavior_action,
+            current_event=current_event,
+        )
         return round(score, 4)
 
     note_block = "\n".join(f"- {item}" for item in notes[:3])
@@ -1365,6 +1497,7 @@ def _rewrite_natural_dialog_answer(
         "把这句收回到更自然的人与人对话尺度，保留同一轮情绪和立场，不新增设定。\n"
         f"{'关系余波：' + relationship_weather_guidance + chr(10) if relationship_weather_guidance else ''}"
         f"{'你对这句的当前判断：' + counterpart_scene_guidance + chr(10) if counterpart_scene_guidance else ''}"
+        f"{embodied_guidance + chr(10) if embodied_guidance else ''}"
         f"{'这类场景的表面收束：' + scene_surface_guidance + chr(10) if scene_surface_guidance else ''}"
         f"{'当前更自然的主动倾向：' + motive_state_hint + chr(10) if motive_state_hint else ''}"
         f"{'这轮互动自然倾向：' + user_turn_behavior_pref_lines[0] + chr(10) if user_turn_behavior_pref_lines and not event_reply_rewrite else ''}"

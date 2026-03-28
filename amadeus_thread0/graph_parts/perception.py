@@ -131,6 +131,13 @@ def attach_perception_context(
     tags = payload.get("tags") if isinstance(payload.get("tags"), list) else []
     text = _clean_text(payload.get("effective_text")) or _clean_text(payload.get("text"))
     perception = payload.get("perception") if isinstance(payload.get("perception"), dict) else {}
+    digital_body_hints = (
+        dict(perception.get("digital_body_hints"))
+        if isinstance(perception.get("digital_body_hints"), dict)
+        else dict(payload.get("digital_body_hints"))
+        if isinstance(payload.get("digital_body_hints"), dict)
+        else {}
+    )
     session_thread_id = _clean_text(perception.get("thread_id")) or _clean_text(thread_id)
     event_id = _clean_text(perception.get("event_id")) or (
         f"{session_thread_id}:{created_at}:{kind}:{source}"
@@ -162,6 +169,9 @@ def attach_perception_context(
             else _delivery_mode(kind, source) in {"scheduled", "self_initiated", "ambient"}
         ),
     }
+    if digital_body_hints:
+        payload["digital_body_hints"] = dict(digital_body_hints)
+        payload["perception"]["digital_body_hints"] = dict(digital_body_hints)
     return payload
 
 

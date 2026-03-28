@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..graph_parts.action_packets import normalize_action_packet, normalize_action_packets
+from ..graph_parts.autonomy_runtime import (
+    autonomy_intent_has_signal,
+    normalize_autonomy_intent,
+    refresh_autonomy_intent_from_packets,
+)
 from ..graph_parts.behavior_runtime import _behavior_plan_from_action
+from ..graph_parts.digital_body_runtime import digital_body_state_has_signal, normalize_digital_body_state
+from ..evolution_engine.reconsolidation import derive_digital_body_consequence
 from ..utils.counterpart_profile import normalize_counterpart_assessment_profile
 
 
@@ -12,6 +20,23 @@ def _dict_or_empty(value: Any) -> dict[str, Any]:
 
 def _list_or_empty(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def _positive_int_list(value: Any, *, limit: int = 8) -> list[int]:
+    if not isinstance(value, list):
+        return []
+    out: list[int] = []
+    for item in value:
+        try:
+            ivalue = int(item)
+        except Exception:
+            continue
+        if ivalue <= 0:
+            continue
+        out.append(ivalue)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
 
 
 def behavior_action_has_signal(action: dict[str, Any] | None) -> bool:
@@ -46,7 +71,10 @@ def behavior_action_has_signal(action: dict[str, Any] | None) -> bool:
     if bool(action.get("silence_ok", False)):
         return True
     window_profile = action.get("window_profile")
-    return isinstance(window_profile, dict) and bool(window_profile)
+    if isinstance(window_profile, dict) and bool(window_profile):
+        return True
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(action.get("embodied_context")))
+    return digital_body_consequence_has_signal(embodied_context)
 
 
 def behavior_action_has_plan_signal(action: dict[str, Any] | None) -> bool:
@@ -101,7 +129,8 @@ def behavior_plan_has_signal(plan: dict[str, Any] | None) -> bool:
             return True
     if "allow_interrupt" in plan and isinstance(plan.get("allow_interrupt"), bool):
         return True
-    return False
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(plan.get("embodied_context")))
+    return digital_body_consequence_has_signal(embodied_context)
 
 
 def interaction_carryover_has_signal(carryover: dict[str, Any] | None) -> bool:
@@ -117,7 +146,10 @@ def interaction_carryover_has_signal(carryover: dict[str, Any] | None) -> bool:
         if isinstance(value, str) and value.strip():
             return True
     value = carryover.get("strength")
-    return isinstance(value, (int, float)) and float(value) != 0.0
+    if isinstance(value, (int, float)) and float(value) != 0.0:
+        return True
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(carryover.get("embodied_context")))
+    return digital_body_consequence_has_signal(embodied_context)
 
 
 def counterpart_assessment_has_signal(assessment: dict[str, Any] | None) -> bool:
@@ -180,12 +212,38 @@ def agenda_lifecycle_has_signal(residue: dict[str, Any] | None) -> bool:
         value = residue.get(key)
         if isinstance(value, (int, float)) and float(value) != 0.0:
             return True
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(residue.get("embodied_context")))
+    return digital_body_consequence_has_signal(embodied_context)
+
+
+def action_packets_have_signal(action_packets: Any) -> bool:
+    return bool(normalize_action_packets(action_packets))
+
+
+def action_trace_has_signal(action_trace: Any) -> bool:
+    if not isinstance(action_trace, list) or not action_trace:
+        return False
+    for item in action_trace:
+        if not isinstance(item, dict):
+            continue
+        if any(
+            (
+                str(item.get("proposal_id") or "").strip(),
+                str(item.get("status") or "").strip(),
+                str(item.get("event") or "").strip(),
+            )
+        ):
+            return True
     return False
+
+
+def autonomy_block_reason_has_signal(value: Any) -> bool:
+    return bool(str(value or "").strip())
 
 
 def _reconsolidation_behavior_action(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
     recon = _dict_or_empty(reconsolidation_snapshot)
-    action = _dict_or_empty(recon.get("behavior_action"))
+    action = _normalized_behavior_action(_dict_or_empty(recon.get("behavior_action")))
     if behavior_action_has_signal(action):
         return action
     legacy_action = {
@@ -199,14 +257,39 @@ def _reconsolidation_behavior_action(reconsolidation_snapshot: dict[str, Any] | 
 
 def _reconsolidation_behavior_plan(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
     recon = _dict_or_empty(reconsolidation_snapshot)
-    plan = _dict_or_empty(recon.get("behavior_plan"))
+    plan = _normalized_behavior_plan(_dict_or_empty(recon.get("behavior_plan")))
     return plan if behavior_plan_has_signal(plan) else {}
+
+
+def _normalized_behavior_action(action: dict[str, Any] | None) -> dict[str, Any]:
+    row = _dict_or_empty(action)
+    if not row:
+        return {}
+    normalized = dict(row)
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
+    if digital_body_consequence_has_signal(embodied_context):
+        normalized["embodied_context"] = embodied_context
+    else:
+        normalized.pop("embodied_context", None)
+    return normalized if behavior_action_has_signal(normalized) else {}
+
+
+def _normalized_behavior_plan(plan: dict[str, Any] | None) -> dict[str, Any]:
+    row = _dict_or_empty(plan)
+    if not row:
+        return {}
+    normalized = dict(row)
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
+    if digital_body_consequence_has_signal(embodied_context):
+        normalized["embodied_context"] = embodied_context
+    else:
+        normalized.pop("embodied_context", None)
+    return normalized if behavior_plan_has_signal(normalized) else {}
 
 
 def _reconsolidation_interaction_carryover(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
     recon = _dict_or_empty(reconsolidation_snapshot)
-    carryover = _dict_or_empty(recon.get("interaction_carryover"))
-    return carryover if interaction_carryover_has_signal(carryover) else {}
+    return _normalized_interaction_carryover(recon.get("interaction_carryover"))
 
 
 def _reconsolidation_counterpart_assessment(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
@@ -217,8 +300,182 @@ def _reconsolidation_counterpart_assessment(reconsolidation_snapshot: dict[str, 
 
 def _reconsolidation_agenda_lifecycle(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
     recon = _dict_or_empty(reconsolidation_snapshot)
-    residue = _dict_or_empty(recon.get("agenda_lifecycle_consequence"))
+    residue = _normalized_agenda_lifecycle(_dict_or_empty(recon.get("agenda_lifecycle_consequence")))
     return residue if agenda_lifecycle_has_signal(residue) else {}
+
+
+def _normalized_agenda_lifecycle(residue: dict[str, Any] | None) -> dict[str, Any]:
+    row = _dict_or_empty(residue)
+    if not row:
+        return {}
+    normalized = dict(row)
+    if isinstance(row.get("source_tags"), list):
+        normalized["source_tags"] = [
+            str(item).strip()
+            for item in _list_or_empty(row.get("source_tags"))
+            if str(item or "").strip()
+        ][:12]
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
+    if digital_body_consequence_has_signal(embodied_context):
+        normalized["embodied_context"] = embodied_context
+    else:
+        normalized.pop("embodied_context", None)
+    return normalized if agenda_lifecycle_has_signal(normalized) else {}
+
+
+def _reconsolidation_autonomy_intent(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    intent = normalize_autonomy_intent(recon.get("autonomy_intent"))
+    return intent if autonomy_intent_has_signal(intent) else {}
+
+
+def _reconsolidation_action_packets(reconsolidation_snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    return normalize_action_packets(recon.get("action_packets"))
+
+
+def _reconsolidation_action_trace(reconsolidation_snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    trace = recon.get("action_trace")
+    if not isinstance(trace, list):
+        return []
+    return [dict(item) for item in trace if isinstance(item, dict)]
+
+
+def _reconsolidation_autonomy_block_reason(reconsolidation_snapshot: dict[str, Any] | None) -> str:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    return str(recon.get("autonomy_block_reason") or "").strip()
+
+
+def _reconsolidation_digital_body_state(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    body = normalize_digital_body_state(recon.get("digital_body_state"))
+    return body if digital_body_state_has_signal(body) else {}
+
+
+def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> bool:
+    if not isinstance(consequence, dict) or not consequence:
+        return False
+    return any(
+        (
+            str(consequence.get("kind") or "").strip(),
+            str(consequence.get("summary") or "").strip(),
+            bool(consequence.get("procedural_growth", False)),
+            bool(consequence.get("environmental_friction", False)),
+            bool(consequence.get("requested_help", False)),
+            isinstance(consequence.get("missing_access"), list) and bool(consequence.get("missing_access")),
+            isinstance(consequence.get("requested_access"), list) and bool(consequence.get("requested_access")),
+            isinstance(consequence.get("granted_toolsets"), list) and bool(consequence.get("granted_toolsets")),
+            isinstance(consequence.get("active_tools"), list) and bool(consequence.get("active_tools")),
+            str(consequence.get("block_reason") or "").strip(),
+            int(consequence.get("retry_after_s") or 0) > 0,
+            str(consequence.get("cooldown_scope") or "").strip(),
+            str(consequence.get("session_continuity") or "").strip(),
+            int(consequence.get("session_expires_in_s") or 0) > 0,
+            str(consequence.get("session_recovery_mode") or "").strip(),
+            str(consequence.get("artifact_continuity") or "").strip(),
+            str(consequence.get("active_artifact_kind") or "").strip(),
+            str(consequence.get("active_artifact_ref") or "").strip(),
+            str(consequence.get("active_artifact_label") or "").strip(),
+            int(consequence.get("artifact_age_s") or 0) > 0,
+            str(consequence.get("artifact_reacquisition_mode") or "").strip(),
+            str(consequence.get("artifact_carrier") or "").strip(),
+            isinstance(consequence.get("artifact_source_ref_ids"), list) and bool(consequence.get("artifact_source_ref_ids")),
+            str(consequence.get("artifact_source_url") or "").strip(),
+            str(consequence.get("artifact_source_query") or "").strip(),
+            str(consequence.get("artifact_source_title") or "").strip(),
+            str(consequence.get("artifact_source_tool_name") or "").strip(),
+        )
+    )
+
+
+def _normalize_digital_body_consequence(consequence: dict[str, Any] | None) -> dict[str, Any]:
+    row = _dict_or_empty(consequence)
+    if not row:
+        return {}
+    normalized = {
+        "kind": str(row.get("kind") or "").strip().lower(),
+        "summary": str(row.get("summary") or "").strip()[:220],
+        "access_mode": str(row.get("access_mode") or "").strip().lower(),
+        "active_surface": str(row.get("active_surface") or "").strip().lower(),
+        "world_surfaces": [
+            str(item).strip().lower()
+            for item in _list_or_empty(row.get("world_surfaces"))
+            if str(item or "").strip()
+        ][:12],
+        "missing_access": [
+            str(item).strip().lower()
+            for item in _list_or_empty(row.get("missing_access"))
+            if str(item or "").strip()
+        ][:12],
+        "requested_access": [
+            str(item).strip().lower()
+            for item in _list_or_empty(row.get("requested_access"))
+            if str(item or "").strip()
+        ][:12],
+        "granted_toolsets": [
+            str(item).strip().lower()
+            for item in _list_or_empty(row.get("granted_toolsets"))
+            if str(item or "").strip()
+        ][:12],
+        "active_tools": [
+            str(item).strip().lower()
+            for item in _list_or_empty(row.get("active_tools"))
+            if str(item or "").strip()
+        ][:8],
+        "block_reason": str(row.get("block_reason") or "").strip()[:220],
+        "retry_after_s": max(0, int(row.get("retry_after_s") or 0)),
+        "cooldown_scope": str(row.get("cooldown_scope") or "").strip().lower(),
+        "session_continuity": str(row.get("session_continuity") or "").strip().lower(),
+        "session_expires_in_s": max(0, int(row.get("session_expires_in_s") or 0)),
+        "session_recovery_mode": str(row.get("session_recovery_mode") or "").strip().lower(),
+        "artifact_continuity": str(row.get("artifact_continuity") or "").strip().lower(),
+        "active_artifact_kind": str(row.get("active_artifact_kind") or "").strip().lower(),
+        "active_artifact_ref": str(row.get("active_artifact_ref") or "").strip()[:220],
+        "active_artifact_label": str(row.get("active_artifact_label") or "").strip()[:160],
+        "artifact_age_s": max(0, int(row.get("artifact_age_s") or 0)),
+        "artifact_reacquisition_mode": str(row.get("artifact_reacquisition_mode") or "").strip().lower(),
+        "artifact_carrier": str(row.get("artifact_carrier") or "").strip().lower(),
+        "artifact_source_ref_ids": _positive_int_list(row.get("artifact_source_ref_ids")),
+        "artifact_source_url": str(row.get("artifact_source_url") or "").strip()[:320],
+        "artifact_source_query": str(row.get("artifact_source_query") or "").strip()[:220],
+        "artifact_source_title": str(row.get("artifact_source_title") or "").strip()[:160],
+        "artifact_source_tool_name": str(row.get("artifact_source_tool_name") or "").strip().lower()[:80],
+        "primary_proposal_id": str(row.get("primary_proposal_id") or "").strip(),
+        "primary_status": str(row.get("primary_status") or "").strip().lower(),
+        "primary_origin": str(row.get("primary_origin") or "").strip().lower(),
+        "primary_intent": str(row.get("primary_intent") or "").strip().lower(),
+        "primary_tool_name": str(row.get("primary_tool_name") or "").strip().lower(),
+        "procedural_growth": bool(row.get("procedural_growth", False)),
+        "environmental_friction": bool(row.get("environmental_friction", False)),
+        "requested_help": bool(row.get("requested_help", False)),
+    }
+    return normalized if digital_body_consequence_has_signal(normalized) else {}
+
+
+def _normalized_interaction_carryover(carryover: dict[str, Any] | None) -> dict[str, Any]:
+    row = _dict_or_empty(carryover)
+    if not row:
+        return {}
+    normalized = dict(row)
+    if isinstance(row.get("source_tags"), list):
+        normalized["source_tags"] = [
+            str(item).strip()
+            for item in _list_or_empty(row.get("source_tags"))
+            if str(item or "").strip()
+        ][:12]
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
+    if digital_body_consequence_has_signal(embodied_context):
+        normalized["embodied_context"] = embodied_context
+    else:
+        normalized.pop("embodied_context", None)
+    return normalized if interaction_carryover_has_signal(normalized) else {}
+
+
+def _reconsolidation_digital_body_consequence(reconsolidation_snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    consequence = _normalize_digital_body_consequence(recon.get("digital_body_consequence"))
+    return consequence if digital_body_consequence_has_signal(consequence) else {}
 
 
 def _normalized_counterpart_assessment(assessment: dict[str, Any] | None) -> dict[str, Any]:
@@ -241,8 +498,15 @@ def resolve_behavior_payloads(
     current_event: dict[str, Any] | None = None,
     world_model_state: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    live_action = _dict_or_empty(behavior_action)
-    live_plan = _dict_or_empty(behavior_plan)
+    raw_live_plan = _dict_or_empty(behavior_plan)
+    mergeable_live_plan = dict(raw_live_plan)
+    embodied_context = _normalize_digital_body_consequence(_dict_or_empty(mergeable_live_plan.get("embodied_context")))
+    if digital_body_consequence_has_signal(embodied_context):
+        mergeable_live_plan["embodied_context"] = embodied_context
+    else:
+        mergeable_live_plan.pop("embodied_context", None)
+    live_action = _normalized_behavior_action(behavior_action)
+    live_plan = _normalized_behavior_plan(raw_live_plan)
     frozen_action = _reconsolidation_behavior_action(reconsolidation_snapshot)
     frozen_plan = _reconsolidation_behavior_plan(reconsolidation_snapshot)
     action = frozen_action if behavior_action_has_signal(frozen_action) else live_action
@@ -272,10 +536,11 @@ def resolve_behavior_payloads(
     )
     if not isinstance(derived_plan, dict) or not derived_plan:
         return action, plan
-    if not plan:
+    merge_base = plan if plan else mergeable_live_plan
+    if not merge_base:
         return action, dict(derived_plan)
     merged_plan = dict(derived_plan)
-    merged_plan.update(plan)
+    merged_plan.update(merge_base)
     return action, merged_plan
 
 
@@ -284,7 +549,7 @@ def resolve_interaction_carryover(
     interaction_carryover: dict[str, Any] | None,
     reconsolidation_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    live_carryover = _dict_or_empty(interaction_carryover)
+    live_carryover = _normalized_interaction_carryover(interaction_carryover)
     frozen_carryover = _reconsolidation_interaction_carryover(reconsolidation_snapshot)
     if interaction_carryover_has_signal(frozen_carryover):
         return frozen_carryover
@@ -308,7 +573,7 @@ def resolve_agenda_lifecycle_residue(
     agenda_lifecycle_residue: dict[str, Any] | None,
     reconsolidation_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    live_residue = _dict_or_empty(agenda_lifecycle_residue)
+    live_residue = _normalized_agenda_lifecycle(agenda_lifecycle_residue)
     frozen_residue = _reconsolidation_agenda_lifecycle(reconsolidation_snapshot)
     if agenda_lifecycle_has_signal(frozen_residue):
         return frozen_residue
@@ -329,6 +594,144 @@ def resolve_behavior_queue(
     return []
 
 
+def resolve_autonomy_intent(
+    *,
+    autonomy_intent: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+    action_packets: Any = None,
+    current_event: dict[str, Any] | None = None,
+    autonomy_block_reason: str | None = None,
+) -> dict[str, Any]:
+    live_intent = normalize_autonomy_intent(autonomy_intent)
+    frozen_intent = _reconsolidation_autonomy_intent(reconsolidation_snapshot)
+    live_packets = normalize_action_packets(action_packets)
+    if live_packets:
+        has_live_pending = any(
+            str(packet.get("status") or "").strip().lower() == "awaiting_approval"
+            or (
+                bool(packet.get("requires_approval", False))
+                and str(packet.get("status") or "").strip().lower() in {"proposed", "approved"}
+            )
+            for packet in live_packets
+        )
+        if has_live_pending:
+            refreshed_live = refresh_autonomy_intent_from_packets(
+                live_intent or frozen_intent,
+                live_packets,
+                current_event=_dict_or_empty(current_event),
+                block_reason=str(autonomy_block_reason or "").strip(),
+            )
+            if autonomy_intent_has_signal(refreshed_live):
+                return refreshed_live
+    if autonomy_intent_has_signal(frozen_intent):
+        return frozen_intent
+    return live_intent
+
+
+def resolve_action_packets(
+    *,
+    action_packets: Any,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    live_packets = normalize_action_packets(action_packets)
+    frozen_packets = _reconsolidation_action_packets(reconsolidation_snapshot)
+    frozen_terminal = any(
+        str(packet.get("status") or "").strip().lower() in {"completed", "blocked", "rejected", "awaiting_approval"}
+        or bool(packet.get("writeback_ready", False))
+        for packet in frozen_packets
+    )
+    if frozen_packets and (frozen_terminal or not live_packets):
+        return frozen_packets
+    if live_packets:
+        return live_packets
+    return frozen_packets
+
+
+def resolve_pending_action_proposal(
+    *,
+    pending_action_proposal: dict[str, Any] | None,
+    action_packets: Any,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    live_pending = normalize_action_packet(pending_action_proposal)
+    if live_pending and bool(live_pending.get("requires_approval", False)):
+        return live_pending
+    for packet in resolve_action_packets(action_packets=action_packets, reconsolidation_snapshot=reconsolidation_snapshot):
+        status = str(packet.get("status") or "").strip().lower()
+        if bool(packet.get("requires_approval", False)) and status in {"proposed", "awaiting_approval"}:
+            return dict(packet)
+    return {}
+
+
+def resolve_action_trace(
+    *,
+    action_trace: Any,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    live_trace = [dict(item) for item in (action_trace if isinstance(action_trace, list) else []) if isinstance(item, dict)]
+    frozen_trace = _reconsolidation_action_trace(reconsolidation_snapshot)
+    if frozen_trace:
+        return frozen_trace
+    return live_trace
+
+
+def resolve_autonomy_block_reason(
+    *,
+    autonomy_block_reason: str | None,
+    action_packets: Any = None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> str:
+    frozen_reason = _reconsolidation_autonomy_block_reason(reconsolidation_snapshot)
+    if autonomy_block_reason_has_signal(frozen_reason):
+        return frozen_reason
+    live_reason = str(autonomy_block_reason or "").strip()
+    if autonomy_block_reason_has_signal(live_reason):
+        return live_reason
+    for packet in resolve_action_packets(action_packets=action_packets, reconsolidation_snapshot=reconsolidation_snapshot):
+        block_reason = str(packet.get("block_reason") or "").strip()
+        if block_reason:
+            return block_reason
+    return ""
+
+
+def resolve_digital_body_state(
+    *,
+    digital_body_state: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    live_body = normalize_digital_body_state(digital_body_state)
+    if digital_body_state_has_signal(live_body):
+        return live_body
+    frozen_body = _reconsolidation_digital_body_state(reconsolidation_snapshot)
+    if digital_body_state_has_signal(frozen_body):
+        return frozen_body
+    return {}
+
+
+def resolve_digital_body_consequence(
+    *,
+    digital_body_consequence: dict[str, Any] | None = None,
+    digital_body_state: dict[str, Any] | None = None,
+    action_packets: Any = None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    live_consequence = _normalize_digital_body_consequence(digital_body_consequence)
+    if digital_body_consequence_has_signal(live_consequence):
+        return live_consequence
+    frozen_consequence = _reconsolidation_digital_body_consequence(reconsolidation_snapshot)
+    if digital_body_consequence_has_signal(frozen_consequence):
+        return frozen_consequence
+    derived = _normalize_digital_body_consequence(
+        derive_digital_body_consequence(
+            digital_body_state=digital_body_state,
+            action_packets=action_packets,
+        )
+    )
+    if digital_body_consequence_has_signal(derived):
+        return derived
+    return {}
+
+
 __all__ = [
     "behavior_action_has_signal",
     "behavior_action_has_plan_signal",
@@ -336,9 +739,19 @@ __all__ = [
     "interaction_carryover_has_signal",
     "counterpart_assessment_has_signal",
     "agenda_lifecycle_has_signal",
+    "action_packets_have_signal",
+    "action_trace_has_signal",
+    "autonomy_block_reason_has_signal",
     "resolve_behavior_payloads",
     "resolve_interaction_carryover",
     "resolve_counterpart_assessment",
     "resolve_agenda_lifecycle_residue",
     "resolve_behavior_queue",
+    "resolve_autonomy_intent",
+    "resolve_action_packets",
+    "resolve_pending_action_proposal",
+    "resolve_action_trace",
+    "resolve_autonomy_block_reason",
+    "resolve_digital_body_state",
+    "resolve_digital_body_consequence",
 ]

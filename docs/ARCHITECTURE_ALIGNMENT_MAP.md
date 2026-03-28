@@ -1,11 +1,20 @@
 # Architecture Alignment Map
 
-Updated: 2026-03-11
+Updated: 2026-03-27
 
-This document maps the current codebase to the intended three-layer architecture:
+This document originally mapped the current codebase to an intended three-layer architecture:
 
 - `Perception Layer`
 - `Persona Core + Self-Evolution System`
+- `Behavior Layer`
+
+That framing is still conceptually useful, but the current runtime target is broader.
+The codebase is now converging toward a `digital embodiment` architecture with five aligned layers:
+
+- `Perception Layer`
+- `Persona Core`
+- `Unified Experience + Self-Evolution System`
+- `Digital Body / Access Layer`
 - `Behavior Layer`
 
 It also records what is already implemented, what is only partially implemented, and what remains future work.
@@ -17,7 +26,7 @@ Perception is the structured intake of events from the outside world.
 The correct abstraction is `event`, not only `user message`.
 
 ### Current status
-Status: `implemented as a text-first event bridge`
+Status: `implemented as a text-first, event-centric bridge that is starting to situate a digital body`
 
 Currently implemented inputs:
 - user text
@@ -39,6 +48,7 @@ Current evidence:
 - `pending_utterance_fragment`
 - `pending_user_goal`
 - `turn_appraisal`
+- emerging autonomy packet aftermath in runtime/backend traces
 
 ### Missing
 Not yet first-class:
@@ -46,9 +56,10 @@ Not yet first-class:
 - audio/perceptual cues
 - proactive world events
 - bodily / ambient state simulation
+- browser/session/access/resource observations as explicit body-state events
 
 ### Near-term action
-Refactor runtime language so internal logic increasingly speaks in terms of `events` rather than only `user_text`.
+Refactor runtime language so internal logic increasingly speaks in terms of `events` and `body/resource observations` rather than only `user_text`.
 
 ## 2. Persona Core
 
@@ -73,9 +84,11 @@ Current evidence:
 ### Near-term action
 Keep the authority file as the only entry point for future role-shell swaps and persona-core edits, and refuse ordinary runtime payloads that try to rewrite immutable identity fields.
 
-## 3. Self-Evolution System
+## 3. Unified Experience + Self-Evolution System
 
 This is the mutable layer that lets the same person change.
+It now has one explicit architectural constraint:
+relationship change, world interaction, task attempts, access failures, and procedural learning should reconverge into one lived continuity model rather than split into separate persona and work brains.
 
 ### 3.1 Appraisal Layer
 Status: `implemented as mixed path`
@@ -94,6 +107,7 @@ What it already does:
 What still needs work:
 - broader event understanding beyond text-first turns
 - better calibration against public affect datasets
+- explicit body-state and access-state appraisal
 
 ### 3.2 Affect Engine
 Status: `implemented`
@@ -140,8 +154,8 @@ Current evidence:
 What it does:
 - turns the system from reactive shell into regulation-aware actor
 
-### 3.6 Worldline + Reconsolidation
-Status: `implemented as strongest subsystem`
+### 3.6 Unified Experience Memory + Reconsolidation
+Status: `implemented as strongest subsystem, with embodied expansion still open`
 
 Current evidence:
 - commitments
@@ -149,12 +163,17 @@ Current evidence:
 - repair traces
 - semantic self narratives
 - revision traces
+- autonomy/action traces entering final semantics
 
 What it does:
 - preserves long-term relationship and identity meaning, not just recall
 - semantic narratives now feed back into appraisal and counterpart judgment, so reconsolidation is part of runtime causality rather than a passive archive
 - current runtime narratives now cover not only `bond / commitment / repair / tension`, but also `boundary / selfhood / agency`, so “平权、自我、自己的节奏” 已经进入长期状态层而不是只停在提示词
 - runtime now also records `semantic self evidence` from high-value turns, so long-term self narratives can keep consolidating even when the user is discussing selfhood/boundaries/autonomy rather than generating explicit relationship events
+
+What still needs work:
+- browser/filesystem/search/sandbox interaction results should write back through the same reconsolidation path
+- access/resource traces should become first-class lived memory, not only transient runtime metadata
 
 ### 3.7 Behavior Policy Engine
 Status: `implemented as explicit bridge`
@@ -179,14 +198,45 @@ What it does:
 - self-originated break windows can now also branch under `open / guarded` counterpart reads instead of always becoming reopening speech
 - gesture / ambient / observed-scene events can now also branch under the current counterpart read instead of always forcing immediate speech
 
-## 4. Behavior Layer
+## 4. Digital Body / Access Layer
+
+### Definition
+Digital body is the bounded runtime body through which the persona senses, acts, verifies, asks for help, and gradually learns how to use its environment.
+It should not be reduced to a fixed tool checklist.
+
+### Current status
+Status: `partially implemented through bounded autonomy substrate; not yet fully embodied`
+
+Current evidence:
+- `autonomy_intent`
+- `action_packets`
+- `pending_approval`
+- `execution_trace`
+- approval-gated risk tiers: `read / memory_write / external_mutation`
+- `toolset_unlocks` and upgrade proposals outside persona-core judgment
+
+What it does:
+- models structured action proposals instead of only reply text
+- keeps approval semantics explicit and inspectable
+- separates persona-owned continuity (`behavior_queue`) from structured action execution (`action_packets`)
+- already supports bounded low-risk reads, approval-gated writes, and live pending state
+
+What still needs work:
+- browser, filesystem, search, sandbox, account/session state should become first-class body surfaces
+- resource/access state should be readable as world condition, not only as tool failure
+- bounded helper/workflow formation should eventually happen inside approved or sandboxed environments, not by treating persona-core as a generic ops shell
+
+### Near-term action
+Formalize `affordance / resource / access` runtime state and make body interaction results write back into unified experience memory instead of a detached operational side log.
+
+## 5. Behavior Layer
 
 ### Definition
 Behavior is the outward action selected from identity + state + context.
 Text is only one channel.
 
 ### Current status
-Status: `text behavior plus initial non-user event behavior implemented`
+Status: `text behavior plus initial structured autonomy behavior implemented`
 
 Current behavior forms:
 - final text response
@@ -194,6 +244,7 @@ Current behavior forms:
 - continuation behavior
 - explicit interaction mode summary via `behavior_action`
 - lightweight cross-turn behavior agenda / queue via `behavior_agenda / behavior_queue`
+- structured `action_packets` with execution / approval / block semantics
 - context-sensitive queue conflict handling so “到点了也不一定立刻冒头”
 - idle-time low-pressure check-in / quiet non-expansion
 - scheduled life nudges and shared-activity offers, now with counterpart-aware maturity/hold
@@ -205,11 +256,11 @@ Current behavior forms:
 
 ### Missing
 - richer proactive initiation families beyond light check-ins and life nudges
-- action planning outside reply text
+- browser/file/world actions as ordinary behavior channels
 - multimodal body/attention outputs
 
 ### Near-term action
-Start treating behavior as a richer action object even before UI work resumes.
+Treat behavior as a richer action object whose language output, structured packets, and later embodied actions all share one final-turn semantics.
 Examples:
 - brief reply
 - delayed reply
@@ -217,7 +268,7 @@ Examples:
 - low-engagement acknowledgement
 - topic follow-up intention
 
-## 5. Evaluation Mapping
+## 6. Evaluation Mapping
 
 ### Regression Gate
 Purpose:
@@ -239,24 +290,28 @@ Purpose:
 Purpose:
 - measure whether the system feels like a real interacting being rather than a prompt shell
 
-## 6. Immediate Priority
+## 7. Immediate Priority
 
-The current bottleneck is no longer architecture.
-The bottleneck is the last-mile `Behavior Layer`, especially:
-- casual support
-- quiet confirmation
-- familiar low-effort companionship
+The current bottleneck is no longer only conversational behavior polish.
+The bottleneck is convergence from an autonomy-closed backend to an embodied runtime:
+- formal `digital body / access / resource` state
+- unified writeback of world interaction results
+- gradual procedural growth without identity drift
 
 That means the next optimization phase should focus on:
-- user-style expression preference
-- pairwise open evaluation
-- reducing service-feel without reintroducing hard templates
+- formalizing browser/filesystem/search/sandbox surfaces as body components
+- treating missing access/cookies/accounts/permissions as world conditions rather than immediate terminal failure
+- writing procedural/access/world traces into the same reconsolidation path as relationship and selfhood traces
+- keeping language as one behavior channel inside a broader action system
 
-## 7. Long-Term Direction
+## 8. Long-Term Direction
 
 To match the constitution, the project should move toward:
 - event-centric perception
+- a real digital body / access model
+- one unified experience memory
 - selfhood-preserving evolution
 - behavior outputs beyond dialogue
 - fewer handcrafted response rules
 - more fitting from realistic interaction data and pairwise preferences
+- bounded capability formation inside approved or sandboxed environments rather than a dead fixed tool menu

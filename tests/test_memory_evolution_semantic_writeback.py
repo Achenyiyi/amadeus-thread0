@@ -127,6 +127,12 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                             "motive_tension": "contact_without_pressure",
                             "goal_frame": "顺着之前留下的惦记等更自然的时候再接回来。",
                             "timing_window_min": 30,
+                            "embodied_context": {
+                                "kind": "access_request_pending",
+                                "primary_status": "awaiting_approval",
+                                "requested_access": ["workspace_write", "human_approval"],
+                                "requested_help": True,
+                            },
                         },
                     },
                     source="test:frozen_behavior_action_priority",
@@ -159,6 +165,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertEqual(float(trace.get("memory_anchor") or trace.get("content", {}).get("memory_anchor") or 0.0), 0.54)
                 self.assertEqual(float(trace.get("semantic_identity_gravity") or trace.get("content", {}).get("semantic_identity_gravity") or 0.0), 0.64)
                 self.assertEqual(int(trace.get("long_term_axis_count") or trace.get("content", {}).get("long_term_axis_count") or 0), 4)
+                embodied_context = trace.get("content", {}).get("embodied_context") if isinstance(trace.get("content"), dict) else {}
+                self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+                self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+                self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
             finally:
                 store.close()
 
@@ -498,6 +508,12 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                             "primary_motive": "honor_continuity",
                             "motive_tension": "contact_without_pressure",
                             "goal_frame": "顺着之前留下的惦记自然接回来。",
+                            "embodied_context": {
+                                "kind": "access_request_pending",
+                                "primary_status": "awaiting_approval",
+                                "requested_access": ["workspace_write", "human_approval"],
+                                "requested_help": True,
+                            },
                         }
                     },
                     source="test:frozen_behavior_plan_priority",
@@ -517,6 +533,10 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                     str(trace.get("after_summary") or trace.get("content", {}).get("after_summary") or ""),
                     "final frozen plan should win",
                 )
+                embodied_context = trace.get("content", {}).get("embodied_context") if isinstance(trace.get("content"), dict) else {}
+                self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+                self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+                self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
 
                 worldline = [
                     item
@@ -1514,5 +1534,197 @@ class SemanticEvidenceWritebackTests(unittest.TestCase):
                 self.assertEqual(int(presence.get("motive_support_count") or 0), 0)
                 self.assertEqual(float(presence.get("motive_support_mass") or 0.0), 0.0)
                 self.assertEqual(str(presence.get("motive_signature") or ""), "")
+            finally:
+                store.close()
+
+    def test_refresh_semantic_narratives_absorbs_embodied_access_constraints(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.88,
+                        "interaction_frame": "task",
+                        "salience": {
+                            "relationship": 0.10,
+                            "companionship": 0.12,
+                            "selfhood": 0.06,
+                            "task": 0.82,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.52,
+                        "closeness": 0.48,
+                        "hurt": 0.0,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "tool_attempt", "approval_gate"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.08,
+                        "ambient_resonance": 0.03,
+                        "self_activity_momentum": 0.50,
+                    },
+                    digital_body_state={
+                        "active_surface": "approval_gate",
+                        "perception_channels": ["dialogue"],
+                        "action_channels": ["language", "structured_action", "approval_gate"],
+                        "world_surfaces": ["dialogue", "browser", "network"],
+                        "available_toolsets": ["search_web"],
+                        "access_state": {
+                            "mode": "approval_pending",
+                            "conditions": ["human_approval_required", "cookie_access_missing"],
+                            "pending_approval_count": 1,
+                            "external_mutation_pending": True,
+                            "missing_access": ["cookies"],
+                            "requestable_access": ["cookies", "human_approval"],
+                            "cookie_state": "missing",
+                            "network_access": "available",
+                        },
+                        "resource_state": {
+                            "action_packet_count": 1,
+                            "pending_approval_count": 1,
+                        },
+                        "body_constraints": ["human_approval_required", "cookie_access_missing"],
+                    },
+                )
+                self.assertTrue(wrote)
+
+                _refresh_semantic_self_narratives(store, source="test:embodied_access_refresh")
+                narratives = store.list_semantic_self_narratives(limit=16)
+                agency = next(item for item in narratives if str(item.get("category") or "") == "agency_style")
+                boundary = next(item for item in narratives if str(item.get("category") or "") == "boundary_style")
+                presence = next(item for item in narratives if str(item.get("category") or "") == "presence_style")
+
+                self.assertIn("入口", str(agency.get("text") or ""))
+                self.assertTrue(any(term in str(agency.get("text") or "") for term in ("申请", "换路", "没做到")))
+                self.assertTrue(any(term in str(boundary.get("text") or "") for term in ("数字环境", "入口条件", "cookies", "审批")))
+                self.assertTrue(any(term in str(presence.get("text") or "") for term in ("待申请", "入口", "动作")))
+                self.assertGreater(float(agency.get("support_mass") or 0.0), 0.0)
+                self.assertGreater(float(boundary.get("support_mass") or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_refresh_semantic_narratives_absorbs_embodied_growth(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.86,
+                        "interaction_frame": "task",
+                        "salience": {
+                            "relationship": 0.08,
+                            "companionship": 0.10,
+                            "selfhood": 0.08,
+                            "task": 0.84,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.50,
+                        "closeness": 0.46,
+                        "hurt": 0.0,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "tool_attempt", "tool_success"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.04,
+                        "ambient_resonance": 0.02,
+                        "self_activity_momentum": 0.56,
+                    },
+                    digital_body_state={
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["dialogue", "network", "sandbox"],
+                        "available_toolsets": ["search_web", "workspace_fs"],
+                        "active_tools": ["search_web"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "granted_toolsets": ["search_web", "workspace_fs"],
+                            "network_access": "available",
+                            "sandbox_mode": "workspace_scoped",
+                        },
+                        "resource_state": {
+                            "action_packet_count": 1,
+                            "completed_packet_count": 1,
+                            "external_tool_count": 1,
+                        },
+                    },
+                )
+                self.assertTrue(wrote)
+
+                _refresh_semantic_self_narratives(store, source="test:embodied_growth_refresh")
+                narratives = store.list_semantic_self_narratives(limit=16)
+                agency = next(item for item in narratives if str(item.get("category") or "") == "agency_style")
+                presence = next(item for item in narratives if str(item.get("category") or "") == "presence_style")
+
+                self.assertTrue(any(term in str(agency.get("text") or "") for term in ("环境路径", "从零摸索", "身体部分")))
+                self.assertTrue(any(term in str(presence.get("text") or "") for term in ("环境入口", "身体部分", "只亮这一轮")))
+                self.assertGreater(float(agency.get("support_mass") or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_record_agenda_lifecycle_preserves_compact_artifact_identity_in_proactive_history(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_consequence(
+                    store,
+                    agenda_lifecycle_residue={"kind": "held"},
+                    reconsolidation_snapshot={
+                        "agenda_lifecycle_consequence": {
+                            "kind": "held",
+                            "summary": "先把这条小窗口留住，等更自然的时候再续上。",
+                            "trigger_family": "life_window",
+                            "carryover_mode": "quiet_recontact",
+                            "carryover_strength": 0.42,
+                            "hold_count": 1,
+                        },
+                        "digital_body_consequence": {
+                            "kind": "environmental_friction",
+                            "summary": "和刚才那条检索结果的连续性断了，得先把它接回来。",
+                            "artifact_continuity": "missing",
+                            "active_artifact_kind": "search_result",
+                            "active_artifact_label": "Persistence",
+                            "artifact_reacquisition_mode": "rerun_search",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": [17],
+                            "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_source_query": "langgraph persistence checkpointer thread",
+                            "artifact_source_title": "Persistence",
+                            "artifact_source_tool_name": "search_web",
+                            "environmental_friction": True,
+                        },
+                    },
+                    source="test:artifact_identity_writeback",
+                    confidence=0.9,
+                )
+                self.assertTrue(wrote)
+
+                proactive = store.list_proactive_continuity_history(limit=10)
+                self.assertEqual(len(proactive), 1)
+                embodied = proactive[0].get("embodied_context") if isinstance(proactive[0].get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("artifact_carrier"), "source_ref")
+                self.assertEqual(embodied.get("artifact_source_ref_ids"), [17])
+                self.assertEqual(
+                    embodied.get("artifact_source_query"),
+                    "langgraph persistence checkpointer thread",
+                )
+                self.assertIn("docs.langchain.com", str(embodied.get("artifact_source_url") or ""))
+                self.assertNotIn("preview", embodied)
             finally:
                 store.close()

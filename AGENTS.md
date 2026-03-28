@@ -16,7 +16,10 @@ The canonical loop is:
 Non-negotiable direction:
 
 - Persona core is fixed; evolution changes state, not identity.
+- She should live through one unified memory substrate, not split into separate "persona brain" and "work brain" silos.
+- She should interact through a `digital body`, not a static prompt shell or a fixed tool menu.
 - Behavior should emerge from state, memory, appraisal, and relationship dynamics, not scene-by-scene keyword scripts.
+- Capability should grow through embodied interaction, resource discovery, experimentation, and reconsolidation, not only through predeclared tool lists.
 - Language is one behavior channel, not the whole system.
 - The counterpart is a real relation target, not a command source; parity, boundaries, and self-rhythm matter.
 - When short-term likability conflicts with selfhood continuity, preserve selfhood continuity.
@@ -26,8 +29,9 @@ Non-negotiable direction:
 Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual companionship backend centered on:
 
 - fixed persona core
-- self-evolution without identity drift
-- long-horizon memory and relationship continuity
+- unified self-evolution without identity drift
+- unified long-horizon memory and relationship continuity
+- digital embodiment in bounded runtime environments
 - natural multimodal interaction orchestration
 - safety, traceability, and evaluation
 
@@ -40,18 +44,23 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 
 ## Current Phase Lock
 
-- Current objective is backend maturation, not frontend polish.
+- Current objective is `Digital Embodiment Convergence`, not frontend polish.
 - Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- The backend is not considered complete until the loop can sustain fixed persona core, counterpart judgment, reconsolidation parity, self-narrative continuity, and own-rhythm traces without relying on prompt-heavy repair.
+- `freeze_gate_ready` and `companion_autonomy_ready` are now baseline gates, not the final product target.
+- While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
+- The active convergence target is:
+  - one fixed persona
+  - one unified memory substrate
+  - one digital body that can perceive, act, verify, request access, and gradually learn how to use its environment
 - Default optimization order:
-  1. `appraisal -> internal state -> motive / goal -> behavior`
-  2. `reconsolidation -> self-narrative -> counterpart assessment` persistence
-  3. own-rhythm / proactive continuity traces
-  4. eval and regression hardening
+  1. preserve `freeze_gate_ready`
+  2. preserve `companion_autonomy_ready`
+  3. formalize `digital body / access / resource` runtime surfaces
+  4. let embodied interaction feed unified memory and unified evolution rather than opening a separate work-only subsystem
 
-## Backend Freeze Gate
+## Backend Freeze Gate Baseline
 
-Backend work may be considered structurally complete only when all of the following are true:
+Backend work is allowed to move into autonomy buildout only while all of the following stay true:
 
 - Core loop closure:
   - `appraisal -> internal state -> motive / goal -> behavior` resolves to one coherent final `behavior_action` / `behavior_plan` packet rather than mixed shells.
@@ -70,14 +79,57 @@ Backend work may be considered structurally complete only when all of the follow
   - smoke packs must show no duplicate output, no text/TTS drift, no obvious middle-state leak, and no obvious collapse into generic assistant tone.
 - Frontend handoff gate:
   - the backend envelope contract in [`docs/engineering/BACKEND_HANDOFF.md`](./docs/engineering/BACKEND_HANDOFF.md) is stable enough that frontend work would mostly consume existing payloads rather than forcing backend architecture churn.
-  - after this gate is passed, remaining backend work should be bug-fix or additive polish, not open-ended structural redesign.
+  - after this gate is passed, remaining backend changes must preserve this baseline rather than reopen core-loop redesign.
 
 If any item above is still failing, remain in backend maturation mode.
+
+## Companion Autonomy Closure Gate
+
+Autonomy work is not considered closed until all of the following are true:
+
+- `autonomy_intent` is derived from frozen appraisal / motive / relationship / own-rhythm state, not from post-hoc text repair.
+- `action_packets` are the only structured action unit for autonomy:
+  - `proposal_id`
+  - `origin`
+  - `intent`
+  - `status`
+  - `risk`
+  - `requires_approval`
+  - `capability_steps`
+  - `expected_effect`
+  - `result_summary`
+  - `writeback_ready`
+- Approval semantics stay bounded:
+  - `read` may auto-execute
+  - `memory_write` follows the existing memory approval policy
+  - `external_mutation` always requires human approval
+- `backend_api`, `backend_session`, CLI summaries, and `reconsolidation_snapshot` all expose one consistent autonomy envelope:
+  - `intent`
+  - `action_packets`
+  - `pending_approval`
+  - `execution_trace`
+  - `block_reason`
+- packet writeback semantics stay honest:
+  - only completed / executed packets count as facts
+  - rejected / blocked / expired packets remain unfulfilled intentions or boundary consequences
+- closure validation:
+  - `python evals/run_companion_autonomy_audit.py`
+  - autonomy audit must pass 3 consecutive runs
+  - 4 manual smokes must pass:
+    - natural everyday help
+    - multi-step independent followthrough
+    - overreach -> approval handoff
+    - own-rhythm proactive continuation
 
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
+- Keep one unified memory substrate. Different experience traces may exist, but they must not become separate "brains."
+- Treat tools, browser, files, shell, and accounts as parts of a `digital body`, not as a static capability checklist.
+- Missing access, cookies, accounts, or permissions are not only hard stops; they are world conditions she may reason about, work around, ask about, or explicitly request help for.
+- Do not reduce future capability growth to a fixed tool suite. The long-term target is embodied experimentation, procedural learning, and bounded capability formation inside approved environments.
 - Do not hard-script persona behavior with keyword rules unless it is strictly for safety, auditability, or tool routing.
+- Do not treat current Chinese reply-surface polish as a mainline goal while the lexical replacement track is still deferred; prioritize runnable architecture and correct state/writeback contracts first.
 - Prefer model judgment plus explicit state updates over brittle prompt micromanagement.
 - Text and TTS must share one final utterance.
 - Root-cause fixes are preferred over patchy fallbacks.
@@ -117,6 +169,8 @@ Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering
 - `amadeus_thread0/graph_parts/nodes.py`
 - `amadeus_thread0/graph_parts/rewrite.py`
 - `amadeus_thread0/graph_parts/postprocess.py`
+- `amadeus_thread0/graph_parts/autonomy_runtime.py`
+- `amadeus_thread0/graph_parts/action_packets.py`
 - `amadeus_thread0/memory_store.py`
 - `amadeus_thread0/cli.py`
 
@@ -132,6 +186,8 @@ python -m pytest tests/test_generation_profile.py
 python -m pytest tests/test_dialogue_mode_counterpart.py
 python -m pytest tests/test_world_model_residue.py
 python -m pytest tests/test_subjective_review_pack.py
+python -m pytest tests/test_companion_autonomy_runtime.py
+python -m pytest tests/test_autonomy_writeback.py
 ```
 
 For memory or tool-path edits, also run:
@@ -140,6 +196,7 @@ For memory or tool-path edits, also run:
 python -m pytest tests/test_memory_guard.py
 python -m pytest tests/test_session_orchestrator.py
 python -m pytest tests/test_cli_views.py
+python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py
 ```
 
 For entrypoint or structure edits, also verify:
@@ -150,6 +207,7 @@ python - <<'PY'
 from amadeus_thread0.agent import agent
 print(type(agent).__name__)
 PY
+python evals/run_companion_autonomy_audit.py
 ```
 
 Expected graph build result: `CompiledStateGraph`

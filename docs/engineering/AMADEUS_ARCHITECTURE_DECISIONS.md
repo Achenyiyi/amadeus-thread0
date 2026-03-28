@@ -11,16 +11,21 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Amadeus-K` remains a `digital persona system`, not a personal ops shell.
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
+- The next target is not "more tools". It is `digital embodiment`: one fixed persona interacting with the digital world through one unified memory substrate and one bounded runtime body.
 
-## Backend Closure Status
+## Backend Status
 
-Status as of `2026-03-26`: `backend-complete for P0/P1 decisions`
+Status as of `2026-03-27`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-open`
 
-For backend purposes, the structural decisions in this document are now treated as closed under one executable gate:
+For backend purposes, the structural decisions in this document are now split into:
 
-- formal closeout entrypoint: `python evals/run_backend_freeze_gate_audit.py`
-- required readiness state: `freeze_gate_ready`
-- handoff posture: frontend may consume the frozen backend contract, but backend work should now be limited to bug-fix or additive polish rather than redesign
+- baseline gate: `python evals/run_backend_freeze_gate_audit.py`
+- autonomy gate: `python evals/run_companion_autonomy_audit.py`
+- current handoff posture:
+  - frontend remains frozen
+  - backend contract is stable enough to consume
+  - autonomy contract is baseline-complete
+  - digital embodiment buildout is now the active structural work
 
 Closure evidence by decision family:
 
@@ -46,11 +51,11 @@ Closure evidence by decision family:
   - runtime: `counterpart_assessment`, `boundary_pressure`, `reconsolidation_snapshot`, `writeback_trace`
   - checks: `tests/test_behavior_runtime_alignment.py`, `tests/test_memory_guard.py`, `tests/test_backend_api.py`, `tests/test_cli_views.py`
 
-This closure does not change the intentional P2 deferrals below:
+This status does not change the intentional guardrails below:
 
 - cross-surface continuity beyond the current backend contract still comes later
-- subagents remain peripheral
-- dynamic skill generation remains deferred
+- subagents remain peripheral to persona-core judgment
+- arbitrary host-side code generation remains deferred until sandbox and approval boundaries are explicit
 
 ## P0 Decisions
 
@@ -122,6 +127,113 @@ This closure does not change the intentional P2 deferrals below:
 - Capabilities can provide sensed facts, executable actions, and external feedback.
 - Capabilities must not become the source of persona identity.
 
+### 7a. Persona-First Autonomy
+
+- Autonomy is built inside the companion loop, not as a separate generic task agent.
+- `autonomy_intent` must arise from frozen appraisal / motive / relationship / own-rhythm state.
+- Persona-core judgment remains upstream of tool execution and worker execution.
+
+### 7b. Action Packet Contract
+
+- Structured autonomy flows through one bounded packet contract.
+- Required minimum fields:
+  - `proposal_id`
+  - `origin`
+  - `intent`
+  - `status`
+  - `risk`
+  - `requires_approval`
+  - `capability_steps`
+  - `expected_effect`
+  - `result_summary`
+  - `writeback_ready`
+
+### 7c. Approval-Gated Mutation
+
+- `read` packets may auto-execute.
+- `memory_write` packets reuse the existing memory approval policy.
+- `external_mutation` packets always require human approval.
+- Rejected or blocked packets never masquerade as completed facts.
+- The first concrete direct-execution slice is `artifact reacquisition`:
+  - when a prior file/work-surface is detached or missing
+  - and the packet is low-risk `read`
+  - the graph may execute reacquisition before the next model turn instead of only describing the need semantically
+  - for browser/search-like surfaces, the current bounded carrier is `saved source_refs`, not a fake live browser session:
+    - previously retrieved pages/search results may be reattached from stored `url/title/query/snippet`
+    - true live browser reopening remains deferred until a real browser/runtime surface exists
+
+### 7d. Bounded Capability Expansion
+
+- Persona-core may request capability expansion through explicit upgrade proposals.
+- Future worker execution, if added, stays outside persona-core judgment.
+
+### 7e. Digital Body Core
+
+- `Amadeus-K` should not converge toward a fixed tool menu.
+- It should converge toward a `digital body` composed of bounded perception/action surfaces such as:
+  - browser/runtime sessions
+  - workspace filesystem
+  - sandboxed execution
+  - search/retrieval surfaces
+  - access/session/cookie/account state
+- These surfaces are not identity; they are the digital-world body through which identity acts.
+
+### 7f. Affordance / Resource / Access Model
+
+- The runtime should reason not only about "which tool exists" but also about:
+  - what is reachable right now
+  - what resources are missing
+  - what accounts/cookies/permissions are absent
+  - what conditions are only temporarily unavailable and should be retried later
+  - whether a reusable session is still stable, already expiring, or broken and what recovery path would restore continuity
+  - what can be requested, created, earned, or deferred
+- Missing access is not always a terminal failure:
+  - she may ask the operator for credentials or approval
+  - she may create bounded new access such as a fresh account where appropriate
+  - she may choose an alternate path when direct access is unavailable
+- This is the digital analogue of real-world constraints rather than a static tool-gating table.
+- `resource_state` must now also track attached work surfaces as first-class runtime facts:
+  - `artifact_continuity`
+  - `active_artifact_kind`
+  - `active_artifact_ref`
+  - `active_artifact_label`
+  - `artifact_age_s`
+  - `artifact_reacquisition_mode`
+- Losing a page/file/work-surface attachment is not the same as a persona change; it is embodied world friction that must survive into writeback, summaries, and later reacquisition behavior.
+
+### 7g. Unified Experience Memory
+
+- Do not split the system into a "persona memory" and a separate "work memory" brain.
+- Keep one memory substrate with multiple experience trace families, for example:
+  - relationship traces
+  - selfhood traces
+  - world/task/artifact traces
+  - procedural traces
+  - access/resource traces
+- Different retrieval views may exist, but they must write back into one lived continuity model.
+
+### 7h. Unified Evolution Engine
+
+- Do not create a separate top-level `capability evolution` system in parallel with personality evolution.
+- The same evolution engine should absorb:
+  - emotional change
+  - relationship change
+  - self-narrative change
+  - work-style change
+  - procedural competence change
+  - digital-body usage strategy change
+- The system should therefore grow as one person interacting with one world, not as a role shell plus an independent task optimizer.
+
+### 7i. Capability Formation Through Embodied Interaction
+
+- The long-term target is not a frozen toolbox.
+- The long-term target is that she can:
+  - explore how to use a granted environment
+  - ask for missing context or access
+  - learn usage patterns from trial, feedback, and explanation
+  - eventually form bounded new workflows or helper capabilities inside approved/sandboxed environments
+- Host-side arbitrary code generation remains unsafe and out of scope until explicit sandbox and approval contracts exist.
+
 ### 8. Presence Layer Becomes Formal Runtime Infrastructure
 
 - Typing, silence, interruption recovery, delayed continuation, and proactive re-entry belong to a dedicated presence layer.
@@ -157,13 +269,33 @@ This closure does not change the intentional P2 deferrals below:
 
 ### 12. Subagents Stay Peripheral
 
-- Subagents may support retrieval, synthesis, or external work.
-- Subagents must not own persona-core decisions.
+- Subagents / workers may support retrieval, synthesis, or bounded packet execution.
+- Subagents must not own persona-core decisions or identity judgment.
 
 ### 13. Dynamic Skill Generation Is Deferred
 
-- It may become useful later for external capability expansion.
-- It is not a current bottleneck for persona realism.
+- Host-side arbitrary skill/tool generation remains deferred.
+- In the near term, only explicit capability-upgrade proposals are allowed.
+- Long-term digital-embodiment convergence may include bounded helper creation or workflow synthesis, but only inside sandboxed / approval-gated execution surfaces.
+
+### 14. Chinese Lexical De-Scaffolding Is Deferred
+
+- Replacing most Chinese lexical heuristics is a valid future architecture move, but it is not the active mainline slice.
+- The current mainline remains `digital body / access / unified experience` convergence.
+- Until that deferred replacement phase is explicitly opened, output naturalness / tone micro-polish is not a structural success metric by itself.
+- Current quality bar is:
+  - runtime is runnable
+  - state contracts are correct
+  - writeback provenance is correct
+  - digital-body / autonomy / reconsolidation architecture keeps closing
+- When this replacement phase is opened, the candidate mechanisms are:
+  - structured state extractors
+  - small semantic classifiers
+  - CrossEncoder semantic scorers / rerankers
+  - preference optimization / DPO-style tuning
+  - PEFT / LoRA / QLoRA-style role tuning
+- The exact choice remains intentionally undecided until the digital-body phase is stable enough to avoid solving the wrong layer first.
+- Until then, only the most brittle Chinese-heavy zones should be audited and documented, not proactively rewritten without a replacement contract.
 
 ## Explicit Rejections
 
@@ -194,11 +326,19 @@ This closure does not change the intentional P2 deferrals below:
   - repair history
   - own rhythm traces
 
+### 6. Reject “Fixed Tool Suite = Capability” Reduction
+
+- A static menu of tools is not the same thing as a living digital body.
+- Capability should be modeled as embodied access, experimentation, verification, and reconsolidated experience.
+
 ## Current Implementation Order
 
 1. `Session Fabric + Perception Event` - `backend-closed`
 2. `Counterpart Model + Relationship Appraisal` - `backend-closed`
 3. `Own Rhythm Engine` - `backend-closed`
-4. `Capability Bus` - `backend-closed`
-5. `Presence Layer` - `backend-closed`
-6. later frontend / multimodal integration - `intentionally deferred`
+4. `Capability Bus` - `backend-closed as baseline`
+5. `Presence Layer` - `backend-closed as baseline`
+6. `Companion Autonomy Closure` - `baseline-closed`
+7. `Digital Body / Unified Experience / Embodied Capability` - `current convergence target`
+8. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
+9. later frontend / multimodal integration - `intentionally deferred`

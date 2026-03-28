@@ -16,7 +16,17 @@
       "action_target": "offer_small_opening",
       "primary_motive": "gentle_recontact",
       "motive_tension": "self_rhythm_vs_contact",
-      "goal_frame": "Return from her own rhythm and leave a small opening."
+      "goal_frame": "Return from her own rhythm and leave a small opening.",
+      "embodied_context": {
+        "kind": "access_request_pending",
+        "requested_access": [
+          "workspace_write",
+          "human_approval"
+        ],
+        "requested_help": true,
+        "summary": "She already moved this step to the approval gate.",
+        "primary_status": "awaiting_approval"
+      }
     },
     "behavior_plan": {
       "kind": "small_opening",
@@ -28,12 +38,32 @@
       "goal_frame": "Return from her own rhythm and leave a small opening.",
       "carryover_mode": "own_rhythm",
       "carryover_strength": 0.57,
-      "relationship_weather": "warm_residue"
+      "relationship_weather": "warm_residue",
+      "embodied_context": {
+        "kind": "access_request_pending",
+        "requested_access": [
+          "workspace_write",
+          "human_approval"
+        ],
+        "requested_help": true,
+        "summary": "She already moved this step to the approval gate.",
+        "primary_status": "awaiting_approval"
+      }
     },
     "interaction_carryover": {
       "carryover_mode": "own_rhythm",
       "strength": 0.57,
-      "relationship_weather": "warm_residue"
+      "relationship_weather": "warm_residue",
+      "embodied_context": {
+        "kind": "access_request_pending",
+        "requested_access": [
+          "workspace_write",
+          "human_approval"
+        ],
+        "requested_help": true,
+        "summary": "She already moved this step to the approval gate.",
+        "primary_status": "awaiting_approval"
+      }
     },
     "counterpart_assessment": {
       "summary": "She reads the delay as busy-but-not-dismissive, so the contact stays open without pressure.",
@@ -60,7 +90,15 @@
       "interaction_frame": "relationship",
       "behavior_consequence": {
         "kind": "leave_small_opening",
-        "summary": "She responded without taking over the whole scene."
+        "summary": "She responded without taking over the whole scene.",
+        "embodied_context": {
+          "kind": "environmental_friction",
+          "summary": "The browser session is still unavailable.",
+          "missing_access": [
+            "browser_session"
+          ],
+          "environmental_friction": true
+        }
       }
     },
     "current_event": {
@@ -149,7 +187,40 @@
         "recon_event_kind": "scheduled_life_due",
         "recon_interaction_frame": "relationship",
         "behavior_consequence_kind": "leave_small_opening",
-        "behavior_consequence_summary": "She responded without taking over the whole scene."
+        "behavior_consequence_summary": "She responded without taking over the whole scene.",
+        "behavior_action_embodied_context": {
+          "kind": "access_request_pending",
+          "requested_access": [
+            "workspace_write",
+            "human_approval"
+          ],
+          "requested_help": true,
+          "summary": "She already moved this step to the approval gate.",
+          "primary_status": "awaiting_approval"
+        },
+        "behavior_consequence_embodied_context": {
+          "kind": "environmental_friction",
+          "summary": "The browser session is still unavailable.",
+          "missing_access": [
+            "browser_session"
+          ],
+          "environmental_friction": true
+        },
+        "autonomy_mode": "proposal",
+        "autonomy_origin": "counterpart_request",
+        "autonomy_reason": "A workspace write still needs approval before she can carry it through.",
+        "autonomy_confidence": 0.74,
+        "autonomy_requires_approval": true,
+        "action_packet_count": 1,
+        "autonomy_block_reason": "waiting for human approval",
+        "digital_body_surface": "approval_gate",
+        "digital_body_access_mode": "approval_pending",
+        "digital_body_pending_approval_count": 1,
+        "digital_body_consequence_kind": "access_request_pending",
+        "digital_body_consequence_summary": "She already moved this step to the approval gate.",
+        "digital_body_procedural_growth": false,
+        "digital_body_requested_help": true,
+        "digital_body_environmental_friction": false
       },
       "event_residue": {
         "event_kind": "scheduled_life_due",
@@ -161,7 +232,17 @@
         "ambient_resonance": 0.0,
         "self_activity_momentum": 0.0,
         "scheduled_after_min": 0,
-        "idle_minutes": 0
+        "idle_minutes": 0,
+        "digital_body_consequence": {
+          "kind": "access_request_pending",
+          "requested_access": [
+            "workspace_write",
+            "human_approval"
+          ],
+          "requested_help": true,
+          "summary": "She already moved this step to the approval gate.",
+          "primary_status": "awaiting_approval"
+        }
       },
       "agenda_lifecycle": {
         "kind": "held",
@@ -207,11 +288,337 @@
         "goal_frame": "Return from her own rhythm and leave a small opening.",
         "carryover_mode": "own_rhythm",
         "carryover_strength": 0.57,
-        "relationship_weather": "warm_residue"
+        "relationship_weather": "warm_residue",
+        "embodied_context": {
+          "kind": "access_request_pending",
+          "requested_access": [
+            "workspace_write",
+            "human_approval"
+          ],
+          "requested_help": true,
+          "summary": "She already moved this step to the approval gate.",
+          "primary_status": "awaiting_approval"
+        }
       },
       "behavior_queue_preview": [],
       "worldline_focus_preview": [],
-      "worldline_focus_items": []
+      "worldline_focus_items": [],
+      "interaction_carryover": {
+        "embodied_context": {
+          "kind": "access_request_pending",
+          "requested_access": [
+            "workspace_write",
+            "human_approval"
+          ],
+          "requested_help": true,
+          "summary": "She already moved this step to the approval gate.",
+          "primary_status": "awaiting_approval"
+        }
+      },
+      "behavior_consequence": {
+        "kind": "leave_small_opening",
+        "embodied_context": {
+          "kind": "environmental_friction",
+          "summary": "The browser session is still unavailable.",
+          "missing_access": [
+            "browser_session"
+          ],
+          "environmental_friction": true
+        },
+        "summary": "She responded without taking over the whole scene."
+      },
+      "autonomy": {
+        "block_reason": "waiting for human approval",
+        "intent": {
+          "confidence": 0.74,
+          "reason": "A workspace write still needs approval before she can carry it through.",
+          "primary_proposal_id": "ap-approve-1",
+          "requires_approval": true,
+          "own_rhythm_weight": 0.31,
+          "mode": "proposal",
+          "continuity_weight": 0.62,
+          "origin": "counterpart_request"
+        },
+        "action_packets": [
+          {
+            "writeback_ready": false,
+            "origin": "counterpart_request",
+            "risk": "external_mutation",
+            "expected_effect": "Leave a note in the workspace once approval is granted.",
+            "status": "awaiting_approval",
+            "intent": "write_workspace_note",
+            "result_summary": "",
+            "capability_steps": [
+              {
+                "kind": "tool",
+                "requires_approval": true,
+                "note": "Needs workspace write approval before execution.",
+                "name": "write_file"
+              }
+            ],
+            "proposal_id": "ap-approve-1",
+            "requires_approval": true
+          }
+        ],
+        "execution_trace": [
+          {
+            "event": "approval_requested",
+            "intent": "write_workspace_note",
+            "status": "awaiting_approval",
+            "requires_approval": true,
+            "risk": "external_mutation",
+            "origin": "counterpart_request",
+            "proposal_id": "ap-approve-1"
+          }
+        ],
+        "pending_approval": {
+          "intent": "write_workspace_note",
+          "status": "awaiting_approval",
+          "requires_approval": true,
+          "risk": "external_mutation",
+          "origin": "counterpart_request",
+          "proposal_id": "ap-approve-1"
+        }
+      },
+      "digital_body": {
+        "constraints": [
+          "human_approval_required"
+        ],
+        "action_channels": [
+          "language",
+          "structured_action",
+          "tooling"
+        ],
+        "available_toolsets": [
+          "filesystem"
+        ],
+        "active_surface": "approval_gate",
+        "access": {
+          "browser_session": "missing",
+          "block_reason": "waiting for approval",
+          "granted_toolsets": [
+            "filesystem"
+          ],
+          "requestable_access": [
+            "workspace_write",
+            "human_approval"
+          ],
+          "filesystem_state": "read_only",
+          "conditions": [
+            "human_approval_required"
+          ],
+          "sandbox_mode": "restricted",
+          "mode": "approval_pending",
+          "pending_approval_count": 1,
+          "cookie_state": "missing",
+          "missing_access": [
+            "workspace_write"
+          ],
+          "network_access": "restricted",
+          "account_state": "logged_out",
+          "external_mutation_pending": true
+        },
+        "perception_channels": [
+          "dialogue",
+          "scene"
+        ],
+        "world_surfaces": [
+          "filesystem",
+          "network"
+        ],
+        "active_tools": [
+          "write_file"
+        ],
+        "resources": {
+          "external_tool_count": 1,
+          "executing_packet_count": 0,
+          "behavior_queue_depth": 1,
+          "completed_packet_count": 0,
+          "queued_packet_count": 0,
+          "pending_approval_count": 1,
+          "blocked_packet_count": 0,
+          "action_packet_count": 1
+        }
+      },
+      "digital_body_consequence": {
+        "kind": "access_request_pending",
+        "requested_access": [
+          "workspace_write",
+          "human_approval"
+        ],
+        "requested_help": true,
+        "summary": "She already moved this step to the approval gate.",
+        "primary_status": "awaiting_approval"
+      }
+    },
+    "writeback_trace": {
+      "turn_started_at": 1710000000,
+      "semantic_self_narratives": [
+        {
+          "id": 12,
+          "category": "agency_style",
+          "text": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "updated_at": 1710000001
+        }
+      ],
+      "revision_traces": [
+        {
+          "namespace": "semantic_self_evidence",
+          "target_id": "agency_style",
+          "after_summary": "She keeps her own rhythm instead of orbiting the counterpart.",
+          "source": "auto:passive_evolution_final",
+          "created_at": 1710000001,
+          "embodied_context": {
+            "kind": "access_request_pending",
+            "requested_access": [
+              "workspace_write",
+              "human_approval"
+            ],
+            "requested_help": true,
+            "summary": "She already moved this step to the approval gate.",
+            "primary_status": "awaiting_approval"
+          }
+        }
+      ],
+      "counterpart_assessment_history": [
+        {
+          "summary": "She reads this return as sincere repair rather than a casual ping.",
+          "stance": "repair_open",
+          "scene": "repair",
+          "created_at": 1710000001
+        }
+      ],
+      "proactive_continuity_history": [
+        {
+          "summary": "She keeps a small reopening path alive after returning from her own rhythm.",
+          "kind": "promoted",
+          "trace_family": "continuity_recontact",
+          "created_at": 1710000001
+        }
+      ]
+    },
+    "autonomy": {
+      "block_reason": "waiting for human approval",
+      "intent": {
+        "confidence": 0.74,
+        "reason": "A workspace write still needs approval before she can carry it through.",
+        "primary_proposal_id": "ap-approve-1",
+        "requires_approval": true,
+        "own_rhythm_weight": 0.31,
+        "mode": "proposal",
+        "continuity_weight": 0.62,
+        "origin": "counterpart_request"
+      },
+      "action_packets": [
+        {
+          "writeback_ready": false,
+          "origin": "counterpart_request",
+          "risk": "external_mutation",
+          "expected_effect": "Leave a note in the workspace once approval is granted.",
+          "status": "awaiting_approval",
+          "intent": "write_workspace_note",
+          "result_summary": "",
+          "capability_steps": [
+            {
+              "kind": "tool",
+              "requires_approval": true,
+              "note": "Needs workspace write approval before execution.",
+              "name": "write_file"
+            }
+          ],
+          "proposal_id": "ap-approve-1",
+          "requires_approval": true
+        }
+      ],
+      "execution_trace": [
+        {
+          "event": "approval_requested",
+          "intent": "write_workspace_note",
+          "status": "awaiting_approval",
+          "requires_approval": true,
+          "risk": "external_mutation",
+          "origin": "counterpart_request",
+          "proposal_id": "ap-approve-1"
+        }
+      ],
+      "pending_approval": {
+        "intent": "write_workspace_note",
+        "status": "awaiting_approval",
+        "requires_approval": true,
+        "risk": "external_mutation",
+        "origin": "counterpart_request",
+        "proposal_id": "ap-approve-1"
+      }
+    },
+    "digital_body": {
+      "constraints": [
+        "human_approval_required"
+      ],
+      "action_channels": [
+        "language",
+        "structured_action",
+        "tooling"
+      ],
+      "available_toolsets": [
+        "filesystem"
+      ],
+      "active_surface": "approval_gate",
+      "access": {
+        "browser_session": "missing",
+        "block_reason": "waiting for approval",
+        "granted_toolsets": [
+          "filesystem"
+        ],
+        "requestable_access": [
+          "workspace_write",
+          "human_approval"
+        ],
+        "filesystem_state": "read_only",
+        "conditions": [
+          "human_approval_required"
+        ],
+        "sandbox_mode": "restricted",
+        "mode": "approval_pending",
+        "pending_approval_count": 1,
+        "cookie_state": "missing",
+        "missing_access": [
+          "workspace_write"
+        ],
+        "network_access": "restricted",
+        "account_state": "logged_out",
+        "external_mutation_pending": true
+      },
+      "perception_channels": [
+        "dialogue",
+        "scene"
+      ],
+      "world_surfaces": [
+        "filesystem",
+        "network"
+      ],
+      "active_tools": [
+        "write_file"
+      ],
+      "resources": {
+        "external_tool_count": 1,
+        "executing_packet_count": 0,
+        "behavior_queue_depth": 1,
+        "completed_packet_count": 0,
+        "queued_packet_count": 0,
+        "pending_approval_count": 1,
+        "blocked_packet_count": 0,
+        "action_packet_count": 1
+      }
+    },
+    "digital_body_consequence": {
+      "kind": "access_request_pending",
+      "requested_access": [
+        "workspace_write",
+        "human_approval"
+      ],
+      "requested_help": true,
+      "summary": "She already moved this step to the approval gate.",
+      "primary_status": "awaiting_approval"
     }
   },
   "meta": {

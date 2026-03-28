@@ -165,6 +165,10 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
     elif mode == "ambient_echo":
         parts.append("刚才注意到的小动静还留在你的感知里")
 
+    embodied_hint = _compact_embodied_carryover_hint(carryover)
+    if embodied_hint:
+        parts.append(embodied_hint)
+
     weather_phrase = _relationship_weather_phrase(relationship_weather, strength=strength)
     if weather_phrase:
         parts.append(weather_phrase)
@@ -192,7 +196,46 @@ def _compact_interaction_carryover_hint(carryover: dict[str, Any] | None) -> str
     elif attention_target == "counterpart_state" and mode in {"quiet_recontact", "brief_presence"}:
         parts.append("所以你会先轻轻确认他的在场")
 
-    return "，".join(parts[:3]) + "。"
+    return "，".join(parts[:4]) + "。"
+
+
+def _compact_embodied_carryover_hint(carryover: dict[str, Any] | None) -> str:
+    if not isinstance(carryover, dict):
+        return ""
+    embodied = dict(carryover.get("embodied_context") or {})
+    if not embodied:
+        return ""
+    kind = str(embodied.get("kind") or "").strip().lower()
+    primary_status = str(embodied.get("primary_status") or "").strip().lower()
+    block_reason = str(embodied.get("block_reason") or "").strip()
+    requested_help = bool(embodied.get("requested_help", False))
+    requested_access = [
+        str(item).strip().lower()
+        for item in (embodied.get("requested_access") if isinstance(embodied.get("requested_access"), list) else [])
+        if str(item).strip()
+    ][:2]
+    missing_access = [
+        str(item).strip().lower()
+        for item in (embodied.get("missing_access") if isinstance(embodied.get("missing_access"), list) else [])
+        if str(item).strip()
+    ][:2]
+    access_label = "、".join(requested_access or missing_access)
+
+    if kind == "access_request_pending" or primary_status == "awaiting_approval" or requested_help:
+        if access_label and requested_help:
+            return f"那件事还卡在等{access_label}和外部确认这一步，这不是对对方的态度变化，只是入口还没放开"
+        if access_label:
+            return f"那件事还卡在等{access_label}这一步，这不是对对方的态度变化，只是入口还没放开"
+        return "那件事还停在入口确认之前，这不是对对方的态度变化，只是当前环境还没齐"
+
+    if kind == "environmental_friction" or block_reason or missing_access:
+        if block_reason:
+            return f"那件事暂时还被环境条件卡着：{block_reason.rstrip('。')}"
+        if access_label:
+            return f"那件事暂时还缺着{access_label}这类环境条件，这不是关系判断变了，只是当前环境还没齐"
+        return "那件事暂时还被环境条件卡着，这不是关系判断变了，只是当前环境还没齐"
+
+    return ""
 
 
 def _compact_long_horizon_continuity_hint(
