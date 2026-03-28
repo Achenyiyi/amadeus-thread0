@@ -572,6 +572,33 @@ class CliViewsTests(unittest.TestCase):
                 "hold_count": 2,
                 "recontact_cooldown": 0.52,
             },
+            digital_body_state={
+                "active_surface": "approval_gate",
+                "perception_channels": ["dialogue"],
+                "action_channels": ["language", "approval_gate"],
+                "available_toolsets": ["memory"],
+                "active_tools": ["write_diary"],
+                "access_state": {
+                    "mode": "approval_pending",
+                    "conditions": ["human_approval_required"],
+                    "pending_approval_count": 1,
+                    "granted_toolsets": ["memory"],
+                },
+                "resource_state": {
+                    "action_packet_count": 1,
+                    "pending_approval_count": 1,
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "plan.md",
+                    "artifact_reacquisition_mode": "reopen_file",
+                },
+                "body_constraints": ["human_approval_required"],
+            },
+            digital_body_consequence={
+                "kind": "access_request_pending",
+                "summary": "她已经把动作推进到审批门口了。",
+                "requested_help": True,
+            },
         )
         line = build_evolution_summary_line(summary)
         self.assertIn("presence=0.580/0.410", line)
@@ -586,7 +613,221 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("lifecycle=held:own_rhythm:0.410", line)
         self.assertIn("holds=2", line)
         self.assertIn("cool=0.520", line)
+        self.assertIn("body=approval_gate:approval_pending", line)
+        self.assertIn("bodyfx=access_request_pending", line)
+        self.assertIn("approvals=1", line)
+        self.assertIn("artifact=file:plan.md:detached:reopen_file", line)
         self.assertIn("bond=0.640", line)
+
+    def test_build_evolution_cli_summary_surfaces_digital_body_section(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "scene"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["browser", "filesystem", "network"],
+                "available_toolsets": ["browser", "filesystem"],
+                "active_tools": ["search_web", "read_file"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "conditions": ["network_available"],
+                    "missing_access": ["browser_session"],
+                    "requestable_access": ["browser_session", "workspace_write"],
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "missing",
+                    "api_key_state": "missing",
+                    "quota_state": "low",
+                    "filesystem_state": "read_only",
+                    "sandbox_mode": "restricted",
+                    "network_access": "restricted",
+                    "pending_approval_count": 0,
+                    "external_mutation_pending": False,
+                    "granted_toolsets": ["browser", "filesystem"],
+                },
+                "resource_state": {
+                    "behavior_queue_depth": 1,
+                    "action_packet_count": 2,
+                    "queued_packet_count": 1,
+                    "completed_packet_count": 1,
+                    "external_tool_count": 1,
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/plan.md",
+                    "active_artifact_label": "plan.md",
+                    "artifact_age_s": 7200,
+                    "artifact_reacquisition_mode": "reopen_file",
+                },
+                "body_constraints": ["network_available"],
+            }
+        )
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("active_surface"), "tooling")
+        self.assertEqual(digital_body.get("perception_channels"), ["dialogue", "scene"])
+        self.assertEqual(digital_body.get("action_channels"), ["language", "structured_action", "tooling"])
+        self.assertEqual(digital_body.get("world_surfaces"), ["browser", "filesystem", "network"])
+        self.assertEqual(digital_body.get("available_toolsets"), ["browser", "filesystem"])
+        self.assertEqual(digital_body.get("active_tools"), ["search_web", "read_file"])
+        self.assertEqual(digital_body.get("access", {}).get("mode"), "tool_enabled")
+        self.assertEqual(digital_body.get("access", {}).get("granted_toolsets"), ["browser", "filesystem"])
+        self.assertEqual(digital_body.get("access", {}).get("missing_access"), ["browser_session"])
+        self.assertEqual(digital_body.get("access", {}).get("requestable_access"), ["browser_session", "workspace_write"])
+        self.assertEqual(digital_body.get("access", {}).get("browser_session"), "missing")
+        self.assertEqual(digital_body.get("access", {}).get("api_key_state"), "missing")
+        self.assertEqual(digital_body.get("access", {}).get("quota_state"), "low")
+        self.assertEqual(digital_body.get("access", {}).get("filesystem_state"), "read_only")
+        self.assertEqual(digital_body.get("access", {}).get("sandbox_mode"), "restricted")
+        self.assertEqual(digital_body.get("resources", {}).get("action_packet_count"), 2)
+        self.assertEqual(digital_body.get("resources", {}).get("external_tool_count"), 1)
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_continuity"), "detached")
+        self.assertEqual(digital_body.get("resources", {}).get("active_artifact_kind"), "file")
+        self.assertEqual(digital_body.get("resources", {}).get("active_artifact_label"), "plan.md")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_reacquisition_mode"), "reopen_file")
+        self.assertEqual(digital_body.get("constraints"), ["network_available"])
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_surface"), "tooling")
+        self.assertEqual(current_turn.get("digital_body_access_mode"), "tool_enabled")
+        self.assertEqual(current_turn.get("digital_body_artifact_continuity"), "detached")
+        self.assertEqual(current_turn.get("digital_body_active_artifact_kind"), "file")
+        self.assertEqual(current_turn.get("digital_body_active_artifact_label"), "plan.md")
+        self.assertEqual(current_turn.get("digital_body_artifact_reacquisition_mode"), "reopen_file")
+
+    def test_build_evolution_cli_summary_surfaces_digital_body_cooldown(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "cooldown_gate",
+                "perception_channels": ["dialogue"],
+                "action_channels": ["language", "cooldown_gate"],
+                "world_surfaces": ["network"],
+                "available_toolsets": ["search_web"],
+                "active_tools": [],
+                "access_state": {
+                    "mode": "cooldown",
+                    "conditions": ["cooldown_active", "provider_cooldown_active"],
+                    "quota_state": "exhausted",
+                    "retry_after_s": 300,
+                    "cooldown_scope": "provider",
+                    "requestable_access": ["api_quota"],
+                    "missing_access": ["api_quota"],
+                },
+                "resource_state": {},
+                "body_constraints": ["cooldown_active"],
+            }
+        )
+
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("active_surface"), "cooldown_gate")
+        self.assertEqual(digital_body.get("access", {}).get("mode"), "cooldown")
+        self.assertEqual(digital_body.get("access", {}).get("retry_after_s"), 300)
+        self.assertEqual(digital_body.get("access", {}).get("cooldown_scope"), "provider")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_retry_after_s"), 300)
+        self.assertEqual(current_turn.get("digital_body_cooldown_scope"), "provider")
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("body=cooldown_gate:cooldown", line)
+        self.assertIn("retry=300s@provider", line)
+
+    def test_build_evolution_cli_summary_surfaces_digital_body_session_lifecycle(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "native_only",
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_continuity": "expiring",
+                    "session_expires_in_s": 600,
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {},
+            },
+            digital_body_consequence={
+                "kind": "environmental_friction",
+                "summary": "这次会话已经断开，得先刷新会话。",
+                "session_continuity": "expired",
+                "session_recovery_mode": "refresh_session",
+                "environmental_friction": True,
+            },
+        )
+
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("access", {}).get("session_continuity"), "expiring")
+        self.assertEqual(digital_body.get("access", {}).get("session_expires_in_s"), 600)
+        self.assertEqual(digital_body.get("access", {}).get("session_recovery_mode"), "refresh_session")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_session_continuity"), "expiring")
+        self.assertEqual(current_turn.get("digital_body_session_expires_in_s"), 600)
+        self.assertEqual(current_turn.get("digital_body_session_recovery_mode"), "refresh_session")
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("session_continuity"), "expired")
+        self.assertEqual(digital_body_consequence.get("session_recovery_mode"), "refresh_session")
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("session=expiring:600s:refresh_session", line)
+
+    def test_build_evolution_cli_summary_surfaces_digital_body_consequence_section(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "approval_gate",
+                "access_state": {
+                    "mode": "approval_pending",
+                    "pending_approval_count": 1,
+                },
+            },
+            digital_body_consequence={
+                "kind": "access_request_pending",
+                "summary": "她已经把动作推进到审批门口了。",
+                "access_mode": "approval_pending",
+                "active_surface": "approval_gate",
+                "world_surfaces": ["filesystem", "network"],
+                "missing_access": ["workspace_write"],
+                "requested_access": ["workspace_write", "human_approval"],
+                "granted_toolsets": ["filesystem"],
+                "active_tools": ["write_file"],
+                "block_reason": "waiting for approval",
+                "artifact_continuity": "missing",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/plan.md",
+                "active_artifact_label": "plan.md",
+                "artifact_age_s": 7200,
+                "artifact_reacquisition_mode": "reopen_file",
+                "primary_proposal_id": "ap-body-1",
+                "primary_status": "awaiting_approval",
+                "primary_origin": "counterpart_request",
+                "primary_intent": "write_file",
+                "primary_tool_name": "write_file",
+                "procedural_growth": False,
+                "environmental_friction": False,
+                "requested_help": True,
+            },
+        )
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "access_request_pending")
+        self.assertEqual(digital_body_consequence.get("summary"), "她已经把动作推进到审批门口了。")
+        self.assertEqual(digital_body_consequence.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertEqual(digital_body_consequence.get("artifact_continuity"), "missing")
+        self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "file")
+        self.assertEqual(digital_body_consequence.get("active_artifact_label"), "plan.md")
+        self.assertEqual(digital_body_consequence.get("artifact_reacquisition_mode"), "reopen_file")
+        self.assertEqual(digital_body_consequence.get("primary_proposal_id"), "ap-body-1")
+        self.assertEqual(digital_body_consequence.get("primary_status"), "awaiting_approval")
+        self.assertTrue(bool(digital_body_consequence.get("requested_help")))
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "access_request_pending")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), "她已经把动作推进到审批门口了。")
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+        self.assertTrue(bool(current_turn.get("digital_body_requested_help")))
+        self.assertFalse(bool(current_turn.get("digital_body_environmental_friction")))
 
     def test_build_evolution_cli_summary_prefers_frozen_counterpart_snapshot_over_runtime_copy(self):
         summary = build_evolution_cli_summary(
@@ -668,6 +909,34 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("motive=gentle_recontact / self_rhythm_vs_contact", rendered)
         self.assertIn("goal=顺着余温轻轻回头。", rendered)
 
+    def test_counterpart_assessment_cli_summary_surfaces_embodied_context_only_when_present(self):
+        history = [
+            {
+                "id": 8,
+                "summary": "她会先把这次靠近看成是真诚的，但身体条件上的限制也会算进去。",
+                "stance": "open",
+                "scene": "care_bid",
+                "digital_body_consequence": {
+                    "kind": "access_request_pending",
+                    "summary": "她已经把动作推进到审批门口了。",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("bodyfx=access_request_pending", rendered)
+        self.assertIn("ask=workspace_write,human_approval", rendered)
+        self.assertIn("help=yes", rendered)
+
     def test_build_proactive_continuity_cli_summary_and_render(self):
         history = [
             {
@@ -727,6 +996,35 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("anchors=0.66/0.72/0.34/0.22/0.30 semantic=0.68/0.64", rendered)
         self.assertIn("lineage=0.70/0.44/0.41/0.36/0.69/0.78 axes=4", rendered)
         self.assertIn("motive=preserve_self_rhythm / self_rhythm_vs_contact", rendered)
+
+    def test_proactive_continuity_cli_summary_surfaces_embodied_context_only_when_present(self):
+        history = [
+            {
+                "id": 9,
+                "summary": "她把这次留下来的审批入口也带进了后续连续性里。",
+                "kind": "promoted",
+                "trace_family": "continuity_recontact",
+                "carryover_mode": "small_opening",
+                "digital_body_consequence": {
+                    "kind": "access_request_pending",
+                    "summary": "她已经把动作推进到审批门口了。",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            }
+        ]
+
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        self.assertIn("bodyfx=access_request_pending", rendered)
+        self.assertIn("ask=workspace_write", rendered)
+        self.assertIn("help=yes", rendered)
 
     def test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue(self):
         summary = build_evolution_cli_summary(
@@ -890,6 +1188,19 @@ class CliViewsTests(unittest.TestCase):
                 "created_at": 1710000099,
                 "source_tags": ["user_busy", "agenda_lifecycle"],
                 "note": "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            },
+            digital_body_consequence={
+                "kind": "access_request_pending",
+                "summary": "她已经把动作推进到审批门口了。",
+                "requested_access": ["workspace_write", "human_approval"],
+                "requested_help": True,
+                "primary_status": "awaiting_approval",
             },
         )
         opening = summary.get("opening_window") if isinstance(summary.get("opening_window"), dict) else {}
@@ -929,6 +1240,14 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(event_residue.get("delivery_mode"), "scheduled")
         self.assertTrue(event_residue.get("is_proactive"))
         self.assertEqual(event_residue.get("scheduled_after_min"), 18)
+        event_bodyfx = (
+            event_residue.get("digital_body_consequence")
+            if isinstance(event_residue.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(event_bodyfx.get("kind"), "access_request_pending")
+        self.assertEqual(event_bodyfx.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(event_bodyfx.get("requested_help")))
         lifecycle = summary.get("agenda_lifecycle") if isinstance(summary.get("agenda_lifecycle"), dict) else {}
         self.assertEqual(lifecycle.get("kind"), "released_to_self_activity")
         self.assertEqual(lifecycle.get("carryover_mode"), "own_rhythm")
@@ -936,6 +1255,10 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(lifecycle.get("continuity_anchor"), 0.66)
         self.assertEqual(lifecycle.get("own_rhythm_anchor"), 0.72)
         self.assertEqual(lifecycle.get("semantic_continuity_depth"), 0.68)
+        lifecycle_embodied = lifecycle.get("embodied_context") if isinstance(lifecycle.get("embodied_context"), dict) else {}
+        self.assertEqual(lifecycle_embodied.get("kind"), "access_request_pending")
+        self.assertEqual(lifecycle_embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(lifecycle_embodied.get("requested_help")))
         self.assertEqual(lifecycle.get("semantic_identity_gravity"), 0.64)
         self.assertEqual(lifecycle.get("lineage_gravity"), 0.7)
         self.assertEqual(lifecycle.get("repair_lineage"), 0.41)
@@ -982,6 +1305,7 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("decision=wait_and_recheck", line)
         self.assertIn("recheck=18m", line)
         self.assertIn("lifecycle=released_to_self_activity:own_rhythm:0.530", line)
+        self.assertIn("lifecyclefx=access_request_pending", line)
 
     def test_build_evolution_cli_summary_surfaces_event_identity_fields(self):
         summary = build_evolution_cli_summary(
@@ -1000,6 +1324,115 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(event_residue.get("thread_id"), "thread-a")
         self.assertEqual(event_residue.get("turn_id"), "thread-a:555")
         self.assertEqual(event_residue.get("event_id"), "thread-a:555:idle:scheduler")
+
+    def test_build_evolution_cli_summary_surfaces_carryover_embodied_context(self):
+        summary = build_evolution_cli_summary(
+            interaction_carryover={
+                "source": "reconsolidation",
+                "carryover_mode": "own_rhythm",
+                "strength": 0.53,
+                "relationship_weather": "warm_residue",
+                "note": "前面的窗口还在慢慢往后带。",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "她把动作推进到了审批门口。",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            }
+        )
+
+        carryover = summary.get("interaction_carryover") if isinstance(summary.get("interaction_carryover"), dict) else {}
+        self.assertEqual(carryover.get("source"), "reconsolidation")
+        self.assertEqual(carryover.get("carryover_mode"), "own_rhythm")
+        self.assertEqual(carryover.get("strength"), 0.53)
+        embodied = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_request_pending")
+        self.assertEqual(embodied.get("requested_access"), ["workspace_write"])
+        self.assertTrue(bool(embodied.get("requested_help")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("carryfx=access_request_pending", line)
+
+    def test_build_evolution_cli_summary_surfaces_plan_and_consequence_embodied_context(self):
+        summary = build_evolution_cli_summary(
+            behavior_plan={
+                "kind": "deferred_checkin",
+                "target": "counterpart",
+                "trigger_family": "observe",
+                "note": "先把窗口留着。",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "这一步还卡在审批门口。",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            },
+            reconsolidation_snapshot={
+                "behavior_consequence": {
+                    "kind": "defer_recontact",
+                    "summary": "这次先没有立刻往前接。",
+                    "embodied_context": {
+                        "kind": "environmental_friction",
+                        "summary": "浏览器会话还没准备好。",
+                        "missing_access": ["browser_session"],
+                        "environmental_friction": True,
+                    },
+                }
+            },
+        )
+
+        behavior_plan = summary.get("behavior_plan") if isinstance(summary.get("behavior_plan"), dict) else {}
+        plan_embodied = behavior_plan.get("embodied_context") if isinstance(behavior_plan.get("embodied_context"), dict) else {}
+        self.assertEqual(plan_embodied.get("kind"), "access_request_pending")
+        self.assertEqual(plan_embodied.get("requested_access"), ["workspace_write"])
+
+        consequence = summary.get("behavior_consequence") if isinstance(summary.get("behavior_consequence"), dict) else {}
+        consequence_embodied = consequence.get("embodied_context") if isinstance(consequence.get("embodied_context"), dict) else {}
+        self.assertEqual(consequence_embodied.get("kind"), "environmental_friction")
+        self.assertEqual(consequence_embodied.get("missing_access"), ["browser_session"])
+
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        current_consequence_embodied = (
+            current_turn.get("behavior_consequence_embodied_context")
+            if isinstance(current_turn.get("behavior_consequence_embodied_context"), dict)
+            else {}
+        )
+        self.assertEqual(current_consequence_embodied.get("kind"), "environmental_friction")
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("planfx=access_request_pending", line)
+        self.assertIn("consfx=environmental_friction", line)
+
+    def test_build_evolution_cli_summary_surfaces_behavior_action_embodied_context(self):
+        summary = build_evolution_cli_summary(
+            behavior_action={
+                "interaction_mode": "deferred_watch",
+                "primary_motive": "honor_continuity",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "summary": "她把这一步先推进到了审批门口。",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                    "primary_status": "awaiting_approval",
+                },
+            }
+        )
+
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        action_embodied = (
+            current_turn.get("behavior_action_embodied_context")
+            if isinstance(current_turn.get("behavior_action_embodied_context"), dict)
+            else {}
+        )
+        self.assertEqual(action_embodied.get("kind"), "access_request_pending")
+        self.assertEqual(action_embodied.get("requested_access"), ["workspace_write", "human_approval"])
+        self.assertTrue(bool(action_embodied.get("requested_help")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("actfx=access_request_pending", line)
 
     def test_build_evolution_cli_summary_surfaces_event_created_at_and_tags(self):
         summary = build_evolution_cli_summary(

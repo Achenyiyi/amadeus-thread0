@@ -31,6 +31,7 @@ from .rewrite import (
     _light_dialog_rewrite_notes,
     _natural_dialog_rewrite_notes_for,
     _norm_text,
+    _rewrite_embodied_continuity_adjustment,
     _rewrite_light_dialog_answer,
     _rewrite_natural_dialog_answer,
     _should_run_light_dialog_rewrite,
@@ -115,8 +116,23 @@ def _should_accept_natural_dialog_rewrite(
     effective_targeted_flags: list[str] | tuple[str, ...],
     rewritten_issues: list[str] | tuple[str, ...],
     rewritten_gap_flags: list[str] | tuple[str, ...],
+    current_event: dict[str, Any] | None = None,
+    behavior_action: dict[str, Any] | None = None,
 ) -> bool:
     if _norm_text(rewritten) == _norm_text(aligned):
+        return False
+
+    aligned_embodied = _rewrite_embodied_continuity_adjustment(
+        aligned,
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
+    rewritten_embodied = _rewrite_embodied_continuity_adjustment(
+        rewritten,
+        behavior_action=behavior_action,
+        current_event=current_event,
+    )
+    if rewritten_embodied + 0.12 < aligned_embodied:
         return False
 
     targeted_flag_set = {str(item).strip() for item in (effective_targeted_flags or []) if str(item or "").strip()}
@@ -291,9 +307,21 @@ def _finalize_text_response(
                 light_dialog_final_pref_score = rewritten_pref_score
                 draft_total = light_dialog_draft_pref_score - light_dialog_draft_penalty
                 rewritten_total = rewritten_pref_score - rewritten_penalty
+                draft_embodied = _rewrite_embodied_continuity_adjustment(
+                    draft_text,
+                    behavior_action=behavior_action,
+                    current_event=current_event,
+                )
+                rewritten_embodied = _rewrite_embodied_continuity_adjustment(
+                    rewritten,
+                    behavior_action=behavior_action,
+                    current_event=current_event,
+                )
+                embodied_ok = rewritten_embodied + 0.12 >= draft_embodied
                 strong_case_match = float(light_dialog_profile.get("score") or 0.0) >= 0.95
                 low_pref_case = light_dialog_draft_pref_score < 0.16
-                if rewritten_total > draft_total + 0.04 or (
+                if embodied_ok and (
+                    rewritten_total > draft_total + 0.04 or (
                     rewritten_total >= draft_total
                     and rewritten_penalty <= light_dialog_draft_penalty
                     and _norm_text(rewritten) != _norm_text(draft_text)
@@ -303,7 +331,7 @@ def _finalize_text_response(
                     and rewritten_total >= draft_total - 0.02
                     and rewritten_penalty <= light_dialog_draft_penalty + 0.05
                     and _norm_text(rewritten) != _norm_text(draft_text)
-                ):
+                )):
                     aligned = rewritten
                     alignment_applied = True
                     light_dialog_rewrite_applied = True
@@ -431,6 +459,8 @@ def _finalize_text_response(
                     effective_targeted_flags=effective_targeted_flags,
                     rewritten_issues=rewritten_issues,
                     rewritten_gap_flags=rewritten_gap_flags,
+                    current_event=current_event,
+                    behavior_action=behavior_action,
                 ):
                     aligned = rewritten
                     alignment_applied = True

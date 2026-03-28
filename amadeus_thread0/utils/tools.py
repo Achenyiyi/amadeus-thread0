@@ -28,7 +28,8 @@ except Exception:
 
 from ..config import SOURCE_RELIABILITY_DEFAULT, TOOL_POLICIES, TOOL_RELIABILITY_WEIGHTS
 from ..memory_store import MemoryStore
-from ..runtime.settings import get_settings
+from ..runtime.settings import BASE_DIR, get_settings
+from .revision_trace_export import normalize_revision_trace_exports
 
 
 def _meta(tool_name: str) -> dict[str, Any]:
@@ -111,6 +112,85 @@ def _run_async(coro):
             return loop.run_until_complete(coro)
         finally:
             loop.close()
+
+
+def _resolve_artifact_path(raw: Any) -> Path | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    candidate = Path(text).expanduser()
+    attempts: list[Path] = []
+    if candidate.is_absolute():
+        attempts.append(candidate)
+    else:
+        attempts.append((Path.cwd() / candidate).resolve())
+        attempts.append((BASE_DIR / candidate).resolve())
+    for path in attempts:
+        try:
+            if path.exists():
+                return path
+        except Exception:
+            continue
+    return None
+
+
+def _parse_source_ref_id(raw: Any) -> int:
+    text = str(raw or "").strip().lower()
+    if not text:
+        return 0
+    if text.startswith("source_ref:"):
+        text = text.split(":", 1)[1].strip()
+    try:
+        value = int(text)
+    except Exception:
+        value = 0
+    return value if value > 0 else 0
+
+
+def _resolve_source_ref_surface(*, artifact_ref: Any, artifact_label: Any) -> dict[str, Any]:
+    store = _get_store()
+    refs = store.list_source_refs(limit=120)
+    if not isinstance(refs, list) or not refs:
+        return {}
+
+    target_ref = str(artifact_ref or "").strip()
+    target_label = str(artifact_label or "").strip()
+    target_id = _parse_source_ref_id(target_ref) or _parse_source_ref_id(target_label)
+    if target_id > 0:
+        for item in refs:
+            try:
+                if int(item.get("id") or 0) == target_id:
+                    return dict(item)
+            except Exception:
+                continue
+
+    best: dict[str, Any] = {}
+    best_score = 0.0
+    for item in refs:
+        url = str(item.get("url") or "").strip()
+        title = str(item.get("title") or "").strip()
+        query = str(item.get("query") or "").strip()
+        snippet = str(item.get("snippet") or "").strip()
+        score = 0.0
+        if target_ref:
+            if target_ref == url or target_ref == query or target_ref == title:
+                score += 1.0
+            elif target_ref and target_ref in url:
+                score += 0.76
+            score += 0.52 * _overlap_score(target_ref, title)
+            score += 0.42 * _overlap_score(target_ref, query)
+            score += 0.16 * _overlap_score(target_ref, snippet)
+        if target_label:
+            if target_label == title or target_label == query:
+                score += 0.92
+            score += 0.56 * _overlap_score(target_label, title)
+            score += 0.46 * _overlap_score(target_label, query)
+            score += 0.12 * _overlap_score(target_label, snippet)
+        if score > best_score:
+            best = dict(item)
+            best_score = score
+
+    return best if best_score >= 0.22 else {}
 
 
 def _text_units(text: str) -> set[str]:
@@ -1130,7 +1210,9 @@ def get_worldline_snapshot(limit: int = 20) -> dict[str, Any]:
                 "commitments": store.list_commitments(limit=lim),
                 "unresolved_tensions": store.list_unresolved_tensions(limit=lim),
                 "semantic_self_narratives": store.list_semantic_self_narratives(limit=lim),
-                "revision_traces": store.list_revision_traces(limit=min(lim, 50)),
+                "revision_traces": normalize_revision_trace_exports(
+                    store.list_revision_traces(limit=min(lim, 50))
+                ),
                 "canon_facts": store.list_canon_facts(),
                 "memory_quarantine": store.list_memory_quarantine(limit=min(lim, 50)),
             },
@@ -1431,7 +1513,7 @@ def list_revision_traces(limit: int = 20) -> dict[str, Any]:
     try:
         store = _get_store()
         lim = max(1, min(100, int(limit)))
-        return _ok(tool_name, store.list_revision_traces(limit=lim))
+        return _ok(tool_name, normalize_revision_trace_exports(store.list_revision_traces(limit=lim)))
     except Exception as e:
         return _err(tool_name, "INTERNAL", str(e))
 
@@ -1606,6 +1688,143 @@ def search_langchain_docs(query: str, max_results: int = 3) -> dict[str, Any]:
         return _ok(tool_name, {"query": q, "items": items, "source_ref_ids": source_ref_ids})
     except Exception as e:
         return _err(tool_name, "INTERNAL", str(e), {"query": q, "max_results": k})
+
+
+@tool
+def reacquire_artifact(
+    mode: str,
+    artifact_kind: str = "",
+    artifact_ref: str = "",
+    artifact_label: str = "",
+    preview_chars: int = 900,
+) -> dict[str, Any]:
+    """在受限只读范围内重新接回当前工作面。
+
+    目前支持本地文件/文档/工作区类 artifact。
+    浏览器页面和检索结果仍保持显式阻塞，等待未来 browser/search surface 落地。
+    """
+
+    tool_name = "reacquire_artifact"
+    reacquire_mode = str(mode or "").strip().lower()
+    kind = str(artifact_kind or "").strip().lower()
+    label = str(artifact_label or artifact_ref or "").strip()
+    ref = str(artifact_ref or artifact_label or "").strip()
+    limit = max(120, min(int(preview_chars or 900), 2400))
+
+    if not reacquire_mode:
+        return _err(tool_name, "BAD_INPUT", "mode is required")
+
+    path = _resolve_artifact_path(ref)
+    if path is None and reacquire_mode == "reattach_workspace":
+        path = _resolve_artifact_path(label)
+
+    if path is not None:
+        try:
+            stat = path.stat()
+            resolved_label = label
+            try:
+                normalized_label_path = Path(label).expanduser() if label else None
+            except Exception:
+                normalized_label_path = None
+            if (
+                not resolved_label
+                or resolved_label == ref
+                or (normalized_label_path is not None and str(normalized_label_path) == str(path))
+            ):
+                resolved_label = path.name or str(path)
+            if path.is_dir():
+                children = sorted(item.name for item in path.iterdir())[:20]
+                summary = f"已重新接回工作区 {path.name or str(path)}。"
+                return _ok(
+                    tool_name,
+                    {
+                        "summary": summary,
+                        "artifact_continuity": "attached",
+                        "artifact_kind": kind or "workspace",
+                        "artifact_ref": str(path),
+                        "artifact_label": resolved_label or path.name or str(path),
+                        "artifact_reacquisition_mode": reacquire_mode,
+                        "artifact_exists": True,
+                        "artifact_preview": "\n".join(children),
+                        "artifact_preview_truncated": False,
+                        "artifact_size_bytes": int(stat.st_size),
+                        "artifact_updated_at": int(stat.st_mtime),
+                    },
+                )
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            preview = content[:limit]
+            summary = f"已重新接回文件 {path.name}。"
+            return _ok(
+                tool_name,
+                    {
+                        "summary": summary,
+                        "artifact_continuity": "attached",
+                        "artifact_kind": kind or "file",
+                        "artifact_ref": str(path),
+                        "artifact_label": resolved_label or path.name,
+                        "artifact_reacquisition_mode": reacquire_mode,
+                        "artifact_exists": True,
+                        "artifact_preview": preview,
+                    "artifact_preview_truncated": len(content) > len(preview),
+                    "artifact_size_bytes": int(stat.st_size),
+                    "artifact_updated_at": int(stat.st_mtime),
+                },
+            )
+        except Exception as e:
+            return _err(tool_name, "READ_FAILED", str(e), {"artifact_ref": str(path), "mode": reacquire_mode})
+
+    browserish_kinds = {"page", "tab", "site", "browser_page", "search_result"}
+    if kind in browserish_kinds or reacquire_mode in {"reopen_page", "rerun_search"}:
+        try:
+            rec = _resolve_source_ref_surface(artifact_ref=ref, artifact_label=label)
+        except Exception as e:
+            return _err(
+                tool_name,
+                "READ_FAILED",
+                str(e),
+                {"mode": reacquire_mode, "artifact_kind": kind, "artifact_ref": ref, "artifact_label": label},
+            )
+        if rec:
+            url = str(rec.get("url") or "").strip()
+            query = str(rec.get("query") or "").strip()
+            title = str(rec.get("title") or label or ref).strip()
+            snippet = str(rec.get("snippet") or "").strip()
+            summary = (
+                f"已重新接回检索结果 {title}。"
+                if kind == "search_result" or reacquire_mode == "rerun_search"
+                else f"已重新接回页面 {title}。"
+            )
+            return _ok(
+                tool_name,
+                {
+                    "summary": summary,
+                    "artifact_continuity": "attached",
+                    "artifact_kind": kind or ("search_result" if reacquire_mode == "rerun_search" else "page"),
+                    "artifact_ref": url or query or ref,
+                    "artifact_label": title or label or ref,
+                    "artifact_reacquisition_mode": reacquire_mode,
+                    "artifact_exists": True,
+                    "artifact_preview": snippet[:limit],
+                    "artifact_preview_truncated": len(snippet) > limit,
+                    "source_ref_ids": [int(rec.get("id") or 0)] if int(rec.get("id") or 0) > 0 else [],
+                    "source_url": url,
+                    "source_query": query,
+                    "tool_name": str(rec.get("tool_name") or "").strip(),
+                },
+            )
+        return _err(
+            tool_name,
+            "UNSUPPORTED",
+            "browser/search artifact reacquisition needs a saved source_ref carrier in the current runtime",
+            {"mode": reacquire_mode, "artifact_kind": kind, "artifact_ref": ref, "artifact_label": label},
+        )
+
+    return _err(
+        tool_name,
+        "NOT_FOUND",
+        "artifact path could not be resolved in the current workspace",
+        {"mode": reacquire_mode, "artifact_kind": kind, "artifact_ref": ref, "artifact_label": label},
+    )
 
 
 @tool

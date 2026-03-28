@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from amadeus_thread0.evolution_engine.policy import build_behavior_policy
+from amadeus_thread0.evolution_engine.reconsolidation import derive_agenda_lifecycle_consequence
 from amadeus_thread0.evolution_engine.worldline import build_world_model_state
 from amadeus_thread0.graph_parts.behavior_agenda import (
     _behavior_agenda_entry_from_plan,
@@ -18,10 +19,13 @@ from amadeus_thread0.graph_parts.behavior_agenda import (
 from amadeus_thread0.graph_parts.behavior_runtime import (
     _behavior_action_from_state,
     _behavior_plan_from_action,
+    _compact_behavior_action_hint,
 )
 from amadeus_thread0.graph_parts.dialogue_guidance import _subjective_runtime_state_hint
 from amadeus_thread0.graph_parts.memory_evolution import (
     _passive_evolution_memory_update,
+    _record_agenda_lifecycle_long_horizon_memory,
+    _record_counterpart_assessment_long_horizon_memory,
     _record_semantic_self_evidence,
     _refresh_semantic_self_narratives,
     _semantic_self_evidence_records,
@@ -32,6 +36,11 @@ from amadeus_thread0.graph_parts.relational import (
     _recent_interaction_carryover,
     _seeded_interaction_carryover_from_state,
 )
+from amadeus_thread0.graph_parts.relational_carryover import (
+    _apply_retrieved_behavior_trace_bridge,
+    _hydrate_retrieved_agenda_lifecycle_residue,
+)
+from amadeus_thread0.graph_parts.runtime_prompting import _prompt_state_runtime_brief
 from amadeus_thread0.graph_parts.semantic_narrative import (
     _compact_semantic_narrative_hint,
     _semantic_narrative_appraisal_hint,
@@ -2244,6 +2253,12 @@ class WorldModelResidueTests(unittest.TestCase):
                             "plan_kind:small_opening",
                             "trigger_family:self_activity",
                         ],
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "primary_status": "awaiting_approval",
+                            "requested_access": ["workspace_write", "human_approval"],
+                            "requested_help": True,
+                        },
                     },
                 )
                 self.assertTrue(wrote)
@@ -2257,6 +2272,14 @@ class WorldModelResidueTests(unittest.TestCase):
                 reactivation_content = reactivation.get("content") if isinstance(reactivation.get("content"), dict) else {}
                 self.assertEqual(str(reactivation_content.get("source_plan_kind") or ""), "small_opening")
                 self.assertEqual(str(reactivation_content.get("current_action_target") or ""), "offer_small_opening")
+                embodied_context = (
+                    reactivation_content.get("embodied_context")
+                    if isinstance(reactivation_content.get("embodied_context"), dict)
+                    else {}
+                )
+                self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+                self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+                self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
                 worldline = next(
                     item
                     for item in store.list_worldline_events(limit=12)
@@ -2554,6 +2577,13 @@ class WorldModelResidueTests(unittest.TestCase):
                         "recontact_cooldown": 0.48,
                         "counterpart_scene_bias": "busy_not_disrespectful",
                         "note": "前面挂着的窗口没有继续往前推，注意力被自然收回到了自己的节奏里。",
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "primary_status": "awaiting_approval",
+                            "primary_origin": "counterpart_request",
+                            "requested_access": ["workspace_write", "human_approval"],
+                            "requested_help": True,
+                        },
                     },
                 )
                 self.assertTrue(wrote)
@@ -2568,6 +2598,14 @@ class WorldModelResidueTests(unittest.TestCase):
                 lifecycle_content = lifecycle.get("content") if isinstance(lifecycle.get("content"), dict) else {}
                 self.assertEqual(str(lifecycle_content.get("primary_motive") or ""), "preserve_self_rhythm")
                 self.assertEqual(str(lifecycle_content.get("motive_tension") or ""), "self_rhythm_vs_contact")
+                lifecycle_embodied = (
+                    lifecycle_content.get("embodied_context")
+                    if isinstance(lifecycle_content.get("embodied_context"), dict)
+                    else {}
+                )
+                self.assertEqual(str(lifecycle_embodied.get("kind") or ""), "access_request_pending")
+                self.assertEqual(str(lifecycle_embodied.get("primary_status") or ""), "awaiting_approval")
+                self.assertIn("workspace_write", lifecycle_embodied.get("requested_access") or [])
                 semantic_traces = [
                     item
                     for item in traces
@@ -2604,6 +2642,268 @@ class WorldModelResidueTests(unittest.TestCase):
                 )
                 self.assertGreater(float(relationship_memory.get("trust_delta") or 0.0), 0.0)
                 self.assertGreater(float(relationship_memory.get("affinity_delta") or 0.0), 0.0)
+            finally:
+                store.close()
+
+    def test_passive_evolution_records_digital_body_consequence_trace(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _passive_evolution_memory_update(
+                    store,
+                    user_text="",
+                    appraisal={
+                        "used": True,
+                        "confidence": 0.88,
+                        "interaction_frame": "task",
+                        "salience": {
+                            "relationship": 0.12,
+                            "companionship": 0.14,
+                            "selfhood": 0.08,
+                            "task": 0.78,
+                        },
+                        "signals": {},
+                    },
+                    emotion_state={"label": "neutral"},
+                    bond_state={
+                        "trust": 0.58,
+                        "closeness": 0.54,
+                        "hurt": 0.0,
+                    },
+                    current_event={
+                        "kind": "self_activity_state",
+                        "tags": ["self_activity", "tool_attempt", "approval_gate"],
+                    },
+                    world_model_state={
+                        "presence_residue": 0.08,
+                        "ambient_resonance": 0.04,
+                        "self_activity_momentum": 0.52,
+                    },
+                    digital_body_state={
+                        "active_surface": "approval_gate",
+                        "perception_channels": ["dialogue"],
+                        "action_channels": ["language", "structured_action", "approval_gate"],
+                        "world_surfaces": ["dialogue", "browser", "network"],
+                        "available_toolsets": ["search_web"],
+                        "access_state": {
+                            "mode": "approval_pending",
+                            "conditions": ["human_approval_required", "cookie_access_missing"],
+                            "pending_approval_count": 1,
+                            "external_mutation_pending": True,
+                            "missing_access": ["cookies"],
+                            "requestable_access": ["cookies", "human_approval"],
+                            "cookie_state": "missing",
+                            "network_access": "available",
+                        },
+                        "resource_state": {
+                            "action_packet_count": 1,
+                            "pending_approval_count": 1,
+                        },
+                        "body_constraints": ["human_approval_required", "cookie_access_missing"],
+                    },
+                )
+                self.assertTrue(wrote)
+                traces = store.list_revision_traces(limit=40)
+                body_consequence = next(
+                    item
+                    for item in traces
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "digital_body_consequence"
+                )
+                self.assertEqual(str(body_consequence.get("target_id") or ""), "access_request_pending")
+                body_content = body_consequence.get("content") if isinstance(body_consequence.get("content"), dict) else {}
+                self.assertIn("cookies", body_content.get("missing_access") or [])
+                self.assertIn("human_approval", body_content.get("requested_access") or [])
+                semantic_traces = [
+                    item
+                    for item in traces
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "") == "semantic_self_evidence"
+                    and str((item.get("content") or {}).get("body_consequence_kind") or "") == "access_request_pending"
+                ]
+                categories = {str(item.get("target_id") or "") for item in semantic_traces}
+                self.assertIn("agency_style", categories)
+                self.assertIn("boundary_style", categories)
+                self.assertIn("presence_style", categories)
+                worldline = store.list_worldline_events(limit=8)
+                self.assertTrue(
+                    any(
+                        str(item.get("category") or item.get("content", {}).get("category") or "") == "access_request"
+                        and "待申请条件" in str(item.get("summary") or item.get("content", {}).get("summary") or "")
+                        for item in worldline
+                    )
+                )
+            finally:
+                store.close()
+
+    def test_counterpart_assessment_writeback_keeps_embodied_context_only_for_counterpart_origin(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_counterpart_assessment_long_horizon_memory(
+                    store,
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"primary_motive": "maintain_boundary"},
+                    reconsolidation_snapshot={
+                        "event_kind": "user_utterance",
+                        "interaction_frame": "relationship",
+                        "counterpart": {
+                            "summary": "她会把这次开口看成带着一点边界压力的推进，不会直接当成轻松的靠近。",
+                            "stance": "guarded",
+                            "scene": "selfhood_test",
+                            "respect_level": 0.46,
+                            "reciprocity": 0.41,
+                            "boundary_pressure": 0.48,
+                            "reliability_read": 0.44,
+                            "assessment_profile": {
+                                "openness_drive": 0.22,
+                                "guarded_drive": 0.66,
+                                "guard_margin": 0.44,
+                                "dominant_scene_signal": "selfhood",
+                                "scene_strengths": {
+                                    "care": 0.08,
+                                    "repair": 0.10,
+                                    "friction": 0.28,
+                                    "selfhood": 0.74,
+                                    "busy": 0.06,
+                                },
+                            },
+                        },
+                        "digital_body_consequence": {
+                            "kind": "access_request_pending",
+                            "summary": "这次她已经把动作推进到了审批门口，但还差 workspace_write。",
+                            "requested_access": ["workspace_write", "human_approval"],
+                            "requested_help": True,
+                            "primary_origin": "counterpart_request",
+                            "primary_status": "awaiting_approval",
+                            "environmental_friction": True,
+                            "artifact_continuity": "detached",
+                            "active_artifact_kind": "file",
+                            "active_artifact_label": "plan.md",
+                            "artifact_reacquisition_mode": "reopen_file",
+                        },
+                    },
+                    source="passive_evolution",
+                    confidence=0.84,
+                )
+                self.assertTrue(wrote)
+                record = store.list_counterpart_assessment_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("kind"), "access_request_pending")
+                self.assertEqual(embodied.get("primary_origin"), "counterpart_request")
+                self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
+                self.assertIn("workspace_write", embodied.get("requested_access") or [])
+                self.assertEqual(embodied.get("artifact_continuity"), "detached")
+                self.assertEqual(embodied.get("active_artifact_kind"), "file")
+                self.assertEqual(embodied.get("active_artifact_label"), "plan.md")
+                self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
+            finally:
+                store.close()
+
+    def test_counterpart_assessment_writeback_omits_embodied_context_without_counterpart_origin(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_counterpart_assessment_long_horizon_memory(
+                    store,
+                    current_event={"kind": "user_utterance"},
+                    behavior_action={"primary_motive": "maintain_boundary"},
+                    reconsolidation_snapshot={
+                        "event_kind": "user_utterance",
+                        "interaction_frame": "relationship",
+                        "counterpart": {
+                            "summary": "她会把这次开口先看成谨慎观察，不急着把关系判断推得太满。",
+                            "stance": "watchful",
+                            "scene": "repair_attempt",
+                            "respect_level": 0.55,
+                            "reciprocity": 0.52,
+                            "boundary_pressure": 0.18,
+                            "reliability_read": 0.51,
+                        },
+                        "digital_body_consequence": {
+                            "kind": "access_request_pending",
+                            "summary": "这次她已经把动作推进到了审批门口。",
+                            "requested_access": ["human_approval"],
+                            "requested_help": True,
+                            "primary_origin": "own_rhythm",
+                            "primary_status": "awaiting_approval",
+                            "environmental_friction": True,
+                        },
+                    },
+                    source="passive_evolution",
+                    confidence=0.84,
+                )
+                self.assertTrue(wrote)
+                record = store.list_counterpart_assessment_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertFalse(embodied)
+            finally:
+                store.close()
+
+    def test_proactive_continuity_writeback_carries_embodied_context_when_body_state_itself_continues(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_long_horizon_memory(
+                    store,
+                    consequence={
+                        "summary": "前面挂着的那点窗口还留在后面，但这次真正继续之前要先把入口拿到。",
+                        "kind": "promoted",
+                        "source_event_kind": "scheduled_life_due",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "small_opening",
+                        "relationship_weather": "warm_residue",
+                        "hold_count": 1,
+                        "carryover_strength": 0.58,
+                        "recontact_cooldown": 0.22,
+                        "presence_residue": 0.16,
+                        "ambient_resonance": 0.10,
+                        "self_activity_momentum": 0.24,
+                        "continuity_anchor": 0.52,
+                        "own_rhythm_anchor": 0.34,
+                        "recontact_anchor": 0.46,
+                        "boundary_anchor": 0.18,
+                        "memory_anchor": 0.24,
+                        "semantic_continuity_depth": 0.60,
+                        "semantic_identity_gravity": 0.54,
+                        "lineage_gravity": 0.58,
+                        "contact_lineage": 0.48,
+                        "repair_lineage": 0.30,
+                        "boundary_lineage": 0.22,
+                        "selfhood_lineage": 0.28,
+                        "agency_lineage": 0.44,
+                        "long_term_axis_count": 3,
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "continuity_vs_access_gate",
+                        "goal_frame": "先把前面的窗口留住，等入口齐了再继续。",
+                    },
+                    digital_body_consequence={
+                        "kind": "access_request_pending",
+                        "summary": "这次她已经把动作推进到了审批门口，但还差 workspace_write。",
+                        "requested_access": ["workspace_write", "human_approval"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                        "primary_origin": "motive_goal",
+                        "environmental_friction": True,
+                        "artifact_continuity": "missing",
+                        "active_artifact_kind": "file",
+                        "active_artifact_label": "plan.md",
+                        "artifact_reacquisition_mode": "reopen_file",
+                    },
+                    confidence=0.82,
+                )
+                self.assertTrue(wrote)
+                record = store.list_proactive_continuity_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("kind"), "access_request_pending")
+                self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
+                self.assertIn("workspace_write", embodied.get("requested_access") or [])
+                self.assertTrue(bool(embodied.get("requested_help")))
+                self.assertEqual(embodied.get("artifact_continuity"), "missing")
+                self.assertEqual(embodied.get("active_artifact_kind"), "file")
+                self.assertEqual(embodied.get("active_artifact_label"), "plan.md")
+                self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
             finally:
                 store.close()
 
@@ -2917,6 +3217,75 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("平等关系", compact_hint)
         self.assertIn("约定", compact_hint)
         self.assertNotIn("周围环境", compact_hint)
+
+    def test_compact_semantic_hint_prefers_embodied_access_lines_when_snapshot_present(self):
+        profile = {
+            "boundary_residue": 0.76,
+            "agency_drive": 0.82,
+            "presence_carry": 0.68,
+            "summary_lines": [],
+            "top_narratives": [],
+            "embodied_snapshot": {
+                "boundary_style": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["cookies"],
+                    "granted_toolsets": [],
+                    "active_tools": [],
+                    "support_mass": 0.88,
+                },
+                "agency_style": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["cookies"],
+                    "granted_toolsets": [],
+                    "active_tools": [],
+                    "support_mass": 0.92,
+                },
+                "presence_style": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["cookies"],
+                    "granted_toolsets": [],
+                    "active_tools": [],
+                    "support_mass": 0.84,
+                },
+            },
+        }
+        compact_hint = _compact_semantic_narrative_hint(profile)
+        self.assertIn("workspace_write", compact_hint)
+        self.assertIn("cookies", compact_hint)
+        self.assertIn("申请或换路", compact_hint)
+        self.assertNotIn("边界是否被尊重会持续留痕", compact_hint)
+
+    def test_semantic_appraisal_hint_surfaces_embodied_pending_access_as_world_constraint(self):
+        profile = {
+            "boundary_residue": 0.0,
+            "agency_drive": 0.0,
+            "presence_carry": 0.0,
+            "embodied_snapshot": {
+                "boundary_style": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["cookies"],
+                    "granted_toolsets": [],
+                    "active_tools": [],
+                    "support_mass": 0.84,
+                },
+                "presence_style": {
+                    "kind": "access_request_pending",
+                    "requested_access": ["workspace_write"],
+                    "missing_access": ["cookies"],
+                    "granted_toolsets": [],
+                    "active_tools": [],
+                    "support_mass": 0.78,
+                },
+            },
+        }
+        appraisal_hint = _semantic_narrative_appraisal_hint(profile)
+        self.assertIn("cookies", appraisal_hint)
+        self.assertIn("现实边界", appraisal_hint)
+        self.assertIn("未完成意图", appraisal_hint)
 
     def test_subjective_runtime_hint_mentions_own_rhythm_from_long_term_profile(self):
         hint = _subjective_runtime_state_hint(
@@ -3418,6 +3787,434 @@ class WorldModelResidueTests(unittest.TestCase):
             },
         )
         self.assertEqual(str(action.get("interaction_mode") or ""), "self_activity_reopen")
+
+    def test_behavior_action_keeps_access_pending_as_body_condition_not_relationship_shift(self):
+        world_model_state = {
+            "self_activity_momentum": 0.28,
+            "presence_residue": 0.18,
+            "ambient_resonance": 0.10,
+            "bond_depth": 0.56,
+            "companionship_pull": 0.46,
+            "task_pull": 0.22,
+            "boundary_load": 0.08,
+            "agency_load": 0.36,
+            "selfhood_load": 0.24,
+            "memory_gravity": 0.18,
+            "tension_load": 0.08,
+            "relationship_maturity": 0.62,
+            "repair_load": 0.12,
+        }
+        behavior_policy = build_behavior_policy(
+            response_style_hint="natural",
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.04,
+                "engagement_drive": 0.58,
+            },
+            allostasis_state={
+                "safety_need": 0.14,
+                "autonomy_need": 0.22,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.66,
+                "stance": "open",
+            },
+            world_model_state=world_model_state,
+            latent_state={
+                "agency_pressure": 0.44,
+                "expression_freedom": 0.68,
+                "self_coherence": 0.74,
+            },
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        action = _behavior_action_from_state(
+            current_event={"kind": "user_utterance", "tags": []},
+            response_style_hint="natural",
+            user_text="在干嘛？",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.04,
+                "engagement_drive": 0.58,
+            },
+            allostasis_state={
+                "safety_need": 0.14,
+                "autonomy_need": 0.22,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.66,
+                "stance": "open",
+            },
+            semantic_narrative_profile={},
+            behavior_policy=behavior_policy,
+            world_model_state=world_model_state,
+            interaction_carryover={
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                }
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "steady_reply")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("approach_style") or ""), "steady")
+        self.assertIn("留在进行中", str(action.get("goal_frame") or ""))
+        self.assertIn("workspace_write", str(action.get("note") or ""))
+        self.assertIn("不会装作已经做完", str(action.get("note") or ""))
+        plan = _behavior_plan_from_action(
+            {"kind": "user_utterance"},
+            action,
+            world_model_state=world_model_state,
+        )
+        self.assertIn("留在进行中", str(plan.get("goal_frame") or ""))
+
+    def test_behavior_action_marks_environmental_friction_without_becoming_relationship_guard(self):
+        world_model_state = {
+            "self_activity_momentum": 0.28,
+            "presence_residue": 0.18,
+            "ambient_resonance": 0.10,
+            "bond_depth": 0.56,
+            "companionship_pull": 0.46,
+            "task_pull": 0.22,
+            "boundary_load": 0.08,
+            "agency_load": 0.36,
+            "selfhood_load": 0.24,
+            "memory_gravity": 0.18,
+            "tension_load": 0.08,
+            "relationship_maturity": 0.62,
+            "repair_load": 0.12,
+        }
+        behavior_policy = build_behavior_policy(
+            response_style_hint="natural",
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.04,
+                "engagement_drive": 0.58,
+            },
+            allostasis_state={
+                "safety_need": 0.14,
+                "autonomy_need": 0.22,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.66,
+                "stance": "open",
+            },
+            world_model_state=world_model_state,
+            latent_state={
+                "agency_pressure": 0.44,
+                "expression_freedom": 0.68,
+                "self_coherence": 0.74,
+            },
+            tsundere_intensity=0.44,
+            science_mode=False,
+        )
+        action = _behavior_action_from_state(
+            current_event={"kind": "user_utterance", "tags": []},
+            response_style_hint="natural",
+            user_text="在干嘛？",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.66,
+                "closeness": 0.62,
+                "hurt": 0.02,
+                "irritation": 0.04,
+                "engagement_drive": 0.58,
+            },
+            allostasis_state={
+                "safety_need": 0.14,
+                "autonomy_need": 0.22,
+                "cognitive_budget": 0.72,
+            },
+            counterpart_assessment={
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.66,
+                "stance": "open",
+            },
+            semantic_narrative_profile={},
+            behavior_policy=behavior_policy,
+            world_model_state=world_model_state,
+            interaction_carryover={
+                "embodied_context": {
+                    "kind": "environmental_friction",
+                    "missing_access": ["browser_session"],
+                    "block_reason": "browser session missing",
+                }
+            },
+        )
+        self.assertEqual(str(action.get("interaction_mode") or ""), "steady_reply")
+        self.assertEqual(str(action.get("action_target") or ""), "respond_now")
+        self.assertEqual(str(action.get("approach_style") or ""), "steady")
+        self.assertIn("环境条件", str(action.get("goal_frame") or ""))
+        self.assertIn("browser session missing", str(action.get("note") or ""))
+        self.assertNotEqual(str(action.get("action_target") or ""), "protect_relationship_boundary")
+
+    def test_compact_behavior_action_hint_preserves_embodied_friction_signal(self):
+        hint = _compact_behavior_action_hint(
+            {
+                "interaction_mode": "companion_reply",
+                "primary_motive": "maintain_natural_contact",
+                "approach_style": "approach",
+                "followup_intent": "active",
+                "embodied_context": {
+                    "kind": "environmental_friction",
+                    "missing_access": ["browser_session"],
+                    "block_reason": "browser session missing",
+                },
+            }
+        )
+        self.assertIn("browser session missing", hint)
+        self.assertIn("环境条件", hint)
+        self.assertNotIn("可以保留一点主动续接", hint)
+
+    def test_runtime_brief_can_fall_back_to_behavior_action_embodied_context_without_carryover(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={
+                "interaction_mode": "steady_reply",
+                "primary_motive": "honor_continuity",
+                "goal_frame": "先把前面挂着的事情自然接上，同时把还卡在workspace_write这一步的事留在进行中。",
+                "note": "前面那件事还卡在等workspace_write和外部确认这一步，不会装作已经做完",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                },
+            },
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertIn("workspace_write", brief)
+        self.assertIn("环境条件", brief)
+        self.assertIn("未完成部分", brief)
+
+    def test_runtime_brief_can_surface_current_digital_body_state_without_carryover(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "approval_pending",
+                    "missing_access": ["cookies"],
+                    "requestable_access": ["cookies", "human_approval"],
+                    "cookie_state": "missing",
+                    "filesystem_state": "read_only",
+                    "pending_approval_count": 1,
+                },
+                "resource_state": {
+                    "pending_approval_count": 1,
+                },
+            },
+            session_context={},
+        )
+        self.assertIn("当前数字环境", brief)
+        self.assertIn("cookies", brief)
+        self.assertIn("workspace_write", brief)
+
+    def test_runtime_brief_can_surface_session_context_digital_body_hints_without_body_snapshot(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "cookie_state": "missing",
+                    "filesystem_state": "read_only",
+                }
+            },
+        )
+        self.assertIn("当前数字环境", brief)
+        self.assertIn("cookies", brief)
+        self.assertIn("workspace_write", brief)
+
+    def test_runtime_brief_can_surface_current_event_digital_body_hints_without_body_or_session(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={
+                "kind": "user_utterance",
+                "digital_body_hints": {
+                    "cookie_state": "missing",
+                    "filesystem_state": "read_only",
+                },
+            },
+            digital_body_state={},
+            session_context={},
+        )
+        self.assertIn("当前数字环境", brief)
+        self.assertIn("cookies", brief)
+        self.assertIn("workspace_write", brief)
+
+    def test_runtime_brief_can_surface_perception_digital_body_hints_without_body_or_session(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={
+                "kind": "external_event",
+                "perception": {
+                    "digital_body_hints": {
+                        "account_state": "logged_out",
+                    }
+                },
+            },
+            digital_body_state={},
+            session_context={},
+        )
+        self.assertIn("当前数字环境", brief)
+        self.assertIn("account_login", brief)
+
+    def test_runtime_brief_can_surface_expiring_session_lifecycle(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "native_only",
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_continuity": "expiring",
+                    "session_expires_in_s": 600,
+                    "session_recovery_mode": "refresh_session",
+                },
+                "resource_state": {},
+            },
+            session_context={},
+        )
+        self.assertIn("600秒", brief)
+        self.assertIn("会话", brief)
+        self.assertIn("刷新", brief)
+
+    def test_runtime_brief_can_surface_expired_session_recovery_path(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "browser_session": "expired",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                }
+            },
+        )
+        self.assertIn("会话", brief)
+        self.assertIn("过期", brief)
+        self.assertIn("刷新", brief)
+
+    def test_runtime_brief_can_surface_detached_artifact_reacquisition_path(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "plan.md",
+                    "artifact_reacquisition_mode": "reopen_file",
+                }
+            },
+        )
+        self.assertIn("plan.md", brief)
+        self.assertIn("重新打开", brief)
 
     def test_runtime_behavior_surfaces_self_rhythm_bias_without_explicit_carryover(self):
         world_model_state = {
@@ -4460,6 +5257,13 @@ class WorldModelResidueTests(unittest.TestCase):
                 "attention_target": "self_then_counterpart",
                 "nonverbal_signal": "resume_task",
                 "channel": "none",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "primary_origin": "counterpart_request",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                },
             },
             world_model_state={
                 "self_activity_momentum": 0.74,
@@ -4479,6 +5283,10 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(plan.get("primary_motive") or ""), "preserve_self_rhythm")
         self.assertEqual(str(plan.get("motive_tension") or ""), "self_rhythm_vs_contact")
         self.assertIn("自己的节奏", str(plan.get("goal_frame") or ""))
+        embodied_context = plan.get("embodied_context") if isinstance(plan.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
 
     def test_behavior_agenda_preserves_carryover_fields(self):
         plan = {
@@ -4499,6 +5307,13 @@ class WorldModelResidueTests(unittest.TestCase):
             "presence_residue": 0.34,
             "ambient_resonance": 0.28,
             "self_activity_momentum": 0.74,
+            "embodied_context": {
+                "kind": "access_request_pending",
+                "primary_status": "awaiting_approval",
+                "primary_origin": "counterpart_request",
+                "requested_access": ["workspace_write", "human_approval"],
+                "requested_help": True,
+            },
         }
         entry = _behavior_agenda_entry_from_plan({"kind": "time_idle"}, plan)
         self.assertIsNotNone(entry)
@@ -4516,6 +5331,9 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertAlmostEqual(float(agenda_entry.get("presence_residue") or 0.0), 0.34, places=3)
         self.assertAlmostEqual(float(agenda_entry.get("ambient_resonance") or 0.0), 0.28, places=3)
         self.assertAlmostEqual(float(agenda_entry.get("self_activity_momentum") or 0.0), 0.74, places=3)
+        embodied_context = agenda_entry.get("embodied_context") if isinstance(agenda_entry.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
 
     def test_promoted_self_activity_event_keeps_carryover_hints(self):
         promoted = _promote_due_behavior_plan_event(
@@ -4536,6 +5354,13 @@ class WorldModelResidueTests(unittest.TestCase):
                 "presence_residue": 0.34,
                 "ambient_resonance": 0.28,
                 "self_activity_momentum": 0.74,
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "primary_origin": "counterpart_request",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                },
             },
         )
         self.assertEqual(str(promoted.get("kind") or ""), "self_activity_state")
@@ -4557,6 +5382,10 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertAlmostEqual(float(normalized.get("presence_residue") or 0.0), 0.34, places=3)
         self.assertAlmostEqual(float(normalized.get("ambient_resonance") or 0.0), 0.28, places=3)
         self.assertAlmostEqual(float(normalized.get("self_activity_momentum") or 0.0), 0.74, places=3)
+        embodied_context = normalized.get("embodied_context") if isinstance(normalized.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
 
     def test_promoted_self_activity_small_opening_keeps_break_window_tags(self):
         promoted = _promote_due_behavior_plan_event(
@@ -4829,6 +5658,23 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertLess(float(carryover.get("strength") or 0.0), 0.32)
         hint = _compact_interaction_carryover_hint(carryover)
         self.assertIn("中间虽然已经隔了几句", hint)
+
+    def test_compact_interaction_carryover_hint_can_surface_embodied_access_pending(self):
+        hint = _compact_interaction_carryover_hint(
+            {
+                "carryover_mode": "small_opening",
+                "strength": 0.44,
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "requested_access": ["workspace_write"],
+                    "requested_help": True,
+                },
+            }
+        )
+        self.assertIn("workspace_write", hint)
+        self.assertIn("入口还没放开", hint)
+        self.assertIn("不是对对方的态度变化", hint)
 
     def test_recent_interaction_carryover_can_reuse_task_window_with_decay(self):
         carryover = _recent_interaction_carryover(
@@ -5389,6 +6235,13 @@ class WorldModelResidueTests(unittest.TestCase):
                         "primary_motive": "preserve_self_rhythm",
                         "motive_tension": "self_rhythm_vs_contact",
                         "goal_frame": "先把窗口按住，不急着立刻往前推。",
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "summary": "那道入口还在等批准。",
+                            "requested_access": ["workspace_write", "human_approval"],
+                            "requested_help": True,
+                            "primary_status": "awaiting_approval",
+                        },
                     }
                 }
             ],
@@ -5417,6 +6270,11 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(carryover.get("source_action_target") or ""), "hold_own_rhythm")
         self.assertEqual(str(carryover.get("source_primary_motive") or ""), "preserve_self_rhythm")
         self.assertIn("persisted_proactive_history", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:access_request_pending", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:requested_help", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
         self.assertIn("自己的节奏", str(carryover.get("note") or ""))
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.45)
 
@@ -6719,6 +7577,13 @@ class WorldModelResidueTests(unittest.TestCase):
                     "presence_residue": 0.26,
                     "ambient_resonance": 0.12,
                     "self_activity_momentum": 0.68,
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "primary_status": "awaiting_approval",
+                        "primary_origin": "counterpart_request",
+                        "requested_access": ["workspace_write", "human_approval"],
+                        "requested_help": True,
+                    },
                 }
             ],
             counterpart_assessment={
@@ -6733,6 +7598,43 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(residue.get("carryover_mode") or ""), "own_rhythm")
         self.assertGreaterEqual(float(residue.get("carryover_strength") or 0.0), 0.6)
         self.assertEqual(str(residue.get("counterpart_scene_bias") or ""), "busy_not_disrespectful")
+        embodied_context = residue.get("embodied_context") if isinstance(residue.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
+
+    def test_agenda_lifecycle_consequence_keeps_embodied_context_as_body_continuity(self):
+        consequence = derive_agenda_lifecycle_consequence(
+            agenda_lifecycle_residue={
+                "kind": "released_to_self_activity",
+                "source_event_kind": "scheduled_life_due",
+                "trigger_family": "life_window",
+                "carryover_mode": "own_rhythm",
+                "carryover_strength": 0.63,
+                "relationship_weather": "warm_residue",
+                "hold_count": 2,
+                "presence_residue": 0.32,
+                "ambient_resonance": 0.18,
+                "self_activity_momentum": 0.74,
+                "own_rhythm_bias": 0.70,
+                "recontact_cooldown": 0.46,
+                "counterpart_scene_bias": "busy_not_disrespectful",
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "primary_origin": "counterpart_request",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                },
+            }
+        )
+        self.assertEqual(str(consequence.get("kind") or ""), "released_to_self_activity")
+        self.assertEqual(str(consequence.get("primary_motive") or ""), "preserve_self_rhythm")
+        self.assertEqual(str(consequence.get("counterpart_scene_bias") or ""), "busy_not_disrespectful")
+        self.assertIn("自己的节奏", str(consequence.get("summary") or ""))
+        embodied_context = consequence.get("embodied_context") if isinstance(consequence.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
 
     def test_behavior_agenda_lifecycle_residue_carries_long_horizon_lineage(self):
         event, agenda, residue = _promote_due_behavior_agenda_event_with_residue(
@@ -6887,6 +7789,12 @@ class WorldModelResidueTests(unittest.TestCase):
                 "source_tags": ["agenda_lifecycle", "held"],
                 "idle_minutes": 28,
                 "created_at": 1,
+                "embodied_context": {
+                    "kind": "access_request_pending",
+                    "primary_status": "awaiting_approval",
+                    "requested_access": ["workspace_write", "human_approval"],
+                    "requested_help": True,
+                },
             },
             prior_counterpart_assessment={
                 "stance": "watchful",
@@ -6900,6 +7808,87 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertEqual(str(carryover.get("source_event_kind") or ""), "agenda_lifecycle:held")
         self.assertEqual(str(carryover.get("carryover_mode") or ""), "own_rhythm")
         self.assertGreaterEqual(float(carryover.get("strength") or 0.0), 0.5)
+        self.assertIn("bodyfx:access_request_pending", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
+
+    def test_hydrate_retrieved_agenda_lifecycle_residue_preserves_embodied_context(self):
+        residue = _hydrate_retrieved_agenda_lifecycle_residue(
+            retrieved={
+                "agenda_lifecycle_traces": [
+                    {
+                        "namespace": "agenda_lifecycle",
+                        "content": {
+                            "after_summary": "这次先把窗口按住，没有顺势往前推进。",
+                            "lifecycle_kind": "held",
+                            "source_event_kind": "time_idle",
+                            "trigger_family": "life_window",
+                            "carryover_mode": "own_rhythm",
+                            "carryover_strength": 0.58,
+                            "relationship_weather": "warm_residue",
+                            "source_tags": ["agenda_lifecycle", "held"],
+                            "embodied_context": {
+                                "kind": "access_request_pending",
+                                "primary_status": "awaiting_approval",
+                                "requested_access": ["workspace_write", "human_approval"],
+                                "requested_help": True,
+                            },
+                        },
+                    }
+                ]
+            }
+        )
+        self.assertEqual(str(residue.get("kind") or ""), "held")
+        self.assertEqual(str(residue.get("carryover_mode") or ""), "own_rhythm")
+        self.assertIn("bodyfx:access_request_pending", residue.get("source_tags") or [])
+        embodied_context = residue.get("embodied_context") if isinstance(residue.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
+        self.assertIn("workspace_write", str(residue.get("note") or ""))
+        self.assertIn("入口还没放开", str(residue.get("note") or ""))
+
+    def test_retrieved_behavior_trace_bridge_preserves_embodied_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "behavior_reactivation_traces": [
+                    {
+                        "namespace": "behavior_reactivation",
+                        "content": {
+                            "after_summary": "之前那条没走完的动作线又被接了回来。",
+                            "source_plan_kind": "deferred_checkin",
+                            "current_plan_kind": "deferred_checkin",
+                            "trigger_family": "life_window",
+                            "carryover_mode": "life_window",
+                            "carryover_strength": 0.54,
+                            "relationship_weather": "warm_residue",
+                            "attention_target": "counterpart_state",
+                            "nonverbal_signal": "quiet_glance",
+                            "presence_residue": 0.26,
+                            "ambient_resonance": 0.12,
+                            "self_activity_momentum": 0.18,
+                            "embodied_context": {
+                                "kind": "access_request_pending",
+                                "primary_status": "awaiting_approval",
+                                "requested_access": ["workspace_write", "human_approval"],
+                                "requested_help": True,
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "我回来了。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "life_window")
+        self.assertIn("bodyfx:access_request_pending", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:requested_help", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_request_pending")
+        self.assertEqual(str(embodied_context.get("primary_status") or ""), "awaiting_approval")
+        self.assertIn("workspace_write", embodied_context.get("requested_access") or [])
+        self.assertIn("workspace_write", str(carryover.get("note") or ""))
+        self.assertIn("入口还没放开", str(carryover.get("note") or ""))
 
     def test_apply_agenda_lifecycle_residue_to_runtime_state_biases_world_and_counterpart(self):
         world, assessment = _apply_agenda_lifecycle_residue_to_runtime_state(

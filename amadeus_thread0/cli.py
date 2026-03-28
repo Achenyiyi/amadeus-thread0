@@ -45,6 +45,8 @@ from .config import (
 )
 from .utils.cli_views import (
     build_evolution_summary_line,
+    render_action_packet_cli_text,
+    render_autonomy_cli_text,
     render_behavior_queue_cli_text,
     render_counterpart_assessment_cli_text,
     render_proactive_continuity_cli_text,
@@ -301,6 +303,7 @@ def _print_event_round_payload(
     current_event = data.get("current_event") if isinstance(data.get("current_event"), dict) else {}
     turn_summary = data.get("turn_summary") if isinstance(data.get("turn_summary"), dict) else {}
     turn_appraisal = data.get("turn_appraisal") if isinstance(data.get("turn_appraisal"), dict) else {}
+    autonomy = data.get("autonomy") if isinstance(data.get("autonomy"), dict) else {}
     final_text = str(data.get("final_text") or "").strip()
     emotion_label = str(data.get("emotion_label") or "neutral").strip() or "neutral"
 
@@ -312,6 +315,8 @@ def _print_event_round_payload(
     )
     _print_event_evolution_summary(turn_summary, detailed=True)
     _print_turn_appraisal({"turn_appraisal": turn_appraisal})
+    if autonomy:
+        print("\n[AUTONOMY]\n" + json.dumps(autonomy, ensure_ascii=False, indent=2))
     if behavior_plan:
         print("\n[BEHAVIOR_PLAN]\n" + json.dumps(behavior_plan, ensure_ascii=False, indent=2))
     if current_event:
@@ -608,6 +613,8 @@ def main():
             print("\n[COMMITMENTS]\n" + json.dumps(worldline_view.get("commitments", []), ensure_ascii=False, indent=2))
             print("\n[CONFLICT_REPAIR]\n" + json.dumps(worldline_view.get("conflict_repair", []), ensure_ascii=False, indent=2))
             print("\n[UNRESOLVED_TENSIONS]\n" + json.dumps(worldline_view.get("unresolved_tensions", []), ensure_ascii=False, indent=2))
+            print("\n[AUTONOMY]\n" + render_autonomy_cli_text(worldline_view.get("autonomy", {})))
+            print("\n[ACTION_PACKETS]\n" + render_action_packet_cli_text((worldline_view.get("autonomy") or {}).get("action_packets", []), limit=6))
             print("\n[PROACTIVE_CONTINUITY_HISTORY]")
             print(render_proactive_continuity_cli_text(worldline_view.get("proactive_continuity_history", []), limit=8))
             print(
@@ -637,6 +644,8 @@ def main():
                 print(f"- #{it.get('id')} {it.get('summary')}")
             print("\n[COUNTERPART_ASSESSMENT_HISTORY]")
             print(render_counterpart_assessment_cli_text(bond_view.get("counterpart_assessment_history", []), limit=8))
+            print("\n[AUTONOMY]\n" + render_autonomy_cli_text(bond_view.get("autonomy", {})))
+            print("\n[ACTION_PACKETS]\n" + render_action_packet_cli_text((bond_view.get("autonomy") or {}).get("action_packets", []), limit=6))
             print("\n[PROACTIVE_CONTINUITY_HISTORY]")
             print(render_proactive_continuity_cli_text(bond_view.get("proactive_continuity_history", []), limit=8))
             continue
@@ -681,6 +690,7 @@ def main():
             print("\n[INTERACTION_CARRYOVER]\n" + json.dumps(persona_view.get("interaction_carryover", {}), ensure_ascii=False, indent=2))
             print("\n[AGENDA_LIFECYCLE_RESIDUE]\n" + json.dumps(persona_view.get("agenda_lifecycle_residue", {}), ensure_ascii=False, indent=2))
             print("\n[BEHAVIOR_PLAN]\n" + json.dumps(persona_view.get("behavior_plan", {}), ensure_ascii=False, indent=2))
+            print("\n[AUTONOMY]\n" + json.dumps(persona_view.get("autonomy", {}), ensure_ascii=False, indent=2))
             queue_vals = persona_view.get("behavior_queue", [])
             _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
@@ -699,6 +709,8 @@ def main():
             queue_vals = queue_view.get("behavior_queue", [])
             _print_behavior_queue_summary(queue_vals)
             print("\n[BEHAVIOR_QUEUE]\n" + json.dumps(queue_vals, ensure_ascii=False, indent=2))
+            print("\n[AUTONOMY]\n" + render_autonomy_cli_text(queue_view.get("autonomy", {})))
+            print("\n[ACTION_PACKETS]\n" + render_action_packet_cli_text((queue_view.get("autonomy") or {}).get("action_packets", []), limit=6))
             continue
 
         if user.lower() in {"/events", "/event_list"}:
@@ -1376,6 +1388,9 @@ def main():
         if _cli_show_turn_summary_enabled():
             turn_summary = turn_response.get("turn_summary", {})
             _print_event_evolution_summary(turn_summary, detailed=False, label="TURN_EVOLUTION")
+        autonomy = turn_response.get("autonomy") if isinstance(turn_response.get("autonomy"), dict) else {}
+        if autonomy:
+            print("[TURN_AUTONOMY] " + render_autonomy_cli_text(autonomy))
 
         # TTS 收尾：必须等“工具审批/执行结束后的最终回复”出来再 finish，否则有工具调用时会没声音。
         if tts_enabled and rt is not None:

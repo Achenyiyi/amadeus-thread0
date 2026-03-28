@@ -136,6 +136,26 @@ class DailySurfaceGatingTests(unittest.TestCase):
             )
         )
 
+    def test_should_accept_natural_dialog_rewrite_rejects_embodied_continuity_drop(self):
+        self.assertFalse(
+            _should_accept_natural_dialog_rewrite(
+                aligned="还卡在 workspace_write 这一步，我没法装作已经做完。",
+                rewritten="这事我会接着处理，不过现在先别催我。",
+                current_gap=0.18,
+                rewritten_gap=0.12,
+                effective_targeted_flags=["overexplained"],
+                rewritten_issues=["overexplained"],
+                rewritten_gap_flags=[],
+                current_event={"kind": "user_utterance"},
+                behavior_action={
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "requested_access": ["workspace_write", "human_approval"],
+                    }
+                },
+            )
+        )
+
     def test_support_scenes_count_as_daily_surface(self):
         prompts = [
             "今天压力有点大",
@@ -1506,6 +1526,60 @@ class DailySurfaceGatingTests(unittest.TestCase):
             ],
         )
 
+    def test_self_narrative_anchor_lines_surface_embodied_prompt_lines_before_generic_identity_lines(self):
+        anchors = _self_narrative_anchor_lines(
+            {
+                "boundary_residue": 0.74,
+                "agency_drive": 0.82,
+                "presence_carry": 0.66,
+                "embodied_snapshot": {
+                    "boundary_style": {
+                        "kind": "access_request_pending",
+                        "requested_access": ["workspace_write"],
+                        "missing_access": ["cookies"],
+                        "granted_toolsets": [],
+                        "active_tools": [],
+                        "support_mass": 0.88,
+                    },
+                    "agency_style": {
+                        "kind": "access_request_pending",
+                        "requested_access": ["workspace_write"],
+                        "missing_access": ["cookies"],
+                        "granted_toolsets": [],
+                        "active_tools": [],
+                        "support_mass": 0.92,
+                    },
+                    "presence_style": {
+                        "kind": "access_request_pending",
+                        "requested_access": ["workspace_write"],
+                        "missing_access": ["cookies"],
+                        "granted_toolsets": [],
+                        "active_tools": [],
+                        "support_mass": 0.84,
+                    },
+                },
+                "identity_prompt_lines": [
+                    "你会把自己放在和冈部伦太郎平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+                ],
+            },
+            evolution_state={"self_coherence": 0.78},
+            persona_core={
+                "evolution_contract": {
+                    "mutable_axes": ["emotion", "long_term_self_narratives"],
+                    "immutable_axes": ["identity"],
+                }
+            },
+            counterpart_name="冈部伦太郎",
+        )
+        self.assertGreaterEqual(len(anchors), 3)
+        self.assertIn("workspace_write", anchors[0])
+        self.assertIn("申请或换路", anchors[0])
+        self.assertIn("cookies", anchors[1])
+        self.assertEqual(
+            anchors[2],
+            "你会把自己放在和冈部伦太郎平等互动的位置上，而不是为了迎合气氛就退回成工具。",
+        )
+
     def test_relationship_prompt_includes_self_narrative_anchor_block(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -1546,6 +1620,94 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("当前自我连续性", prompt)
         self.assertIn("平等互动的主体", prompt)
         self.assertIn("不是每轮都从零开始", prompt)
+
+    def test_prompt_includes_current_digital_body_state_even_without_carryover(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.24},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.72, "reciprocity": 0.74},
+                    "behavior_policy": {"warmth": 0.58, "approach_vs_withdraw": 0.56, "self_directedness": 0.40},
+                    "behavior_action": {},
+                    "digital_body_state": {
+                        "active_surface": "dialogue",
+                        "access_state": {
+                            "mode": "approval_pending",
+                            "missing_access": ["cookies"],
+                            "requestable_access": ["cookies", "human_approval"],
+                            "cookie_state": "missing",
+                            "filesystem_state": "read_only",
+                            "pending_approval_count": 1,
+                        },
+                        "resource_state": {
+                            "pending_approval_count": 1,
+                        },
+                    },
+                    "session_context": {},
+                    "interaction_carryover": {},
+                    "world_model_state": {"presence_residue": 0.12},
+                    "semantic_narrative_profile": {},
+                    "evolution_state": {},
+                    "relationship": {"stage": "warming", "notes": "慢慢热起来。"},
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "natural"},
+                    "recent_events": [],
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "evidence_pack": [],
+                }
+                prompt = _build_task_prompt(state, "你现在能做什么？", store)
+            finally:
+                store.close()
+        self.assertIn("当前数字环境", prompt)
+        self.assertIn("cookies", prompt)
+        self.assertIn("workspace_write", prompt)
+
+    def test_prompt_includes_current_event_digital_body_hints_without_body_or_session(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "natural",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.24},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.72, "reciprocity": 0.74},
+                    "behavior_policy": {"warmth": 0.58, "approach_vs_withdraw": 0.56, "self_directedness": 0.40},
+                    "behavior_action": {},
+                    "digital_body_state": {},
+                    "session_context": {},
+                    "interaction_carryover": {},
+                    "world_model_state": {"presence_residue": 0.12},
+                    "semantic_narrative_profile": {},
+                    "evolution_state": {},
+                    "relationship": {"stage": "warming", "notes": "慢慢热起来。"},
+                    "retrieved_context": {},
+                    "current_event": {
+                        "kind": "user_utterance",
+                        "response_style_hint": "natural",
+                        "digital_body_hints": {
+                            "cookie_state": "missing",
+                            "filesystem_state": "read_only",
+                        },
+                    },
+                    "recent_events": [],
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "evidence_pack": [],
+                }
+                prompt = _build_task_prompt(state, "你这边眼下还差什么入口？", store)
+            finally:
+                store.close()
+        self.assertIn("当前数字环境", prompt)
+        self.assertIn("cookies", prompt)
+        self.assertIn("workspace_write", prompt)
 
     def test_relationship_prompt_includes_selfhood_preference_block_for_own_rhythm_scene(self):
         with TemporaryDirectory() as td:
@@ -1624,6 +1786,26 @@ class DailySurfaceGatingTests(unittest.TestCase):
                     "counterpart_assessment": {"stance": "open", "respect_level": 0.7, "reciprocity": 0.68},
                     "behavior_policy": {"warmth": 0.44, "approach_vs_withdraw": 0.55},
                     "behavior_action": {"interaction_mode": "science_partner", "followup_intent": "active"},
+                    "digital_body_state": {
+                        "active_surface": "dialogue",
+                        "access_state": {
+                            "mode": "approval_pending",
+                            "missing_access": ["cookies"],
+                            "requestable_access": ["cookies", "human_approval"],
+                            "cookie_state": "missing",
+                            "filesystem_state": "read_only",
+                            "pending_approval_count": 1,
+                        },
+                        "resource_state": {
+                            "pending_approval_count": 1,
+                        },
+                    },
+                    "session_context": {
+                        "digital_body_hints": {
+                            "cookie_state": "missing",
+                            "filesystem_state": "read_only",
+                        }
+                    },
                     "pending_user_goal": "",
                     "worldline_focus": [],
                     "retrieved_context": {},
@@ -1634,6 +1816,9 @@ class DailySurfaceGatingTests(unittest.TestCase):
             finally:
                 store.close()
         self.assertIn("state_snapshot=", prompt)
+        self.assertIn("digital_body_state", prompt)
+        self.assertIn("cookies", prompt)
+        self.assertIn("workspace_write", prompt)
         self.assertNotIn("运行态摘记", prompt)
 
     def test_light_dialog_rewrite_notes_cover_overexplained_smalltalk(self):
@@ -1696,6 +1881,120 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("event_pushy_directive", issues)
         self.assertIn("technical_self_activity", issues)
         self.assertIn("event_window_task_reframe", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_access_constraints_in_event_windows(self):
+        event = {
+            "kind": "scheduled_life_due",
+            "tags": ["scheduled_due", "shared_activity_window", "offer_window", "from_own_rhythm"],
+        }
+        samples = [
+            "那边流程我已经摸到一半了，可账号还没注册好，后面暂时走不动。",
+            "任务我知道怎么做，但权限没开之前我现在不能碰。",
+            "那边进度我心里有数，只是登录入口还没放开。",
+        ]
+        for text in samples:
+            with self.subTest(text=text):
+                issues = _dialogue_surface_issues(
+                    "",
+                    text,
+                    response_style_hint="natural",
+                    science_mode=False,
+                    current_event=event,
+                )
+                self.assertNotIn("event_window_task_reframe", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_connection_state_in_light_smalltalk(self):
+        samples = [
+            "我在，不过连接还没建立，所以那边我现在还进不去。",
+            "我在，登录连接没起来前我就只能先待在门外。",
+            "这边连接还没打通，cookie 也没到手，所以我现在最多只能先看。",
+        ]
+        for text in samples:
+            with self.subTest(text=text):
+                issues = _dialogue_surface_issues(
+                    "你在吗" if text.startswith("我在") else "最近怎么样",
+                    text,
+                    response_style_hint="casual" if text.startswith("我在") else "natural",
+                    science_mode=False,
+                )
+                self.assertNotIn("meta_self_explainer", issues)
+                self.assertNotIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_connection_state_in_support_turn(self):
+        issues = _dialogue_surface_issues(
+            "今天有点累",
+            "你先缓一缓。那边连接还没建立，我也没法替你直接进去，但我还在。",
+            response_style_hint="natural",
+            science_mode=False,
+        )
+        self.assertNotIn("meta_self_explainer", issues)
+        self.assertNotIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_still_flag_relational_connection_metaphor_in_light_smalltalk(self):
+        issues = _dialogue_surface_issues(
+            "你在吗",
+            "我在，连接没断。我只是现在还不想装得太轻松。",
+            response_style_hint="casual",
+            science_mode=False,
+        )
+        self.assertIn("meta_self_explainer", issues)
+        self.assertIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_everyday_runtime_notes(self):
+        samples = [
+            ("你在吗", "我在，不过那边后台登录还没过，所以我现在还进不去。", "casual"),
+            ("你在吗", "我在，浏览器那边先给我弹了个报错，所以入口还没开。", "casual"),
+            ("最近怎么样", "这边权限还没批下来，我只在后台看了一眼，还不能真的动。", "natural"),
+        ]
+        for user_text, answer, hint in samples:
+            with self.subTest(answer=answer):
+                issues = _dialogue_surface_issues(
+                    user_text,
+                    answer,
+                    response_style_hint=hint,
+                    science_mode=False,
+                )
+                self.assertNotIn("technical_self_activity", issues)
+
+    def test_dialogue_surface_issues_still_flag_stagey_technical_scene_with_blocked_terms(self):
+        issues = _dialogue_surface_issues(
+            "你在吗",
+            "我在，不过实验台一样的后台风扇声还没停，像要出事前的安静。",
+            response_style_hint="casual",
+            science_mode=False,
+        )
+        self.assertIn("technical_self_activity", issues)
+        self.assertIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_drop_connection_state(self):
+        issues = _dialogue_surface_issues(
+            "你在吗",
+            "我在，不过那边像突然掉线了一样，我刚伸过去就断了。",
+            response_style_hint="casual",
+            science_mode=False,
+        )
+        self.assertNotIn("meta_self_explainer", issues)
+        self.assertNotIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_allow_embodied_not_online_state(self):
+        issues = _dialogue_surface_issues(
+            "你在吗",
+            "我在，页面那边一直没上线，所以现在还是进不去。",
+            response_style_hint="casual",
+            science_mode=False,
+        )
+        self.assertNotIn("meta_self_explainer", issues)
+        self.assertNotIn("support_scene_drift", issues)
+
+    def test_dialogue_surface_issues_still_flag_plain_self_status_drop_line(self):
+        issues = _dialogue_surface_issues(
+            "你在吗",
+            "我没掉线，也一直在线，你别自己吓自己。",
+            response_style_hint="casual",
+            science_mode=False,
+        )
+        self.assertIn("meta_self_explainer", issues)
+        self.assertIn("support_scene_drift", issues)
 
     def test_dialogue_surface_issues_flag_shared_window_technical_self_activity(self):
         issues = _dialogue_surface_issues(
@@ -6722,6 +7021,39 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("你对这句的当前判断", request_blob)
         self.assertIn("认真修补", request_blob)
         self.assertIn("别把这句写成已经彻底翻篇", request_blob)
+
+    def test_natural_dialog_rewrite_request_mentions_embodied_environment_continuity(self):
+        captured_requests: list[str] = []
+
+        def _fake_invoke(_model, messages):
+            captured_requests.append(str(messages[-1].content))
+            return SimpleNamespace(content="还卡在 workspace_write 这一步，我没法装作已经做完。")
+
+        with patch("amadeus_thread0.graph_parts.rewrite._invoke_model_with_retries", side_effect=_fake_invoke):
+            with patch("amadeus_thread0.graph_parts.rewrite._model", return_value=object()):
+                _rewrite_natural_dialog_answer(
+                    user_text="你这边现在到底卡在哪里？",
+                    draft_text="我会继续处理这件事。",
+                    rewrite_notes=["这句解释得太空了。"],
+                    response_style_hint="natural",
+                    science_mode=False,
+                    current_event={"kind": "user_utterance", "response_style_hint": "natural"},
+                    behavior_action={
+                        "interaction_mode": "companion_reply",
+                        "followup_intent": "soft",
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "requested_access": ["workspace_write", "human_approval"],
+                        },
+                    },
+                    counterpart_assessment={"stance": "open"},
+                    semantic_narrative_profile={"selfhood_integrity": 0.58},
+                    world_model_state={},
+                )
+        request_blob = "\n".join(captured_requests)
+        self.assertIn("workspace_write", request_blob)
+        self.assertIn("环境入口", request_blob)
+        self.assertIn("真实世界状态", request_blob)
 
     def test_natural_dialog_rewrite_request_mentions_previous_assistant_text_for_repetition(self):
         captured_requests: list[str] = []

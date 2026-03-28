@@ -43,6 +43,25 @@ class ToolApprovalPolicyTests(unittest.TestCase):
             )
         )
 
+    def test_should_auto_resume_memory_approval_ignores_proposal_id_metadata(self):
+        payload = {
+            "source": "memory",
+            "tool_calls": [
+                {
+                    "name": "set_profile",
+                    "proposal_id": "ap-memory-1",
+                    "args": {"key": "nickname", "value": "助手"},
+                }
+            ],
+        }
+        self.assertTrue(
+            should_auto_resume_memory_approval(
+                payload,
+                user_facing_mode=True,
+                auto_approve_memory_writes=True,
+            )
+        )
+
     def test_needs_second_confirmation_for_risky_memory_updates(self):
         self.assertTrue(needs_second_confirmation("memory", "correct_profile", {"key": "timezone"}))
         self.assertTrue(needs_second_confirmation("memory", "set_profile", {"key": "likes", "mode": "merge"}))

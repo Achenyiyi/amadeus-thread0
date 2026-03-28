@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from .digital_body_runtime import embodied_context_has_signal, normalize_embodied_context
 from .state import AgendaLifecycleResiduePayload, BehaviorAgendaEntryPayload, EventPayload
 from .turn_events import _now_ts
 
@@ -246,6 +247,7 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
     carryover_mode = str(prior_behavior_plan.get("carryover_mode") or "").strip()
     carryover_strength = _clamp01(prior_behavior_plan.get("carryover_strength"), 0.0)
     relationship_weather = str(prior_behavior_plan.get("relationship_weather") or "").strip().lower()
+    embodied_context = normalize_embodied_context(prior_behavior_plan.get("embodied_context"))
     primary_motive = str(prior_behavior_plan.get("primary_motive") or "").strip()
     motive_tension = str(prior_behavior_plan.get("motive_tension") or "").strip()
     goal_frame = str(prior_behavior_plan.get("goal_frame") or "").strip()
@@ -366,6 +368,8 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "nonverbal_signal_hint": nonverbal_signal,
             }
         )
+        if embodied_context:
+            promoted["embodied_context"] = embodied_context
         return promoted
 
     effective_carryover_mode = carryover_mode or ("quiet_recontact" if trigger_family in {"observe", "light_checkin"} else "")
@@ -459,6 +463,8 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             "nonverbal_signal_hint": nonverbal_signal,
         }
     )
+    if embodied_context:
+        promoted["embodied_context"] = embodied_context
     return promoted
 
 
@@ -495,6 +501,7 @@ def _promote_due_behavior_action_event(
     attention_target_hint = str(prior_behavior_action.get("attention_target") or "").strip()
     nonverbal_signal_hint = str(prior_behavior_action.get("nonverbal_signal") or "").strip()
     relationship_weather = str(prior_behavior_action.get("relationship_weather") or "").strip().lower()
+    embodied_context = normalize_embodied_context(prior_behavior_action.get("embodied_context"))
     tags = event.get("tags") if isinstance(event.get("tags"), list) else []
     extra_tags: list[str] = []
     if trigger_family in {"shared_activity", "shared_activity_window"}:
@@ -551,6 +558,8 @@ def _promote_due_behavior_action_event(
             "nonverbal_signal_hint": nonverbal_signal_hint,
         }
     )
+    if embodied_context:
+        promoted["embodied_context"] = embodied_context
     return promoted
 
 
@@ -617,6 +626,9 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             "semantic_identity_gravity": round(_clamp01(entry.get("semantic_identity_gravity"), 0.0), 3),
             "long_term_axis_count": max(0, int(entry.get("long_term_axis_count") or 0)),
         }
+        embodied_context = normalize_embodied_context(entry.get("embodied_context"))
+        if embodied_context:
+            normalized["embodied_context"] = embodied_context
         items.append(normalized)
     items.sort(key=lambda item: (-float(item.get("priority") or 0.0), int(item.get("created_at") or 0), str(item.get("agenda_id") or "")))
     return items[: max(1, int(limit))]
@@ -872,7 +884,7 @@ def _behavior_agenda_entry_from_plan(
     kind = str(plan.get("kind") or "").strip()
     if kind not in QUEUEABLE_BEHAVIOR_PLAN_KINDS:
         return None
-    return {
+    agenda_entry: BehaviorAgendaEntryPayload = {
         "agenda_id": uuid.uuid4().hex[:12],
         "kind": kind,
         "target": str(plan.get("target") or "counterpart").strip() or "counterpart",
@@ -904,6 +916,10 @@ def _behavior_agenda_entry_from_plan(
             semantic_narrative_profile=semantic_narrative_profile,
         ),
     }
+    embodied_context = normalize_embodied_context(plan.get("embodied_context"))
+    if embodied_context:
+        agenda_entry["embodied_context"] = embodied_context
+    return agenda_entry
 
 
 def _behavior_agenda_signature(entry: dict[str, Any]) -> tuple[str, str, str]:
@@ -1527,7 +1543,7 @@ def _agenda_lifecycle_residue(
     else:
         note = "前面的窗口已经转成了这轮真正生效的行为余波。"
 
-    return {
+    residue: AgendaLifecycleResiduePayload = {
         "kind": kind,
         "source_event_kind": str(event.get("kind") or "time_idle").strip().lower() or "time_idle",
         "trigger_family": str(entry.get("trigger_family") or "").strip().lower(),
@@ -1574,6 +1590,14 @@ def _agenda_lifecycle_residue(
         "counterpart_boundary_delta": round(counterpart_boundary_delta, 3),
         "created_at": _now_ts(),
     }
+    embodied_context = normalize_embodied_context(
+        promoted_event.get("embodied_context")
+        if isinstance(promoted_event, dict) and embodied_context_has_signal(promoted_event.get("embodied_context"))
+        else entry.get("embodied_context")
+    )
+    if embodied_context:
+        residue["embodied_context"] = embodied_context
+    return residue
 
 
 def _promote_due_behavior_agenda_event_with_residue(

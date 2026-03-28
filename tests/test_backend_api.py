@@ -60,7 +60,32 @@ class FakeBackendSession:
         values = state_values if isinstance(state_values, dict) else {}
         recon = values.get("reconsolidation_snapshot") if isinstance(values.get("reconsolidation_snapshot"), dict) else {}
         consequence = recon.get("behavior_consequence") if isinstance(recon.get("behavior_consequence"), dict) else {}
+        behavior_action = (
+            dict(recon.get("behavior_action") or {})
+            if isinstance(recon.get("behavior_action"), dict) and recon.get("behavior_action")
+            else values.get("behavior_action")
+            if isinstance(values.get("behavior_action"), dict)
+            else {}
+        )
         counterpart = recon.get("counterpart") if isinstance(recon.get("counterpart"), dict) else {}
+        digital_body = values.get("digital_body_state") if isinstance(values.get("digital_body_state"), dict) else {}
+        access_state = digital_body.get("access_state") if isinstance(digital_body.get("access_state"), dict) else {}
+        resource_state = digital_body.get("resource_state") if isinstance(digital_body.get("resource_state"), dict) else {}
+        digital_body_consequence = (
+            values.get("digital_body_consequence")
+            if isinstance(values.get("digital_body_consequence"), dict)
+            else {}
+        )
+        if not digital_body_consequence and isinstance(recon.get("digital_body_consequence"), dict):
+            digital_body_consequence = dict(recon.get("digital_body_consequence") or {})
+        current_event = values.get("current_event") if isinstance(values.get("current_event"), dict) else {}
+        interaction_carryover = (
+            dict(recon.get("interaction_carryover") or {})
+            if isinstance(recon.get("interaction_carryover"), dict) and recon.get("interaction_carryover")
+            else values.get("interaction_carryover")
+            if isinstance(values.get("interaction_carryover"), dict)
+            else {}
+        )
         return {
             "relationship": {"stage": "warming"},
             "current_turn": {
@@ -69,7 +94,35 @@ class FakeBackendSession:
                 "counterpart_stance": str(counterpart.get("stance") or "").strip(),
                 "counterpart_scene": str(counterpart.get("scene") or "").strip(),
                 "behavior_consequence_kind": str(consequence.get("kind") or "").strip(),
+                "behavior_action_embodied_context": (
+                    dict(behavior_action.get("embodied_context") or {})
+                    if isinstance(behavior_action.get("embodied_context"), dict)
+                    else {}
+                ),
+                "digital_body_surface": str(digital_body.get("active_surface") or "").strip(),
+                "digital_body_access_mode": str(access_state.get("mode") or "").strip(),
+                "digital_body_pending_approval_count": int(access_state.get("pending_approval_count") or 0),
+                "digital_body_retry_after_s": int(access_state.get("retry_after_s") or 0),
+                "digital_body_cooldown_scope": str(access_state.get("cooldown_scope") or "").strip(),
+                "digital_body_session_continuity": str(access_state.get("session_continuity") or "").strip(),
+                "digital_body_session_expires_in_s": int(access_state.get("session_expires_in_s") or 0),
+                "digital_body_session_recovery_mode": str(access_state.get("session_recovery_mode") or "").strip(),
+                "digital_body_artifact_continuity": str(resource_state.get("artifact_continuity") or "").strip(),
+                "digital_body_active_artifact_kind": str(resource_state.get("active_artifact_kind") or "").strip(),
+                "digital_body_active_artifact_label": str(
+                    resource_state.get("active_artifact_label") or resource_state.get("active_artifact_ref") or ""
+                ).strip(),
+                "digital_body_artifact_reacquisition_mode": str(resource_state.get("artifact_reacquisition_mode") or "").strip(),
+                "digital_body_consequence_kind": str(digital_body_consequence.get("kind") or "").strip(),
+                "digital_body_consequence_summary": str(digital_body_consequence.get("summary") or "").strip(),
             },
+            "event_residue": {
+                "event_kind": str(current_event.get("kind") or "").strip(),
+                "digital_body_consequence": dict(digital_body_consequence),
+            },
+            "interaction_carryover": dict(interaction_carryover),
+            "digital_body": dict(digital_body),
+            "digital_body_consequence": dict(digital_body_consequence),
         }
 
     def extract_final_text(self, values, *, streamed_text=""):
@@ -248,6 +301,41 @@ class BackendApiTests(unittest.TestCase):
                 "evolution_state": {"self_coherence": 0.76, "agency_pressure": 0.42},
                 "behavior_action": {"interaction_mode": "checkin"},
                 "behavior_plan": {"kind": "small_opening"},
+                "autonomy_intent": {
+                    "mode": "queue_followthrough",
+                    "origin": "counterpart_request",
+                    "reason": "先回应这次靠近，再把后续的小窗口留着。",
+                    "confidence": 0.67,
+                    "continuity_weight": 0.58,
+                },
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["chat", "text"],
+                    "action_channels": ["language", "tooling", "structured_action"],
+                    "available_toolsets": ["search_web"],
+                    "active_tools": ["search_web"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "granted_toolsets": ["search_web"],
+                        "api_key_state": "present",
+                        "quota_state": "low",
+                    },
+                    "resource_state": {"action_packet_count": 1},
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-turn-1",
+                        "origin": "counterpart_request",
+                        "intent": "small_opening",
+                        "status": "queued",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "capability_steps": [],
+                        "expected_effect": "先回应，再留一个小窗口。",
+                        "writeback_ready": False,
+                    }
+                ],
+                "action_trace": [{"proposal_id": "ap-turn-1", "status": "queued", "event": "derived_from_behavior"}],
                 "reconsolidation_snapshot": {
                     "event_kind": "user_utterance",
                     "interaction_frame": "relationship",
@@ -264,6 +352,12 @@ class BackendApiTests(unittest.TestCase):
                     "agenda_lifecycle_consequence": {
                         "kind": "released_to_self_activity",
                         "carryover_mode": "own_rhythm",
+                    },
+                    "digital_body_consequence": {
+                        "kind": "embodied_growth",
+                        "summary": "这轮她把新的环境路径真正摸顺了。",
+                        "procedural_growth": True,
+                        "granted_toolsets": ["search_web"],
                     },
                 },
                 "current_event": {"kind": "idle"},
@@ -302,6 +396,25 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["evolution_state"]["self_coherence"], 0.76)
             self.assertEqual(event_response.payload["counterpart_assessment"]["scene"], "repair_attempt")
             self.assertIn("修复尝试", event_response.payload["counterpart_assessment"]["summary"])
+            self.assertEqual(event_response.payload["autonomy"]["intent"]["mode"], "queue_followthrough")
+            self.assertEqual(event_response.payload["autonomy"]["action_packets"][0]["proposal_id"], "ap-turn-1")
+            self.assertEqual(event_response.payload["digital_body"]["access_state"]["mode"], "tool_enabled")
+            self.assertEqual(event_response.payload["digital_body"]["access_state"]["api_key_state"], "present")
+            self.assertEqual(event_response.payload["digital_body"]["access_state"]["quota_state"], "low")
+            self.assertIn("tooling", event_response.payload["digital_body"]["action_channels"])
+            self.assertEqual(event_response.payload["digital_body_consequence"]["kind"], "embodied_growth")
+            self.assertTrue(bool(event_response.payload["digital_body_consequence"]["procedural_growth"]))
+            self.assertEqual(
+                event_response.payload["turn_summary"]["digital_body_consequence"]["kind"],
+                "embodied_growth",
+            )
+            self.assertEqual(
+                (
+                    (event_response.payload["turn_summary"].get("event_residue") or {}).get("digital_body_consequence")
+                    or {}
+                ).get("kind"),
+                "embodied_growth",
+            )
             event_profile = (
                 event_response.payload["counterpart_assessment"].get("assessment_profile")
                 if isinstance(event_response.payload["counterpart_assessment"].get("assessment_profile"), dict)
@@ -347,8 +460,171 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(turn_response.payload["agenda_lifecycle_residue"]["carryover_mode"], "own_rhythm")
             self.assertEqual(turn_response.payload["pending_utterance_fragment"], "unfinished thought")
             self.assertEqual(turn_response.payload["current_event"]["kind"], "idle")
+            self.assertEqual(turn_response.payload["autonomy"]["execution_trace"][0]["event"], "derived_from_behavior")
+            self.assertEqual(turn_response.payload["digital_body"]["active_surface"], "tooling")
+            self.assertEqual(turn_response.payload["digital_body"]["available_toolsets"], ["search_web"])
+            self.assertEqual(turn_response.payload["digital_body"]["access_state"]["api_key_state"], "present")
+            self.assertEqual(turn_response.payload["digital_body"]["access_state"]["quota_state"], "low")
+            self.assertEqual(turn_response.payload["digital_body_consequence"]["kind"], "embodied_growth")
+            self.assertEqual(
+                turn_response.payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                "embodied_growth",
+            )
+            self.assertEqual(
+                (
+                    (turn_response.payload["turn_summary"].get("event_residue") or {}).get("digital_body_consequence")
+                    or {}
+                ).get("kind"),
+                "embodied_growth",
+            )
             self.assertEqual(session.last_extract_args, (state_values, "ignored"))
             self.assertIs(session.last_summary_state, state_values)
+
+    def test_turn_and_event_responses_preserve_digital_body_cooldown_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "cooldown_gate",
+                    "perception_channels": ["chat", "text"],
+                    "action_channels": ["language", "cooldown_gate"],
+                    "world_surfaces": ["network"],
+                    "access_state": {
+                        "mode": "cooldown",
+                        "quota_state": "exhausted",
+                        "retry_after_s": 300,
+                        "cooldown_scope": "provider",
+                        "requestable_access": ["api_quota"],
+                        "missing_access": ["api_quota"],
+                    },
+                    "resource_state": {},
+                },
+                "reconsolidation_snapshot": {
+                    "digital_body_consequence": {
+                        "kind": "environmental_friction",
+                        "summary": "这轮留下的是上游服务的临时冷却。",
+                        "environmental_friction": True,
+                        "retry_after_s": 300,
+                        "cooldown_scope": "provider",
+                    }
+                },
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="稍后再试。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["access_state"]["mode"], "cooldown")
+                self.assertEqual(payload["digital_body"]["access_state"]["retry_after_s"], 300)
+                self.assertEqual(payload["digital_body"]["access_state"]["cooldown_scope"], "provider")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_retry_after_s"], 300)
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_cooldown_scope"], "provider")
+                self.assertEqual(payload["digital_body_consequence"]["retry_after_s"], 300)
+                self.assertEqual(payload["digital_body_consequence"]["cooldown_scope"], "provider")
+
+    def test_turn_and_event_responses_preserve_digital_body_session_lifecycle_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "dialogue",
+                    "perception_channels": ["chat", "text"],
+                    "action_channels": ["language"],
+                    "world_surfaces": ["browser"],
+                    "access_state": {
+                        "mode": "native_only",
+                        "browser_session": "present",
+                        "account_state": "logged_in",
+                        "cookie_state": "present",
+                        "session_continuity": "expiring",
+                        "session_expires_in_s": 600,
+                        "session_recovery_mode": "refresh_session",
+                    },
+                    "resource_state": {},
+                },
+                "reconsolidation_snapshot": {
+                    "digital_body_consequence": {
+                        "kind": "environmental_friction",
+                        "summary": "这轮留下的是会话连续性中断，需要刷新会话。",
+                        "environmental_friction": True,
+                        "session_continuity": "expired",
+                        "session_recovery_mode": "refresh_session",
+                    }
+                },
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="先刷新一下会话。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["access_state"]["session_continuity"], "expiring")
+                self.assertEqual(payload["digital_body"]["access_state"]["session_expires_in_s"], 600)
+                self.assertEqual(payload["digital_body"]["access_state"]["session_recovery_mode"], "refresh_session")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_session_continuity"], "expiring")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_session_expires_in_s"], 600)
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_session_recovery_mode"], "refresh_session")
+                self.assertEqual(payload["digital_body_consequence"]["session_continuity"], "expired")
+                self.assertEqual(payload["digital_body_consequence"]["session_recovery_mode"], "refresh_session")
+
+    def test_turn_and_event_responses_preserve_digital_body_artifact_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "dialogue",
+                    "perception_channels": ["chat", "text"],
+                    "action_channels": ["language"],
+                    "world_surfaces": ["filesystem"],
+                    "access_state": {
+                        "mode": "native_only",
+                    },
+                    "resource_state": {
+                        "artifact_continuity": "detached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "notes/plan.md",
+                        "active_artifact_label": "plan.md",
+                        "artifact_age_s": 7200,
+                        "artifact_reacquisition_mode": "reopen_file",
+                    },
+                },
+                "reconsolidation_snapshot": {
+                    "digital_body_consequence": {
+                        "kind": "environmental_friction",
+                        "summary": "这轮留下的是前面文件工作面的断开，需要重新打开文件。",
+                        "environmental_friction": True,
+                        "artifact_continuity": "detached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_label": "plan.md",
+                        "artifact_reacquisition_mode": "reopen_file",
+                    }
+                },
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="先把文件重新打开。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["artifact_continuity"], "detached")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "plan.md")
+                self.assertEqual(payload["digital_body"]["resource_state"]["artifact_reacquisition_mode"], "reopen_file")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_artifact_continuity"], "detached")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_active_artifact_kind"], "file")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_active_artifact_label"], "plan.md")
+                self.assertEqual(payload["turn_summary"]["current_turn"]["digital_body_artifact_reacquisition_mode"], "reopen_file")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_continuity"], "detached")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_kind"], "file")
+                self.assertEqual(payload["digital_body_consequence"]["active_artifact_label"], "plan.md")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_reacquisition_mode"], "reopen_file")
 
     def test_turn_response_prefers_graph_session_context_for_turn_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -423,6 +699,72 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(perception["delivery_mode"], "scheduled")
             self.assertFalse(perception["is_proactive"])
 
+    def test_turn_response_prefers_live_pending_approval_intent_over_stale_recon_intent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "autonomy_intent": {
+                    "mode": "queue_followthrough",
+                    "origin": "counterpart_request",
+                    "reason": "先守住边界和自我位置，再决定要不要继续靠近。",
+                    "primary_proposal_id": "ap-old",
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-pending-1",
+                        "origin": "motive_goal",
+                        "intent": "tool:write_diary",
+                        "status": "awaiting_approval",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "capability_steps": [
+                            {
+                                "kind": "tool_call",
+                                "name": "write_diary",
+                                "target": "",
+                                "status": "awaiting_approval",
+                                "requires_approval": True,
+                                "note": "",
+                            }
+                        ],
+                        "expected_effect": "",
+                        "result_summary": "",
+                        "writeback_ready": False,
+                        "tool_name": "write_diary",
+                    }
+                ],
+                "pending_action_proposal": {
+                    "proposal_id": "ap-pending-1",
+                    "origin": "motive_goal",
+                    "intent": "tool:write_diary",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "capability_steps": [],
+                    "expected_effect": "",
+                    "result_summary": "",
+                    "writeback_ready": False,
+                },
+                "current_event": {"kind": "user_utterance"},
+                "reconsolidation_snapshot": {
+                    "autonomy_intent": {
+                        "mode": "queue_followthrough",
+                        "origin": "counterpart_request",
+                        "reason": "先守住边界和自我位置，再决定要不要继续靠近。",
+                        "primary_proposal_id": "ap-old",
+                    }
+                },
+            }
+
+            response = api.build_turn_response(state_values=state_values, streamed_text="")
+
+            self.assertEqual(response.payload["autonomy"]["intent"]["mode"], "approval_pending")
+            self.assertEqual(response.payload["autonomy"]["intent"]["primary_proposal_id"], "ap-pending-1")
+            self.assertEqual(response.payload["autonomy"]["pending_approval"]["proposal_id"], "ap-pending-1")
+
     def test_turn_and_event_responses_include_current_turn_writeback_trace(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -436,6 +778,15 @@ class BackendApiTests(unittest.TestCase):
                         "target_id": "agency_style",
                         "after_summary": "她不会永远围着对方转。",
                         "source": "auto:passive_evolution_final",
+                        "behavior_consequence": {
+                            "embodied_context": {
+                                "kind": "access_request_pending",
+                                "summary": "这个改动还卡在审批口。",
+                                "requested_access": ["workspace_write"],
+                                "requested_help": True,
+                                "primary_status": "awaiting_approval",
+                            }
+                        },
                         "created_at": 531,
                     },
                     {
@@ -444,6 +795,14 @@ class BackendApiTests(unittest.TestCase):
                         "after_summary": "她有自己的节奏和靠近方式。",
                         "reason": "semantic_reconsolidation",
                         "source": "auto:passive_evolution_final",
+                        "interaction_carryover": {
+                            "embodied_context": {
+                                "kind": "environmental_friction",
+                                "summary": "浏览器环境还没准备好。",
+                                "missing_access": ["browser_session"],
+                                "environmental_friction": True,
+                            }
+                        },
                         "updated_at": 532,
                     },
                     {
@@ -531,6 +890,10 @@ class BackendApiTests(unittest.TestCase):
                 self.assertEqual(writeback["turn_started_at"], 530)
                 self.assertEqual(len(writeback["revision_traces"]), 2)
                 self.assertTrue(all(item["source"] == "auto:passive_evolution_final" for item in writeback["revision_traces"]))
+                self.assertEqual(writeback["revision_traces"][0]["embodied_context"]["kind"], "access_request_pending")
+                self.assertEqual(writeback["revision_traces"][0]["embodied_context"]["requested_access"], ["workspace_write"])
+                self.assertEqual(writeback["revision_traces"][1]["embodied_context"]["kind"], "environmental_friction")
+                self.assertEqual(writeback["revision_traces"][1]["embodied_context"]["missing_access"], ["browser_session"])
                 self.assertEqual([item["category"] for item in writeback["semantic_self_narratives"]], ["agency_style"])
                 self.assertEqual(writeback["semantic_self_narratives"][0]["text"], "她有自己的节奏和靠近方式。")
                 self.assertEqual(
@@ -654,6 +1017,13 @@ class BackendApiTests(unittest.TestCase):
                         "disclosure_posture": "measured",
                         "note": "顺着余温看一眼，但不立刻把距离拉近。",
                         "relationship_weather": "warm_residue",
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "summary": "她把动作推进到了审批门口。",
+                            "requested_access": ["workspace_write"],
+                            "requested_help": True,
+                            "primary_status": "awaiting_approval",
+                        },
                         "window_profile": {
                             "profile_type": "self_opening",
                             "event_kind": "self_activity_state",
@@ -688,6 +1058,13 @@ class BackendApiTests(unittest.TestCase):
                         "carryover_mode": "own_rhythm",
                         "relationship_weather": "warm_residue",
                         "note": "final carryover should win",
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "summary": "她把动作推进到了审批门口。",
+                            "requested_access": ["workspace_write"],
+                            "requested_help": True,
+                            "primary_status": "awaiting_approval",
+                        },
                     },
                 },
                 "current_event": {"kind": "self_activity_state", "event_frame": "idle continuation", "tags": []},
@@ -720,6 +1097,26 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(event_response.payload["interaction_carryover"]["source"], "reconsolidation")
             self.assertEqual(turn_response.payload["interaction_carryover"]["carryover_mode"], "own_rhythm")
             self.assertEqual(turn_response.payload["interaction_carryover"]["strength"], 0.53)
+            self.assertEqual(
+                (turn_response.payload["interaction_carryover"].get("embodied_context") or {}).get("kind"),
+                "access_request_pending",
+            )
+            self.assertEqual(
+                (
+                    (turn_response.payload["turn_summary"].get("interaction_carryover") or {}).get("embodied_context")
+                    or {}
+                ).get("kind"),
+                "access_request_pending",
+            )
+            self.assertEqual(
+                (
+                    turn_response.payload["turn_summary"]
+                    .get("current_turn", {})
+                    .get("behavior_action_embodied_context", {})
+                    .get("kind")
+                ),
+                "access_request_pending",
+            )
 
     def test_turn_and_event_responses_prefer_frozen_behavior_plan_with_context_only_signal(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -766,6 +1163,61 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(turn_response.payload["behavior_plan"]["carryover_strength"], 0.46)
             self.assertFalse(turn_response.payload["behavior_plan"]["allow_interrupt"])
             self.assertNotIn("kind", event_response.payload["behavior_plan"])
+
+    def test_turn_and_event_responses_preserve_embodied_only_behavior_payload_signals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "reconsolidation_snapshot": {
+                    "behavior_action": {
+                        "embodied_context": {
+                            "kind": "access_request_pending",
+                            "summary": "这一步还在等审批。",
+                            "requested_access": ["workspace_write"],
+                            "requested_help": True,
+                            "primary_status": "awaiting_approval",
+                        }
+                    },
+                    "behavior_plan": {
+                        "embodied_context": {
+                            "kind": "environmental_friction",
+                            "summary": "浏览器会话还没准备好。",
+                            "missing_access": ["browser_session"],
+                            "environmental_friction": True,
+                        }
+                    },
+                }
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我在。",
+            )
+            turn_response = api.build_turn_response(
+                state_values=state_values,
+                streamed_text="ignored",
+            )
+
+            for payload in (event_response.payload, turn_response.payload):
+                action_embodied = (
+                    payload["behavior_action"].get("embodied_context")
+                    if isinstance(payload.get("behavior_action"), dict)
+                    and isinstance(payload["behavior_action"].get("embodied_context"), dict)
+                    else {}
+                )
+                plan_embodied = (
+                    payload["behavior_plan"].get("embodied_context")
+                    if isinstance(payload.get("behavior_plan"), dict)
+                    and isinstance(payload["behavior_plan"].get("embodied_context"), dict)
+                    else {}
+                )
+                self.assertEqual(action_embodied.get("kind"), "access_request_pending")
+                self.assertEqual(action_embodied.get("requested_access"), ["workspace_write"])
+                self.assertEqual(plan_embodied.get("kind"), "environmental_friction")
+                self.assertEqual(plan_embodied.get("missing_access"), ["browser_session"])
 
     def test_turn_and_event_responses_derive_plan_from_frozen_action_before_live_plan(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -830,6 +1282,47 @@ class BackendApiTests(unittest.TestCase):
             self.assertNotIn("legacy_hint", event_response.payload["behavior_plan"])
             self.assertNotIn("legacy_hint", turn_response.payload["behavior_plan"])
             self.assertEqual(mock_derive.call_count, 2)
+
+    def test_turn_and_event_responses_reuse_carried_embodied_context_for_digital_body(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "current_event": {
+                    "kind": "user_utterance",
+                    "perception": {"channel": "chat", "modality": "text"},
+                },
+                "interaction_carryover": {
+                    "source": "reconsolidation",
+                    "carryover_mode": "own_rhythm",
+                    "strength": 0.53,
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "summary": "她把动作推进到了审批门口。",
+                        "requested_access": ["workspace_write"],
+                        "missing_access": ["workspace_write"],
+                        "requested_help": True,
+                        "primary_status": "awaiting_approval",
+                    },
+                },
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我在。",
+            )
+            turn_response = api.build_turn_response(
+                state_values=state_values,
+                streamed_text="ignored",
+            )
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["active_surface"], "approval_gate")
+                self.assertEqual(payload["digital_body"]["access_state"]["mode"], "approval_pending")
+                self.assertIn("workspace_write", payload["digital_body"]["access_state"]["missing_access"])
+                self.assertIn("human_approval", payload["digital_body"]["access_state"]["requestable_access"])
 
 
 if __name__ == "__main__":

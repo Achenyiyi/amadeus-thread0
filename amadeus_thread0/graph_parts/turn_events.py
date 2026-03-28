@@ -12,6 +12,7 @@ from ..evolution_engine import (
 )
 from ..memory_store import MemoryStore
 from .common import _now_ts as _common_now_ts, _sanitize_obj as _common_sanitize_obj
+from .digital_body_runtime import normalize_embodied_context
 from .perception import attach_perception_context
 from .postprocess import _has_any_marker
 from .retrieval import _commitment_priority, _record_value
@@ -212,6 +213,20 @@ def _normalize_event_override(
         payload["derived_from_plan_kind"] = str(raw.get("derived_from_plan_kind") or "").strip()
     if raw.get("trigger_family"):
         payload["trigger_family"] = str(raw.get("trigger_family") or "").strip()
+    top_level_hints = raw.get("digital_body_hints") if isinstance(raw.get("digital_body_hints"), dict) else {}
+    perception_hints = (
+        raw.get("perception", {}).get("digital_body_hints")
+        if isinstance(raw.get("perception"), dict) and isinstance(raw.get("perception", {}).get("digital_body_hints"), dict)
+        else {}
+    )
+    merged_hints = dict(perception_hints or {})
+    merged_hints.update(dict(top_level_hints or {}))
+    if merged_hints:
+        payload["digital_body_hints"] = merged_hints
+        if isinstance(raw.get("perception"), dict):
+            payload["perception"] = {
+                "digital_body_hints": dict(merged_hints),
+            }
     if "commitment_id" in raw:
         try:
             payload["commitment_id"] = int(raw.get("commitment_id") or 0)
@@ -256,6 +271,9 @@ def _normalize_event_override(
     nonverbal_signal_hint = str(raw.get("nonverbal_signal_hint") or "").strip()
     if nonverbal_signal_hint:
         payload["nonverbal_signal_hint"] = nonverbal_signal_hint
+    embodied_context = normalize_embodied_context(raw.get("embodied_context"))
+    if embodied_context:
+        payload["embodied_context"] = embodied_context
     return _sanitize_obj(
         attach_perception_context(
             payload,

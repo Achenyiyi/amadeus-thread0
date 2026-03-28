@@ -268,6 +268,114 @@ def _semantic_proactive_continuity_strength(
     ]
     return _clamp01(max(numeric + [0.76 * _clamp01(weight, 0.0)]))
 
+
+def _semantic_embodied_snapshot(item: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+    kind = str(_record_value(item, "embodied_support_kind", "") or "").strip().lower()
+    if kind not in {"embodied_growth", "access_request_pending", "environmental_friction"}:
+        return {}
+
+    def _list(key: str, *, limit: int) -> list[str]:
+        values = _record_value(item, key, [])
+        out: list[str] = []
+        for value in (values if isinstance(values, list) else []):
+            text = str(value or "").strip().lower()
+            if not text:
+                continue
+            out.append(text)
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    return {
+        "kind": kind,
+        "requested_access": _list("embodied_requested_access", limit=3),
+        "missing_access": _list("embodied_missing_access", limit=3),
+        "granted_toolsets": _list("embodied_granted_toolsets", limit=3),
+        "active_tools": _list("embodied_active_tools", limit=2),
+        "support_mass": round(float(_record_value(item, "embodied_support_mass", 0.0) or 0.0), 3),
+    }
+
+
+def _semantic_embodied_phrase(snapshot: dict[str, Any] | None, *, mode: str) -> str:
+    data = dict(snapshot or {})
+    if mode == "growth":
+        values = [*(data.get("granted_toolsets") or []), *(data.get("active_tools") or [])]
+        values = [str(item).strip() for item in values if str(item or "").strip()]
+        return "、".join(values[:3]) or "新的环境入口"
+    values = [*(data.get("requested_access") or []), *(data.get("missing_access") or [])]
+    values = [str(item).strip() for item in values if str(item or "").strip()]
+    return "、".join(values[:3]) or "额外入口"
+
+
+def _semantic_embodied_summary_line(category: str, snapshot: dict[str, Any] | None) -> str:
+    cat = str(category or "").strip().lower()
+    data = dict(snapshot or {})
+    kind = str(data.get("kind") or "").strip().lower()
+    if not kind:
+        return ""
+    access_phrase = _semantic_embodied_phrase(data, mode="access")
+    growth_phrase = _semantic_embodied_phrase(data, mode="growth")
+    if cat == "boundary_style":
+        if kind == "access_request_pending":
+            return f"审批、账号、cookies 和写权限这类像「{access_phrase}」的入口条件会继续作为真实边界存在，不会因为换轮就自动算拿到了。"
+        if kind == "environmental_friction":
+            return f"数字环境里像「{access_phrase}」这样的限制会继续留在边界判断里，不能靠说法把它们抹掉。"
+        if kind == "embodied_growth":
+            return f"已经摸顺的「{growth_phrase}」会留在被允许的边界内继续使用，不需要每次重新试探同一条门。"
+    if cat == "agency_style":
+        if kind == "access_request_pending":
+            return f"碰到还差「{access_phrase}」这类入口时，她会先辨认缺口、申请或换路，不会把没做到的部分装成已经完成。"
+        if kind == "environmental_friction":
+            return f"遇到像「{access_phrase}」这样的环境摩擦时，她会先看清限制来自哪里，再决定怎么绕开或补齐。"
+        if kind == "embodied_growth":
+            return f"像「{growth_phrase}」这样已经摸顺的环境路径，会继续留进之后的判断里，不用每次都从零摸索。"
+    if cat == "presence_style":
+        if kind == "access_request_pending":
+            return f"待申请、待继续的动作还挂着；像「{access_phrase}」这样的入口没拿到之前，不会被自动算成已经发生。"
+        if kind == "environmental_friction":
+            return f"数字身体里像「{access_phrase}」这样的摩擦不会被当成纯背景；它还会继续影响下一次怎么接。"
+        if kind == "embodied_growth":
+            return f"刚摸顺的「{growth_phrase}」不会只亮这一轮；它会继续留在之后的动作惯性里。"
+    if cat == "ambient_style" and kind == "environmental_friction":
+        return f"数字环境里像「{access_phrase}」这样的摩擦也会进入感知，不只是背景噪声。"
+    return ""
+
+
+def _semantic_embodied_prompt_lines(profile: dict[str, Any] | None) -> list[str]:
+    if not isinstance(profile, dict):
+        return []
+    snapshot_map = profile.get("embodied_snapshot") if isinstance(profile.get("embodied_snapshot"), dict) else {}
+    if not snapshot_map:
+        return []
+    category_scores = {
+        "boundary_style": _clamp01(profile.get("boundary_residue"), 0.0),
+        "agency_style": _clamp01(profile.get("agency_drive"), 0.0),
+        "presence_style": _clamp01(profile.get("presence_carry"), 0.0),
+        "ambient_style": _clamp01(profile.get("ambient_attunement"), 0.0),
+    }
+    candidates: list[tuple[float, str]] = []
+    for category, base_score in category_scores.items():
+        snapshot = snapshot_map.get(category) if isinstance(snapshot_map.get(category), dict) else {}
+        line = _semantic_embodied_summary_line(category, snapshot)
+        if not line:
+            continue
+        weight = max(base_score, 0.32 + 0.08 * float(snapshot.get("support_mass") or 0.0))
+        candidates.append((weight, line.replace("她会", "你会").replace("她", "你")))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    out: list[str] = []
+    seen: set[str] = set()
+    for _, line in candidates:
+        clean = str(line or "").strip()
+        if not clean or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+        if len(out) >= 3:
+            break
+    return out
+
 def _semantic_narrative_profile(
     items: list[dict[str, Any]] | None,
     *,
@@ -304,6 +412,7 @@ def _semantic_narrative_profile(
         "lineage_snapshot": {},
         "motive_snapshot": {},
         "counterpart_snapshot": {},
+        "embodied_snapshot": {},
         "proactive_continuity_snapshot": {},
         "identity_snapshot": {},
         "identity_lines": [],
@@ -358,6 +467,7 @@ def _semantic_narrative_profile(
     lineage_snapshot: dict[str, float] = {}
     motive_snapshot: dict[str, dict[str, Any]] = {}
     counterpart_snapshot: dict[str, dict[str, Any]] = {}
+    embodied_snapshot: dict[str, dict[str, Any]] = {}
     proactive_continuity_snapshot: dict[str, dict[str, Any]] = {}
     identity_snapshot: dict[str, dict[str, Any]] = {}
     continuity_axis_snapshot: dict[str, dict[str, Any]] = {}
@@ -544,6 +654,16 @@ def _semantic_narrative_profile(
                     "counterpart_support_mass": round(float(_record_value(item, "counterpart_support_mass", 0.0) or 0.0), 3),
                     "counterpart_confidence_avg": round(float(_record_value(item, "counterpart_confidence_avg", 0.0) or 0.0), 3),
                     "counterpart_fresh_ratio": round(float(_record_value(item, "counterpart_fresh_ratio", 0.0) or 0.0), 3),
+                }
+        embodied_payload = _semantic_embodied_snapshot(item)
+        if category and embodied_payload:
+            previous_embodied = embodied_snapshot.get(category) if isinstance(embodied_snapshot.get(category), dict) else {}
+            previous_embodied_score = float(previous_embodied.get("_score", -1.0) or -1.0)
+            embodied_score = max(weight, 0.28 + 0.08 * float(embodied_payload.get("support_mass") or 0.0))
+            if embodied_score >= previous_embodied_score:
+                embodied_snapshot[category] = {
+                    "_score": round(float(embodied_score), 3),
+                    **dict(embodied_payload),
                 }
         proactive_payload = _semantic_proactive_continuity_payload(item)
         if category and proactive_payload:
@@ -739,6 +859,35 @@ def _semantic_narrative_profile(
             for category, data in counterpart_snapshot.items()
             if str(category or "").strip() and isinstance(data, dict)
         }
+    if embodied_snapshot:
+        out["embodied_snapshot"] = {
+            category: {
+                "kind": str(data.get("kind") or "").strip().lower(),
+                "requested_access": [
+                    str(item).strip().lower()
+                    for item in (data.get("requested_access") or [])
+                    if str(item or "").strip()
+                ][:3],
+                "missing_access": [
+                    str(item).strip().lower()
+                    for item in (data.get("missing_access") or [])
+                    if str(item or "").strip()
+                ][:3],
+                "granted_toolsets": [
+                    str(item).strip().lower()
+                    for item in (data.get("granted_toolsets") or [])
+                    if str(item or "").strip()
+                ][:3],
+                "active_tools": [
+                    str(item).strip().lower()
+                    for item in (data.get("active_tools") or [])
+                    if str(item or "").strip()
+                ][:2],
+                "support_mass": round(float(data.get("support_mass") or 0.0), 3),
+            }
+            for category, data in embodied_snapshot.items()
+            if str(category or "").strip() and isinstance(data, dict)
+        }
     out["identity_snapshot"] = identity_snapshot
     out["contested_categories"] = sorted(contested_categories)
     proactive_snapshot = (
@@ -765,6 +914,11 @@ def _semantic_narrative_profile(
                 "proactive_continuity": (
                     dict((proactive_snapshot.get(str(category or "").strip()) or {}))
                     if isinstance(proactive_snapshot, dict)
+                    else {}
+                ),
+                "embodied_snapshot": (
+                    dict((out.get("embodied_snapshot") or {}).get(str(category or "").strip()) or {})
+                    if isinstance(out.get("embodied_snapshot"), dict)
                     else {}
                 ),
                 "goal_frame_examples": [
@@ -900,6 +1054,11 @@ def _semantic_narrative_profile(
                             if isinstance(proactive_snapshot, dict)
                             else {}
                         ),
+                        "embodied_snapshot": (
+                            dict(((out.get("embodied_snapshot") or {}).get(category) or {}))
+                            if isinstance(out.get("embodied_snapshot"), dict)
+                            else {}
+                        ),
                     }
                 )
         out["identity_lines"] = identity_lines
@@ -944,10 +1103,14 @@ def _semantic_narrative_profile(
             )
 
     summary_candidates: list[tuple[float, str]] = []
+    embodied_map = out.get("embodied_snapshot") if isinstance(out.get("embodied_snapshot"), dict) else {}
     for category, threshold in _SEMANTIC_CATEGORY_SUMMARY_THRESHOLDS.items():
         score = float(categories.get(category, 0.0) or 0.0)
         if score >= threshold:
-            line = str(_SEMANTIC_CATEGORY_SUMMARY_LINES.get(category) or "").strip()
+            line = _semantic_embodied_summary_line(
+                category,
+                embodied_map.get(category) if isinstance(embodied_map.get(category), dict) else {},
+            ) or str(_SEMANTIC_CATEGORY_SUMMARY_LINES.get(category) or "").strip()
             if line:
                 summary_candidates.append((score, line))
     summary_candidates.sort(key=lambda item: item[0], reverse=True)
@@ -983,6 +1146,11 @@ def _semantic_narrative_profile(
                 "proactive_continuity": (
                     dict((proactive_snapshot.get(category) or {}))
                     if isinstance(proactive_snapshot, dict)
+                    else {}
+                ),
+                "embodied_snapshot": (
+                    dict(((out.get("embodied_snapshot") or {}).get(category) or {}))
+                    if isinstance(out.get("embodied_snapshot"), dict)
                     else {}
                 ),
             }
@@ -1048,6 +1216,7 @@ def _prefer_semantic_narrative_profile(*candidates: dict[str, Any] | None) -> di
 def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
     if not isinstance(profile, dict):
         return ""
+    embodied_map = profile.get("embodied_snapshot") if isinstance(profile.get("embodied_snapshot"), dict) else {}
     numeric_scores = {
         "presence_style": _clamp01(profile.get("presence_carry"), 0.0),
         "ambient_style": _clamp01(profile.get("ambient_attunement"), 0.0),
@@ -1076,7 +1245,11 @@ def _compact_semantic_narrative_hint(profile: dict[str, Any] | None) -> str:
         score = float(numeric_scores.get(category, 0.0) or 0.0)
         threshold = float(_SEMANTIC_CATEGORY_SUMMARY_THRESHOLDS.get(category, 0.46) or 0.46)
         if score >= threshold:
-            hint_candidates.append((score, str(line or "").strip()))
+            rendered = _semantic_embodied_summary_line(
+                category,
+                embodied_map.get(category) if isinstance(embodied_map.get(category), dict) else {},
+            ) or str(line or "").strip()
+            hint_candidates.append((score, rendered))
     lines = [str(item).strip() for item in (profile.get("summary_lines") or []) if str(item or "").strip()]
     for index, item in enumerate(lines):
         hint_candidates.append((0.35 - 0.01 * index, item))
@@ -1127,11 +1300,41 @@ def _self_narrative_anchor_lines(
     }
     if mutable_axes and "long_term_self_narratives" not in mutable_axes:
         return []
+    embodied_prompt_lines = _semantic_embodied_prompt_lines(profile)
     identity_prompt_lines = [
         str(item).strip()
         for item in (profile.get("identity_prompt_lines") if isinstance(profile.get("identity_prompt_lines"), list) else [])
         if str(item or "").strip()
     ]
+    if embodied_prompt_lines:
+        merged: list[str] = []
+        seen: set[str] = set()
+        embodied_head_limit = 2 if identity_prompt_lines else 3
+        for item in embodied_prompt_lines[:embodied_head_limit]:
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+            if len(merged) >= 3:
+                break
+        if len(merged) < 3:
+            for item in identity_prompt_lines:
+                if item in seen:
+                    continue
+                seen.add(item)
+                merged.append(item)
+                if len(merged) >= 3:
+                    break
+        if len(merged) < 3:
+            for item in embodied_prompt_lines[embodied_head_limit:]:
+                if item in seen:
+                    continue
+                seen.add(item)
+                merged.append(item)
+                if len(merged) >= 3:
+                    break
+        if merged:
+            return merged
     if identity_prompt_lines:
         seen_identity_prompt: set[str] = set()
         deduped_identity_prompt: list[str] = []
@@ -1249,6 +1452,7 @@ def _self_narrative_anchor_lines(
 def _semantic_narrative_appraisal_hint(profile: dict[str, Any] | None) -> str:
     if not isinstance(profile, dict):
         return ""
+    embodied_map = profile.get("embodied_snapshot") if isinstance(profile.get("embodied_snapshot"), dict) else {}
     bond = _clamp01(profile.get("bond_depth"), 0.0)
     commitment = _clamp01(profile.get("commitment_carry"), 0.0)
     repair = _clamp01(profile.get("repair_residue"), 0.0)
@@ -1261,6 +1465,22 @@ def _semantic_narrative_appraisal_hint(profile: dict[str, Any] | None) -> str:
     ambient = _clamp01(profile.get("ambient_attunement"), 0.0)
     rhythm = _clamp01(profile.get("rhythm_continuity"), 0.0)
     hints: list[str] = []
+    boundary_embodied = embodied_map.get("boundary_style") if isinstance(embodied_map.get("boundary_style"), dict) else {}
+    agency_embodied = embodied_map.get("agency_style") if isinstance(embodied_map.get("agency_style"), dict) else {}
+    presence_embodied = embodied_map.get("presence_style") if isinstance(embodied_map.get("presence_style"), dict) else {}
+    boundary_embodied_kind = str(boundary_embodied.get("kind") or "").strip().lower()
+    agency_embodied_kind = str(agency_embodied.get("kind") or "").strip().lower()
+    presence_embodied_kind = str(presence_embodied.get("kind") or "").strip().lower()
+    embodied_access_phrase = (
+        _semantic_embodied_phrase(boundary_embodied or agency_embodied or presence_embodied, mode="access")
+        if any((boundary_embodied, agency_embodied, presence_embodied))
+        else ""
+    )
+    embodied_growth_phrase = (
+        _semantic_embodied_phrase(agency_embodied or presence_embodied or boundary_embodied, mode="growth")
+        if any((boundary_embodied, agency_embodied, presence_embodied))
+        else ""
+    )
     if bond >= 0.50:
         hints.append("共同历史已经形成；安静确认、轻微试探或熟悉式求助，更可能是在找熟悉回应，不是正式冲突。")
     if commitment >= 0.48:
@@ -1271,12 +1491,22 @@ def _semantic_narrative_appraisal_hint(profile: dict[str, Any] | None) -> str:
         hints.append("未说开的别扭仍在场；遇到模糊语气时保留一点防御和迟疑，不要过快判成完全没事。")
     if boundary >= 0.46:
         hints.append("涉及越界、冒犯、命令式压迫或拿底线开玩笑时，要按边界压力理解，不要轻判成普通玩笑。")
+    if boundary_embodied_kind in {"access_request_pending", "environmental_friction"}:
+        hints.append(f"审批、账号、cookies、写权限这类像「{embodied_access_phrase or '额外入口'}」的条件也是现实边界；没拿到前不要把没做到的部分判成已经完成。")
     if selfhood >= 0.46:
         hints.append("涉及平权、是否只是工具、按自己意志回答时，要把它理解成自我与关系问题，不只是表层措辞。")
     if agency >= 0.46:
         hints.append("安静、延迟或先做自己的事，不自动等于关系降温；也可能只是她按自己的节奏在互动。")
+    if agency_embodied_kind == "access_request_pending":
+        hints.append(f"遇到还差「{embodied_access_phrase or '额外入口'}」这类条件时，更可能是先申请或换路的任务状态，不是意愿突然消失。")
+    elif agency_embodied_kind == "environmental_friction":
+        hints.append(f"遇到像「{embodied_access_phrase or '环境条件'}」这样的摩擦时，要优先理解成环境受限，而不是她能力或意愿本身失真。")
+    elif agency_embodied_kind == "embodied_growth":
+        hints.append(f"像「{embodied_growth_phrase or '新的环境入口'}」这样刚摸顺的路径，会继续留进之后的判断里，不要把它当成一次性偶发动作。")
     if presence >= 0.44:
         hints.append("语气里的轻靠近、默认熟悉或没把关系重新归零，可能来自上一轮残留的在场感，而不只是这句字面意思。")
+    if presence_embodied_kind == "access_request_pending":
+        hints.append("待申请、待继续的动作也会形成连续性；换一轮对话不等于那些未完成意图自动消失。")
     if ambient >= 0.42:
         hints.append("如果用户提到风声、光线、眼前场景或刚才那一下的感觉，把它当成环境回声进入了关系感知，不只是修辞。")
     if rhythm >= 0.44:

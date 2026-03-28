@@ -38,6 +38,8 @@ class EventPayload(TypedDict, total=False):
     self_activity_momentum: float
     attention_target_hint: str
     nonverbal_signal_hint: str
+    embodied_context: dict[str, Any]
+    digital_body_hints: dict[str, Any]
     perception: "PerceptionContextPayload"
 
 
@@ -53,6 +55,7 @@ class PerceptionContextPayload(TypedDict, total=False):
     interruptibility: str
     delivery_mode: str
     is_proactive: bool
+    digital_body_hints: dict[str, Any]
 
 
 class SessionContextPayload(TypedDict, total=False):
@@ -61,6 +64,7 @@ class SessionContextPayload(TypedDict, total=False):
     turn_started_at: int
     user_id: str
     checkpoint_id: str
+    digital_body_hints: dict[str, Any]
 
 
 class BehaviorActionPayload(TypedDict, total=False):
@@ -86,6 +90,7 @@ class BehaviorActionPayload(TypedDict, total=False):
     disclosure_posture: str
     note: str
     relationship_weather: str
+    embodied_context: dict[str, Any]
     window_profile: "BehaviorWindowProfilePayload"
 
 
@@ -135,6 +140,7 @@ class BehaviorPlanPayload(TypedDict, total=False):
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
+    embodied_context: dict[str, Any]
 
 
 class BehaviorAgendaEntryPayload(TypedDict, total=False):
@@ -164,6 +170,7 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
+    embodied_context: dict[str, Any]
     continuity_anchor: float
     own_rhythm_anchor: float
     recontact_anchor: float
@@ -198,6 +205,7 @@ class InteractionCarryoverPayload(TypedDict, total=False):
     nonverbal_signal: str
     note: str
     created_at: int
+    embodied_context: dict[str, Any]
 
 
 class AgendaLifecycleResiduePayload(TypedDict, total=False):
@@ -216,6 +224,7 @@ class AgendaLifecycleResiduePayload(TypedDict, total=False):
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
+    embodied_context: dict[str, Any]
     continuity_anchor: float
     own_rhythm_anchor: float
     recontact_anchor: float
@@ -235,6 +244,96 @@ class AgendaLifecycleResiduePayload(TypedDict, total=False):
     counterpart_scene_bias: str
     counterpart_boundary_delta: float
     created_at: int
+
+
+class CapabilityStepPayload(TypedDict, total=False):
+    kind: str
+    name: str
+    target: str
+    status: str
+    requires_approval: bool
+    note: str
+
+
+class ActionPacketPayload(TypedDict, total=False):
+    proposal_id: str
+    origin: str
+    intent: str
+    status: str
+    risk: str
+    requires_approval: bool
+    capability_steps: list[CapabilityStepPayload]
+    expected_effect: str
+    result_summary: str
+    writeback_ready: bool
+    linked_queue_id: str
+    tool_name: str
+    block_reason: str
+    artifact_context: dict[str, Any]
+
+
+class AutonomyIntentPayload(TypedDict, total=False):
+    mode: str
+    origin: str
+    reason: str
+    confidence: float
+    own_rhythm_weight: float
+    continuity_weight: float
+    requires_approval: bool
+    primary_proposal_id: str
+
+
+class DigitalBodyAccessPayload(TypedDict, total=False):
+    mode: str
+    conditions: list[str]
+    block_reason: str
+    retry_after_s: int
+    cooldown_scope: str
+    session_continuity: str
+    session_expires_in_s: int
+    session_recovery_mode: str
+    pending_approval_count: int
+    external_mutation_pending: bool
+    granted_toolsets: list[str]
+    missing_access: list[str]
+    requestable_access: list[str]
+    browser_session: str
+    account_state: str
+    cookie_state: str
+    api_key_state: str
+    quota_state: str
+    filesystem_state: str
+    sandbox_mode: str
+    network_access: str
+
+
+class DigitalBodyResourcePayload(TypedDict, total=False):
+    behavior_queue_depth: int
+    action_packet_count: int
+    pending_approval_count: int
+    queued_packet_count: int
+    executing_packet_count: int
+    completed_packet_count: int
+    blocked_packet_count: int
+    external_tool_count: int
+    artifact_continuity: str
+    active_artifact_kind: str
+    active_artifact_ref: str
+    active_artifact_label: str
+    artifact_age_s: int
+    artifact_reacquisition_mode: str
+
+
+class DigitalBodyStatePayload(TypedDict, total=False):
+    active_surface: str
+    perception_channels: list[str]
+    action_channels: list[str]
+    world_surfaces: list[str]
+    available_toolsets: list[str]
+    active_tools: list[str]
+    access_state: DigitalBodyAccessPayload
+    resource_state: DigitalBodyResourcePayload
+    body_constraints: list[str]
 
 
 class ThreadState(TypedDict, total=False):
@@ -275,6 +374,12 @@ class ThreadState(TypedDict, total=False):
     recent_events: list[EventPayload]
     interaction_carryover: InteractionCarryoverPayload
     agenda_lifecycle_residue: AgendaLifecycleResiduePayload
+    autonomy_intent: AutonomyIntentPayload
+    action_packets: list[ActionPacketPayload]
+    pending_action_proposal: ActionPacketPayload
+    action_trace: list[dict[str, Any]]
+    autonomy_block_reason: str
+    digital_body_state: DigitalBodyStatePayload
     pending_utterance_fragment: str
     pending_user_goal: str
     retrieved_context: dict[str, Any]

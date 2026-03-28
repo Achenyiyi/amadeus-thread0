@@ -196,6 +196,7 @@ SOURCE_RELIABILITY_DEFAULT = _env_float("AMADEUS_SOURCE_RELIABILITY_DEFAULT", 0.
 TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
     "search_langchain_docs": 0.88,
     "arxiv_search": 0.92,
+    "reacquire_artifact": 0.9,
 }
 CLAIM_REQUIRED_TOOLS = {"search_langchain_docs", "arxiv_search"}
 
@@ -242,6 +243,7 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "list_memory_ledger": {"risk": "read", "auto_approve": True},
     "list_memory_quarantine": {"risk": "read", "auto_approve": True},
     "list_revision_traces": {"risk": "read", "auto_approve": True},
+    "reacquire_artifact": {"risk": "read", "auto_approve": True},
 
     # write / sensitive
     "write_diary": {"risk": "write", "auto_approve": False},

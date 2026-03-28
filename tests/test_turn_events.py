@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from amadeus_thread0.graph_parts.perception import attach_perception_context
 from amadeus_thread0.graph_parts.turn_events import (
     _append_recent_events,
     _normalize_event_override,
@@ -71,3 +72,58 @@ def test_promote_due_commitment_event_uses_due_commitment_window():
             assert "一起看一集动画" in str(promoted.get("text") or "")
         finally:
             store.close()
+
+
+def test_normalize_event_override_preserves_digital_body_hints():
+    payload = _normalize_event_override(
+        {
+            "kind": "user_utterance",
+            "text": "先看这个。",
+            "digital_body_hints": {
+                "cookie_state": "missing",
+            },
+            "perception": {
+                "digital_body_hints": {
+                    "filesystem_state": "read_only",
+                }
+            },
+        },
+        counterpart_name="冈部伦太郎",
+    )
+
+    assert payload["digital_body_hints"] == {
+        "filesystem_state": "read_only",
+        "cookie_state": "missing",
+    }
+    assert payload["perception"]["digital_body_hints"] == {
+        "filesystem_state": "read_only",
+        "cookie_state": "missing",
+    }
+
+
+def test_attach_perception_context_preserves_digital_body_hints():
+    payload = attach_perception_context(
+        {
+            "kind": "external_event",
+            "source": "browser",
+            "text": "页面提示需要登录。",
+            "digital_body_hints": {
+                "account_state": "logged_out",
+            },
+            "perception": {
+                "digital_body_hints": {
+                    "cookie_state": "missing",
+                }
+            },
+        },
+        thread_id="study-p01-b",
+        turn_now_ts=123456,
+        turn_id="study-p01-b:123456",
+    )
+
+    assert payload["digital_body_hints"] == {
+        "cookie_state": "missing",
+    }
+    assert payload["perception"]["digital_body_hints"] == {
+        "cookie_state": "missing",
+    }

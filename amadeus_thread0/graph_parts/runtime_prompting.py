@@ -3,12 +3,190 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .behavior_runtime import _compact_behavior_action_hint
+from .behavior_runtime import _compact_behavior_action_hint, _compact_embodied_action_hint
+from .digital_body_runtime import (
+    derive_artifact_continuity,
+    derive_session_lifecycle,
+    normalize_digital_body_state,
+    normalize_embodied_context,
+)
 from .generation_profile import _clamp01, _effective_relationship_weather
-from .prompt_helpers import _compact_long_horizon_continuity_hint, _relationship_weather_phrase
+from .prompt_helpers import (
+    _compact_embodied_carryover_hint,
+    _compact_long_horizon_continuity_hint,
+    _relationship_weather_phrase,
+)
 
 def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _dedupe_lower_list(*values: Any, limit: int = 12) -> list[str]:
+    items: list[str] = []
+    for value in values:
+        if isinstance(value, list):
+            for item in value:
+                text = str(item or "").strip().lower()
+                if text and text not in items:
+                    items.append(text)
+                    if len(items) >= max(1, int(limit)):
+                        return items
+    return items
+
+
+def _nonnegative_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return max(0, int(value))
+    except Exception:
+        return int(default)
+
+
+def _visible_digital_body_state(
+    *,
+    digital_body_state: dict[str, Any] | None,
+    session_context: dict[str, Any] | None,
+    current_event: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = normalize_digital_body_state(digital_body_state)
+    context = dict(session_context or {})
+    hints = context.get("digital_body_hints") if isinstance(context.get("digital_body_hints"), dict) else {}
+    event = dict(current_event or {})
+    event_hints = event.get("digital_body_hints") if isinstance(event.get("digital_body_hints"), dict) else {}
+    perception = event.get("perception") if isinstance(event.get("perception"), dict) else {}
+    perception_hints = (
+        perception.get("digital_body_hints")
+        if isinstance(perception.get("digital_body_hints"), dict)
+        else {}
+    )
+    merged_hints = dict(perception_hints or {})
+    merged_hints.update(dict(event_hints or {}))
+    merged_hints.update(dict(hints or {}))
+    if not body and not hints:
+        if not merged_hints:
+            return {}
+
+    access = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+    resources = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+    browser_session = str(access.get("browser_session") or merged_hints.get("browser_session") or "").strip().lower()
+    account_state = str(access.get("account_state") or merged_hints.get("account_state") or "").strip().lower()
+    cookie_state = str(access.get("cookie_state") or merged_hints.get("cookie_state") or "").strip().lower()
+    api_key_state = str(access.get("api_key_state") or merged_hints.get("api_key_state") or "").strip().lower()
+    quota_state = str(access.get("quota_state") or merged_hints.get("quota_state") or "").strip().lower()
+    retry_after_s = _nonnegative_int(access.get("retry_after_s") or merged_hints.get("retry_after_s"))
+    cooldown_scope = str(access.get("cooldown_scope") or merged_hints.get("cooldown_scope") or "").strip().lower()
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=access.get("session_continuity") or merged_hints.get("session_continuity"),
+        session_expires_in_s=access.get("session_expires_in_s") or merged_hints.get("session_expires_in_s"),
+        session_recovery_mode=access.get("session_recovery_mode") or merged_hints.get("session_recovery_mode"),
+    )
+    session_continuity = str(session_lifecycle.get("session_continuity") or "").strip().lower()
+    session_expires_in_s = _nonnegative_int(session_lifecycle.get("session_expires_in_s"))
+    session_recovery_mode = str(session_lifecycle.get("session_recovery_mode") or "").strip().lower()
+    filesystem_state = str(access.get("filesystem_state") or merged_hints.get("filesystem_state") or "").strip().lower()
+    sandbox_mode = str(access.get("sandbox_mode") or merged_hints.get("sandbox_mode") or "").strip().lower()
+    network_access = str(access.get("network_access") or merged_hints.get("network_access") or "").strip().lower()
+    artifact = derive_artifact_continuity(
+        artifact_continuity=resources.get("artifact_continuity") or merged_hints.get("artifact_continuity"),
+        active_artifact_kind=resources.get("active_artifact_kind") or merged_hints.get("active_artifact_kind"),
+        active_artifact_ref=resources.get("active_artifact_ref") or merged_hints.get("active_artifact_ref"),
+        active_artifact_label=resources.get("active_artifact_label") or merged_hints.get("active_artifact_label"),
+        artifact_age_s=resources.get("artifact_age_s") or merged_hints.get("artifact_age_s"),
+        artifact_reacquisition_mode=resources.get("artifact_reacquisition_mode")
+        or merged_hints.get("artifact_reacquisition_mode"),
+    )
+
+    missing_access = _dedupe_lower_list(access.get("missing_access"), limit=12)
+    requestable_access = _dedupe_lower_list(access.get("requestable_access"), limit=12)
+
+    def _append_once(target: list[str], value: str) -> None:
+        text = str(value or "").strip().lower()
+        if text and text not in target:
+            target.append(text)
+
+    if browser_session in {"missing", "expired", "required"}:
+        _append_once(missing_access, "browser_session")
+        _append_once(requestable_access, "browser_session")
+    if account_state in {"missing", "logged_out", "required"}:
+        _append_once(missing_access, "account_login")
+        _append_once(requestable_access, "account_login")
+    if cookie_state in {"missing", "expired", "required"}:
+        _append_once(missing_access, "cookies")
+        _append_once(requestable_access, "cookies")
+    if api_key_state in {"missing", "required", "unset", "invalid", "expired"}:
+        _append_once(missing_access, "api_key")
+        _append_once(requestable_access, "api_key")
+    if quota_state in {"exhausted", "blocked", "missing", "required", "unavailable"}:
+        _append_once(missing_access, "api_quota")
+        _append_once(requestable_access, "api_quota")
+    elif quota_state == "low":
+        _append_once(requestable_access, "api_quota")
+    if filesystem_state == "read_only":
+        _append_once(missing_access, "workspace_write")
+        _append_once(requestable_access, "workspace_write")
+    elif filesystem_state in {"missing", "unavailable", "required"}:
+        _append_once(missing_access, "filesystem")
+        _append_once(requestable_access, "filesystem")
+    if sandbox_mode in {"restricted", "blocked"}:
+        _append_once(missing_access, "sandbox")
+        _append_once(requestable_access, "sandbox")
+    if network_access in {"disabled", "blocked"}:
+        _append_once(missing_access, "network")
+        _append_once(requestable_access, "network")
+    elif network_access == "restricted":
+        _append_once(requestable_access, "network")
+    if int(access.get("pending_approval_count") or 0) > 0:
+        _append_once(requestable_access, "human_approval")
+    if session_recovery_mode == "refresh_session":
+        _append_once(requestable_access, "session_refresh")
+
+    normalized_access = {
+        **access,
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "retry_after_s": retry_after_s,
+        "cooldown_scope": cooldown_scope,
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
+        "missing_access": missing_access,
+        "requestable_access": requestable_access,
+    }
+    if body:
+        return {
+            **body,
+            "access_state": normalized_access,
+            "resource_state": {
+                **resources,
+                "artifact_continuity": str(artifact.get("artifact_continuity") or "").strip().lower(),
+                "active_artifact_kind": str(artifact.get("active_artifact_kind") or "").strip().lower(),
+                "active_artifact_ref": str(artifact.get("active_artifact_ref") or "").strip(),
+                "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
+                "artifact_age_s": _nonnegative_int(artifact.get("artifact_age_s")),
+                "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip().lower(),
+            },
+        }
+    return {
+        "active_surface": "dialogue",
+        "access_state": normalized_access,
+        "resource_state": {
+            "artifact_continuity": str(artifact.get("artifact_continuity") or "").strip().lower(),
+            "active_artifact_kind": str(artifact.get("active_artifact_kind") or "").strip().lower(),
+            "active_artifact_ref": str(artifact.get("active_artifact_ref") or "").strip(),
+            "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
+            "artifact_age_s": _nonnegative_int(artifact.get("artifact_age_s")),
+            "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip().lower(),
+        },
+    }
+
 
 def _compact_behavior_hint(policy: dict[str, Any], allostasis_state: dict[str, Any]) -> str:
     if not isinstance(policy, dict):
@@ -84,6 +262,8 @@ def _prompt_state_snapshot(
     behavior_action: dict[str, Any] | None,
     interaction_carryover: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
+    digital_body_state: dict[str, Any] | None = None,
+    session_context: dict[str, Any] | None = None,
 ) -> str:
     payload = {
         "response_style_hint": str(response_style_hint or "").strip() or "natural",
@@ -99,6 +279,17 @@ def _prompt_state_snapshot(
         "interaction_carryover": dict(interaction_carryover or {}),
         "current_event": dict(current_event or {}),
     }
+    normalized_body = _visible_digital_body_state(
+        digital_body_state=digital_body_state,
+        session_context=session_context,
+        current_event=current_event,
+    )
+    if normalized_body:
+        payload["digital_body_state"] = normalized_body
+    context = dict(session_context or {})
+    body_hints = context.get("digital_body_hints") if isinstance(context.get("digital_body_hints"), dict) else {}
+    if body_hints:
+        payload["digital_body_hints"] = dict(body_hints)
     return _safe_json(payload)
 
 def _runtime_state_level(value: Any, *, low: str, mid: str, high: str, default: float = 0.5) -> str:
@@ -147,6 +338,120 @@ def _counterpart_scene_renderer_guidance(
         return "保留那点摩擦和边界感，别把这轮写成已经没事或自动回暖。"
     return ""
 
+
+def _compact_digital_body_runtime_hint(
+    *,
+    digital_body_state: dict[str, Any] | None,
+    session_context: dict[str, Any] | None,
+    current_event: dict[str, Any] | None = None,
+) -> str:
+    body = _visible_digital_body_state(
+        digital_body_state=digital_body_state,
+        session_context=session_context,
+        current_event=current_event,
+    )
+    access = body.get("access_state") if isinstance(body.get("access_state"), dict) else {}
+    resources = body.get("resource_state") if isinstance(body.get("resource_state"), dict) else {}
+
+    access_mode = str(access.get("mode") or "").strip().lower()
+    block_reason = str(access.get("block_reason") or "").strip()
+    retry_after_s = _nonnegative_int(access.get("retry_after_s"))
+    cooldown_scope = str(access.get("cooldown_scope") or "").strip().lower()
+    session_continuity = str(access.get("session_continuity") or "").strip().lower()
+    session_expires_in_s = _nonnegative_int(access.get("session_expires_in_s"))
+    session_recovery_mode = str(access.get("session_recovery_mode") or "").strip().lower()
+    requested_access = [
+        str(item).strip().lower()
+        for item in (access.get("requestable_access") if isinstance(access.get("requestable_access"), list) else [])
+        if str(item or "").strip()
+    ][:3]
+    missing_access = [
+        str(item).strip().lower()
+        for item in (access.get("missing_access") if isinstance(access.get("missing_access"), list) else [])
+        if str(item or "").strip()
+    ][:3]
+    available_toolsets = [
+        str(item).strip().lower()
+        for item in (body.get("available_toolsets") if isinstance(body.get("available_toolsets"), list) else [])
+        if str(item or "").strip()
+    ][:3]
+    active_tools = [
+        str(item).strip().lower()
+        for item in (body.get("active_tools") if isinstance(body.get("active_tools"), list) else [])
+        if str(item or "").strip()
+    ][:2]
+
+    access_label_items: list[str] = []
+    for item in [*missing_access, *requested_access]:
+        if item and item not in access_label_items:
+            access_label_items.append(item)
+        if len(access_label_items) >= 3:
+            break
+    access_label = "、".join(access_label_items)
+    tool_label = "、".join(active_tools or available_toolsets)
+    artifact_continuity = str(resources.get("artifact_continuity") or "").strip().lower()
+    active_artifact_kind = str(resources.get("active_artifact_kind") or "").strip().lower()
+    active_artifact_ref = str(resources.get("active_artifact_ref") or "").strip()
+    active_artifact_label = str(resources.get("active_artifact_label") or "").strip()
+    artifact_reacquisition_mode = str(resources.get("artifact_reacquisition_mode") or "").strip().lower()
+    artifact_label = active_artifact_label or active_artifact_ref or active_artifact_kind
+
+    if retry_after_s > 0:
+        scope_label = {
+            "provider": "上游服务",
+            "network": "网络入口",
+            "browser": "浏览器入口",
+            "filesystem": "文件系统入口",
+            "sandbox": "执行环境",
+            "account": "账号入口",
+        }.get(cooldown_scope, "某个环境入口")
+        return f"当前{scope_label}临时冷却，大约{retry_after_s}秒后再试更合适"
+
+    if session_continuity == "expiring":
+        if session_expires_in_s > 0:
+            return (
+                f"当前会话还可用，但大约{session_expires_in_s}秒后会过期，"
+                "继续推进前最好先刷新一下会话"
+            )
+        return "当前会话还可用，但已经接近过期，继续推进前最好先刷新一下会话"
+
+    if session_continuity in {"expired", "missing"}:
+        recovery_hint = {
+            "refresh_session": "先刷新会话",
+            "restore_cookies": "先恢复 cookies",
+            "relogin": "先重新登录账号",
+        }.get(session_recovery_mode, "先把会话连续性补回来")
+        continuity_hint = "已经过期" if session_continuity == "expired" else "目前不连续"
+        extra_access = f"，像{access_label}这类入口也还没齐" if access_label else ""
+        return f"当前会话{continuity_hint}，{recovery_hint}再继续更稳妥{extra_access}"
+
+    if artifact_continuity == "stale":
+        artifact_hint = artifact_label or "前面的工作面"
+        return f"当前{artifact_hint}还在，但已经有点过期，继续前最好先刷新或重新确认一下"
+
+    if artifact_continuity in {"missing", "detached"}:
+        reacquire_hint = {
+            "reopen_page": "先把页面重新打开",
+            "reopen_file": "先把文件重新打开",
+            "rerun_search": "先把检索结果重新拿回来",
+            "reattach_workspace": "先把工作面重新接回当前上下文",
+        }.get(artifact_reacquisition_mode, "先把前面的工作面重新接回来")
+        artifact_hint = artifact_label or active_artifact_kind or "前面的工作面"
+        return f"当前和{artifact_hint}的连续性已经断了，{reacquire_hint}再继续更稳妥"
+
+    if block_reason:
+        return f"还被环境条件卡着：{block_reason.rstrip('。')}"
+    if access_mode == "blocked":
+        return f"当前有动作被卡住了，像{access_label or '某些入口'}这类条件还没齐"
+    if access_mode == "approval_pending":
+        return f"还停在审批或入口确认阶段，像{access_label or 'human_approval'}这类条件没齐"
+    if missing_access:
+        return f"还缺着{access_label or '一些环境入口'}这类条件"
+    if access_mode == "tool_enabled" and tool_label:
+        return f"当前能直接动用{tool_label}这类环境入口"
+    return ""
+
+
 def _prompt_state_runtime_brief(
     *,
     response_style_hint: str,
@@ -161,6 +466,8 @@ def _prompt_state_runtime_brief(
     behavior_action: dict[str, Any] | None,
     interaction_carryover: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
+    digital_body_state: dict[str, Any] | None = None,
+    session_context: dict[str, Any] | None = None,
 ) -> str:
     emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
@@ -220,6 +527,20 @@ def _prompt_state_runtime_brief(
         relationship_weather,
         strength=relationship_weather_strength,
     )
+    digital_body_hint = _compact_digital_body_runtime_hint(
+        digital_body_state=digital_body_state,
+        session_context=session_context,
+        current_event=current_event,
+    )
+    embodied_carryover_hint = _compact_embodied_carryover_hint(carryover)
+    action_embodied_hint = _compact_embodied_action_hint(action)
+    embodied_context = normalize_embodied_context(carryover.get("embodied_context") or action.get("embodied_context"))
+    embodied_kind = str(embodied_context.get("kind") or "").strip().lower()
+    embodied_runtime_hint = embodied_carryover_hint
+    if action_embodied_hint and (
+        not embodied_runtime_hint or len(action_embodied_hint) > len(embodied_runtime_hint) + 6
+    ):
+        embodied_runtime_hint = action_embodied_hint
 
     lines: list[str] = [
         f"- 当前情绪底色偏{emotion_phrase}；关系上{trust}，{closeness}，{hurt}。"
@@ -251,6 +572,18 @@ def _prompt_state_runtime_brief(
         lines.append("- 对对方还是带着观察，不会一下子把距离全放开。")
     if relationship_weather_phrase:
         lines.append(f"- 关系上的余波：{relationship_weather_phrase}。")
+    if digital_body_hint and (
+        not embodied_runtime_hint
+        or digital_body_hint not in embodied_runtime_hint
+    ):
+        lines.append(f"- 当前数字环境：{digital_body_hint}。")
+    if embodied_runtime_hint:
+        embodied_prefix = (
+            "当前刚摸顺的环境路径"
+            if embodied_kind == "embodied_growth"
+            else "当前还挂着的环境条件"
+        )
+        lines.append(f"- {embodied_prefix}：{embodied_runtime_hint}。")
 
     long_horizon_hint = _compact_long_horizon_continuity_hint(
         world_model_state=world,
@@ -300,6 +633,9 @@ def _renderer_guidance(
     world_model_state: dict[str, Any] | None = None,
     evolution_state: dict[str, Any] | None = None,
     behavior_action: dict[str, Any] | None = None,
+    digital_body_state: dict[str, Any] | None = None,
+    session_context: dict[str, Any] | None = None,
+    current_event: dict[str, Any] | None = None,
 ) -> str:
     hint = str(response_style_hint or "").strip() or "natural"
     trust = _clamp01((bond_state or {}).get("trust"), 0.5)
@@ -333,6 +669,41 @@ def _renderer_guidance(
     task_focus = str(action.get("task_focus") or "").strip().lower()
     attention_target = str(action.get("attention_target") or "").strip().lower()
     initiative_shape = str(action.get("initiative_shape") or "").strip().lower()
+    embodied_context = normalize_embodied_context(action.get("embodied_context"))
+    digital_body_hint = _compact_digital_body_runtime_hint(
+        digital_body_state=digital_body_state,
+        session_context=session_context,
+        current_event=current_event,
+    )
+    embodied_kind = str(embodied_context.get("kind") or "").strip().lower()
+    embodied_access = "、".join(
+        [
+            *[
+                str(item).strip().lower()
+                for item in (embodied_context.get("requested_access") if isinstance(embodied_context.get("requested_access"), list) else [])
+                if str(item or "").strip()
+            ][:2],
+            *[
+                str(item).strip().lower()
+                for item in (embodied_context.get("missing_access") if isinstance(embodied_context.get("missing_access"), list) else [])
+                if str(item or "").strip()
+            ][:2],
+        ][:2]
+    )
+    embodied_growth = "、".join(
+        [
+            *[
+                str(item).strip().lower()
+                for item in (embodied_context.get("granted_toolsets") if isinstance(embodied_context.get("granted_toolsets"), list) else [])
+                if str(item or "").strip()
+            ][:2],
+            *[
+                str(item).strip().lower()
+                for item in (embodied_context.get("active_tools") if isinstance(embodied_context.get("active_tools"), list) else [])
+                if str(item or "").strip()
+            ][:2],
+        ][:2]
+    )
     parts: list[str] = []
 
     if hint == "selfhood":
@@ -387,6 +758,27 @@ def _renderer_guidance(
         parts.append("优先守住自己的立场和连续性，不要为了取悦对方把自己说空。")
     elif agency_pressure > 0.58 or self_activity_momentum > 0.58:
         parts.append("保留你自己的节奏，不必把全部注意力都交给对方。")
+
+    if embodied_kind == "access_request_pending":
+        if embodied_access:
+            parts.append(f"把还差着的{embodied_access}当成真实约束写进去，别把未完成部分说成已经做完。")
+        else:
+            parts.append("把还没批下来或还没拿到的入口当成真实约束写进去，别把未完成部分说成已经做完。")
+    elif embodied_kind == "environmental_friction":
+        block_reason = str(embodied_context.get("block_reason") or "").strip()
+        if block_reason:
+            parts.append(f"环境里的卡点要保留成真实限制，例如“{block_reason.rstrip('。')}”，不要把受阻写成态度变化。")
+        elif embodied_access:
+            parts.append(f"像{embodied_access}这样的环境条件缺口要落成真实限制，不要把受阻写成态度变化。")
+        else:
+            parts.append("环境里的卡点要保留成真实限制，不要把受阻写成态度变化。")
+    elif embodied_kind == "embodied_growth":
+        if embodied_growth:
+            parts.append(f"像{embodied_growth}这样刚摸顺的环境路径可以自然露出来，但别写成炫技或万能。")
+        else:
+            parts.append("刚摸顺的新路径可以自然露出来，但别写成炫技或万能。")
+    elif digital_body_hint:
+        parts.append(f"把当前数字环境里的条件当成真的世界状态，例如“{digital_body_hint}”，不要把做不到的部分写成已经能做。")
 
     if science_mode and task_pull >= companionship_pull:
         parts.append("保持理性和清晰，但像一起解决问题，不要像上课。")

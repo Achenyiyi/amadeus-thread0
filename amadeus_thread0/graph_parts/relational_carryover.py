@@ -5,6 +5,8 @@ from typing import Any
 
 from .behavior_agenda import _agenda_long_horizon_snapshot
 from .common import _clamp01, _now_ts
+from .digital_body_runtime import normalize_embodied_context
+from .prompt_helpers import _compact_embodied_carryover_hint
 from .state import AgendaLifecycleResiduePayload, InteractionCarryoverPayload, ThreadState
 
 
@@ -154,6 +156,46 @@ def _trace_value(item: dict[str, Any], key: str, default: Any = None) -> Any:
     if _has_trace_value(content_meta_value):
         return content_meta_value
     return default
+
+
+def _embodied_summary_mentions_constraint(summary: str, embodied_context: dict[str, Any] | None) -> bool:
+    text = str(summary or "").strip().lower()
+    embodied = normalize_embodied_context(embodied_context)
+    if not text or not embodied:
+        return False
+    tokens: list[str] = []
+    for key in ("requested_access", "missing_access", "granted_toolsets", "active_tools", "world_surfaces"):
+        value = embodied.get(key)
+        if isinstance(value, list):
+            tokens.extend(str(item or "").strip().lower() for item in value if str(item or "").strip())
+    block_reason = str(embodied.get("block_reason") or "").strip().lower()
+    if block_reason:
+        tokens.append(block_reason)
+    if any(token and token in text for token in tokens):
+        return True
+    kind = str(embodied.get("kind") or "").strip().lower()
+    if kind == "access_request_pending":
+        return any(marker in text for marker in ("入口", "审批", "批准", "没放开", "未完成", "没做完"))
+    if kind == "environmental_friction":
+        return any(marker in text for marker in ("环境条件", "卡着", "受阻", "缺着", "限制"))
+    if kind == "embodied_growth":
+        return any(marker in text for marker in ("摸顺", "会用了", "继续用", "新路径", "从零开始"))
+    return False
+
+
+def _embodied_aware_summary(summary: str, embodied_context: dict[str, Any] | None) -> str:
+    base = str(summary or "").strip()
+    embodied = normalize_embodied_context(embodied_context)
+    if not embodied:
+        return base
+    suffix = _compact_embodied_carryover_hint({"embodied_context": embodied}).strip()
+    if not suffix:
+        return base
+    if _embodied_summary_mentions_constraint(base, embodied):
+        return base
+    if not base:
+        return suffix
+    return f"{base.rstrip('。')}；{suffix}"
 
 
 def _bridge_mode_from_behavior_trace(item: dict[str, Any]) -> str:
@@ -413,6 +455,8 @@ def _build_retrieved_behavior_trace_bridge(
         presence_residue = _clamp01(_trace_value(trace, "presence_residue", 0.0), 0.0)
         ambient_resonance = _clamp01(_trace_value(trace, "ambient_resonance", 0.0), 0.0)
         self_activity_momentum = _clamp01(_trace_value(trace, "self_activity_momentum", 0.0), 0.0)
+        embodied_context = normalize_embodied_context(_trace_value(trace, "embodied_context", {}))
+        summary = _embodied_aware_summary(summary, embodied_context)
         derived_strength = _clamp01(
             max(
                 carryover_strength,
@@ -446,8 +490,18 @@ def _build_retrieved_behavior_trace_bridge(
             source_tags.append(f"relationship_effect:{relationship_effect}")
         if self_effect:
             source_tags.append(f"self_effect:{self_effect}")
-        source_tags = [tag for tag in source_tags if tag]
-        return {
+        source_tags = list(
+            dict.fromkeys(
+                [
+                    *source_tags,
+                    f"bodyfx:{str(embodied_context.get('kind') or '').strip().lower()}" if embodied_context else "",
+                    "bodyfx:requested_help" if bool(embodied_context.get("requested_help", False)) else "",
+                    "bodyfx:friction" if bool(embodied_context.get("environmental_friction", False)) else "",
+                    "bodyfx:growth" if bool(embodied_context.get("procedural_growth", False)) else "",
+                ]
+            )
+        )
+        result = {
             "interaction_carryover": {
                 "carryover_mode": bridge_mode,
                 "strength": round(derived_strength, 3),
@@ -456,7 +510,7 @@ def _build_retrieved_behavior_trace_bridge(
                 "nonverbal_signal": nonverbal_signal or default_nonverbal_signal,
                 "note": summary,
                 "source": trace_source,
-                "source_tags": source_tags,
+                "source_tags": [tag for tag in source_tags if tag],
             },
             "event_patch": {
                 "carryover_mode": event_mode or bridge_mode,
@@ -467,6 +521,9 @@ def _build_retrieved_behavior_trace_bridge(
                 "self_activity_momentum": round(self_activity_momentum, 3),
             },
         }
+        if embodied_context:
+            result["interaction_carryover"]["embodied_context"] = embodied_context
+        return result
     return {}
 
 
@@ -506,6 +563,8 @@ def _hydrate_retrieved_agenda_lifecycle_residue(
         kind = str(_trace_value(trace, "lifecycle_kind", _trace_value(trace, "kind", "")) or "").strip().lower()
         carryover_mode = str(_trace_value(trace, "carryover_mode", "") or "").strip().lower()
         carryover_strength = _clamp01(_trace_value(trace, "carryover_strength", 0.0), 0.0)
+        embodied_context = normalize_embodied_context(_trace_value(trace, "embodied_context", {}))
+        summary = _embodied_aware_summary(summary, embodied_context)
         try:
             counterpart_boundary_delta = float(_trace_value(trace, "counterpart_boundary_delta", 0.0) or 0.0)
         except Exception:
@@ -527,10 +586,14 @@ def _hydrate_retrieved_agenda_lifecycle_residue(
                     "agenda_lifecycle",
                     kind,
                     "retrieved_agenda_lifecycle",
+                    f"bodyfx:{str(embodied_context.get('kind') or '').strip().lower()}" if embodied_context else "",
+                    "bodyfx:requested_help" if bool(embodied_context.get("requested_help", False)) else "",
+                    "bodyfx:friction" if bool(embodied_context.get("environmental_friction", False)) else "",
+                    "bodyfx:growth" if bool(embodied_context.get("procedural_growth", False)) else "",
                 ]
             )
         )
-        return {
+        residue: AgendaLifecycleResiduePayload = {
             "kind": kind,
             "source_event_kind": str(_trace_value(trace, "source_event_kind", "time_idle") or "").strip().lower()
             or "time_idle",
@@ -573,6 +636,9 @@ def _hydrate_retrieved_agenda_lifecycle_residue(
             "counterpart_boundary_delta": round(max(-1.0, min(1.0, counterpart_boundary_delta)), 3),
             "created_at": int(_trace_value(trace, "created_at", _now_ts()) or _now_ts()),
         }
+        if embodied_context:
+            residue["embodied_context"] = embodied_context
+        return residue
     return {}
 
 
@@ -979,10 +1045,45 @@ def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -
             return content.get(key)
         return row.get(key, default)
 
+    def _embodied_context(value: Any) -> dict[str, Any]:
+        body = value if isinstance(value, dict) else {}
+        kind = str(body.get("kind") or "").strip().lower()
+        if not kind:
+            return {}
+
+        def _list(key: str, *, limit: int = 8) -> list[str]:
+            values = body.get(key) if isinstance(body.get(key), list) else []
+            out: list[str] = []
+            for item in values:
+                text = str(item or "").strip().lower()
+                if not text:
+                    continue
+                out.append(text)
+                if len(out) >= max(1, int(limit)):
+                    break
+            return out
+
+        return {
+            "kind": kind,
+            "summary": str(body.get("summary") or "").strip()[:220],
+            "access_mode": str(body.get("access_mode") or "").strip().lower(),
+            "active_surface": str(body.get("active_surface") or "").strip().lower(),
+            "requested_access": _list("requested_access"),
+            "missing_access": _list("missing_access"),
+            "granted_toolsets": _list("granted_toolsets"),
+            "active_tools": _list("active_tools"),
+            "primary_proposal_id": str(body.get("primary_proposal_id") or "").strip()[:128],
+            "primary_status": str(body.get("primary_status") or "").strip().lower(),
+            "primary_origin": str(body.get("primary_origin") or "").strip().lower(),
+            "procedural_growth": bool(body.get("procedural_growth", False)),
+            "environmental_friction": bool(body.get("environmental_friction", False)),
+            "requested_help": bool(body.get("requested_help", False)),
+        }
+
     summary = str(_pick("summary") or "").strip()
     if not summary:
         return {}
-    return {
+    normalized = {
         "summary": summary,
         "kind": str(_pick("kind") or "").strip().lower(),
         "trace_family": str(_pick("trace_family") or "").strip().lower(),
@@ -1016,6 +1117,10 @@ def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -
         "motive_tension": str(_pick("motive_tension") or "").strip().lower(),
         "goal_frame": str(_pick("goal_frame") or "").strip(),
     }
+    embodied_context = _embodied_context(_pick("embodied_context", {}))
+    if embodied_context:
+        normalized["embodied_context"] = embodied_context
+    return normalized
 
 
 def _proactive_continuity_history_carryover(
@@ -1138,6 +1243,8 @@ def _proactive_continuity_history_carryover(
         agency_lineage = _clamp01(item.get("agency_lineage"), 0.0)
         trace_family = str(item.get("trace_family") or "").strip().lower()
         counterpart_scene_bias = str(item.get("counterpart_scene_bias") or "").strip().lower()
+        embodied_context = item.get("embodied_context") if isinstance(item.get("embodied_context"), dict) else {}
+        embodied_kind = str(embodied_context.get("kind") or "").strip().lower()
 
         strength = carryover_strength
         if carryover_mode == "own_rhythm":
@@ -1199,6 +1306,12 @@ def _proactive_continuity_history_carryover(
             strength = max(strength, 0.14 + 0.04 * min(4, long_term_axis_count))
         if semantic_continuity_depth >= 0.50 or semantic_identity_gravity >= 0.50:
             strength = max(strength, 0.18 + 0.16 * max(semantic_continuity_depth, semantic_identity_gravity))
+        if embodied_kind == "access_request_pending":
+            strength = max(strength, 0.16 + 0.16 * max(carryover_strength, continuity_anchor, recontact_anchor))
+        elif embodied_kind == "environmental_friction":
+            strength = max(strength, 0.14 + 0.14 * max(carryover_strength, boundary_anchor, memory_anchor))
+        elif embodied_kind == "embodied_growth":
+            strength = max(strength, 0.14 + 0.12 * max(carryover_strength, agency_lineage, contact_lineage))
 
         if hint == "structured":
             strength *= 0.35
@@ -1234,11 +1347,15 @@ def _proactive_continuity_history_carryover(
                     "selfhood_lineage" if selfhood_lineage >= 0.46 else "",
                     "lineage_gravity" if lineage_gravity >= 0.50 else "",
                     "long_term_axis" if long_term_axis_count > 0 else "",
+                    f"bodyfx:{embodied_kind}" if embodied_kind else "",
+                    "bodyfx:requested_help" if bool(embodied_context.get("requested_help", False)) else "",
+                    "bodyfx:friction" if bool(embodied_context.get("environmental_friction", False)) else "",
+                    "bodyfx:growth" if bool(embodied_context.get("procedural_growth", False)) else "",
                 ]
             )
             if tag
         ]
-        return {
+        payload = {
             "source_event_kind": str(item.get("source_event_kind") or "").strip().lower()
             or f"proactive_continuity:{str(item.get('kind') or '').strip().lower() or carryover_mode}",
             "source_behavior_mode": source_behavior_mode,
@@ -1258,6 +1375,9 @@ def _proactive_continuity_history_carryover(
             "note": str(item.get("summary") or "").strip(),
             "created_at": _now_ts(),
         }
+        if embodied_context:
+            payload["embodied_context"] = embodied_context
+        return payload
     return {}
 
 def _recent_interaction_carryover(
@@ -1478,19 +1598,32 @@ def _agenda_lifecycle_carryover(
     strength = _clamp01(payload.get("carryover_strength"), 0.0)
     if not kind or not carryover_mode or strength < 0.12:
         return {}
+    embodied_context = normalize_embodied_context(payload.get("embodied_context"))
+    note = _embodied_aware_summary(str(payload.get("note") or "").strip(), embodied_context)
     source_tags = [
         str(item).strip().lower()
         for item in (payload.get("source_tags") if isinstance(payload.get("source_tags"), list) else [])
         if str(item).strip()
     ]
-    return {
+    source_tags = list(
+        dict.fromkeys(
+            [
+                *source_tags,
+                f"bodyfx:{str(embodied_context.get('kind') or '').strip().lower()}" if embodied_context else "",
+                "bodyfx:requested_help" if bool(embodied_context.get("requested_help", False)) else "",
+                "bodyfx:friction" if bool(embodied_context.get("environmental_friction", False)) else "",
+                "bodyfx:growth" if bool(embodied_context.get("procedural_growth", False)) else "",
+            ]
+        )
+    )
+    result: InteractionCarryoverPayload = {
         "source_event_kind": f"agenda_lifecycle:{kind}",
         "source_behavior_mode": "agenda_lifecycle",
         "source_action_target": "hold_own_rhythm" if carryover_mode == "own_rhythm" else "wait_and_recheck",
         "source_primary_motive": "preserve_self_rhythm" if carryover_mode == "own_rhythm" else "gentle_recontact",
         "source_motive_tension": "self_rhythm_vs_contact" if carryover_mode == "own_rhythm" else "space_vs_contact",
-        "source_goal_frame": str(payload.get("note") or "").strip(),
-        "source_text": str(payload.get("note") or "").strip()[:180],
+        "source_goal_frame": note,
+        "source_text": note[:180],
         "source_tags": source_tags,
         "carryover_mode": carryover_mode,
         "strength": round(strength, 3),
@@ -1499,11 +1632,12 @@ def _agenda_lifecycle_carryover(
         "source_turn_gap": 0,
         "attention_target": str(payload.get("attention_target") or "").strip() or "self_then_counterpart",
         "nonverbal_signal": str(payload.get("nonverbal_signal") or "").strip() or "thought_glance",
-        "note": str(payload.get("note") or "").strip(),
+        "note": note,
         "created_at": int(payload.get("created_at") or _now_ts()),
     }
-
-
+    if embodied_context:
+        result["embodied_context"] = embodied_context
+    return result
 def _apply_agenda_lifecycle_residue_to_runtime_state(
     *,
     agenda_lifecycle_residue: dict[str, Any] | None,

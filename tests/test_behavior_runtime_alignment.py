@@ -138,6 +138,75 @@ class BehaviorRuntimeAlignmentTests(unittest.TestCase):
         self.assertEqual(str(action.get("primary_motive") or ""), "support_without_pressure")
         self.assertEqual(str(action.get("followup_intent") or ""), "soft")
 
+    def test_detached_artifact_carryover_pushes_behavior_to_reacquisition_first(self):
+        action = _behavior_action_from_state(
+            current_event={
+                "kind": "user_utterance",
+                "text": "我们接着前面的计划继续。",
+                "tags": [],
+            },
+            response_style_hint="natural",
+            user_text="我们接着前面的计划继续。",
+            science_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={
+                "trust": 0.64,
+                "closeness": 0.60,
+                "hurt": 0.0,
+                "irritation": 0.0,
+            },
+            allostasis_state={
+                "autonomy_need": 0.22,
+                "safety_need": 0.20,
+                "cognitive_budget": 0.74,
+            },
+            counterpart_assessment={
+                "stance": "open",
+                "scene": "neutral",
+                "boundary_pressure": 0.08,
+                "reliability_read": 0.70,
+            },
+            semantic_narrative_profile={
+                "bond_depth": 0.44,
+                "continuity_depth": 0.52,
+                "history_weight": 0.46,
+            },
+            behavior_policy={
+                "warmth": 0.58,
+                "initiative": 0.54,
+                "reply_length_bias": 0.46,
+                "approach_vs_withdraw": 0.54,
+                "boundary_assertiveness": 0.24,
+                "self_directedness": 0.30,
+                "equality_guard": 0.24,
+            },
+            world_model_state={
+                "presence_residue": 0.20,
+                "ambient_resonance": 0.06,
+                "self_activity_momentum": 0.18,
+                "task_pull": 0.42,
+            },
+            interaction_carryover={
+                "carryover_mode": "task_window",
+                "strength": 0.38,
+                "embodied_context": {
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "plan.md",
+                    "artifact_reacquisition_mode": "reopen_file",
+                },
+            },
+            prior_emotion_state={},
+            prior_bond_state={},
+            prior_allostasis_state={},
+            prior_counterpart_assessment={},
+            appraisal={},
+        )
+        self.assertIn("plan.md", str(action.get("goal_frame") or ""))
+        self.assertIn("重新打开", str(action.get("goal_frame") or ""))
+        self.assertIn("plan.md", str(action.get("note") or ""))
+        self.assertEqual(str(action.get("embodied_context", {}).get("artifact_continuity") or ""), "detached")
+
     def test_repair_apology_reframed_appraisal_avoids_selfhood_reflection(self):
         appraisal = _finalize_turn_appraisal_payload(
             {

@@ -11,8 +11,10 @@ from ..config import (
 from ..evolution_engine import evolve_turn_state
 from ..evolution_engine.reconsolidation import build_reconsolidation_snapshot
 from ..memory_store import MemoryStore
+from .autonomy_runtime import derive_autonomy_runtime
 from .behavior_agenda import _merge_behavior_agenda
 from .behavior_runtime import _behavior_action_from_state, _behavior_plan_from_action
+from .digital_body_runtime import derive_digital_body_state
 from .memory_evolution import (
     _passive_evolution_memory_update,
     _record_behavior_trace_writeback,
@@ -610,6 +612,34 @@ def _prepare_turn_runtime(
         behavior_action,
         world_model_state=world_model_state,
     )
+    behavior_agenda = _merge_behavior_agenda(
+        prior_behavior_agenda,
+        current_event,
+        behavior_plan,
+        counterpart_assessment=counterpart_assessment,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+    )
+    autonomy_runtime = derive_autonomy_runtime(
+        current_event=current_event,
+        behavior_action=behavior_action,
+        behavior_plan=behavior_plan,
+        behavior_queue=behavior_agenda,
+        world_model_state=world_model_state,
+        semantic_narrative_profile=semantic_narrative_profile,
+        interaction_carryover=interaction_carryover,
+        agenda_lifecycle_residue=agenda_lifecycle_residue,
+    )
+    digital_body_state = derive_digital_body_state(
+        current_event=current_event,
+        behavior_queue=behavior_agenda,
+        action_packets=autonomy_runtime.get("action_packets"),
+        interaction_carryover=interaction_carryover,
+        toolset_unlocks=state.get("toolset_unlocks") if isinstance(state.get("toolset_unlocks"), dict) else {},
+        autonomy_block_reason=str(autonomy_runtime.get("autonomy_block_reason") or ""),
+        session_context=state.get("session_context") if isinstance(state.get("session_context"), dict) else {},
+        last_external_tools=state.get("last_external_tools"),
+    )
     writeback_reconsolidation_snapshot = build_reconsolidation_snapshot(
         current_event=current_event,
         appraisal=appraisal,
@@ -623,6 +653,11 @@ def _prepare_turn_runtime(
         behavior_plan=behavior_plan,
         interaction_carryover=interaction_carryover,
         agenda_lifecycle_residue=agenda_lifecycle_residue,
+        autonomy_intent=autonomy_runtime.get("autonomy_intent"),
+        action_packets=autonomy_runtime.get("action_packets"),
+        action_trace=autonomy_runtime.get("action_trace"),
+        autonomy_block_reason=autonomy_runtime.get("autonomy_block_reason"),
+        digital_body_state=digital_body_state,
     )
     if not external_probe_mode and current_event_kind in {
         "user_utterance",
@@ -654,6 +689,7 @@ def _prepare_turn_runtime(
             behavior_plan=behavior_plan,
             interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
+            digital_body_state=digital_body_state,
             reconsolidation_snapshot=writeback_reconsolidation_snapshot,
             source="auto:passive_evolution_final",
             confidence=behavior_trace_confidence,
@@ -733,14 +769,11 @@ def _prepare_turn_runtime(
         behavior_plan=behavior_plan,
         interaction_carryover=interaction_carryover,
         agenda_lifecycle_residue=agenda_lifecycle_residue,
-    )
-    behavior_agenda = _merge_behavior_agenda(
-        prior_behavior_agenda,
-        current_event,
-        behavior_plan,
-        counterpart_assessment=counterpart_assessment,
-        world_model_state=world_model_state,
-        semantic_narrative_profile=semantic_narrative_profile,
+        autonomy_intent=autonomy_runtime.get("autonomy_intent"),
+        action_packets=autonomy_runtime.get("action_packets"),
+        action_trace=autonomy_runtime.get("action_trace"),
+        autonomy_block_reason=autonomy_runtime.get("autonomy_block_reason"),
+        digital_body_state=digital_body_state,
     )
     _audit_jsonl(
         "decision_audit.jsonl",
@@ -780,6 +813,14 @@ def _prepare_turn_runtime(
             "behavior_plan_motive": str(behavior_plan.get("primary_motive") or ""),
             "behavior_plan_goal_frame": str(behavior_plan.get("goal_frame") or "")[:120],
             "behavior_agenda_size": int(len(behavior_agenda or [])),
+            "autonomy_mode": str((autonomy_runtime.get("autonomy_intent") or {}).get("mode") or ""),
+            "autonomy_packet_count": int(len(autonomy_runtime.get("action_packets") or [])),
+            "autonomy_block_reason": str(autonomy_runtime.get("autonomy_block_reason") or "")[:120],
+            "digital_body_active_surface": str(digital_body_state.get("active_surface") or ""),
+            "digital_body_access_mode": str(
+                ((digital_body_state.get("access_state") if isinstance(digital_body_state.get("access_state"), dict) else {}) or {}).get("mode")
+                or ""
+            ),
             "agenda_lifecycle_kind": str(agenda_lifecycle_residue.get("kind") or ""),
             "agenda_lifecycle_cooldown": float(agenda_lifecycle_residue.get("recontact_cooldown") or 0.0),
             "carryover_mode": str(interaction_carryover.get("carryover_mode") or ""),
@@ -809,5 +850,11 @@ def _prepare_turn_runtime(
         "behavior_action": behavior_action,
         "behavior_plan": behavior_plan,
         "behavior_agenda": behavior_agenda,
+        "autonomy_intent": autonomy_runtime.get("autonomy_intent") or {},
+        "action_packets": list(autonomy_runtime.get("action_packets") or []),
+        "pending_action_proposal": autonomy_runtime.get("pending_action_proposal") or {},
+        "action_trace": list(autonomy_runtime.get("action_trace") or []),
+        "autonomy_block_reason": str(autonomy_runtime.get("autonomy_block_reason") or ""),
+        "digital_body_state": digital_body_state,
         "tsundere": tsundere,
     }

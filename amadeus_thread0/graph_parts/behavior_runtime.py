@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..evolution_engine.motive import semantic_motive_vector
+from .digital_body_runtime import embodied_context_has_signal, normalize_embodied_context
 from .counterpart_dynamics import (
     _clamp01,
     _counterpart_dialogue_mode_profile,
@@ -31,6 +32,177 @@ SELFHOOD_BOUNDARY_SCENES = {
     "boundary_non_compliance",
     "relationship_degradation",
 }
+
+_ARTIFACT_KIND_LABELS = {
+    "file": "前面的文件",
+    "document": "前面的文档",
+    "buffer": "前面的缓冲区",
+    "notebook": "前面的笔记本",
+    "workspace": "前面的工作区",
+    "page": "前面的页面",
+    "tab": "前面的标签页",
+    "site": "前面的站点",
+    "browser_page": "前面的页面",
+    "search_result": "前面的检索结果",
+}
+
+
+def _clean_list_text(values: Any, *, limit: int = 2) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    items: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        items.append(text)
+        if len(items) >= max(1, int(limit)):
+            break
+    return items
+
+
+def _artifact_surface_label(embodied: dict[str, Any]) -> str:
+    label = str(embodied.get("active_artifact_label") or "").strip()
+    if label:
+        return label
+    ref = str(embodied.get("active_artifact_ref") or "").strip()
+    if ref:
+        return ref
+    kind = str(embodied.get("active_artifact_kind") or "").strip().lower()
+    return _ARTIFACT_KIND_LABELS.get(kind, "前面的工作面")
+
+
+def _artifact_reacquisition_phrase(embodied: dict[str, Any]) -> str:
+    continuity = str(embodied.get("artifact_continuity") or "").strip().lower()
+    if continuity not in {"stale", "missing", "detached"}:
+        return ""
+    mode = str(embodied.get("artifact_reacquisition_mode") or "").strip().lower()
+    label = _artifact_surface_label(embodied)
+    if mode == "rerun_search":
+        return "先把前面的检索结果重新拿回来，再继续往下做。"
+    if mode == "reattach_workspace":
+        return f"先把{label}重新接回当前上下文，再继续往下做。"
+    if mode in {"reopen_page", "restore_page"}:
+        return f"先把{label}重新打开，再继续往下做。"
+    if mode in {"reopen_file", "restore_file"}:
+        return f"先把{label}重新打开，再继续往下做。"
+    if continuity == "stale":
+        return f"先确认{label}还是当前这一版，再继续往下做。"
+    return f"先把{label}重新接回当前上下文，再继续往下做。"
+
+
+def _embodied_behavior_continuity_hint(carryover: dict[str, Any] | None) -> dict[str, Any]:
+    row = dict(carryover or {})
+    embodied = normalize_embodied_context(row.get("embodied_context"))
+    if not embodied:
+        return {}
+    kind = str(embodied.get("kind") or "").strip().lower()
+    primary_status = str(embodied.get("primary_status") or "").strip().lower()
+    block_reason = str(embodied.get("block_reason") or "").strip()
+    requested_help = bool(embodied.get("requested_help", False))
+    requested_access = _clean_list_text(embodied.get("requested_access"), limit=2)
+    missing_access = _clean_list_text(embodied.get("missing_access"), limit=2)
+    access_label = "、".join(requested_access or missing_access)
+
+    if kind == "access_request_pending" or primary_status == "awaiting_approval" or requested_help:
+        goal_caveat = (
+            f"同时把还卡在{access_label}这一步的事留在进行中。"
+            if access_label
+            else "同时把还卡在入口确认里的事留在进行中。"
+        )
+        note = (
+            f"前面那件事还卡在等{access_label}和外部确认这一步，不会装作已经做完"
+            if access_label and requested_help
+            else f"前面那件事还卡在等{access_label}这一步，不会装作已经做完"
+            if access_label
+            else "前面那件事还停在入口确认之前，不会装作已经做完"
+        )
+        return {
+            "kind": "access_request_pending",
+            "goal_caveat": goal_caveat,
+            "note": note,
+        }
+
+    artifact_continuity = str(embodied.get("artifact_continuity") or "").strip().lower()
+    artifact_phrase = _artifact_reacquisition_phrase(embodied)
+    if artifact_phrase:
+        lead = "前面那个工作面有点旧了" if artifact_continuity == "stale" else "前面那个工作面还没接回当前上下文"
+        return {
+            "kind": "artifact_reacquisition_needed" if artifact_continuity in {"missing", "detached"} else "artifact_refresh_needed",
+            "goal_caveat": artifact_phrase,
+            "note": f"{lead}，{artifact_phrase.rstrip('。')}",
+        }
+
+    if kind == "environmental_friction" or block_reason or missing_access:
+        goal_caveat = "同时不把还被环境条件卡住的事说成已经落地。"
+        note = (
+            f"前面那件事还被环境条件卡着：{block_reason.rstrip('。')}"
+            if block_reason
+            else f"前面那件事还缺着{access_label}这类环境条件，先不把它说成已经落地"
+            if access_label
+            else "前面那件事还被环境条件卡着，先不把它说成已经落地"
+        )
+        return {
+            "kind": "environmental_friction",
+            "goal_caveat": goal_caveat,
+            "note": note,
+        }
+
+    return {}
+
+
+def _compact_embodied_action_hint(action: dict[str, Any] | None) -> str:
+    row = dict(action or {})
+    embodied = normalize_embodied_context(row.get("embodied_context"))
+    if not embodied:
+        return ""
+    kind = str(embodied.get("kind") or "").strip().lower()
+    primary_status = str(embodied.get("primary_status") or "").strip().lower()
+    block_reason = str(embodied.get("block_reason") or "").strip()
+    requested_help = bool(embodied.get("requested_help", False))
+    requested_access = _clean_list_text(embodied.get("requested_access"), limit=2)
+    missing_access = _clean_list_text(embodied.get("missing_access"), limit=2)
+    granted_toolsets = _clean_list_text(embodied.get("granted_toolsets"), limit=2)
+    active_tools = _clean_list_text(embodied.get("active_tools"), limit=2)
+    access_label = "、".join(requested_access or missing_access)
+    growth_label = "、".join(granted_toolsets or active_tools)
+
+    if kind == "access_request_pending" or primary_status == "awaiting_approval" or requested_help:
+        if access_label and requested_help:
+            return f"前面那件事还卡在等{access_label}和外部确认这一步，不把未完成部分写成已经做完"
+        if access_label:
+            return f"前面那件事还卡在等{access_label}这一步，不把未完成部分写成已经做完"
+        return "前面那件事还停在入口确认之前，不把未完成部分写成已经做完"
+
+    artifact_continuity = str(embodied.get("artifact_continuity") or "").strip().lower()
+    artifact_phrase = _artifact_reacquisition_phrase(embodied)
+    if artifact_phrase:
+        lead = "前面的工作面有点旧了" if artifact_continuity == "stale" else "前面的工作面还没接回当前上下文"
+        return f"{lead}，{artifact_phrase.rstrip('。')}"
+
+    if kind == "environmental_friction" or block_reason or missing_access:
+        if block_reason:
+            return f"前面那件事暂时还被环境条件卡着：{block_reason.rstrip('。')}"
+        if access_label:
+            return f"前面那件事暂时还缺着{access_label}这类环境条件，不把受阻写成已经落地"
+        return "前面那件事暂时还被环境条件卡着，不把受阻写成已经落地"
+
+    if kind == "embodied_growth":
+        if growth_label:
+            return f"像{growth_label}这样的环境路径这轮已经能继续接上，不必装作又回到完全不会"
+        return "这轮能沿着刚摸顺的环境路径继续做，不必装作一切都得从零开始"
+
+    return ""
+
+
+def _merge_goal_frame(base: str, caveat: str) -> str:
+    goal = str(base or "").strip() or "先自然接住这轮互动。"
+    extra = str(caveat or "").strip()
+    if not extra or extra in goal:
+        return goal
+    return f"{goal.rstrip('。')}，{extra.rstrip('。')}。"
 
 
 def _semantic_snapshot_level(snapshot: dict[str, Any], categories: tuple[str, ...]) -> float:
@@ -468,6 +640,7 @@ def _behavior_action_from_state(
     respect_space = "respect_space" in event_tags
     busy_scene = "user_busy" in event_tags or "cognitive_load" in event_tags
     carryover = dict(interaction_carryover or {})
+    embodied_continuity_hint = _embodied_behavior_continuity_hint(carryover)
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     carryover_strength = _clamp01(carryover.get("strength"), 0.0)
     carryover_relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
@@ -1717,6 +1890,12 @@ def _behavior_action_from_state(
     primary_motive = str(motive_state.get("primary_motive") or "").strip()
     motive_tension = str(motive_state.get("motive_tension") or "").strip() or "none"
     goal_frame = str(motive_state.get("goal_frame") or "").strip() or "先自然接住这轮互动。"
+    if embodied_continuity_hint:
+        goal_frame = _merge_goal_frame(goal_frame, str(embodied_continuity_hint.get("goal_caveat") or ""))
+        if disclosure_posture == "open":
+            disclosure_posture = "measured"
+        if followup_intent == "active":
+            followup_intent = "soft"
 
     if primary_motive == "protect_boundary":
         if disclosure_posture == "open":
@@ -1787,6 +1966,10 @@ def _behavior_action_from_state(
         note_parts.append("先维持自己的节奏，不急着回到对方身边")
     elif interaction_mode == "self_activity_reopen":
         note_parts.append("从自己的节奏里顺手开一个小口")
+    embodied_context = normalize_embodied_context(carryover.get("embodied_context"))
+    embodied_note = str(embodied_continuity_hint.get("note") or "").strip()
+    if embodied_note:
+        note_parts.append(embodied_note)
     if approach_style == "guarded":
         note_parts.append("保留一点距离")
     elif approach_style == "approach":
@@ -1827,7 +2010,7 @@ def _behavior_action_from_state(
     if followup_intent == "active":
         note_parts.append("允许轻微主动性")
 
-    return {
+    action_payload = {
         "channel": channel,
         "interaction_mode": interaction_mode,
         "approach_style": approach_style,
@@ -1852,6 +2035,9 @@ def _behavior_action_from_state(
         "relationship_weather": effective_relationship_weather,
         "window_profile": behavior_window_profile,
     }
+    if embodied_context_has_signal(embodied_context):
+        action_payload["embodied_context"] = embodied_context
+    return action_payload
 
 def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     if not isinstance(action, dict):
@@ -1866,6 +2052,7 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
     initiative_shape = str(action.get("initiative_shape") or "").strip()
     disclosure_posture = str(action.get("disclosure_posture") or "").strip()
     note = str(action.get("note") or "").strip()
+    embodied_hint = _compact_embodied_action_hint(action)
     parts: list[str] = []
     if primary_motive == "protect_boundary":
         parts.append("先守住边界，再决定要不要继续靠近")
@@ -1885,6 +2072,8 @@ def _compact_behavior_action_hint(action: dict[str, Any]) -> str:
         parts.append("先把共同记忆轻轻接回来")
     elif primary_motive == "confirm_presence":
         parts.append("先确认在场，不急着把话题铺满")
+    if embodied_hint:
+        parts.append(embodied_hint)
     if mode == "brief_presence":
         parts.append("先以轻确认的方式在场")
     elif mode == "idle_presence":
@@ -1986,6 +2175,7 @@ def _behavior_plan_carryover_snapshot(
     presence_residue = _clamp01(world.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(world.get("ambient_resonance"), 0.0)
     self_activity_momentum = _clamp01(world.get("self_activity_momentum"), 0.0)
+    embodied_context = normalize_embodied_context(action.get("embodied_context"))
     carryover_strength = _clamp01(
         action.get("initiative_level"),
         0.0,
@@ -1997,9 +2187,9 @@ def _behavior_plan_carryover_snapshot(
     elif carryover_mode in {"brief_presence", "quiet_recontact"}:
         carryover_strength = max(carryover_strength, presence_residue)
 
-    if not carryover_mode and carryover_strength < 0.18:
+    if not carryover_mode and carryover_strength < 0.18 and not embodied_context:
         return {}
-    return {
+    snapshot = {
         "carryover_mode": carryover_mode,
         "carryover_strength": round(carryover_strength, 3),
         "relationship_weather": str(action.get("relationship_weather") or "").strip(),
@@ -2009,6 +2199,9 @@ def _behavior_plan_carryover_snapshot(
         "ambient_resonance": round(ambient_resonance, 3),
         "self_activity_momentum": round(self_activity_momentum, 3),
     }
+    if embodied_context:
+        snapshot["embodied_context"] = embodied_context
+    return snapshot
 
 def _behavior_plan_from_action(
     current_event: dict[str, Any],

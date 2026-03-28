@@ -63,6 +63,11 @@ def resolve_session_context(
         resolved["user_id"] = user_id
     if checkpoint_id:
         resolved["checkpoint_id"] = checkpoint_id
+    hint_payload = configurable.get("digital_body_hints")
+    if not isinstance(hint_payload, dict):
+        hint_payload = state_context.get("digital_body_hints")
+    if isinstance(hint_payload, dict) and hint_payload:
+        resolved["digital_body_hints"] = dict(hint_payload)
     return resolved
 
 

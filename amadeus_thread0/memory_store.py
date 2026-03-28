@@ -1698,6 +1698,76 @@ class MemoryStore:
         items.sort(key=lambda x: self._recent_item_sort_key(x, "created_at"), reverse=True)
         return items[: int(limit)]
 
+    def _embodied_context_content(self, embodied_context: dict[str, Any] | None) -> dict[str, Any]:
+        item = embodied_context if isinstance(embodied_context, dict) else {}
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind:
+            return {}
+
+        def _text(key: str, *, limit: int = 220) -> str:
+            return str(item.get(key) or "").strip().lower()[:limit]
+
+        def _list(key: str, *, limit: int = 12) -> list[str]:
+            values = item.get(key) if isinstance(item.get(key), list) else []
+            out: list[str] = []
+            for value in values:
+                text = str(value or "").strip().lower()
+                if not text:
+                    continue
+                out.append(text)
+                if len(out) >= max(1, int(limit)):
+                    break
+            return out
+
+        def _int_list(key: str, *, limit: int = 8) -> list[int]:
+            values = item.get(key) if isinstance(item.get(key), list) else []
+            out: list[int] = []
+            for value in values:
+                try:
+                    ivalue = int(value)
+                except Exception:
+                    continue
+                if ivalue <= 0:
+                    continue
+                out.append(ivalue)
+                if len(out) >= max(1, int(limit)):
+                    break
+            return out
+
+        normalized = {
+            "kind": kind,
+            "summary": str(item.get("summary") or "").strip()[:220],
+            "access_mode": _text("access_mode", limit=64),
+            "active_surface": _text("active_surface", limit=64),
+            "world_surfaces": _list("world_surfaces"),
+            "missing_access": _list("missing_access"),
+            "requested_access": _list("requested_access"),
+            "granted_toolsets": _list("granted_toolsets"),
+            "active_tools": _list("active_tools", limit=8),
+            "block_reason": str(item.get("block_reason") or "").strip()[:220],
+            "artifact_continuity": _text("artifact_continuity", limit=64),
+            "active_artifact_kind": _text("active_artifact_kind", limit=64),
+            "active_artifact_ref": str(item.get("active_artifact_ref") or "").strip()[:220],
+            "active_artifact_label": str(item.get("active_artifact_label") or "").strip()[:160],
+            "artifact_age_s": max(0, int(item.get("artifact_age_s") or 0)),
+            "artifact_reacquisition_mode": _text("artifact_reacquisition_mode", limit=64),
+            "artifact_carrier": _text("artifact_carrier", limit=64),
+            "artifact_source_ref_ids": _int_list("artifact_source_ref_ids"),
+            "artifact_source_url": str(item.get("artifact_source_url") or "").strip()[:320],
+            "artifact_source_query": str(item.get("artifact_source_query") or "").strip()[:220],
+            "artifact_source_title": str(item.get("artifact_source_title") or "").strip()[:160],
+            "artifact_source_tool_name": _text("artifact_source_tool_name", limit=80),
+            "primary_proposal_id": str(item.get("primary_proposal_id") or "").strip()[:128],
+            "primary_status": _text("primary_status", limit=64),
+            "primary_origin": _text("primary_origin", limit=64),
+            "primary_intent": _text("primary_intent", limit=120),
+            "primary_tool_name": _text("primary_tool_name", limit=120),
+            "procedural_growth": bool(item.get("procedural_growth", False)),
+            "environmental_friction": bool(item.get("environmental_friction", False)),
+            "requested_help": bool(item.get("requested_help", False)),
+        }
+        return normalized
+
     def add_counterpart_assessment_history(
         self,
         summary: str,
@@ -1714,6 +1784,7 @@ class MemoryStore:
         motive_tension: str = "",
         goal_frame: str = "",
         assessment_profile: dict[str, Any] | None = None,
+        embodied_context: dict[str, Any] | None = None,
         confidence: float = 0.8,
         source_refs: list[int] | None = None,
     ) -> dict[str, Any]:
@@ -1722,6 +1793,7 @@ class MemoryStore:
             raise ValueError("empty counterpart assessment summary")
         profile = assessment_profile if isinstance(assessment_profile, dict) else {}
         raw_scene_strengths = profile.get("scene_strengths") if isinstance(profile.get("scene_strengths"), dict) else {}
+        embodied = self._embodied_context_content(embodied_context)
         return self._append_ns_item(
             "counterpart_assessment_history",
             self._to_memory_record(
@@ -1756,6 +1828,7 @@ class MemoryStore:
                         if profile
                         else {}
                     ),
+                    "embodied_context": embodied,
                 },
                 confidence=float(confidence),
                 source_refs=source_refs,
@@ -1804,12 +1877,14 @@ class MemoryStore:
         primary_motive: str = "",
         motive_tension: str = "",
         goal_frame: str = "",
+        embodied_context: dict[str, Any] | None = None,
         confidence: float = 0.8,
         source_refs: list[int] | None = None,
     ) -> dict[str, Any]:
         s = str(summary or "").strip()
         if not s:
             raise ValueError("empty proactive continuity summary")
+        embodied = self._embodied_context_content(embodied_context)
         return self._append_ns_item(
             "proactive_continuity_history",
             self._to_memory_record(
@@ -1848,6 +1923,7 @@ class MemoryStore:
                     "primary_motive": str(primary_motive or "").strip().lower(),
                     "motive_tension": str(motive_tension or "").strip().lower(),
                     "goal_frame": str(goal_frame or "").strip()[:220],
+                    "embodied_context": embodied,
                 },
                 confidence=float(confidence),
                 source_refs=source_refs,

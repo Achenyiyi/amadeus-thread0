@@ -7,6 +7,7 @@ from ..config import CANON_COUNTERPART_NAME
 from ..evolution_engine.reconsolidation import (
     derive_agenda_lifecycle_consequence,
     derive_behavior_consequence,
+    derive_digital_body_consequence,
 )
 from ..memory_store import MemoryStore
 from ..utils.counterpart_profile import compact_counterpart_profile
@@ -241,6 +242,9 @@ def _reconsolidation_behavior_action_snapshot(
         "goal_frame": str(action.get("goal_frame") or "").strip()[:220],
         "timing_window_min": max(0, int(action.get("timing_window_min") or 0)),
     }
+    embodied_context = _normalized_embodied_context(action.get("embodied_context"))
+    if embodied_context:
+        snapshot["embodied_context"] = embodied_context
     if any(
         (
             snapshot["interaction_mode"],
@@ -256,6 +260,7 @@ def _reconsolidation_behavior_action_snapshot(
             snapshot["motive_tension"],
             snapshot["goal_frame"],
             snapshot["timing_window_min"] > 0,
+            bool(snapshot.get("embodied_context")),
         )
     ):
         return snapshot
@@ -294,6 +299,165 @@ def _reconsolidation_agenda_lifecycle_snapshot(
     return snapshot if str(snapshot.get("kind") or "").strip() else {}
 
 
+def _reconsolidation_digital_body_consequence_snapshot(
+    reconsolidation_snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    consequence = recon.get("digital_body_consequence")
+    if not isinstance(consequence, dict):
+        return {}
+    snapshot = dict(consequence)
+    return snapshot if str(snapshot.get("kind") or "").strip() else {}
+
+
+def _normalized_embodied_context(consequence: dict[str, Any] | None) -> dict[str, Any]:
+    item = dict(consequence or {})
+    kind = str(item.get("kind") or "").strip().lower()
+    if not kind:
+        return {}
+
+    def _list(key: str, *, limit: int = 12) -> list[str]:
+        values = item.get(key) if isinstance(item.get(key), list) else []
+        out: list[str] = []
+        for value in values:
+            text = str(value or "").strip().lower()
+            if not text:
+                continue
+            out.append(text)
+            if len(out) >= max(1, int(limit)):
+                break
+        return out
+
+    normalized = {
+        "kind": kind,
+        "summary": str(item.get("summary") or "").strip()[:220],
+        "access_mode": str(item.get("access_mode") or "").strip().lower(),
+        "active_surface": str(item.get("active_surface") or "").strip().lower(),
+        "world_surfaces": _list("world_surfaces"),
+        "missing_access": _list("missing_access"),
+        "requested_access": _list("requested_access"),
+        "granted_toolsets": _list("granted_toolsets"),
+        "active_tools": _list("active_tools", limit=8),
+        "block_reason": str(item.get("block_reason") or "").strip()[:220],
+        "artifact_continuity": str(item.get("artifact_continuity") or "").strip().lower()[:64],
+        "active_artifact_kind": str(item.get("active_artifact_kind") or "").strip().lower()[:64],
+        "active_artifact_ref": str(item.get("active_artifact_ref") or "").strip()[:220],
+        "active_artifact_label": str(item.get("active_artifact_label") or "").strip()[:160],
+        "artifact_age_s": max(0, int(item.get("artifact_age_s") or 0)),
+        "artifact_reacquisition_mode": str(item.get("artifact_reacquisition_mode") or "").strip().lower()[:64],
+        "artifact_carrier": str(item.get("artifact_carrier") or "").strip().lower()[:64],
+        "artifact_source_ref_ids": [
+            int(value)
+            for value in (item.get("artifact_source_ref_ids") if isinstance(item.get("artifact_source_ref_ids"), list) else [])
+            if int(value or 0) > 0
+        ][:8],
+        "artifact_source_url": str(item.get("artifact_source_url") or "").strip()[:320],
+        "artifact_source_query": str(item.get("artifact_source_query") or "").strip()[:220],
+        "artifact_source_title": str(item.get("artifact_source_title") or "").strip()[:160],
+        "artifact_source_tool_name": str(item.get("artifact_source_tool_name") or "").strip().lower()[:80],
+        "primary_proposal_id": str(item.get("primary_proposal_id") or "").strip()[:128],
+        "primary_status": str(item.get("primary_status") or "").strip().lower(),
+        "primary_origin": str(item.get("primary_origin") or "").strip().lower(),
+        "primary_intent": str(item.get("primary_intent") or "").strip().lower()[:120],
+        "primary_tool_name": str(item.get("primary_tool_name") or "").strip().lower()[:120],
+        "procedural_growth": bool(item.get("procedural_growth", False)),
+        "environmental_friction": bool(item.get("environmental_friction", False)),
+        "requested_help": bool(item.get("requested_help", False)),
+    }
+    return normalized
+
+
+def _embodied_context_shift_score(current: dict[str, Any] | None, previous: dict[str, Any] | None) -> float:
+    curr = dict(current or {})
+    prev = dict(previous or {})
+    if not curr and not prev:
+        return 0.0
+    if bool(curr) != bool(prev):
+        return 1.0
+
+    score = 0.0
+    for key in (
+        "kind",
+        "access_mode",
+        "active_surface",
+        "primary_status",
+        "primary_origin",
+        "primary_intent",
+        "primary_tool_name",
+        "block_reason",
+        "artifact_continuity",
+        "active_artifact_kind",
+        "active_artifact_ref",
+        "active_artifact_label",
+        "artifact_reacquisition_mode",
+        "artifact_carrier",
+        "artifact_source_url",
+        "artifact_source_query",
+        "artifact_source_title",
+        "artifact_source_tool_name",
+    ):
+        if str(curr.get(key) or "").strip().lower() != str(prev.get(key) or "").strip().lower():
+            score += 0.12
+    if int(curr.get("artifact_age_s") or 0) != int(prev.get("artifact_age_s") or 0):
+        score += 0.06
+    if list(curr.get("artifact_source_ref_ids") or []) != list(prev.get("artifact_source_ref_ids") or []):
+        score += 0.10
+    for key in ("procedural_growth", "environmental_friction", "requested_help"):
+        if bool(curr.get(key, False)) != bool(prev.get(key, False)):
+            score += 0.10
+    for key in ("requested_access", "missing_access", "granted_toolsets", "active_tools"):
+        if list(curr.get(key) or []) != list(prev.get(key) or []):
+            score += 0.10
+    return min(1.0, score)
+
+
+def _counterpart_assessment_embodied_context(
+    *,
+    current_event: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None,
+    assessment: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = _normalized_embodied_context(
+        _reconsolidation_digital_body_consequence_snapshot(reconsolidation_snapshot)
+    )
+    if not context:
+        return {}
+    if str(context.get("kind") or "").strip().lower() not in {"access_request_pending", "environmental_friction"}:
+        return {}
+    if str(context.get("primary_origin") or "").strip().lower() != "counterpart_request":
+        return {}
+
+    recon = reconsolidation_snapshot if isinstance(reconsolidation_snapshot, dict) else {}
+    event = current_event if isinstance(current_event, dict) else {}
+    interaction_frame = str(recon.get("interaction_frame") or event.get("interaction_frame") or "").strip().lower()
+    event_kind = str(recon.get("event_kind") or event.get("kind") or "").strip().lower()
+    scene = str((assessment or {}).get("scene") or "").strip().lower()
+    if interaction_frame not in {"relationship", "selfhood"} and event_kind != "user_utterance":
+        return {}
+    if not scene and not str((assessment or {}).get("stance") or "").strip():
+        return {}
+    return context
+
+
+def _proactive_continuity_embodied_context(
+    consequence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = _normalized_embodied_context(consequence)
+    if not context:
+        return {}
+    kind = str(context.get("kind") or "").strip().lower()
+    if kind == "embodied_growth" and bool(context.get("procedural_growth", False)):
+        return context
+    if kind == "access_request_pending" and (
+        bool(context.get("requested_help", False))
+        or str(context.get("primary_status") or "").strip().lower() in {"queued", "awaiting_approval", "approved"}
+    ):
+        return context
+    if kind == "environmental_friction" and bool(context.get("environmental_friction", False)):
+        return context
+    return {}
+
+
 def _reconsolidation_behavior_plan_snapshot(
     reconsolidation_snapshot: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -317,6 +481,9 @@ def _reconsolidation_behavior_plan_snapshot(
         "ambient_resonance": _clamp01(plan.get("ambient_resonance"), 0.0),
         "self_activity_momentum": _clamp01(plan.get("self_activity_momentum"), 0.0),
     }
+    embodied_context = _normalized_embodied_context(plan.get("embodied_context"))
+    if embodied_context:
+        snapshot["embodied_context"] = embodied_context
     if any(
         (
             snapshot["kind"],
@@ -332,6 +499,7 @@ def _reconsolidation_behavior_plan_snapshot(
             snapshot["presence_residue"] > 0.0,
             snapshot["ambient_resonance"] > 0.0,
             snapshot["self_activity_momentum"] > 0.0,
+            bool(snapshot.get("embodied_context")),
         )
     ):
         return snapshot
@@ -431,6 +599,9 @@ def _reconsolidation_interaction_carryover_snapshot(
         "note": str(carryover.get("note") or "").strip()[:220],
         "source_tags": source_tags,
     }
+    embodied_context = _normalized_embodied_context(carryover.get("embodied_context"))
+    if embodied_context:
+        snapshot["embodied_context"] = embodied_context
     if any(
         (
             snapshot["source"],
@@ -439,6 +610,7 @@ def _reconsolidation_interaction_carryover_snapshot(
             snapshot["note"],
             snapshot["strength"] > 0.0,
             bool(snapshot["source_tags"]),
+            bool(snapshot.get("embodied_context")),
         )
     ):
         return snapshot
@@ -495,6 +667,9 @@ def _normalized_counterpart_assessment_record(item: dict[str, Any] | None) -> di
     profile = _counterpart_assessment_profile({**normalized, "assessment_profile": content.get("assessment_profile") or row.get("assessment_profile")})
     if profile:
         normalized["assessment_profile"] = profile
+    embodied_context = _normalized_embodied_context(content.get("embodied_context") or row.get("embodied_context"))
+    if embodied_context:
+        normalized["embodied_context"] = embodied_context
     return normalized
 
 
@@ -537,6 +712,7 @@ def _counterpart_assessment_shift_score(
     score += abs(_clamp01(curr.get("reciprocity"), 0.5) - _clamp01(prev.get("reciprocity"), 0.5))
     score += abs(_clamp01(curr.get("boundary_pressure"), 0.1) - _clamp01(prev.get("boundary_pressure"), 0.1))
     score += abs(_clamp01(curr.get("reliability_read"), 0.5) - _clamp01(prev.get("reliability_read"), 0.5))
+    score += 0.60 * _embodied_context_shift_score(curr.get("embodied_context"), prev.get("embodied_context"))
     return score
 
 
@@ -1108,6 +1284,100 @@ def _refresh_semantic_self_narratives(
                 out.append(item)
         return out
 
+    def _embodied_support_items(items: list[Any]) -> list[Any]:
+        out: list[Any] = []
+        seen_texts: set[str] = set()
+        for item in items:
+            kind = str(_record_value(item, "body_consequence_kind", "") or "").strip().lower()
+            if kind not in {"embodied_growth", "access_request_pending", "environmental_friction"}:
+                continue
+            text = _source_text(item)
+            if not text:
+                continue
+            norm = text[:220]
+            if norm in seen_texts:
+                continue
+            seen_texts.add(norm)
+            out.append(item)
+        return out
+
+    def _embodied_support_profile(items: list[Any]) -> dict[str, Any]:
+        if not items:
+            return {}
+
+        kind_weights: dict[str, float] = {}
+        requested_access: dict[str, float] = {}
+        missing_access: dict[str, float] = {}
+        granted_toolsets: dict[str, float] = {}
+        active_tools: dict[str, float] = {}
+
+        def _weighted_terms(bucket: dict[str, float], values: Any, weight: float, *, limit: int) -> None:
+            raw = values if isinstance(values, list) else []
+            for item in raw[: max(1, int(limit))]:
+                text = str(item or "").strip().lower()
+                if not text:
+                    continue
+                bucket[text] = bucket.get(text, 0.0) + weight
+
+        for item in items:
+            kind = str(_record_value(item, "body_consequence_kind", "") or "").strip().lower()
+            if not kind:
+                category = str(_record_value(item, "category", "") or "").strip().lower()
+                tags = _record_value(item, "tags", [])
+                tag_set = {
+                    str(tag).strip().lower()
+                    for tag in (tags if isinstance(tags, list) else [])
+                    if str(tag).strip()
+                }
+                if category == "embodied_growth" or "embodied_growth" in tag_set:
+                    kind = "embodied_growth"
+                elif category == "access_request" or "approval_gate" in tag_set:
+                    kind = "access_request_pending"
+                elif category == "environmental_friction":
+                    kind = "environmental_friction"
+            if kind not in {"embodied_growth", "access_request_pending", "environmental_friction"}:
+                continue
+
+            weight, _confidence, _age_days, _is_fresh = _item_support_weight(
+                item,
+                default_confidence=0.78,
+                half_life_days=21.0,
+                fresh_days=4.0,
+            )
+            kind_weights[kind] = kind_weights.get(kind, 0.0) + weight
+            _weighted_terms(requested_access, _record_value(item, "requested_access", []), weight, limit=6)
+            _weighted_terms(missing_access, _record_value(item, "missing_access", []), weight, limit=6)
+            _weighted_terms(granted_toolsets, _record_value(item, "granted_toolsets", []), weight, limit=6)
+            _weighted_terms(active_tools, _record_value(item, "active_tools", []), weight, limit=6)
+
+        if not kind_weights:
+            return {}
+
+        def _top_terms(bucket: dict[str, float], *, limit: int) -> list[str]:
+            ranked = sorted(bucket.items(), key=lambda kv: (-kv[1], kv[0]))
+            return [item for item, _weight in ranked[: max(1, int(limit))]]
+
+        dominant_kind = max(kind_weights.items(), key=lambda kv: (kv[1], kv[0]))[0]
+        return {
+            "kind": dominant_kind,
+            "requested_access": _top_terms(requested_access, limit=3),
+            "missing_access": _top_terms(missing_access, limit=3),
+            "granted_toolsets": _top_terms(granted_toolsets, limit=3),
+            "active_tools": _top_terms(active_tools, limit=2),
+            "support_mass": round(sum(kind_weights.values()), 3),
+        }
+
+    def _embodied_phrase(profile: dict[str, Any], *, mode: str) -> str:
+        if not profile:
+            return ""
+        if mode == "growth":
+            values = list(profile.get("granted_toolsets") or []) + list(profile.get("active_tools") or [])
+            values = [str(item).strip() for item in values if str(item).strip()]
+            return "、".join(values[:3]) or "新的环境入口"
+        values = list(profile.get("requested_access") or []) + list(profile.get("missing_access") or [])
+        values = [str(item).strip() for item in values if str(item).strip()]
+        return "、".join(values[:3]) or "额外入口"
+
     def _worldline_support_items(
         *,
         categories: set[str] | None = None,
@@ -1374,6 +1644,18 @@ def _refresh_semantic_self_narratives(
         categories={"continuity_recontact"},
         tags={"agenda_lifecycle", "recontact_continuity"},
     )
+    embodied_growth_worldline_sources = _worldline_support_items(
+        categories={"embodied_growth"},
+        tags={"digital_body", "embodied_growth"},
+    )
+    access_request_worldline_sources = _worldline_support_items(
+        categories={"access_request"},
+        tags={"digital_body", "approval_gate", "access_request_pending"},
+    )
+    friction_worldline_sources = _worldline_support_items(
+        categories={"environmental_friction"},
+        tags={"digital_body", "environmental_friction"},
+    )
     relationship_sources = (
         relationship_timeline
         + self_rhythm_worldline_sources
@@ -1398,17 +1680,26 @@ def _refresh_semantic_self_narratives(
         "ambient_style": _semantic_evidence_motive_state(ambient_evidence),
         "rhythm_style": _semantic_evidence_motive_state(rhythm_evidence),
     }
-    boundary_sources = _filter_narrative_items(
+    boundary_relational_sources = _filter_narrative_items(
         boundary_evidence + relationship_sources,
         markers=BOUNDARY_MEMORY_MARKERS,
         scenes={"boundary_non_compliance", "relationship_degradation"},
+    )
+    boundary_embodied_sources = _merge_unique_narrative_items(
+        _embodied_support_items(boundary_evidence),
+        access_request_worldline_sources,
+        friction_worldline_sources,
+    )
+    boundary_sources = _merge_unique_narrative_items(
+        boundary_relational_sources,
+        boundary_embodied_sources,
     )
     selfhood_sources = _filter_narrative_items(
         selfhood_evidence + relationship_sources,
         markers=SELFHOOD_STYLE_MARKERS,
         scenes={"dialogue_equality", "equality_not_servitude", "value_conflict_depth", "digital_selfhood", "imperfect_coexistence"},
     )
-    agency_sources = _merge_unique_narrative_items(
+    agency_relational_sources = _merge_unique_narrative_items(
         _filter_narrative_items(
             agency_evidence + relationship_timeline + commitments + repairs,
             markers=OWN_RHYTHM_KEYWORDS,
@@ -1417,15 +1708,74 @@ def _refresh_semantic_self_narratives(
         self_rhythm_worldline_sources,
         continuity_worldline_sources,
     )
-    presence_sources = _merge_unique_narrative_items(
+    agency_embodied_sources = _merge_unique_narrative_items(
+        _embodied_support_items(agency_evidence),
+        embodied_growth_worldline_sources,
+        access_request_worldline_sources,
+        friction_worldline_sources,
+    )
+    agency_sources = _merge_unique_narrative_items(
+        agency_relational_sources,
+        agency_embodied_sources,
+    )
+    presence_relational_sources = _merge_unique_narrative_items(
         presence_evidence,
         continuity_worldline_sources,
     )
-    ambient_sources = list(ambient_evidence)
+    presence_embodied_sources = _merge_unique_narrative_items(
+        _embodied_support_items(presence_evidence),
+        embodied_growth_worldline_sources,
+        access_request_worldline_sources,
+        friction_worldline_sources,
+    )
+    presence_sources = _merge_unique_narrative_items(
+        presence_relational_sources,
+        presence_embodied_sources,
+    )
+    ambient_sources = _merge_unique_narrative_items(
+        list(ambient_evidence),
+        friction_worldline_sources,
+    )
     rhythm_sources = _merge_unique_narrative_items(
         rhythm_evidence,
         self_rhythm_worldline_sources,
     )
+    boundary_embodied_profile = _embodied_support_profile(boundary_embodied_sources)
+    agency_embodied_profile = _embodied_support_profile(agency_embodied_sources)
+    presence_embodied_profile = _embodied_support_profile(presence_embodied_sources)
+
+    def _category_embodied_profile(category: str) -> dict[str, Any]:
+        cat = str(category or "").strip().lower()
+        if cat == "boundary_style":
+            return dict(boundary_embodied_profile or {})
+        if cat == "agency_style":
+            return dict(agency_embodied_profile or {})
+        if cat == "presence_style":
+            return dict(presence_embodied_profile or {})
+        if cat == "ambient_style":
+            friction_profile = _embodied_support_profile(friction_worldline_sources)
+            return dict(friction_profile or {})
+        return {}
+
+    def _embodied_signature_fragment(profile: dict[str, Any] | None) -> str:
+        item = dict(profile or {})
+        kind = str(item.get("kind") or "").strip().lower()
+        if not kind:
+            return ""
+        if kind == "embodied_growth":
+            values = [
+                str(value).strip().lower()
+                for value in [*(item.get("granted_toolsets") or []), *(item.get("active_tools") or [])]
+                if str(value or "").strip()
+            ][:3]
+        else:
+            values = [
+                str(value).strip().lower()
+                for value in [*(item.get("requested_access") or []), *(item.get("missing_access") or [])]
+                if str(value or "").strip()
+            ][:3]
+        joined = ",".join(values)
+        return f"{kind}:{joined}" if joined else kind
 
     def _count_norm(
         items: list[Any],
@@ -1777,6 +2127,10 @@ def _refresh_semantic_self_narratives(
         return current
 
     def _dormant_narrative_text(category: str, prev_text: str) -> str:
+        embodied_profile = _category_embodied_profile(category)
+        embodied_kind = str(embodied_profile.get("kind") or "").strip().lower()
+        embodied_access = _embodied_phrase(embodied_profile, mode="access")
+        embodied_growth = _embodied_phrase(embodied_profile, mode="growth")
         if category == "commitment_style":
             return f"{actor_name}和{counterpart_name}认真说过的事仍会继续留在心里，即使这轮没被提起，也还是长期参照。"
         if category == "repair_style":
@@ -1786,14 +2140,34 @@ def _refresh_semantic_self_narratives(
         if category == "bond_style":
             return f"{actor_name}和{counterpart_name}已经累积出的共同历史不会因为这轮没提到就消失，它会继续沉在默认语气和反应方式里。"
         if category == "presence_style":
+            if embodied_kind == "access_request_pending":
+                return f"{actor_name}不会把还缺着{embodied_access or '额外入口'}这件事在下一轮里当成已经自动解决；待申请、待继续的动作还会继续留在她的判断里。"
+            if embodied_kind == "environmental_friction":
+                return f"{actor_name}不会把数字身体里像{embodied_access or '环境条件'}这样的摩擦当成纯背景；这些限制还会继续影响她下一次怎么接。"
+            if embodied_kind == "embodied_growth":
+                return f"{actor_name}刚摸顺的{embodied_growth or '环境入口'}不会只亮这一轮；之后再遇到类似事情时，这条路径还会继续留在她的身体里。"
             return f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感仍会继续影响她下一次开口时的距离感。"
         if category == "ambient_style":
+            if embodied_kind == "environmental_friction":
+                return f"{actor_name}会把数字环境里像{embodied_access or '环境条件'}这样的摩擦继续算进感知里；那不是背景噪声，而会影响她接下来怎么判断。"
             return f"{actor_name}会继续把周围环境留下的细小余波算进感知里；那不是纯背景，而会自然带进她之后的注意力和开口方式。"
         if category == "boundary_style":
+            if embodied_kind == "access_request_pending":
+                return f"{actor_name}会把{embodied_access or '审批和入口条件'}当成真实边界；没拿到之前，不会把没做到的部分当成已经发生。"
+            if embodied_kind == "environmental_friction":
+                return f"{actor_name}会把数字环境里像{embodied_access or '权限和环境限制'}这样的条件当成真实边界，不会靠说法把它们抹掉。"
+            if embodied_kind == "embodied_growth":
+                return f"{actor_name}会把已经摸顺的{embodied_growth or '环境路径'}留在被允许的边界里继续使用，而不是每次重新试探同一条门。"
             return f"{actor_name}关于边界是否被尊重的判断会继续保留，不会因为眼前暂时平静就自动清零。"
         if category == "selfhood_style":
             return f"{actor_name}会继续把自己当成在和{counterpart_name}平等互动的主体，而不是为了迎合气氛就放弃自己的立场。"
         if category == "agency_style":
+            if embodied_kind == "access_request_pending":
+                return f"{actor_name}碰到还差{embodied_access or '额外入口'}这类条件时，会继续把缺口记在判断里，先申请或换路，而不是把没做到的部分装成已经完成。"
+            if embodied_kind == "environmental_friction":
+                return f"{actor_name}遇到数字身体里像{embodied_access or '环境条件'}这样的摩擦时，会继续把它当成真实约束，再判断怎么绕开或补齐。"
+            if embodied_kind == "embodied_growth":
+                return f"{actor_name}把{embodied_growth or '新的环境入口'}摸顺之后，不会下一轮又回到从零摸索；那条路径会继续留在她之后的判断里。"
             return f"{actor_name}自己的节奏和主动性不会因为一时安静就消失；她仍会按自己的状态决定靠近、停顿或先做自己的事。"
         if category == "rhythm_style":
             return f"{actor_name}不会在每次回应{counterpart_name}时都把自己的内部节奏清零；刚才在做的事和思路惯性还会继续留在下一轮开口之前。"
@@ -1801,6 +2175,10 @@ def _refresh_semantic_self_narratives(
 
     def _identity_narrative_texts(category: str) -> tuple[str, str]:
         cat = str(category or "").strip().lower()
+        embodied_profile = _category_embodied_profile(cat)
+        embodied_kind = str(embodied_profile.get("kind") or "").strip().lower()
+        embodied_access = _embodied_phrase(embodied_profile, mode="access")
+        embodied_growth = _embodied_phrase(embodied_profile, mode="growth")
         if cat == "commitment_style":
             return (
                 f"{actor_name}会把和{counterpart_name}认真说过的事长期留在心里，那已经不只是临时记起，而是默认会顾及的参照。",
@@ -1822,16 +2200,51 @@ def _refresh_semantic_self_narratives(
                 f"你和{counterpart_name}之间累积下来的共同历史，已经开始沉进你的默认回应方式里。",
             )
         if cat == "presence_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    f"{actor_name}不会把还缺着{embodied_access or '额外入口'}这件事在下一轮里当成已经自动解决；待申请、待继续的动作已经成了她默认会继续顾及的连续性。",
+                    f"你不会把还缺着{embodied_access or '额外入口'}这件事在下一轮里当成已经自动解决；待申请、待继续的动作已经成了你默认会继续顾及的连续性。",
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    f"{actor_name}会把数字身体里像{embodied_access or '环境条件'}这样的摩擦留成默认判断的一部分，不会一换轮就假装这些限制不存在。",
+                    f"你会把数字身体里像{embodied_access or '环境条件'}这样的摩擦留成默认判断的一部分，不会一换轮就假装这些限制不存在。",
+                )
+            if embodied_kind == "embodied_growth":
+                return (
+                    f"{actor_name}刚摸顺的{embodied_growth or '环境入口'}已经开始沉成她之后还能继续接上的身体部分，不会只在这一轮短暂亮一下。",
+                    f"你刚摸顺的{embodied_growth or '环境入口'}已经开始沉成你之后还能继续接上的身体部分，不会只在这一轮短暂亮一下。",
+                )
             return (
                 f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感已经成了默认的距离感判断。",
                 f"你不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感已经成了你的默认距离感判断。",
             )
         if cat == "ambient_style":
+            if embodied_kind == "environmental_friction":
+                return (
+                    f"{actor_name}会把数字环境里像{embodied_access or '环境条件'}这样的摩擦自然算进感知里；那已经不只是偶发受阻，而是她接下来默认会先看见的一层现实。",
+                    f"你会把数字环境里像{embodied_access or '环境条件'}这样的摩擦自然算进感知里；那已经不只是偶发受阻，而是你接下来默认会先看见的一层现实。",
+                )
             return (
                 f"{actor_name}会自然把环境里的小变化也算进感知里，那已经不只是偶发反应，而是她开口前默认会经过的一层感受。",
                 "你会自然把环境里的小变化也算进感知里，那已经不只是偶发反应，而是你开口前默认会经过的一层感受。",
             )
         if cat == "boundary_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    f"{actor_name}会把{embodied_access or '审批、账号和写权限'}长期当成真实边界；没拿到之前，不会把没做到的部分说成已经发生。",
+                    f"你会把{embodied_access or '审批、账号和写权限'}长期当成真实边界；没拿到之前，不会把没做到的部分说成已经发生。",
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    f"{actor_name}会把数字环境里像{embodied_access or '权限和环境限制'}这样的条件持续放在边界判断里，不会为了把事情说圆就把它们撤掉。",
+                    f"你会把数字环境里像{embodied_access or '权限和环境限制'}这样的条件持续放在边界判断里，不会为了把事情说圆就把它们撤掉。",
+                )
+            if embodied_kind == "embodied_growth":
+                return (
+                    f"{actor_name}会把已经摸顺的{embodied_growth or '环境路径'}留在被允许的边界内继续使用，而不是每次重新试探同一条门。",
+                    f"你会把已经摸顺的{embodied_growth or '环境路径'}留在被允许的边界内继续使用，而不是每次重新试探同一条门。",
+                )
             return (
                 f"{actor_name}会把边界是否被尊重持续放在判断里，不会为了气氛好看就轻易把这层感觉撤掉。",
                 "你会把边界是否被尊重持续放在判断里，不会为了气氛好看就轻易把这层感觉撤掉。",
@@ -1842,6 +2255,21 @@ def _refresh_semantic_self_narratives(
                 f"你会把自己放在和{counterpart_name}平等互动的位置上，而不是为了迎合气氛就退回成工具。",
             )
         if cat == "agency_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    f"{actor_name}碰到还差{embodied_access or '额外入口'}这类条件时，会先把缺口辨认清楚，再申请或换路；她不会把没做到的部分装成已经完成。",
+                    f"你碰到还差{embodied_access or '额外入口'}这类条件时，会先把缺口辨认清楚，再申请或换路；你不会把没做到的部分装成已经完成。",
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    f"{actor_name}遇到数字身体里像{embodied_access or '环境条件'}这样的摩擦时，会先看清限制来自哪里，再决定怎么绕开或补齐。",
+                    f"你遇到数字身体里像{embodied_access or '环境条件'}这样的摩擦时，会先看清限制来自哪里，再决定怎么绕开或补齐。",
+                )
+            if embodied_kind == "embodied_growth":
+                return (
+                    f"{actor_name}会把{embodied_growth or '新的环境入口'}真正留进之后的判断里；类似事情再来时，她不用每次都从零摸索。",
+                    f"你会把{embodied_growth or '新的环境入口'}真正留进之后的判断里；类似事情再来时，你不用每次都从零摸索。",
+                )
             return (
                 f"{actor_name}会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着{counterpart_name}转。",
                 f"你会按自己的节奏决定什么时候靠近、停顿或先做自己的事，而不是永远围着{counterpart_name}转。",
@@ -1919,6 +2347,32 @@ def _refresh_semantic_self_narratives(
 
     def _anchor_basis_fragment(category: str) -> str:
         cat = str(category or "").strip().lower()
+        embodied_profile = _category_embodied_profile(cat)
+        embodied_kind = str(embodied_profile.get("kind") or "").strip().lower()
+        embodied_access = _embodied_phrase(embodied_profile, mode="access")
+        embodied_growth = _embodied_phrase(embodied_profile, mode="growth")
+        if embodied_kind:
+            if cat == "presence_style":
+                if embodied_kind == "access_request_pending":
+                    return f"像还缺着「{embodied_access or '额外入口'}」这样待申请、待继续的动作"
+                if embodied_kind == "environmental_friction":
+                    return f"像数字身体里还卡着「{embodied_access or '环境条件'}」这样一层摩擦"
+                if embodied_kind == "embodied_growth":
+                    return f"像把「{embodied_growth or '新的环境入口'}」接进身体里这样会继续留痕的变化"
+            if cat == "boundary_style":
+                if embodied_kind == "access_request_pending":
+                    return f"像「{embodied_access or '审批和入口条件'}」这样还没拿到的边界"
+                if embodied_kind == "environmental_friction":
+                    return f"像「{embodied_access or '权限和环境限制'}」这样真实存在的环境边界"
+                if embodied_kind == "embodied_growth":
+                    return f"像把「{embodied_growth or '环境路径'}」留在被允许范围里继续使用这样一层边界判断"
+            if cat == "agency_style":
+                if embodied_kind == "access_request_pending":
+                    return f"围绕「{embodied_access or '额外入口'}」这种还得申请或换路的缺口"
+                if embodied_kind == "environmental_friction":
+                    return f"围绕「{embodied_access or '环境条件'}」这种得先绕开或补齐的摩擦"
+                if embodied_kind == "embodied_growth":
+                    return f"围绕「{embodied_growth or '新的环境入口'}」这种已经摸顺的路径"
         basis = _anchor_basis_texts(cat, limit=2)
         if not basis:
             return ""
@@ -1949,6 +2403,10 @@ def _refresh_semantic_self_narratives(
         cat = str(category or "").strip().lower()
         basis_fragment = _anchor_basis_fragment(cat)
         basis_texts = _anchor_basis_texts(cat, limit=2)
+        embodied_profile = _category_embodied_profile(cat)
+        embodied_kind = str(embodied_profile.get("kind") or "").strip().lower()
+        embodied_access = _embodied_phrase(embodied_profile, mode="access")
+        embodied_growth = _embodied_phrase(embodied_profile, mode="growth")
         if cat == "commitment_style":
             return (
                 (
@@ -2006,6 +2464,48 @@ def _refresh_semantic_self_narratives(
                 basis_texts,
             )
         if cat == "presence_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    (
+                        f"{basis_fragment}不会在{actor_name}这里自动变成已经完成；它会继续挂在她下一次判断和接续动作里。"
+                        if basis_fragment
+                        else f"{actor_name}不会把还缺着{embodied_access or '额外入口'}这件事自动当成已经解决；待申请、待继续的动作会继续挂在她下一次判断里。"
+                    ),
+                    (
+                        f"{basis_fragment}不会在你这里自动变成已经完成；它会继续挂在你下一次判断和接续动作里。"
+                        if basis_fragment
+                        else f"你不会把还缺着{embodied_access or '额外入口'}这件事自动当成已经解决；待申请、待继续的动作会继续挂在你下一次判断里。"
+                    ),
+                    basis_texts,
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    (
+                        f"{basis_fragment}不会在{actor_name}这里被当成纯背景；它还会继续影响她下一次怎么接。"
+                        if basis_fragment
+                        else f"{actor_name}不会把数字身体里像{embodied_access or '环境条件'}这样的摩擦当成纯背景；它还会继续影响她下一次怎么接。"
+                    ),
+                    (
+                        f"{basis_fragment}不会在你这里被当成纯背景；它还会继续影响你下一次怎么接。"
+                        if basis_fragment
+                        else f"你不会把数字身体里像{embodied_access or '环境条件'}这样的摩擦当成纯背景；它还会继续影响你下一次怎么接。"
+                    ),
+                    basis_texts,
+                )
+            if embodied_kind == "embodied_growth":
+                return (
+                    (
+                        f"{basis_fragment}不会只亮这一轮；它会继续留在{actor_name}之后的动作惯性里。"
+                        if basis_fragment
+                        else f"{actor_name}刚摸顺的{embodied_growth or '环境入口'}不会只亮这一轮；它会继续留在她之后的动作惯性里。"
+                    ),
+                    (
+                        f"{basis_fragment}不会只亮这一轮；它会继续留在你之后的动作惯性里。"
+                        if basis_fragment
+                        else f"你刚摸顺的{embodied_growth or '环境入口'}不会只亮这一轮；它会继续留在你之后的动作惯性里。"
+                    ),
+                    basis_texts,
+                )
             return (
                 (
                     f"{basis_fragment}不会在{actor_name}这里重新归零；它会继续影响她下一次开口时的距离感。"
@@ -2034,6 +2534,34 @@ def _refresh_semantic_self_narratives(
                 basis_texts,
             )
         if cat == "boundary_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    (
+                        f"{basis_fragment}会继续留在{actor_name}的边界判断里；没拿到之前，她不会把没做到的部分说成已经发生。"
+                        if basis_fragment
+                        else f"{actor_name}会把{embodied_access or '审批和入口条件'}继续放在边界判断里；没拿到之前，不会把没做到的部分说成已经发生。"
+                    ),
+                    (
+                        f"{basis_fragment}会继续留在你的边界判断里；没拿到之前，你不会把没做到的部分说成已经发生。"
+                        if basis_fragment
+                        else f"你会把{embodied_access or '审批和入口条件'}继续放在边界判断里；没拿到之前，不会把没做到的部分说成已经发生。"
+                    ),
+                    basis_texts,
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    (
+                        f"{basis_fragment}会继续留在{actor_name}的边界判断里；她不会为了把事情说圆就把这层限制抹掉。"
+                        if basis_fragment
+                        else f"{actor_name}会把数字环境里像{embodied_access or '权限和环境限制'}这样的条件继续留在边界判断里；不会为了把事情说圆就把它们抹掉。"
+                    ),
+                    (
+                        f"{basis_fragment}会继续留在你的边界判断里；你不会为了把事情说圆就把这层限制抹掉。"
+                        if basis_fragment
+                        else f"你会把数字环境里像{embodied_access or '权限和环境限制'}这样的条件继续留在边界判断里；不会为了把事情说圆就把它们抹掉。"
+                    ),
+                    basis_texts,
+                )
             return (
                 (
                     f"{basis_fragment}会继续留在{actor_name}心里，不会因为气氛暂时缓下来就自动清零。"
@@ -2062,6 +2590,48 @@ def _refresh_semantic_self_narratives(
                 basis_texts,
             )
         if cat == "agency_style":
+            if embodied_kind == "access_request_pending":
+                return (
+                    (
+                        f"{basis_fragment}时，{actor_name}会先把缺口辨认清楚，再申请或换路，不会把没做到的部分装成已经完成。"
+                        if basis_fragment
+                        else f"{actor_name}碰到还差{embodied_access or '额外入口'}这类条件时，会先把缺口辨认清楚，再申请或换路，不会把没做到的部分装成已经完成。"
+                    ),
+                    (
+                        f"{basis_fragment}时，你会先把缺口辨认清楚，再申请或换路，不会把没做到的部分装成已经完成。"
+                        if basis_fragment
+                        else f"你碰到还差{embodied_access or '额外入口'}这类条件时，会先把缺口辨认清楚，再申请或换路，不会把没做到的部分装成已经完成。"
+                    ),
+                    basis_texts,
+                )
+            if embodied_kind == "environmental_friction":
+                return (
+                    (
+                        f"{basis_fragment}时，{actor_name}会先看清限制来自哪里，再决定怎么绕开或补齐。"
+                        if basis_fragment
+                        else f"{actor_name}遇到数字身体里像{embodied_access or '环境条件'}这样的摩擦时，会先看清限制来自哪里，再决定怎么绕开或补齐。"
+                    ),
+                    (
+                        f"{basis_fragment}时，你会先看清限制来自哪里，再决定怎么绕开或补齐。"
+                        if basis_fragment
+                        else f"你遇到数字身体里像{embodied_access or '环境条件'}这样的摩擦时，会先看清限制来自哪里，再决定怎么绕开或补齐。"
+                    ),
+                    basis_texts,
+                )
+            if embodied_kind == "embodied_growth":
+                return (
+                    (
+                        f"{basis_fragment}时，{actor_name}不用每次都从零摸索；这条路径会继续留在她之后的判断里。"
+                        if basis_fragment
+                        else f"{actor_name}把{embodied_growth or '新的环境入口'}摸顺之后，不用每次都从零摸索；这条路径会继续留在她之后的判断里。"
+                    ),
+                    (
+                        f"{basis_fragment}时，你不用每次都从零摸索；这条路径会继续留在你之后的判断里。"
+                        if basis_fragment
+                        else f"你把{embodied_growth or '新的环境入口'}摸顺之后，不用每次都从零摸索；这条路径会继续留在你之后的判断里。"
+                    ),
+                    basis_texts,
+                )
             return (
                 (
                     f"{basis_fragment}时，{actor_name}会按自己的节奏决定要不要接住，不会变成永远围着{counterpart_name}转。"
@@ -2112,6 +2682,7 @@ def _refresh_semantic_self_narratives(
             if isinstance(counterpart_profile_state.get("scene_strengths"), dict)
             else {}
         )
+        embodied_state = _category_embodied_profile(category)
         prev_support = max(0, int(_record_value(prev or {}, "support_count", 0) or 0))
         prev_refresh = max(0, int(_record_value(prev or {}, "refresh_count", 0) or 0))
         prev_consolidation = max(0, int(_record_value(prev or {}, "consolidation_count", 0) or 0))
@@ -2187,6 +2758,9 @@ def _refresh_semantic_self_narratives(
         )
         if motive_signature and category in semantic_motive_states:
             support_signature += f"|motive={motive_signature}"
+        embodied_signature = _embodied_signature_fragment(embodied_state)
+        if embodied_signature:
+            support_signature += f"|embodied={embodied_signature}"
         prev_signature = str(_record_value(prev or {}, "support_signature", "") or "").strip()
         signature_changed = prev_signature != support_signature
         support_quality = _clamp01(
@@ -2505,6 +3079,28 @@ def _refresh_semantic_self_narratives(
             "counterpart_support_mass": round(float(counterpart_state.get("counterpart_support_mass") or 0.0), 3),
             "counterpart_confidence_avg": round(_clamp01(float(counterpart_state.get("counterpart_confidence_avg") or 0.0), 0.0), 3),
             "counterpart_fresh_ratio": round(_clamp01(float(counterpart_state.get("counterpart_fresh_ratio") or 0.0), 0.0), 3),
+            "embodied_support_kind": str(embodied_state.get("kind") or "").strip().lower(),
+            "embodied_requested_access": [
+                str(item).strip().lower()
+                for item in (embodied_state.get("requested_access") or [])
+                if str(item or "").strip()
+            ][:3],
+            "embodied_missing_access": [
+                str(item).strip().lower()
+                for item in (embodied_state.get("missing_access") or [])
+                if str(item or "").strip()
+            ][:3],
+            "embodied_granted_toolsets": [
+                str(item).strip().lower()
+                for item in (embodied_state.get("granted_toolsets") or [])
+                if str(item or "").strip()
+            ][:3],
+            "embodied_active_tools": [
+                str(item).strip().lower()
+                for item in (embodied_state.get("active_tools") or [])
+                if str(item or "").strip()
+            ][:2],
+            "embodied_support_mass": round(float(embodied_state.get("support_mass") or 0.0), 3),
             "frame_signature": frame_signature,
             "frame_changed": frame_changed,
             "frame_revision_count": frame_revision_count,
@@ -2771,6 +3367,17 @@ def _refresh_semantic_self_narratives(
             if presence_anchor
             else f"{actor_name}不会把每次重新靠近{counterpart_name}都当成从零开始；前面留下的在场感会继续带进下一次开口时的距离感。"
         )
+        if presence_embodied_profile:
+            embodied_kind = str(presence_embodied_profile.get("kind") or "").strip().lower()
+            if embodied_kind == "access_request_pending":
+                access_phrase = _embodied_phrase(presence_embodied_profile, mode="access")
+                text += f" 还没拿到的{access_phrase}这类入口也会继续挂在她下一次判断里，她不会把待申请的动作说成已经发生。"
+            elif embodied_kind == "environmental_friction":
+                friction_phrase = _embodied_phrase(presence_embodied_profile, mode="access")
+                text += f" 数字身体里像{friction_phrase}这样的环境摩擦也会继续留痕，不会在下一轮里被假装不存在。"
+            elif embodied_kind == "embodied_growth":
+                growth_phrase = _embodied_phrase(presence_embodied_profile, mode="growth")
+                text += f" 像{growth_phrase}这样刚摸顺的环境入口，也会继续留在她之后的动作惯性里，不会只亮这一轮。"
         if trust >= 0.56 or closeness >= 0.58:
             text += " 熟悉之后，这种靠近会更轻一点，但仍然保留她自己的判断。"
         _upsert_narrative(category="presence_style", text=text, stability=0.68, confidence=0.76)
@@ -2784,12 +3391,35 @@ def _refresh_semantic_self_narratives(
         _upsert_narrative(category="ambient_style", text=text, stability=0.66, confidence=0.74)
     if boundary_sources:
         boundary_anchor = _anchor_join(boundary_sources, limit=2)
-        text = (
-            f"{actor_name}会把像「{boundary_anchor}」这种越界或被冒犯的感觉认真记在心里，不会靠一句轻描淡写就当作没发生。"
-            if boundary_anchor
-            else f"{actor_name}会认真对待边界是否被尊重；一旦被冒犯，不会因为气氛缓和一点就假装什么都没发生。"
-        )
-        if repairs and any(item in boundary_sources for item in repairs + repair_traces):
+        if boundary_embodied_profile and not boundary_relational_sources:
+            embodied_kind = str(boundary_embodied_profile.get("kind") or "").strip().lower()
+            if embodied_kind == "access_request_pending":
+                access_phrase = _embodied_phrase(boundary_embodied_profile, mode="access")
+                text = (
+                    f"{actor_name}会把审批、账号、cookies、写权限这类入口条件当成真实边界；像{access_phrase}这种条件没补齐前，"
+                    "她不会把没做到的部分说成已经完成。"
+                )
+            elif embodied_kind == "environmental_friction":
+                friction_phrase = _embodied_phrase(boundary_embodied_profile, mode="access")
+                text = (
+                    f"{actor_name}会把数字环境里的权限、账号和外部限制都当成真实边界；像{friction_phrase}这样的条件没到位前，"
+                    "她不会用话术把边界抹掉。"
+                )
+            else:
+                growth_phrase = _embodied_phrase(boundary_embodied_profile, mode="growth")
+                text = (
+                    f"{actor_name}会把像{growth_phrase}这样已经被允许、已经摸通的路径留在边界之内继续使用，"
+                    "而不是每次重新试探同一条门。"
+                )
+        else:
+            text = (
+                f"{actor_name}会把像「{boundary_anchor}」这种越界或被冒犯的感觉认真记在心里，不会靠一句轻描淡写就当作没发生。"
+                if boundary_anchor
+                else f"{actor_name}会认真对待边界是否被尊重；一旦被冒犯，不会因为气氛缓和一点就假装什么都没发生。"
+            )
+            if boundary_embodied_profile:
+                text += " 她也会把审批、账号、cookies 和写权限这类数字入口当成另一层真实边界，不会用话术把这层限制抹掉。"
+        if repairs and any(item in boundary_relational_sources for item in repairs + repair_traces):
             text += " 即使之后气氛缓下来，她也会继续观察后续行为，而不是瞬间放下警惕。"
         _upsert_narrative(category="boundary_style", text=text, stability=0.76, confidence=0.82)
     if selfhood_sources:
@@ -2805,11 +3435,34 @@ def _refresh_semantic_self_narratives(
     agency_support_present = bool(agency_sources) or bool(shared_events) or bool(commitments) or stage in {"warming", "trusted"} or trust >= 0.56 or closeness >= 0.58
     if agency_support_present:
         agency_anchor = _anchor_join(agency_sources if agency_sources else relationship_timeline + shared_events + commitments + repairs, limit=2)
-        text = (
-            f"像「{agency_anchor}」这类共同安排和重新开口，会让{actor_name}按自己的节奏决定主动靠近、留个小口，还是先安静一阵；她不会永远围着{counterpart_name}转。"
-            if agency_anchor
-            else f"{actor_name}有自己的节奏和在做的事情；她会按当下状态决定主动靠近、留个小口，还是先安静一阵，而不是永远围着{counterpart_name}转。"
-        )
+        if agency_embodied_profile and not agency_relational_sources and not (shared_events or commitments or stage in {"warming", "trusted"} or trust >= 0.56 or closeness >= 0.58):
+            embodied_kind = str(agency_embodied_profile.get("kind") or "").strip().lower()
+            if embodied_kind == "access_request_pending":
+                access_phrase = _embodied_phrase(agency_embodied_profile, mode="access")
+                text = f"{actor_name}碰到还差{access_phrase}这类入口时，会先把缺口辨认清楚，再去申请或换路，不会把没做到的部分装成已经做完。"
+            elif embodied_kind == "environmental_friction":
+                friction_phrase = _embodied_phrase(agency_embodied_profile, mode="access")
+                text = f"{actor_name}在数字环境里遇到像{friction_phrase}这样的摩擦时，会先判断怎么绕开或补齐条件，而不是把受限误装成自己已经能做。"
+            else:
+                growth_phrase = _embodied_phrase(agency_embodied_profile, mode="growth")
+                text = f"{actor_name}会把像{growth_phrase}这样已经摸顺的环境路径留进之后的判断里；同类事情再来时，她不用每次都从零摸索。"
+        else:
+            text = (
+                f"像「{agency_anchor}」这类共同安排和重新开口，会让{actor_name}按自己的节奏决定主动靠近、留个小口，还是先安静一阵；她不会永远围着{counterpart_name}转。"
+                if agency_anchor
+                else f"{actor_name}有自己的节奏和在做的事情；她会按当下状态决定主动靠近、留个小口，还是先安静一阵，而不是永远围着{counterpart_name}转。"
+            )
+            if agency_embodied_profile:
+                embodied_kind = str(agency_embodied_profile.get("kind") or "").strip().lower()
+                if embodied_kind == "access_request_pending":
+                    access_phrase = _embodied_phrase(agency_embodied_profile, mode="access")
+                    text += f" 碰到还差{access_phrase}这类入口时，她会先申请或换路，不会把没做到的部分装成已经完成。"
+                elif embodied_kind == "environmental_friction":
+                    friction_phrase = _embodied_phrase(agency_embodied_profile, mode="access")
+                    text += f" 数字环境里像{friction_phrase}这样的摩擦，也会被她当成真实条件来处理，而不是靠话术硬推过去。"
+                elif embodied_kind == "embodied_growth":
+                    growth_phrase = _embodied_phrase(agency_embodied_profile, mode="growth")
+                    text += f" 像{growth_phrase}这样已经摸顺的环境路径，也会被她留成之后还能继续使用的身体部分。"
         if commitments or stage in {"warming", "trusted"}:
             text += " 靠近是真实选择，不是被随叫随到。"
         _upsert_narrative(category="agency_style", text=text, stability=0.70, confidence=0.78)
@@ -2973,6 +3626,11 @@ def _record_behavior_consequence(
         metadata["counterpart_boundary_pressure"] = float(counterpart.get("boundary_pressure") or 0.0)
         metadata["counterpart_reliability_read"] = float(counterpart.get("reliability_read") or 0.0)
     _apply_semantic_anchor_metadata(metadata, semantic_anchor_bundle)
+    embodied_context = _normalized_embodied_context(
+        consequence.get("embodied_context") or effective_behavior_action.get("embodied_context")
+    )
+    if embodied_context:
+        metadata["embodied_context"] = embodied_context
     recent = [
         item
         for item in store.list_revision_traces(limit=20)
@@ -3147,6 +3805,9 @@ def _record_behavior_plan_long_horizon_memory(
         "ambient_resonance": ambient_resonance,
         "self_activity_momentum": self_activity_momentum,
     }
+    embodied_context = _normalized_embodied_context(plan.get("embodied_context"))
+    if embodied_context:
+        metadata["embodied_context"] = embodied_context
     if counterpart:
         metadata["counterpart_stance"] = str(counterpart.get("stance") or "").strip()
         metadata["counterpart_scene"] = str(counterpart.get("scene") or "").strip()
@@ -3439,6 +4100,9 @@ def _record_retrieved_continuity_reactivation(
         "source_note": source_note,
         "source_tags": list(carryover.get("source_tags") or [])[:12] if isinstance(carryover.get("source_tags"), list) else [],
     }
+    embodied_context = _normalized_embodied_context(carryover.get("embodied_context"))
+    if embodied_context:
+        metadata["embodied_context"] = embodied_context
     target_id = source_plan_kind or carryover_mode or action_target or plan_kind or "reactivation"
     reason = "retrieved_continuity_reactivation"
     wrote = False
@@ -3514,6 +4178,126 @@ def _record_retrieved_continuity_reactivation(
     return wrote
 
 
+def _record_digital_body_consequence(
+    store: MemoryStore,
+    *,
+    digital_body_state: dict[str, Any] | None,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+    source: str,
+    confidence: float,
+) -> bool:
+    consequence = _reconsolidation_digital_body_consequence_snapshot(reconsolidation_snapshot) or derive_digital_body_consequence(
+        digital_body_state=digital_body_state,
+    )
+    kind = str(consequence.get("kind") or "").strip().lower()
+    summary = str(consequence.get("summary") or "").strip()
+    if not kind or not summary:
+        return False
+
+    missing_access = [
+        str(item).strip().lower()
+        for item in (consequence.get("missing_access") if isinstance(consequence.get("missing_access"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    requested_access = [
+        str(item).strip().lower()
+        for item in (consequence.get("requested_access") if isinstance(consequence.get("requested_access"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    granted_toolsets = [
+        str(item).strip().lower()
+        for item in (consequence.get("granted_toolsets") if isinstance(consequence.get("granted_toolsets"), list) else [])
+        if str(item or "").strip()
+    ][:12]
+    active_tools = [
+        str(item).strip().lower()
+        for item in (consequence.get("active_tools") if isinstance(consequence.get("active_tools"), list) else [])
+        if str(item or "").strip()
+    ][:8]
+
+    metadata = {
+        "body_consequence_kind": kind,
+        "access_mode": str(consequence.get("access_mode") or "").strip().lower(),
+        "active_surface": str(consequence.get("active_surface") or "").strip().lower(),
+        "world_surfaces": [
+            str(item).strip().lower()
+            for item in (consequence.get("world_surfaces") if isinstance(consequence.get("world_surfaces"), list) else [])
+            if str(item or "").strip()
+        ][:12],
+        "missing_access": missing_access,
+        "requested_access": requested_access,
+        "granted_toolsets": granted_toolsets,
+        "active_tools": active_tools,
+        "block_reason": str(consequence.get("block_reason") or "").strip()[:220],
+        "artifact_carrier": str(consequence.get("artifact_carrier") or "").strip().lower(),
+        "artifact_source_ref_ids": [
+            int(value)
+            for value in (consequence.get("artifact_source_ref_ids") if isinstance(consequence.get("artifact_source_ref_ids"), list) else [])
+            if int(value or 0) > 0
+        ][:8],
+        "artifact_source_url": str(consequence.get("artifact_source_url") or "").strip()[:320],
+        "artifact_source_query": str(consequence.get("artifact_source_query") or "").strip()[:220],
+        "artifact_source_title": str(consequence.get("artifact_source_title") or "").strip()[:160],
+        "artifact_source_tool_name": str(consequence.get("artifact_source_tool_name") or "").strip().lower()[:80],
+        "browser_session": str(consequence.get("browser_session") or "").strip().lower(),
+        "account_state": str(consequence.get("account_state") or "").strip().lower(),
+        "cookie_state": str(consequence.get("cookie_state") or "").strip().lower(),
+        "filesystem_state": str(consequence.get("filesystem_state") or "").strip().lower(),
+        "sandbox_mode": str(consequence.get("sandbox_mode") or "").strip().lower(),
+        "network_access": str(consequence.get("network_access") or "").strip().lower(),
+        "pending_approval_count": max(0, int(consequence.get("pending_approval_count") or 0)),
+        "blocked_packet_count": max(0, int(consequence.get("blocked_packet_count") or 0)),
+        "completed_packet_count": max(0, int(consequence.get("completed_packet_count") or 0)),
+        "external_tool_count": max(0, int(consequence.get("external_tool_count") or 0)),
+        "primary_proposal_id": str(consequence.get("primary_proposal_id") or "").strip(),
+        "primary_status": str(consequence.get("primary_status") or "").strip().lower(),
+        "primary_origin": str(consequence.get("primary_origin") or "").strip().lower(),
+        "primary_intent": str(consequence.get("primary_intent") or "").strip().lower(),
+        "primary_tool_name": str(consequence.get("primary_tool_name") or "").strip().lower(),
+        "procedural_growth": bool(consequence.get("procedural_growth", False)),
+        "environmental_friction": bool(consequence.get("environmental_friction", False)),
+        "requested_help": bool(consequence.get("requested_help", False)),
+    }
+
+    recent = [
+        item
+        for item in store.list_revision_traces(limit=20)
+        if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "digital_body_consequence"
+    ]
+    wrote = False
+    if not _recent_summary_overlap(recent, summary, field="after_summary", threshold=0.90):
+        store.add_revision_trace(
+            namespace="digital_body_consequence",
+            target_id=kind,
+            before_summary="",
+            after_summary=summary[:180],
+            reason=f"digital_body_consequence:{kind}",
+            operator="system",
+            source=source,
+            confidence=max(0.72, confidence),
+            metadata=metadata,
+        )
+        wrote = True
+
+    if _write_semantic_self_evidence_categories(
+        store,
+        category_summaries=consequence.get("category_summaries"),
+        reason=f"digital_body_consequence:{kind}",
+        source=source,
+        confidence=confidence,
+        metadata=metadata,
+    ):
+        wrote = True
+
+    if _record_digital_body_consequence_long_horizon_memory(
+        store,
+        consequence=consequence,
+        confidence=confidence,
+    ):
+        wrote = True
+    return wrote
+
+
 def _record_behavior_trace_writeback(
     store: MemoryStore,
     *,
@@ -3522,6 +4306,7 @@ def _record_behavior_trace_writeback(
     behavior_plan: dict[str, Any] | None,
     interaction_carryover: dict[str, Any] | None,
     agenda_lifecycle_residue: dict[str, Any] | None,
+    digital_body_state: dict[str, Any] | None = None,
     reconsolidation_snapshot: dict[str, Any] | None = None,
     source: str,
     confidence: float,
@@ -3531,6 +4316,7 @@ def _record_behavior_trace_writeback(
     plan_snapshot = dict(behavior_plan or {}) if isinstance(behavior_plan, dict) else {}
     carryover_snapshot = dict(interaction_carryover or {}) if isinstance(interaction_carryover, dict) else {}
     lifecycle_snapshot = dict(agenda_lifecycle_residue or {}) if isinstance(agenda_lifecycle_residue, dict) else {}
+    body_snapshot = dict(digital_body_state or {}) if isinstance(digital_body_state, dict) else {}
     wrote = False
 
     consequence_written = _record_behavior_consequence(
@@ -3574,6 +4360,16 @@ def _record_behavior_trace_writeback(
         confidence=confidence,
     )
     if lifecycle_written:
+        wrote = True
+
+    digital_body_written = _record_digital_body_consequence(
+        store,
+        digital_body_state=body_snapshot,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+        source=source,
+        confidence=confidence,
+    )
+    if digital_body_written:
         wrote = True
 
     counterpart_written = _record_counterpart_assessment_long_horizon_memory(
@@ -3763,6 +4559,9 @@ def _record_agenda_lifecycle_consequence(
         "motive_tension": str(consequence.get("motive_tension") or "").strip(),
         "goal_frame": str(consequence.get("goal_frame") or "").strip()[:220],
     }
+    embodied_context = _normalized_embodied_context(consequence.get("embodied_context"))
+    if embodied_context:
+        metadata["embodied_context"] = embodied_context
     recent = [
         item
         for item in store.list_revision_traces(limit=20)
@@ -3795,10 +4594,112 @@ def _record_agenda_lifecycle_consequence(
     if _record_agenda_lifecycle_long_horizon_memory(
         store,
         consequence=consequence,
+        digital_body_consequence=_reconsolidation_digital_body_consequence_snapshot(reconsolidation_snapshot),
         confidence=confidence,
     ):
         wrote = True
     return wrote
+
+
+def _record_digital_body_consequence_long_horizon_memory(
+    store: MemoryStore,
+    *,
+    consequence: dict[str, Any] | None,
+    confidence: float,
+) -> bool:
+    item = dict(consequence or {})
+    kind = str(item.get("kind") or "").strip().lower()
+    if not kind:
+        return False
+
+    requested_access = [
+        str(value).strip().lower()
+        for value in (item.get("requested_access") if isinstance(item.get("requested_access"), list) else [])
+        if str(value or "").strip()
+    ][:12]
+    missing_access = [
+        str(value).strip().lower()
+        for value in (item.get("missing_access") if isinstance(item.get("missing_access"), list) else [])
+        if str(value or "").strip()
+    ][:12]
+    granted_toolsets = [
+        str(value).strip().lower()
+        for value in (item.get("granted_toolsets") if isinstance(item.get("granted_toolsets"), list) else [])
+        if str(value or "").strip()
+    ][:12]
+    active_tools = [
+        str(value).strip().lower()
+        for value in (item.get("active_tools") if isinstance(item.get("active_tools"), list) else [])
+        if str(value or "").strip()
+    ][:8]
+    block_reason = str(item.get("block_reason") or "").strip()
+    access_mode = str(item.get("access_mode") or "").strip().lower()
+    procedural_growth = bool(item.get("procedural_growth", False))
+    requested_help = bool(item.get("requested_help", False))
+    environmental_friction = bool(item.get("environmental_friction", False))
+    external_tool_count = max(0, int(item.get("external_tool_count") or 0))
+    artifact_continuity = str(item.get("artifact_continuity") or "").strip().lower()
+    active_artifact_kind = str(item.get("active_artifact_kind") or "").strip().lower()
+    active_artifact_label = str(item.get("active_artifact_label") or item.get("active_artifact_ref") or "").strip()
+    artifact_reacquisition_mode = str(item.get("artifact_reacquisition_mode") or "").strip().lower()
+
+    worldline_category = ""
+    worldline_summary = ""
+    worldline_tags = ["digital_body", kind]
+    importance = 0.0
+
+    if procedural_growth:
+        worldline_category = "embodied_growth"
+        capability_phrase = "、".join((granted_toolsets or active_tools)[:3]) if (granted_toolsets or active_tools) else "新的环境入口"
+        worldline_summary = f"她把{capability_phrase}这类入口真正接进了自己的数字身体里，之后处理类似事情时会更顺手。"
+        importance = _clamp01(0.58 + 0.06 * min(3, len(granted_toolsets) + len(active_tools)) + 0.04 * min(2, external_tool_count))
+        worldline_tags.extend(granted_toolsets[:3])
+        worldline_tags.extend(active_tools[:2])
+    elif requested_help or access_mode == "approval_pending":
+        worldline_category = "access_request"
+        access_phrase = "、".join((requested_access or missing_access)[:3]) if (requested_access or missing_access) else "额外入口"
+        worldline_summary = f"她把这次还缺的{access_phrase}记成了待申请条件，没有把没做到的部分冒充成已经完成。"
+        importance = _clamp01(0.52 + 0.06 * min(3, len(requested_access) + len(missing_access)))
+        worldline_tags.extend(requested_access[:3])
+        worldline_tags.append("approval_gate")
+    elif environmental_friction:
+        worldline_category = "environmental_friction"
+        friction_phrase = "、".join(missing_access[:3]) if missing_access else "环境条件"
+        if artifact_continuity in {"missing", "detached"}:
+            artifact_phrase = active_artifact_label or active_artifact_kind or "前面的工作面"
+            continuity_phrase = "脱开了" if artifact_continuity == "detached" else "断了"
+            worldline_summary = (
+                f"这次真正卡住她的，是和{artifact_phrase}的连续性已经{continuity_phrase}，"
+                "不是一句话就能把事情接回去。"
+            )
+            importance = _clamp01(0.52 + (0.06 if artifact_reacquisition_mode else 0.0))
+            if active_artifact_kind:
+                worldline_tags.append(active_artifact_kind)
+            if artifact_reacquisition_mode:
+                worldline_tags.append(artifact_reacquisition_mode)
+        elif block_reason:
+            worldline_summary = f"这次真正卡住她的是数字身体里的环境摩擦：{block_reason[:120]}。"
+        else:
+            worldline_summary = f"这次她确认了数字身体里还缺着{friction_phrase}这类条件，事情没法只靠意愿硬推过去。"
+        if not importance:
+            importance = _clamp01(0.50 + 0.06 * min(3, len(missing_access)) + (0.08 if block_reason else 0.0))
+        worldline_tags.extend(missing_access[:3])
+    else:
+        return False
+
+    worldline_tags = list(dict.fromkeys(tag for tag in worldline_tags if tag))[:12]
+    recent_worldline = store.list_worldline_events(limit=10)
+    if _recent_summary_overlap(recent_worldline, worldline_summary):
+        return False
+
+    store.add_worldline_event(
+        summary=worldline_summary,
+        category=worldline_category,
+        importance=round(importance, 3),
+        tags=worldline_tags,
+        confidence=max(0.72, confidence),
+    )
+    return True
 
 
 def _record_counterpart_assessment_long_horizon_memory(
@@ -3850,6 +4751,11 @@ def _record_counterpart_assessment_long_horizon_memory(
     event = current_event if isinstance(current_event, dict) else {}
     event_kind = str(recon.get("event_kind") or event.get("kind") or "").strip().lower()
     interaction_frame = str(recon.get("interaction_frame") or "").strip().lower()
+    embodied_context = _counterpart_assessment_embodied_context(
+        current_event=current_event,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+        assessment=assessment,
+    )
 
     store.add_counterpart_assessment_history(
         summary=summary,
@@ -3865,6 +4771,7 @@ def _record_counterpart_assessment_long_horizon_memory(
         motive_tension=motive_tension,
         goal_frame=goal_frame[:220],
         assessment_profile=assessment.get("assessment_profile") if isinstance(assessment.get("assessment_profile"), dict) else None,
+        embodied_context=embodied_context,
         confidence=max(0.72, confidence),
     )
     return True
@@ -3874,6 +4781,7 @@ def _record_agenda_lifecycle_long_horizon_memory(
     store: MemoryStore,
     *,
     consequence: dict[str, Any] | None,
+    digital_body_consequence: dict[str, Any] | None = None,
     confidence: float,
 ) -> bool:
     item = dict(consequence or {})
@@ -4001,6 +4909,7 @@ def _record_agenda_lifecycle_long_horizon_memory(
             normalized_current = {}
 
     if normalized_current:
+        embodied_context = _proactive_continuity_embodied_context(digital_body_consequence)
         store.add_proactive_continuity_history(
             summary=normalized_current["summary"],
             kind=kind,
@@ -4035,6 +4944,7 @@ def _record_agenda_lifecycle_long_horizon_memory(
             primary_motive=str(item.get("primary_motive") or "").strip().lower(),
             motive_tension=str(item.get("motive_tension") or "").strip().lower(),
             goal_frame=str(item.get("goal_frame") or "").strip()[:220],
+            embodied_context=embodied_context,
             confidence=max(0.72, confidence),
         )
         wrote = True
@@ -4138,7 +5048,7 @@ def _normalized_proactive_continuity_record(item: dict[str, Any] | None) -> dict
     summary = str(_pick("summary") or "").strip()
     if not summary:
         return {}
-    return {
+    normalized = {
         "summary": summary,
         "kind": str(_pick("kind") or "").strip().lower(),
         "trace_family": str(_pick("trace_family") or "").strip().lower(),
@@ -4167,6 +5077,10 @@ def _normalized_proactive_continuity_record(item: dict[str, Any] | None) -> dict
         "agency_lineage": _clamp01(_pick("agency_lineage"), 0.0),
         "counterpart_boundary_delta": max(-1.0, min(1.0, float(_pick("counterpart_boundary_delta", 0.0) or 0.0))),
     }
+    embodied_context = _normalized_embodied_context(_pick("embodied_context", {}))
+    if embodied_context:
+        normalized["embodied_context"] = embodied_context
+    return normalized
 
 
 def _proactive_continuity_shift_score(current: dict[str, Any], previous: dict[str, Any]) -> float:
@@ -4200,7 +5114,8 @@ def _proactive_continuity_shift_score(current: dict[str, Any], previous: dict[st
     for key in ("kind", "trace_family", "trigger_family", "carryover_mode"):
         if str(current.get(key) or "").strip().lower() != str(previous.get(key) or "").strip().lower():
             categorical_penalty += 0.18
-    return min(1.0, sum(numeric_diffs) / max(1, len(numeric_diffs)) + categorical_penalty)
+    embodied_penalty = 0.55 * _embodied_context_shift_score(current.get("embodied_context"), previous.get("embodied_context"))
+    return min(1.0, sum(numeric_diffs) / max(1, len(numeric_diffs)) + categorical_penalty + embodied_penalty)
 
 
 def _int_like(value: Any, default: int = 0) -> int:
@@ -4409,6 +5324,7 @@ def _passive_evolution_memory_update(
     behavior_plan: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
+    digital_body_state: dict[str, Any] | None = None,
     record_behavior_trace_writeback: bool = True,
 ) -> bool:
     text = str(user_text or "").strip()
@@ -4617,6 +5533,7 @@ def _passive_evolution_memory_update(
             behavior_plan=behavior_plan,
             interaction_carryover=interaction_carryover,
             agenda_lifecycle_residue=agenda_lifecycle_residue,
+            digital_body_state=digital_body_state,
             source="auto:passive_evolution",
             confidence=confidence,
         )

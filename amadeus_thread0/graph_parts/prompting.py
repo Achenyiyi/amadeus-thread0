@@ -110,6 +110,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     current_event = state.get("current_event") if isinstance(state.get("current_event"), dict) else {}
     recent_events = state.get("recent_events") if isinstance(state.get("recent_events"), list) else []
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
+    digital_body_state = state.get("digital_body_state") if isinstance(state.get("digital_body_state"), dict) else {}
+    session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
     behavior_agenda = _resolve_behavior_agenda(
         state.get("behavior_agenda"),
         behavior_queue=state.get("behavior_queue"),
@@ -309,6 +311,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         behavior_action=behavior_action,
         interaction_carryover=interaction_carryover,
         current_event=current_event,
+        digital_body_state=digital_body_state,
+        session_context=session_context,
     )
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
@@ -322,6 +326,9 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         world_model_state=world_model_state,
         evolution_state=evolution_state,
         behavior_action=behavior_action,
+        digital_body_state=digital_body_state,
+        session_context=session_context,
+        current_event=current_event,
     )
     free_dialog = _is_free_dialog_style(response_style_hint, prompt_user_text, science_mode)
     light_free_dialog = _is_light_free_dialog_turn(
@@ -670,6 +677,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             behavior_action=behavior_action,
             interaction_carryover=interaction_carryover,
             current_event=current_event,
+            digital_body_state=digital_body_state,
+            session_context=session_context,
         )
         runtime_state_block = (
             "运行态摘记：\n" + runtime_state_brief + "\n"

@@ -11,16 +11,20 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-03-25`
+- Date: `2026-03-28`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: `backend additive polish on top of freeze-gated core loop`
+- Mainline phase: `digital embodiment convergence on top of freeze_gate_ready + companion_autonomy_ready`
 - Immediate research focus:
-  - frontend remains paused; the active work is backend maturation around graph-native session fabric, counterpart assessment continuity, and final-semantics writeback parity
+  - frontend remains paused
+  - active work is backend-side `digital body / access / unified experience` convergence
+  - the Chinese lexical-rule replacement discussion has been recorded as a future deferred track, not the current slice
 - Active backend focus:
-  - preserve freeze-gate stability under future changes
-  - keep backend work limited to bug-fix or additive polish, not structural redesign
-  - continue tightening graph-native runtime surfaces so future frontend consumption stays thin
-  - current live slice: semantic own-rhythm / proactive continuity anchors are now consumed by motive, policy, and runtime behavior routing instead of sitting only in self-narrative readback
+  - preserve `freeze_gate_ready`
+  - preserve `companion_autonomy_ready`
+  - continue formalizing `digital body / access / resource` runtime surfaces
+  - continue writing embodied interaction results back through the same reconsolidation and self-narrative path
+  - do not reopen broad Chinese lexical rewrites before the embodiment phase reaches a stable replacement contract
+  - do not spend current mainline time on reply naturalness / tone micro-polish unless it blocks runtime correctness or contract closure
 - Current frontend-handoff focus:
   - `frontend/` remains mock-driven for now by deliberate choice; live transport stays deferred until the UI quality bar is higher
   - the active task is visual and interaction maturation: stronger layout hierarchy, more distinctive Amadeus identity, and smoother mock-first scene navigation
@@ -184,10 +188,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - continue auditing any remaining persistence paths that still derive long-term memory from non-frozen runtime inputs
   - keep expanding own-rhythm / proactive continuity behavior without falling back to prompt-heavy repair
 - Immediate next step:
-  - continue backend additive polish on the AGENTS mainline, but move forward from readback/routing into writeback parity:
-    - audit whether reconsolidation, turn summary, and memory writeback preserve the same anchor-aware semantics now used by runtime behavior selection
-    - prefer fixes at final behavior semantics handoff rather than adding more surface-level rewrite/postprocess rescue
-    - keep postprocess/manual-read work narrow unless a new real runtime transcript proves a fresh behavior-owner gap
+  - continue the `digital body / artifact continuity` line from raw structured writeback into carried continuity:
+    - decide which compact parts of completed `artifact_context` should later feed `interaction_carryover` / `digital_body_consequence` without duplicating raw previews everywhere
+    - keep fixes at contract/state/writeback handoff, not prompt/rewrite polish
+    - preserve bounded carrier semantics (`filesystem` + saved `source_refs`) rather than inventing a fake live browser runtime
 
 ## Validation Baseline
 
@@ -4669,3 +4673,520 @@ This file is the live development ledger for `amadeus-thread0`.
     - approval-gated external action execution
     - optional peripheral subagent workers
     - no persona-core delegation
+
+
+## 2026-03-28 Run 126
+
+- Focus:
+  - audit every Chinese-bearing runtime source file
+  - classify Chinese usage by purpose instead of treating all Chinese literals as one kind of rule
+  - prepare a migration answer for replacing Chinese lexical constraints with more semantic methods
+- Files changed:
+  - `docs/engineering/CHINESE_USAGE_AUDIT.md`
+  - `program.md`
+- Validation:
+  - scanned `amadeus_thread0/**/*.py`, `tests/**/*.py`, `evals/**/*.py|jsonl`
+  - computed runtime-source Chinese inventory:
+    - `41` source files
+    - `3424` Han-bearing source lines
+    - `61981` Han chars
+  - split eval authored vs generated artifacts:
+    - authored eval files with Chinese: `16`
+    - generated `_tmp` eval artifacts with Chinese: `1603`
+- Result:
+  - added [`docs/engineering/CHINESE_USAGE_AUDIT.md`](./docs/engineering/CHINESE_USAGE_AUDIT.md)
+  - the audit separates Chinese usage into six runtime categories:
+    - user-facing UX / admin text
+    - model-visible prompting / context narration
+    - input routing / appraisal fallback
+    - tool / memory / safety free-text parsing
+    - output surface rewrite / postprocess filtering
+    - memory extraction / continuity heuristics
+  - the audit also records which categories really use Chinese as a behavioral constraint and which categories only use Chinese because the product language is Chinese
+  - the main finding is that the least portable zone is still:
+    - `amadeus_thread0/graph_parts/postprocess.py`
+    - `amadeus_thread0/graph_parts/rewrite.py`
+    - followed by marker-heavy memory extraction in `amadeus_thread0/graph_parts/memory_evolution.py`
+- Next:
+  - if the project direction holds, begin reducing Category E and F by replacing lexical Chinese heuristics with structured semantic extraction and learned reranking
+
+## 2026-03-28 Run 127
+
+- Focus:
+  - record the `Chinese lexical de-scaffolding` discussion as a future deferred direction
+  - keep the active backend mainline on `digital body / access / unified experience` convergence
+  - reorient the run ledger back to the current embodiment phase before continuing backend work
+- Files changed:
+  - `docs/engineering/CHINESE_USAGE_AUDIT.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Validation:
+  - reread `AGENTS.md`
+  - reread `program.md`
+  - reread `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - reread `docs/ARCHITECTURE_ALIGNMENT_MAP.md`
+  - reread `docs/DIGITAL_PERSONA_LIFEFORM_BLUEPRINT.md`
+  - reread `docs/SELF_EVOLUTION_ENGINE.md`
+- Result:
+  - documented that replacing most Chinese lexical heuristics is a valid future phase, but not the active mainline slice
+  - recorded the five candidate replacement families without prematurely choosing one:
+    - structured state extractors
+    - small semantic classifiers
+    - CrossEncoder semantic scorers / rerankers
+    - preference optimization / DPO-style tuning
+    - PEFT / LoRA / QLoRA-style role tuning
+  - clarified in the architecture decisions that current work remains `Digital Body / Unified Experience / Embodied Capability`
+  - updated the current-state summary so future runs do not accidentally treat Chinese-rule migration as the immediate task
+- Next:
+  - continue backend work on the digital-body line by auditing the current runtime/body contract for the next concrete gap in `access / resource / embodied writeback` semantics
+
+## 2026-03-28 Run 128
+
+- Focus:
+  - write down the new execution rule that current mainline does not spend time on reply-tone / naturalness micro-polish
+  - keep the active slice on `digital body` architecture rather than `postprocess` surface cleanup
+  - extend the body contract so provider-side world conditions such as missing API credentials or exhausted quota are first-class runtime state
+- Files changed:
+  - `AGENTS.md`
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `amadeus_thread0/graph_parts/state.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_api.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/state.py amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/runtime_prompting.py amadeus_thread0/utils/cli_views.py`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_cli_views.py tests/test_backend_api.py tests/test_backend_session.py tests/test_final_state.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_frontend_contract_sync.py -q`
+- Result:
+  - documented that the current phase optimizes for runnable architecture and correct contracts, not Chinese reply-surface polish
+  - extended `digital_body.access_state` with provider-side world-condition fields:
+    - `api_key_state`
+    - `quota_state`
+  - body-state derivation now turns missing/exhausted provider access into real environment constraints:
+    - `api_key_missing`
+    - `api_quota_exhausted`
+    - `api_quota_unavailable`
+    - `api_quota_low`
+  - these conditions now propagate consistently through:
+    - runtime normalization
+    - prompt-visible body state
+    - CLI / evolution summary surfaces
+    - backend envelope contract types
+  - fixed the actual root cause where explicit environment constraints such as `workspace_scoped` could be truncated away by derived condition lists; explicit constraints are now preserved ahead of generic derived ones
+  - targeted and structural regressions stayed green:
+    - `84 passed`
+    - `616 passed, 33 subtests passed`
+    - `3 passed`
+- Next:
+  - continue the digital-body line by formalizing the next missing environment condition family after cookies/accounts/approval/api-quota, preferably in `access / resource / embodied writeback` rather than in reply-surface repair
+
+## 2026-03-28 Run 129
+
+- Focus:
+  - extend the `digital body` contract from static availability into `time-bound temporary unavailability`
+  - make `retry later` a first-class backend concept instead of collapsing it into generic missing-access state
+  - keep the slice strictly on backend/runtime correctness rather than reply-surface polish
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `amadeus_thread0/graph_parts/state.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/state.py amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/runtime_prompting.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/runtime/final_state.py amadeus_thread0/utils/cli_views.py`
+  - `python -m py_compile tests/test_digital_body_runtime.py tests/test_final_state.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_final_state.py -q`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_frontend_contract_sync.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+- Result:
+  - `digital_body.access_state` now models temporary environment cooldown explicitly through:
+    - `retry_after_s`
+    - `cooldown_scope`
+  - runtime derivation now distinguishes `cooldown` from generic `limited` / `blocked`:
+    - `access_state.mode="cooldown"`
+    - `active_surface="cooldown_gate"`
+    - `action_channels` includes `cooldown_gate` when relevant
+  - prompt-visible body state and CLI/evolution summaries now preserve cooldown metadata instead of flattening it away
+  - `digital_body_consequence` can now write back “temporarily unavailable, retry later” as embodied environmental friction instead of treating it like permanent absence
+  - backend/frontend contract types now expose the cooldown fields consistently
+  - targeted plus AGENTS-required graph regressions stayed green:
+    - `18 passed`
+    - `74 passed`
+    - `709 passed, 35 subtests passed`
+- Next:
+  - continue the digital-body line by formalizing the next `session/account/cookie lifecycle` slice so the body can reason not only about absence/cooldown, but also about reusable session continuity and expiry recovery
+
+## 2026-03-28 Run 130
+
+- Focus:
+  - finish the in-progress `session/account/cookie lifecycle` slice on top of the already-landed body-state derivation
+  - propagate session continuity / expiry / recovery semantics through prompt-visible state, embodied consequence, CLI summary, and frontend/backend contract types
+  - keep the slice on backend/runtime correctness and contract closure, not reply-surface micro-polish
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_final_state.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_world_model_residue.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/runtime_prompting.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/runtime/final_state.py amadeus_thread0/utils/cli_views.py`
+  - `python -m py_compile tests/test_digital_body_runtime.py tests/test_final_state.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_world_model_residue.py`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_final_state.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_frontend_contract_sync.py -q`
+  - `python -m pytest tests/test_world_model_residue.py -k "runtime_brief_can_surface" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py -q`
+- Result:
+  - completed the downstream propagation of `session lifecycle` semantics that were already being derived in `digital_body_runtime`:
+    - `session_continuity`
+    - `session_expires_in_s`
+    - `session_recovery_mode`
+  - prompt-visible body state now distinguishes:
+    - session still usable but expiring soon
+    - session continuity already broken
+    - recovery path should be `refresh_session` / `restore_cookies` / `relogin`
+    - and it still keeps parallel access gaps like `workspace_write` or `account_login` visible instead of letting the lifecycle hint overwrite them
+  - `digital_body_consequence` / final-state normalization now preserve session lifecycle metadata and can write back broken continuity as embodied environmental friction, while keeping `expiring`-only sessions as body state rather than falsely promoting them into frozen consequence facts
+  - CLI / evolution summaries now surface session lifecycle in:
+    - `digital_body.access`
+    - `digital_body_consequence`
+    - `current_turn`
+    - one-line summary rendering via `session=<continuity>:<expires>:<recovery>`
+  - frontend/backend TypeScript contracts were updated in both canonical copies so the lifecycle fields are exposed consistently to future consumers
+  - docs now record that the digital body model includes reusable session continuity and recovery semantics, not just static missing-access or cooldown states
+  - targeted plus AGENTS-required regressions stayed green:
+    - `99 passed`
+    - `6 passed, 135 deselected`
+    - `711 passed, 35 subtests passed`
+- Next:
+  - continue the digital-body line by formalizing the next missing embodied condition family after `cooldown + session lifecycle`, preferably `resource / artifact continuity` so the body can reason about what page/file/work surface is already open, attached, or needs reacquisition before acting
+
+## 2026-03-28 Run 131
+
+- Focus:
+  - complete the `resource / artifact continuity` slice on top of the already-landed cooldown + session lifecycle body model
+  - make attached/stale/detached work-surface facts first-class backend state instead of prompt-only hints
+  - keep the work on runtime/writeback/contract correctness, not reply-surface naturalness
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/contracts/backend.ts`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/memory_store.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_world_model_residue.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/memory_evolution.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/runtime/final_state.py amadeus_thread0/memory_store.py amadeus_thread0/utils/cli_views.py`
+  - `python -m py_compile tests/test_digital_body_runtime.py tests/test_final_state.py tests/test_cli_views.py tests/test_backend_api.py tests/test_world_model_residue.py`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_final_state.py tests/test_cli_views.py tests/test_backend_api.py tests/test_frontend_contract_sync.py -q`
+  - `python -m pytest tests/test_world_model_residue.py -k "digital_body_consequence_trace or counterpart_assessment_writeback_keeps_embodied_context_only_for_counterpart_origin or proactive_continuity_writeback_carries_embodied_context_when_body_state_itself_continues or runtime_brief_can_surface_detached_artifact_reacquisition_path" -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - completed the downstream propagation of `artifact continuity` semantics already started in `digital_body_runtime`:
+    - `artifact_continuity`
+    - `active_artifact_kind`
+    - `active_artifact_ref`
+    - `active_artifact_label`
+    - `artifact_age_s`
+    - `artifact_reacquisition_mode`
+  - `digital_body.resource_state` now treats current page/file/work-surface continuity as first-class body state, so runtime can distinguish:
+    - still attached
+    - stale and worth refreshing
+    - missing / detached and requiring reacquisition
+  - `digital_body_consequence` / final-state normalization now preserve frozen artifact continuity when a turn ends with lost work-surface continuity, instead of flattening it away into generic environment friction
+  - memory writeback now keeps artifact continuity inside embodied context for:
+    - counterpart assessment history
+    - proactive continuity history
+    - digital-body worldline traces
+    so later retrieval can remember not only that something was blocked, but which work surface was lost and how it should be reattached
+  - CLI / evolution summaries now expose artifact continuity through:
+    - `digital_body.resources`
+    - `digital_body_consequence`
+    - `current_turn`
+    - one-line summary rendering via `artifact=<kind>:<label>:<continuity>:<reacquisition>`
+  - backend/frontend TypeScript contracts were updated in both canonical copies so future consumers can treat work-surface continuity as part of the stable embodiment contract
+  - docs now record that the digital body model includes work-surface attachment and reacquisition semantics, not only access/session/cooldown conditions
+  - targeted plus AGENTS-required regressions stayed green:
+    - `71 passed`
+    - `14 passed, 9 subtests passed`
+    - `3 passed, 138 deselected`
+    - `1 passed, 141 deselected`
+    - `721 passed, 35 subtests passed`
+    - `95 passed, 9 subtests passed`
+- Next:
+  - continue the digital-body line by moving from `artifact continuity visibility` into `artifact-aware behavior/autonomy selection`, so detached or missing work surfaces do not only appear in summaries and memory, but also bias the next behavior/action proposal toward reacquisition before further execution
+
+## 2026-03-28 Run 132
+
+- Focus:
+  - complete the next `digital body` slice by turning persisted `artifact continuity` into next-turn behavior/autonomy bias
+  - make detached or missing work surfaces influence the next action proposal instead of only surfacing in summaries, memory, and CLI views
+  - keep the change minimal by using carried `interaction_carryover.embodied_context`, not by reordering the whole `prepare_turn_runtime` pipeline
+- Files changed:
+  - `program.md`
+  - `amadeus_thread0/graph_parts/behavior_runtime.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_behavior_runtime_alignment.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/behavior_runtime.py amadeus_thread0/graph_parts/autonomy_runtime.py tests/test_companion_autonomy_runtime.py tests/test_behavior_runtime_alignment.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py tests/test_behavior_runtime_alignment.py -q`
+  - `python -m pytest tests/test_prepare_turn_runtime.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+- Result:
+  - `behavior_runtime` now reads carried artifact continuity from `interaction_carryover.embodied_context` and injects an explicit reacquisition-first caveat into `goal_frame` / `note` when the prior work surface is `detached`, `missing`, or `stale`
+  - the behavior layer stays structurally honest: when a file/page/work surface has fallen out of context, the next turn no longer acts as if continuation is already available
+  - `autonomy_runtime` now upgrades carried `artifact_continuity in {missing, detached}` into a structured read-only packet instead of leaving it as a vague continuity hint:
+    - `intent=artifact:<reacquisition_mode>`
+    - `risk=read`
+    - `requires_approval=false`
+    - trace source/event marked as `interaction_carryover` / `derived_from_embodied_carryover`
+  - meaningful non-default behavior packets are preserved: artifact bias only overrides the weak language-shell case or the no-packet case, so queued followthrough and other real behavior plans are not stomped
+  - new regressions lock both halves of the slice:
+    - detached artifact -> `autonomy_intent.mode=reacquire_artifact`
+    - detached artifact -> `artifact:reopen_file` packet
+    - meaningful queued packet is not replaced by artifact bias
+    - behavior goal framing explicitly mentions reopening the detached artifact before continuing
+  - targeted plus AGENTS-required graph regressions stayed green:
+    - `16 passed`
+    - `30 passed`
+    - `723 passed, 35 subtests passed`
+- Next:
+  - continue the `digital body` line by turning these `artifact:*` reacquisition packets from proposal-only structure into bounded low-risk read-side followthrough, so lost files/pages/work surfaces can be reacquired through the same autonomy contract rather than only being proposed semantically
+
+## 2026-03-28 Run 133
+
+- Focus:
+  - move `artifact:*` from proposal-only semantics into bounded low-risk read-side followthrough
+  - keep execution inside the existing LangGraph mainline rather than opening a second orchestration framework
+  - make detached or missing local work surfaces actually reacquirable before the next model turn
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/graph_builder.py`
+  - `tests/test_companion_autonomy_runtime.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/config.py amadeus_thread0/utils/tools.py amadeus_thread0/utils/tool_registry.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/graph_parts/graph_builder.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ... PY` -> `CompiledStateGraph`
+  - `python -m pytest tests/test_graph_facade.py tests/test_backend_session.py tests/test_backend_api.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+- Result:
+  - added a new read-only runtime tool `reacquire_artifact`, currently supporting bounded local file/workspace reacquisition and returning explicit blocked errors for browser/search artifacts that the current runtime still cannot touch
+  - the graph now supports a direct pre-model autonomy execution branch:
+    - `prepare_turn -> autonomy_execute -> call_model`
+    - only for low-risk `artifact:*` packets that do not require approval
+  - this keeps the execution contract inside the same LangGraph mainline:
+    - no second framework
+    - no fake prompt-only continuation
+    - no external-mutation widening
+  - `autonomy_execute` now:
+    - executes `artifact:*` packets before the next model turn
+    - updates packet status to `executing -> completed/blocked`
+    - emits packet-level execution trace
+    - refreshes `session_context.digital_body_hints`
+    - recomputes `digital_body_state`
+    - appends synthetic tool history so the next model turn can answer from reacquired artifact context instead of pretending
+  - successful local file reacquisition now upgrades body-state continuity back to `attached` in the same turn rather than waiting for a later semantic guess
+  - missing/unsupported artifacts now fail honestly as blocked runtime facts, which still feed the same autonomy/digital-body contract instead of being flattened away
+  - docs now explicitly record that `artifact reacquisition` is the first concrete direct-execution slice under the read-side autonomy policy
+  - targeted plus structural regressions stayed green:
+    - `11 passed`
+    - `66 passed, 5 subtests passed`
+    - `726 passed, 35 subtests passed`
+- Next:
+  - continue the digital-body line by extending direct artifact followthrough beyond local file/workspace surfaces into real browser/search surfaces once their bounded runtime carriers exist, while also deciding whether completed `artifact:*` packets should feed richer structured preview context into later reconsolidation/export instead of only packet/result-summary traces
+
+## 2026-03-28 Run 134
+
+- Focus:
+  - extend `artifact:*` direct followthrough beyond local file/workspace surfaces into bounded research-page/search-result carriers
+  - avoid inventing a fake browser layer by reusing the repository's existing `source_refs` memory substrate as the first browser/search surface carrier
+  - keep the contract inside the same autonomy/digital-body loop
+- Files changed:
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `tests/test_companion_autonomy_runtime.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/graph_parts/tool_nodes.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ... PY` -> `CompiledStateGraph`
+- Result:
+  - `reacquire_artifact` no longer stops at local filesystem surfaces only
+  - browser/search-like artifact reacquisition now has a bounded runtime carrier through persisted `source_refs`:
+    - if a page or search result was previously saved into `source_refs`
+    - the tool can reattach it by matching `url/title/query/snippet`
+    - and return a structured preview payload as an `attached` artifact surface
+  - this avoids the wrong abstraction:
+    - no fake browser session
+    - no pretend live page reopen without a browser runtime
+    - no silent fallback into generic blocked text when a legitimate saved research surface already exists
+  - `autonomy_execute` now carries `source_ref` reacquisition forward into `evidence_pack`, preserving `source_id` and `url` so the next model turn can speak from the reattached surface with the same traceable evidence path
+  - new regressions now lock three direct-followthrough families:
+    - local file reacquisition succeeds
+    - missing local file blocks honestly
+    - saved search surface reacquires successfully from `source_refs`
+  - architecture decisions now record the exact current boundary:
+    - browser/search carrier = saved `source_refs`
+    - true live browser reopening remains deferred until a real runtime surface exists
+  - regressions stayed green:
+    - `12 passed`
+    - `95 passed, 9 subtests passed`
+    - `727 passed, 35 subtests passed`
+- Next:
+  - continue the digital-body line by deciding whether completed `artifact:*` reacquisition should write richer structured preview/search metadata into reconsolidation and export surfaces, so later continuity can recover not only that a source was reattached, but what kind of external surface it was and what evidence payload it restored
+
+## 2026-03-28 Run 135
+
+- Focus:
+  - write richer structured `artifact:*` reacquisition context into completed packets instead of flattening everything to `result_summary`
+  - preserve that structure through frozen reconsolidation/export, not only in the live runtime packet
+  - keep the slice bounded to existing `filesystem` + saved `source_refs` carriers, with no fake live-browser widening
+- Files changed:
+  - `program.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/state.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_autonomy_backend_contract.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/graph_parts/state.py`
+  - `python -m pytest tests/test_action_packet_contract.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_autonomy_backend_contract.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_cli_views.py tests/test_session_orchestrator.py tests/test_memory_guard.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+- Result:
+  - `action_packets` now support an optional structured `artifact_context` contract for completed bounded artifact reacquisition:
+    - `carrier`
+    - `artifact_kind`
+    - `artifact_ref`
+    - `artifact_label`
+    - `reacquisition_mode`
+    - `preview`
+    - `preview_truncated`
+    - `exists`
+    - `size_bytes`
+    - `updated_at`
+    - `source_ref_ids`
+    - `source_url`
+    - `source_query`
+    - `source_title`
+    - `source_tool_name`
+  - `autonomy_execute` now attaches that structure to completed `artifact:*` packets for both:
+    - local filesystem surfaces
+    - saved `source_refs` page/search carriers
+  - `reacquire_artifact` local-file/workspace returns now normalize `artifact_label` to a real display label instead of leaking the full absolute path back as the label when the incoming label was path-shaped
+  - frozen `reconsolidation_snapshot.action_packets[*]` now preserve a compact `artifact_context` instead of keeping only plain-text `result_summary`, so later export/readback can still recover what surface was restored and what payload came back
+  - backend autonomy envelopes inherit that structure through existing `resolve_action_packets()` normalization; no extra adapter path was needed
+  - handoff docs now record `artifact_context` as part of the bounded autonomy contract for completed `artifact:*` packets
+  - regressions stayed green:
+    - `22 passed`
+    - `95 passed, 9 subtests passed`
+    - `727 passed, 35 subtests passed`
+- Next:
+  - continue the digital-body line by deciding whether a compact subset of completed `artifact_context` should feed later carried continuity surfaces (`interaction_carryover` / `digital_body_consequence`) so future turns can reuse restored work-surface identity without having to duplicate full preview payloads everywhere
+
+## 2026-03-28 Run 136
+
+- Focus:
+  - carry a compact subset of completed `artifact_context` into later continuity surfaces instead of stopping at packet/reconsolidation storage
+  - keep the carried contract bounded to identity/provenance only:
+    - carrier
+    - source refs
+    - source url/query/title/tool
+  - do not propagate full `preview` into `digital_body_consequence` / `embodied_context` / long-horizon continuity
+- Files changed:
+  - `program.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/memory_store.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_memory_evolution_semantic_writeback.py`
+  - `tests/test_final_state.py`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/graph_parts/memory_evolution.py amadeus_thread0/memory_store.py amadeus_thread0/runtime/final_state.py tests/test_digital_body_runtime.py tests/test_autonomy_writeback.py tests/test_memory_evolution_semantic_writeback.py tests/test_final_state.py`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_memory_evolution_semantic_writeback.py tests/test_autonomy_writeback.py tests/test_final_state.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+- Result:
+  - completed `artifact:*` packet identity now survives beyond the packet itself:
+    - `digital_body.resource_state`
+    - `digital_body_consequence`
+    - carried `embodied_context`
+    - `runtime.final_state` readback
+    - persisted preview/history surfaces that already store `embodied_context`
+  - the carried artifact identity is intentionally compact:
+    - `artifact_carrier`
+    - `artifact_source_ref_ids`
+    - `artifact_source_url`
+    - `artifact_source_query`
+    - `artifact_source_title`
+    - `artifact_source_tool_name`
+  - full `artifact_context.preview` stays packet-scoped and reconsolidation-scoped only; it is not duplicated into continuity/history payloads
+  - `derive_digital_body_consequence()` now recovers compact artifact provenance from the primary completed packet when the live body state itself does not already carry it
+  - `derive_digital_body_state()` now preserves carried artifact provenance through `interaction_carryover.embodied_context`, so later turns can still know which saved external surface or carrier is being reattached
+  - long-horizon embodied continuity writeback now keeps that compact artifact identity in persisted `embodied_context` where provenance already existed, without inflating memory rows with large previews
+  - regressions stayed green:
+    - `50 passed, 4 subtests passed`
+    - `95 passed, 9 subtests passed`
+    - `727 passed, 35 subtests passed`
+- Next:
+  - continue auditing remaining summary/export faces for silent artifact-identity loss, especially:
+    - `counterpart_assessment_preview`
+    - `proactive_continuity_preview`
+    - other `event_residue` / revision-export paths that may still flatten compact artifact provenance away even when the raw packet and carried continuity already have it
