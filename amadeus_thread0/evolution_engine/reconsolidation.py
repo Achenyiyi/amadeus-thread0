@@ -43,6 +43,14 @@ _DIGITAL_BODY_PACKET_PRIORITY = {
     "proposed": 1,
 }
 
+_ARTIFACT_REACQUISITION_INTENTS = {
+    "artifact:reopen_file",
+    "artifact:reattach_workspace",
+    "artifact:reopen_page",
+    "artifact:restore_page",
+    "artifact:rerun_search",
+}
+
 
 def _normalized_event_tags(current_event: dict[str, Any] | None) -> set[str]:
     if not isinstance(current_event, dict):
@@ -804,17 +812,16 @@ def derive_digital_body_consequence(
     selected_access_target = str(selected_access_proposal.get("target") or "").strip().lower()
     selected_access_mode = str(selected_access_proposal.get("mode") or "").strip().lower()
     selected_access_path_kind = str(selected_access_proposal.get("path_kind") or "").strip().lower()
-    growth_capabilities = list(dict.fromkeys([*granted_toolsets, *active_tools, primary_tool_name]))[:12]
-    growth_signal = bool(
-        completed_packet_count > 0
-        and (
-            primary_status == "completed"
-            or primary_origin == "capability_upgrade"
-            or "upgrade" in primary_intent
-            or bool(growth_capabilities)
-            or external_tool_count > 0
-        )
+    artifact_mutation_mode = (
+        "append"
+        if primary_tool_name == "append_workspace_file"
+        else "replace"
+        if primary_tool_name in {"replace_workspace_text", "replace_workspace_lines"}
+        else "write"
+        if primary_tool_name == "write_workspace_file"
+        else ""
     )
+    growth_capabilities = list(dict.fromkeys([*granted_toolsets, *active_tools, primary_tool_name]))[:12]
     access_resolution_signal = bool(primary_intent == "access:request_help" and primary_status == "completed")
     workspace_resolution_signal = bool(
         access_resolution_signal
@@ -823,6 +830,43 @@ def derive_digital_body_consequence(
             or active_artifact_kind == "workspace"
             or selected_access_mode == "operator_create_workspace"
             or (selected_access_target == "filesystem" and selected_access_path_kind == "create_new")
+        )
+    )
+    file_mutation_signal = bool(
+        primary_status == "completed"
+        and artifact_mutation_mode
+        and active_artifact_kind == "file"
+    )
+    workspace_inspection_signal = bool(
+        primary_status == "completed"
+        and primary_tool_name == "inspect_workspace_path"
+        and active_artifact_kind in {"file", "workspace"}
+        and artifact_continuity == "attached"
+    )
+    artifact_reacquired_signal = bool(
+        primary_status == "completed"
+        and (
+            primary_tool_name == "reacquire_artifact"
+            or primary_intent in _ARTIFACT_REACQUISITION_INTENTS
+        )
+        and active_artifact_kind
+        and artifact_continuity == "attached"
+    )
+    access_refresh_signal = bool(
+        primary_status == "completed"
+        and (
+            primary_tool_name == "refresh_access_state"
+            or primary_intent == "access:refresh_state"
+        )
+    )
+    growth_signal = bool(
+        completed_packet_count > 0
+        and not workspace_inspection_signal
+        and not artifact_reacquired_signal
+        and (
+            primary_origin == "capability_upgrade"
+            or "upgrade" in primary_intent
+            or file_mutation_signal
         )
     )
     approval_signal = bool(
@@ -884,6 +928,64 @@ def derive_digital_body_consequence(
                 "presence_style": "一旦入口真的补回来了，她会把这件事写成已经恢复的连续性，而不是继续挂在门口等待。",
                 "boundary_style": "她不会把尚未完成的 access 冒充成已完成；但一旦真的补齐，也不会继续假装自己还被卡在原地。",
             }
+    elif file_mutation_signal and not approval_signal and not friction_signal:
+        kind = "workspace_file_updated"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        file_label = active_artifact_label or active_artifact_ref or "当前文件"
+        if not summary:
+            if artifact_mutation_mode == "append":
+                summary = f"文件 {file_label} 已经继续写入并保持在当前工作面里，后面的整理可以顺着接下去。"
+            else:
+                summary = f"文件 {file_label} 已经真的写入当前工作面里，后面的整理或续写现在可以继续。"
+        category_summaries = {
+            "agency_style": "她会把已经真实落到文件表面的动作记成发生过的工作事实，而不是把它继续压扁成抽象的“能力增长”。",
+            "presence_style": "一旦文件已经写进去，她会把当前工作面记成还连着、还能继续顺着做下去的现实表面。",
+            "boundary_style": "她不会把还没落盘的内容冒充成已经写好；但一旦真的写进文件，也不会再退回成模糊的工具尝试。",
+        }
+    elif workspace_inspection_signal and not approval_signal and not friction_signal:
+        kind = "workspace_path_inspected"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if active_artifact_kind == "workspace":
+            workspace_label = active_artifact_label or active_artifact_ref or "当前工作区"
+            if not summary:
+                summary = f"已经把 {workspace_label} 重新看了一遍，当前结构和工作面还是连着的。"
+        else:
+            file_label = active_artifact_label or active_artifact_ref or "当前文件"
+            if not summary:
+                summary = f"已经把 {file_label} 重新读回来，当前内容和工作面还是连着的。"
+        category_summaries = {
+            "agency_style": "她会把重新确认过的工作面记成一次真实感知，而不是把所有 read-side 行为都压平进抽象的工具完成。",
+            "presence_style": "对她来说，重新看一眼当前工作面本身就是连续性的一部分，这能保证后续动作建立在真实表面上。",
+            "boundary_style": "她不会把“已经检查确认”的状态冒充成“已经改动完成”；感知和改动在她那里是两种不同事实。",
+        }
+    elif artifact_reacquired_signal and not approval_signal and not friction_signal:
+        kind = "artifact_reacquired"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            if artifact_carrier == "source_ref" or active_artifact_kind in {"page", "search_result"}:
+                source_label = active_artifact_label or artifact_source_title or active_artifact_ref or "前面的外部材料"
+                summary = f"已经把 {source_label} 重新接回当前视野，后面的判断可以顺着这条材料继续。"
+            elif active_artifact_kind == "workspace":
+                workspace_label = active_artifact_label or active_artifact_ref or "当前工作区"
+                summary = f"已经把 {workspace_label} 重新接回当前上下文，后面的动作可以顺着这块工作面继续。"
+            else:
+                file_label = active_artifact_label or active_artifact_ref or "当前文件"
+                summary = f"已经把 {file_label} 重新接回当前上下文，后面的动作可以顺着这条工作面继续。"
+        category_summaries = {
+            "agency_style": "她会把重新接回来的页面、检索面或文件当成已经恢复的现实表面，而不是停留在抽象的“可以再看看”。",
+            "presence_style": "对她来说，重新接回材料本身就是连续性的恢复，这样后续判断才能继续建立在同一块表面上。",
+            "boundary_style": "她不会把重新接回材料冒充成已经修改了材料本身；这只是恢复接触，不是篡改事实。",
+        }
+    elif access_refresh_signal and not approval_signal and not friction_signal:
+        kind = "access_state_refreshed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            summary = "已经把当前入口状态重新核对过一遍，这条路径眼下是连着的。"
+        category_summaries = {
+            "agency_style": "她会把重新核对过的入口状态当成新的环境事实，而不是继续依赖上一轮过期的 access 猜测。",
+            "presence_style": "入口状态一旦重新核对完成，她就能把之后的动作建立在最新环境上，而不是悬在旧会话残影里。",
+            "boundary_style": "她不会把刷新状态误写成已经登录或越权执行；这只是核对当前边界，不是跨过边界。",
+        }
     elif growth_signal and not approval_signal and not friction_signal:
         kind = "embodied_growth"
         capability_phrase = "、".join(growth_capabilities[:3]) if growth_capabilities else "新的入口"
@@ -1031,6 +1133,7 @@ def derive_digital_body_consequence(
         "artifact_source_query": artifact_source_query,
         "artifact_source_title": artifact_source_title,
         "artifact_source_tool_name": artifact_source_tool_name,
+        "artifact_mutation_mode": artifact_mutation_mode,
         "browser_session": browser_session,
         "account_state": account_state,
         "cookie_state": cookie_state,

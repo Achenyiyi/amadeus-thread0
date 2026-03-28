@@ -268,6 +268,59 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(result.values["autonomy_intent"]["primary_proposal_id"], "ap-memory-1")
         self.assertEqual(result.values["action_packets"][0]["proposal_id"], "ap-memory-1")
 
+    def test_invoke_stream_preserves_workspace_mutation_preview_in_approval_request(self):
+        graph = FakeStreamGraph(
+            stream_rows=[
+                (
+                    "values",
+                    {
+                        "__interrupt__": (
+                            {
+                                "value": {
+                                    "kind": "tool_approval",
+                                    "source": "dialog",
+                                    "tool_calls": [
+                                        {
+                                            "name": "replace_workspace_lines",
+                                            "args": {
+                                                "relative_path": "notes/todo.md",
+                                                "start_line": 2,
+                                                "end_line": 2,
+                                                "new_text": "beta v2",
+                                            },
+                                            "proposal_id": "ap-file-lines-1",
+                                            "mutation_preview": {
+                                                "tool_name": "replace_workspace_lines",
+                                                "can_apply": True,
+                                                "mutation_mode": "replace",
+                                                "relative_path": "notes/todo.md",
+                                                "summary": "todo.md 的 patch 预览已生成，审批通过后会只在当前 workspace 内落地。",
+                                                "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                                            },
+                                        }
+                                    ],
+                                }
+                            },
+                        )
+                    },
+                )
+            ],
+            state_values={},
+        )
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "hi"}]})
+
+        self.assertIsNotNone(result.approval_request)
+        assert result.approval_request is not None
+        preview = result.approval_request.tool_calls[0]["mutation_preview"]
+        self.assertTrue(preview["can_apply"])
+        self.assertEqual(preview["mutation_mode"], "replace")
+        self.assertIn("+beta v2", preview["diff_preview"])
+        self.assertEqual(result.values["pending_action_proposal"]["proposal_id"], "ap-file-lines-1")
+        self.assertEqual(result.values["pending_action_proposal"]["mutation_preview"]["relative_path"], "notes/todo.md")
+        self.assertIn("+beta v2", result.values["pending_action_proposal"]["mutation_preview"]["diff_preview"])
+
     def test_invoke_stream_synthesizes_access_request_from_pending_access_packet(self):
         packet = {
             "proposal_id": "ap-access-help-1",
@@ -716,6 +769,86 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(selected.get("path_kind"), "create_new")
         self.assertEqual(result.values["session_context"]["digital_body_hints"]["selected_access_proposal"]["mode"], "operator_register_account")
         self.assertEqual(result.values["autonomy_intent"]["reason"], "如果没有现成账号，也可以先注册一个新的可用入口。")
+
+    def test_resume_stream_approved_workspace_creation_path_persists_execution_binding(self):
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_create_workspace",
+            "path_kind": "create_new",
+            "summary": "先新建一个可写工作区。",
+            "operator_action": "新建一个可写工作区。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+        packet = {
+            "proposal_id": "ap-access-help-workspace",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "filesystem",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "先新建一个可写工作区。",
+                }
+            ],
+            "expected_effect": "先新建一个可写工作区。",
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": [proposal],
+            "selected_access_proposal": proposal,
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "先新建一个可写工作区。",
+                "primary_proposal_id": "ap-access-help-workspace",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "filesystem_state": "missing",
+                    "missing_access": ["filesystem", "workspace_write"],
+                    "requestable_access": ["filesystem", "workspace_write", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream([{"action": "approve"}])
+
+        packet_out = result.values["action_packets"][0]
+        self.assertEqual(packet_out["status"], "approved")
+        self.assertEqual(packet_out["tool_name"], "create_workspace_access")
+        self.assertEqual(packet_out["tool_args"]["access_hints"]["selected_access_proposal"]["mode"], "operator_create_workspace")
+        self.assertEqual(packet_out["tool_args"]["workspace_name"], "")
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "access_acquire_planned")
 
     def test_resume_stream_keeps_partial_access_arrival_as_approved(self):
         proposal = {

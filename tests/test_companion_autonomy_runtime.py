@@ -156,6 +156,9 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_packets"][0]["intent"], "artifact:reopen_file")
         self.assertEqual(runtime["action_packets"][0]["risk"], "read")
         self.assertFalse(runtime["action_packets"][0]["requires_approval"])
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "reacquire_artifact")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["mode"], "reopen_file")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["artifact_label"], "plan.md")
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_embodied_carryover")
         self.assertIn("plan.md", str(runtime["autonomy_intent"]["reason"]))
 
@@ -179,6 +182,8 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["autonomy_intent"]["mode"], "refresh_access_state")
         self.assertEqual(runtime["action_packets"][0]["intent"], "access:refresh_state")
         self.assertEqual(runtime["action_packets"][0]["risk"], "read")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "refresh_access_state")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["access_hints"]["browser_session"], "present")
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_refresh")
 
     def test_derive_autonomy_runtime_builds_access_request_help_packet_from_event_scoped_gap(self):
@@ -402,6 +407,41 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(route, "autonomy_execute")
 
+    def test_route_after_prepare_can_branch_into_autonomy_execute_for_workspace_file_mutation_packet(self):
+        route = _route_after_prepare(
+            {
+                "current_event": {"kind": "user_utterance"},
+                "behavior_action": {"channel": "speech"},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab",
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-write-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:write_file",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "write_workspace_file",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "content": "buy bananas",
+                        },
+                        "capability_steps": [
+                            {"kind": "tool_call", "name": "write_workspace_file", "target": "notes/todo.md", "status": "approved"}
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(route, "autonomy_execute")
+
     def test_route_after_prepare_keeps_access_request_help_on_model_path(self):
         route = _route_after_prepare(
             {
@@ -504,6 +544,66 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(artifact_context.get("reacquisition_mode"), "reopen_file")
         self.assertTrue(bool(artifact_context.get("exists")))
         self.assertIn("artifact continuity test", str(artifact_context.get("preview") or ""))
+
+    def test_autonomy_execute_can_reacquire_artifact_from_packet_binding_without_live_carryover(self):
+        with TemporaryDirectory() as td:
+            path = Path(td) / "plan.md"
+            path.write_text("# plan\nartifact continuity test\n", encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "继续前面的计划。"},
+                "interaction_carryover": {},
+                "session_context": {"digital_body_hints": {}},
+                "autonomy_intent": {"mode": "reacquire_artifact", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-artifact-bound-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:reopen_file",
+                        "status": "approved",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "reacquire_artifact",
+                        "tool_args": {
+                            "mode": "reopen_file",
+                            "artifact_kind": "file",
+                            "artifact_ref": str(path),
+                            "artifact_label": "plan.md",
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "artifact",
+                                "name": "reopen_file",
+                                "target": str(path),
+                                "status": "approved",
+                                "requires_approval": False,
+                            }
+                        ],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "reacquire_artifact")
+        self.assertEqual(out["action_packets"][0]["tool_args"]["artifact_ref"], str(path))
+        self.assertEqual(out["autonomy_intent"]["mode"], "reacquire_artifact")
+        artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("artifact_ref"), str(path))
 
     def test_autonomy_execute_blocks_missing_local_file_reacquisition(self):
         state = {
@@ -723,6 +823,76 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertIsInstance(out["messages"][0], AIMessage)
         self.assertIsInstance(out["messages"][1], ToolMessage)
 
+    def test_autonomy_execute_can_refresh_access_state_from_packet_binding_without_live_session_hints(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            runtime_dir.mkdir()
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "先看看当前入口状态。"},
+                "interaction_carryover": {},
+                "session_context": {},
+                "autonomy_intent": {"mode": "refresh_access_state", "origin": "motive_goal"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-bound-1",
+                        "origin": "motive_goal",
+                        "intent": "access:refresh_state",
+                        "status": "approved",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "refresh_access_state",
+                        "tool_args": {
+                            "access_hints": {
+                                "browser_session": "present",
+                                "account_state": "logged_in",
+                                "cookie_state": "present",
+                                "session_expires_in_s": 600,
+                                "api_key_state": "missing",
+                            }
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "access",
+                                "name": "refresh_state",
+                                "target": "session_refresh / api_key",
+                                "status": "approved",
+                                "requires_approval": False,
+                            }
+                        ],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+                "DASHSCOPE_API_KEY": "sk-test",
+                "AMADEUS_NETWORK_ACCESS": "restricted",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "refresh_access_state")
+        self.assertEqual(out["action_packets"][0]["tool_args"]["access_hints"]["browser_session"], "present")
+        self.assertEqual(out["autonomy_intent"]["mode"], "refresh_access_state")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["api_key_state"], "present")
+        self.assertEqual(out["digital_body_state"]["access_state"]["network_access"], "restricted")
+
     def test_autonomy_execute_can_create_workspace_from_approved_access_path(self):
         proposal = {
             "target": "filesystem",
@@ -807,8 +977,399 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertNotIn("selected_access_proposal", out["session_context"]["digital_body_hints"])
         self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "workspace")
         self.assertEqual(out["autonomy_intent"]["mode"], "access_request_resolved")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "create_workspace_access")
+        self.assertEqual(out["action_packets"][0]["tool_args"]["access_hints"]["selected_access_proposal"]["mode"], "operator_create_workspace")
         self.assertIsInstance(out["messages"][0], AIMessage)
         self.assertIsInstance(out["messages"][1], ToolMessage)
+
+    def test_autonomy_execute_can_create_workspace_from_packet_binding_without_live_session_hints(self):
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_create_workspace",
+            "path_kind": "create_new",
+            "summary": "先新建一个可写工作区。",
+            "operator_action": "新建一个可写工作区。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            runtime_dir.mkdir()
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "那就新建一个工作区继续。"},
+                "interaction_carryover": {},
+                "session_context": {},
+                "autonomy_intent": {"mode": "access_acquire_planned", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-create-bound-1",
+                        "origin": "counterpart_request",
+                        "intent": "access:request_help",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "create_workspace_access",
+                        "tool_args": {
+                            "workspace_name": "lab",
+                            "access_hints": {
+                                "filesystem_state": "missing",
+                                "missing_access": ["filesystem", "workspace_write"],
+                                "requestable_access": ["filesystem", "workspace_write"],
+                                "selected_access_proposal": proposal,
+                                "access_acquire_proposals": [proposal],
+                            },
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "access",
+                                "name": "request_help",
+                                "target": "filesystem",
+                                "status": "approved",
+                                "requires_approval": True,
+                                "note": "先新建一个可写工作区。",
+                            }
+                        ],
+                        "expected_effect": "先新建一个可写工作区。",
+                        "selected_access_proposal": proposal,
+                        "access_acquire_proposals": [proposal],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "create_workspace_access")
+        self.assertEqual(out["action_packets"][0]["tool_args"]["workspace_name"], "lab")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "lab")
+        self.assertEqual(out["autonomy_intent"]["mode"], "access_request_resolved")
+
+    def test_autonomy_execute_can_write_workspace_file_from_approved_packet(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            workspace.mkdir(parents=True)
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "把待办记下来。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "autonomy_intent": {"mode": "queue_followthrough", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-write-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:write_file",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "write_workspace_file",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "content": "buy bananas",
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "tool_call",
+                                "name": "write_workspace_file",
+                                "target": "notes/todo.md",
+                                "status": "approved",
+                                "requires_approval": True,
+                            }
+                        ],
+                        "expected_effect": "把待办真正写进工作区文件里。",
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+            target = workspace / "notes" / "todo.md"
+            self.assertTrue(target.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "buy bananas")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["tool_name"], "write_workspace_file")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertIsInstance(out["messages"][0], AIMessage)
+            self.assertIsInstance(out["messages"][1], ToolMessage)
+
+    def test_autonomy_execute_can_replace_workspace_text_from_approved_packet(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("buy bananas", encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "把 bananas 改成 apples。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": str(target),
+                        "active_artifact_label": "todo.md",
+                    }
+                },
+                "autonomy_intent": {"mode": "queue_followthrough", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-replace-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:replace_text",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "replace_workspace_text",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "old_text": "bananas",
+                            "new_text": "apples",
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "tool_call",
+                                "name": "replace_workspace_text",
+                                "target": "notes/todo.md",
+                                "status": "approved",
+                                "requires_approval": True,
+                            }
+                        ],
+                        "expected_effect": "把文件里的旧文本精确替换掉。",
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "buy apples")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["tool_name"], "replace_workspace_text")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "replace_workspace_text")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "replace_workspace_text")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+
+    def test_autonomy_execute_can_replace_workspace_lines_from_approved_packet(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "把第二行改成 beta v2。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": str(target),
+                        "active_artifact_label": "todo.md",
+                    }
+                },
+                "autonomy_intent": {"mode": "queue_followthrough", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-lines-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:replace_lines",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "replace_workspace_lines",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "start_line": 2,
+                            "end_line": 2,
+                            "new_text": "beta v2",
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "tool_call",
+                                "name": "replace_workspace_lines",
+                                "target": "notes/todo.md",
+                                "status": "approved",
+                                "requires_approval": True,
+                            }
+                        ],
+                        "expected_effect": "把文件里指定行替换成新的版本。",
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "alpha\nbeta v2\ngamma\n")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["tool_name"], "replace_workspace_lines")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "replace_workspace_lines")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "replace_workspace_lines")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+
+    def test_autonomy_execute_can_inspect_workspace_path_from_packet_binding(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("hello from inspect\n" * 8, encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "先看看 todo.md 里面现在是什么。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "autonomy_intent": {"mode": "tool_completed", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-inspect-file-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:inspect_path",
+                        "status": "approved",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "inspect_workspace_path",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "access_hints": {
+                                "filesystem_state": "writable",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": str(workspace),
+                                "active_artifact_label": "lab",
+                            },
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "tool_call",
+                                "name": "inspect_workspace_path",
+                                "target": "notes/todo.md",
+                                "status": "approved",
+                                "requires_approval": False,
+                            }
+                        ],
+                        "expected_effect": "把当前文件重新读回来，确认工作面状态。",
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["tool_name"], "inspect_workspace_path")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "inspect_workspace_path")
+            self.assertIn("hello from inspect", out["action_packets"][0]["artifact_context"]["preview"])
+            self.assertEqual(out["autonomy_intent"]["mode"], "inspect_workspace_path")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
 
     def test_tool_execute_create_workspace_updates_session_context(self):
         with TemporaryDirectory() as td:
@@ -861,9 +1422,283 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
                     out = _node_tool_execute(state)
 
         self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "workspace")
         self.assertEqual(out["session_context"]["digital_body_hints"]["filesystem_state"], "writable")
         self.assertEqual(out["digital_body_state"]["access_state"]["filesystem_state"], "writable")
         self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_kind"], "workspace")
+
+    def test_tool_execute_inspect_workspace_path_updates_session_context(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("inspect me", encoding="utf-8")
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "tc-1",
+                                "name": "inspect_workspace_path",
+                                "args": {
+                                    "relative_path": "notes/todo.md",
+                                    "access_hints": {
+                                        "filesystem_state": "writable",
+                                        "active_artifact_kind": "workspace",
+                                        "active_artifact_ref": str(workspace),
+                                        "active_artifact_label": "lab",
+                                    },
+                                },
+                            }
+                        ],
+                    )
+                ],
+                "approval_actions": [
+                    {
+                        "id": "tc-1",
+                        "name": "inspect_workspace_path",
+                        "args": {
+                            "relative_path": "notes/todo.md",
+                            "access_hints": {
+                                "filesystem_state": "writable",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": str(workspace),
+                                "active_artifact_label": "lab",
+                            },
+                        },
+                        "proposal_id": "ap-inspect-file-1",
+                        "action": "approve",
+                    }
+                ],
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "toolset_unlocks": {},
+                "evidence_pack": [],
+                "last_external_tools": [],
+                "memory_guard_checked": 0,
+                "memory_guard_blocked": 0,
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                with patch.dict(os.environ, env, clear=True):
+                    out = _node_tool_execute(state)
+
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["tool_name"], "inspect_workspace_path")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "inspect_workspace_path")
+            self.assertEqual(out["autonomy_intent"]["mode"], "inspect_workspace_path")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_ref"], str(target))
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+
+    def test_tool_execute_write_workspace_file_updates_session_context(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            workspace.mkdir(parents=True)
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "tc-1",
+                                "name": "write_workspace_file",
+                                "args": {
+                                    "relative_path": "notes/todo.md",
+                                    "content": "buy bananas",
+                                    "access_hints": {
+                                        "filesystem_state": "writable",
+                                        "active_artifact_kind": "workspace",
+                                        "active_artifact_ref": str(workspace),
+                                        "active_artifact_label": "lab",
+                                    },
+                                },
+                            }
+                        ],
+                    )
+                ],
+                "approval_actions": [
+                    {
+                        "id": "tc-1",
+                        "name": "write_workspace_file",
+                        "args": {
+                            "relative_path": "notes/todo.md",
+                            "content": "buy bananas",
+                            "access_hints": {
+                                "filesystem_state": "writable",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": str(workspace),
+                                "active_artifact_label": "lab",
+                            },
+                        },
+                        "proposal_id": "ap-write-workspace-file-1",
+                        "action": "approve",
+                    }
+                ],
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "toolset_unlocks": {},
+                "evidence_pack": [],
+                "last_external_tools": [],
+                "memory_guard_checked": 0,
+                "memory_guard_blocked": 0,
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                with patch.dict(os.environ, env, clear=True):
+                    out = _node_tool_execute(state)
+
+            target = workspace / "notes" / "todo.md"
+            self.assertTrue(target.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "buy bananas")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["digital_body_state"]["access_state"]["filesystem_state"], "writable")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_kind"], "file")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+
+    def test_tool_execute_append_workspace_file_updates_session_context(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("buy", encoding="utf-8")
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "tc-1",
+                                "name": "append_workspace_file",
+                                "args": {
+                                    "relative_path": "notes/todo.md",
+                                    "content": " bananas",
+                                    "access_hints": {
+                                        "filesystem_state": "writable",
+                                        "active_artifact_kind": "workspace",
+                                        "active_artifact_ref": str(workspace),
+                                        "active_artifact_label": "lab",
+                                    },
+                                },
+                            }
+                        ],
+                    )
+                ],
+                "approval_actions": [
+                    {
+                        "id": "tc-1",
+                        "name": "append_workspace_file",
+                        "args": {
+                            "relative_path": "notes/todo.md",
+                            "content": " bananas",
+                            "access_hints": {
+                                "filesystem_state": "writable",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": str(workspace),
+                                "active_artifact_label": "lab",
+                            },
+                        },
+                        "proposal_id": "ap-append-workspace-file-1",
+                        "action": "approve",
+                    }
+                ],
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "toolset_unlocks": {},
+                "evidence_pack": [],
+                "last_external_tools": [],
+                "memory_guard_checked": 0,
+                "memory_guard_blocked": 0,
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                with patch.dict(os.environ, env, clear=True):
+                    out = _node_tool_execute(state)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "buy bananas")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
 
     def test_tool_gate_attaches_proposal_id_and_keeps_external_mutation_human_gated(self):
         state = {
@@ -900,6 +1735,192 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertTrue(str(out["approval_actions"][0]["proposal_id"]).startswith("ap-"))
         self.assertEqual(out["action_packets"][0]["status"], "approved")
         self.assertEqual(out["reconsolidation_snapshot"]["action_packets"][0]["proposal_id"], out["approval_actions"][0]["proposal_id"])
+
+    def test_tool_gate_attaches_workspace_mutation_preview_before_human_approval(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "tc-1",
+                                "name": "replace_workspace_lines",
+                                "args": {
+                                    "relative_path": "notes/todo.md",
+                                    "start_line": 2,
+                                    "end_line": 2,
+                                    "new_text": "beta v2",
+                                    "access_hints": {
+                                        "filesystem_state": "writable",
+                                        "active_artifact_kind": "workspace",
+                                        "active_artifact_ref": str(workspace),
+                                        "active_artifact_label": "lab",
+                                    },
+                                },
+                            }
+                        ],
+                    )
+                ],
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                with patch(
+                    "amadeus_thread0.graph_parts.tool_nodes.interrupt",
+                    return_value={"decisions": [{"action": "approve"}]},
+                ):
+                    out = _node_tool_gate(state)
+
+        preview = out["approval_actions"][0]["mutation_preview"]
+        self.assertTrue(preview["can_apply"])
+        self.assertEqual(preview["mutation_mode"], "replace")
+        self.assertEqual(preview["relative_path"], "notes/todo.md")
+        self.assertIn("-beta", preview["diff_preview"])
+        self.assertIn("+beta v2", preview["diff_preview"])
+        self.assertEqual(out["action_packets"][0]["tool_name"], "replace_workspace_lines")
+        self.assertEqual(out["action_packets"][0]["status"], "approved")
+        self.assertEqual(out["action_packets"][0]["mutation_preview"]["relative_path"], "notes/todo.md")
+        self.assertIn("+beta v2", out["action_packets"][0]["mutation_preview"]["diff_preview"])
+
+    def test_tool_execute_preserves_workspace_mutation_preview_on_completed_packet(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            workspace = runtime_dir / "workspaces" / "lab"
+            target = workspace / "notes" / "todo.md"
+            target.parent.mkdir(parents=True)
+            target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "id": "tc-1",
+                                "name": "replace_workspace_lines",
+                                "args": {
+                                    "relative_path": "notes/todo.md",
+                                    "start_line": 2,
+                                    "end_line": 2,
+                                    "new_text": "beta v2",
+                                    "access_hints": {
+                                        "filesystem_state": "writable",
+                                        "active_artifact_kind": "workspace",
+                                        "active_artifact_ref": str(workspace),
+                                        "active_artifact_label": "lab",
+                                    },
+                                },
+                            }
+                        ],
+                    )
+                ],
+                "approval_actions": [
+                    {
+                        "id": "tc-1",
+                        "name": "replace_workspace_lines",
+                        "args": {
+                            "relative_path": "notes/todo.md",
+                            "start_line": 2,
+                            "end_line": 2,
+                            "new_text": "beta v2",
+                            "access_hints": {
+                                "filesystem_state": "writable",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": str(workspace),
+                                "active_artifact_label": "lab",
+                            },
+                        },
+                        "proposal_id": "ap-file-lines-1",
+                        "action": "approve",
+                    }
+                ],
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "writable",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": str(workspace),
+                        "active_artifact_label": "lab",
+                    }
+                },
+                "toolset_unlocks": {},
+                "evidence_pack": [],
+                "last_external_tools": [],
+                "memory_guard_checked": 0,
+                "memory_guard_blocked": 0,
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-file-lines-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:replace_lines",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "replace_workspace_lines",
+                        "tool_args": {
+                            "relative_path": "notes/todo.md",
+                            "start_line": 2,
+                            "end_line": 2,
+                            "new_text": "beta v2",
+                        },
+                        "mutation_preview": {
+                            "tool_name": "replace_workspace_lines",
+                            "can_apply": True,
+                            "mutation_mode": "replace",
+                            "relative_path": "notes/todo.md",
+                            "summary": "todo.md 的 patch 预览已生成。",
+                            "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                        },
+                    }
+                ],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                with patch.dict(os.environ, env, clear=True):
+                    out = _node_tool_execute(state)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "alpha\nbeta v2\ngamma\n")
+            self.assertEqual(out["action_packets"][0]["status"], "completed")
+            self.assertEqual(out["action_packets"][0]["mutation_preview"]["relative_path"], "notes/todo.md")
+            self.assertIn("+beta v2", out["action_packets"][0]["mutation_preview"]["diff_preview"])
 
     def test_tool_execute_writes_completed_packet_and_trace(self):
         state = {

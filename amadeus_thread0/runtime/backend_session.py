@@ -334,6 +334,7 @@ def _merge_pending_approval_state(
             proposal_id=proposal_id,
             args=args,
             status="awaiting_approval",
+            mutation_preview=tool_call.get("mutation_preview") if isinstance(tool_call.get("mutation_preview"), dict) else None,
         )
         if not packet:
             continue
@@ -414,6 +415,29 @@ def _normalize_access_updates(args: dict[str, Any] | None) -> dict[str, Any]:
 
 def _prune_resolved_access_lists(hints: dict[str, Any]) -> dict[str, Any]:
     return prune_resolved_access_hints(hints)
+
+
+def _access_request_execution_binding(
+    *,
+    selected_access_proposal: Any,
+    hints: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    selected = normalize_access_acquire_proposal(selected_access_proposal)
+    if not selected:
+        return "", {}
+    if str(selected.get("path_kind") or "").strip().lower() != "create_new":
+        return "", {}
+    if str(selected.get("mode") or "").strip().lower() != "operator_create_workspace":
+        return "", {}
+    access_hints = dict(hints or {})
+    access_hints["selected_access_proposal"] = selected
+    return (
+        "create_workspace_access",
+        {
+            "workspace_name": str(selected.get("workspace_name") or "").strip(),
+            "access_hints": access_hints,
+        },
+    )
 
 
 def _access_request_trace_entry(
@@ -545,17 +569,31 @@ def _apply_access_request_resolution(
 
     action_packets = normalize_action_packets(data.get("action_packets"))
     updated_packets: list[dict[str, Any]] = []
+    bound_tool_name = ""
+    bound_tool_args: dict[str, Any] = {}
+    if packet_status == "approved":
+        bound_tool_name, bound_tool_args = _access_request_execution_binding(
+            selected_access_proposal=selected_access_proposal,
+            hints=hints,
+        )
     for row in action_packets:
         if str(row.get("proposal_id") or "").strip() == proposal_id:
+            updated_row = {
+                **row,
+                "status": packet_status,
+                "result_summary": result_summary,
+                "block_reason": block_reason,
+                "writeback_ready": packet_status == "completed",
+                "selected_access_proposal": selected_access_proposal,
+            }
+            if bound_tool_name:
+                updated_row["tool_name"] = bound_tool_name
+                updated_row["tool_args"] = bound_tool_args
+            elif packet_status != "completed":
+                updated_row["tool_name"] = ""
+                updated_row["tool_args"] = {}
             updated_packets.append(
-                {
-                    **row,
-                    "status": packet_status,
-                    "result_summary": result_summary,
-                    "block_reason": block_reason,
-                    "writeback_ready": packet_status == "completed",
-                    "selected_access_proposal": selected_access_proposal,
-                }
+                updated_row
             )
         else:
             updated_packets.append(dict(row))

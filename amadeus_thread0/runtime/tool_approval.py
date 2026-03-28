@@ -86,6 +86,43 @@ def _build_meta_preview(args: dict[str, Any]) -> dict[str, Any]:
     return preview
 
 
+def _build_mutation_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
+    preview = tool_call.get("mutation_preview")
+    if not isinstance(preview, dict):
+        return {}
+    normalized: dict[str, Any] = {}
+    for key in (
+        "tool_name",
+        "can_apply",
+        "mutation_mode",
+        "workspace_name",
+        "relative_path",
+        "file_path",
+        "file_name",
+        "target_exists",
+        "created_new",
+        "start_line",
+        "end_line",
+        "match_count",
+        "replace_count",
+        "replaced_line_count",
+        "inserted_line_count",
+        "appended_bytes",
+        "error_code",
+        "error_message",
+        "summary",
+        "preview_truncated",
+    ):
+        value = preview.get(key)
+        if value in (None, "", [], {}):
+            continue
+        normalized[key] = value
+    diff_preview = preview.get("diff_preview")
+    if isinstance(diff_preview, str) and diff_preview.strip():
+        normalized["diff_preview"] = diff_preview[:1600]
+    return normalized
+
+
 @dataclass(frozen=True)
 class ToolApprovalPreview:
     name: str
@@ -94,6 +131,7 @@ class ToolApprovalPreview:
     requested_tools: list[str]
     access_acquire_proposals: list[dict[str, Any]]
     selected_access_proposal: dict[str, Any]
+    mutation_preview: dict[str, Any]
     reason: str
     note: str
     needs_second_confirmation: bool
@@ -158,6 +196,7 @@ def build_tool_approval_preview(
     requested_tools: list[str] = []
     access_acquire_proposals: list[dict[str, Any]] = []
     selected_access_proposal: dict[str, Any] = {}
+    mutation_preview = _build_mutation_preview(tool_call)
     reason = ""
     note = ""
     if name == "request_toolset_upgrade":
@@ -176,6 +215,12 @@ def build_tool_approval_preview(
             note = "approve 只会确认当前 access 获取路径，不代表外部入口已经补齐。"
         elif access_acquire_proposals:
             note = "approve 后会先记录候选 access 获取路径，仍需后续真实补齐入口。"
+    elif mutation_preview:
+        reason = str(mutation_preview.get("summary") or "").strip()
+        if bool(mutation_preview.get("can_apply", False)):
+            note = "approve 后会按这个预览在当前 runtime workspace 内落地，不会越过当前工作区边界。"
+        else:
+            note = "当前预览显示这组改动还不能真实落地；如果继续 approve，执行阶段仍会按真实错误拦下。"
     return ToolApprovalPreview(
         name=name,
         args=args,
@@ -183,6 +228,7 @@ def build_tool_approval_preview(
         requested_tools=requested_tools,
         access_acquire_proposals=access_acquire_proposals,
         selected_access_proposal=selected_access_proposal,
+        mutation_preview=mutation_preview,
         reason=reason,
         note=note,
         needs_second_confirmation=needs_second_confirmation(source, name, args),

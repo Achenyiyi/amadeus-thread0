@@ -79,6 +79,14 @@ class AutonomyBackendContractTests(unittest.TestCase):
                             "source_url": "https://example.com/result",
                             "source_query": "example query",
                         },
+                        "mutation_preview": {
+                            "tool_name": "replace_workspace_lines",
+                            "can_apply": True,
+                            "mutation_mode": "replace",
+                            "relative_path": "notes/todo.md",
+                            "summary": "审批通过后会在当前 workspace 内应用 patch。",
+                            "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                        },
                     }
                 ],
                 "pending_action_proposal": {
@@ -89,6 +97,14 @@ class AutonomyBackendContractTests(unittest.TestCase):
                     "risk": "external_mutation",
                     "requires_approval": True,
                     "capability_steps": [],
+                    "mutation_preview": {
+                        "tool_name": "replace_workspace_lines",
+                        "can_apply": True,
+                        "mutation_mode": "replace",
+                        "relative_path": "notes/todo.md",
+                        "summary": "审批通过后会在当前 workspace 内应用 patch。",
+                        "diff_preview": "--- a/notes/todo.md\n+++ b/notes/todo.md\n@@\n-beta\n+beta v2\n",
+                    },
                 },
                 "action_trace": [{"proposal_id": "ap-1", "status": "awaiting_approval", "event": "tool_gate_decision"}],
                 "autonomy_block_reason": "",
@@ -106,7 +122,10 @@ class AutonomyBackendContractTests(unittest.TestCase):
                 self.assertEqual(artifact_context.get("artifact_kind"), "search_result")
                 self.assertEqual(artifact_context.get("artifact_label"), "Example Result")
                 self.assertEqual(artifact_context.get("source_ref_ids"), [9])
+                self.assertEqual(autonomy["action_packets"][0]["mutation_preview"]["relative_path"], "notes/todo.md")
                 self.assertEqual(autonomy["pending_approval"]["proposal_id"], "ap-1")
+                self.assertEqual(autonomy["pending_approval"]["mutation_preview"]["mutation_mode"], "replace")
+                self.assertIn("+beta v2", autonomy["pending_approval"]["mutation_preview"]["diff_preview"])
                 self.assertEqual(autonomy["execution_trace"][0]["event"], "tool_gate_decision")
                 self.assertEqual(autonomy["block_reason"], "")
 
