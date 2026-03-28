@@ -115,6 +115,12 @@ class FakeMemoryStore:
                         "kind": "access_request_pending",
                         "summary": "她已经把动作推进到了审批门口。",
                         "requested_access": ["workspace_write", "human_approval"],
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [17],
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread",
+                        "artifact_source_title": "Persistence",
+                        "artifact_source_tool_name": "search_web",
                         "requested_help": True,
                         "primary_status": "awaiting_approval",
                     },
@@ -146,6 +152,12 @@ class FakeMemoryStore:
                         "kind": "access_request_pending",
                         "summary": "她已经把动作推进到了审批门口。",
                         "requested_access": ["workspace_write"],
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [17],
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread",
+                        "artifact_source_title": "Persistence",
+                        "artifact_source_tool_name": "search_web",
                         "requested_help": True,
                         "primary_status": "awaiting_approval",
                     },
@@ -255,6 +267,555 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(result.values["autonomy_intent"]["mode"], "approval_pending")
         self.assertEqual(result.values["autonomy_intent"]["primary_proposal_id"], "ap-memory-1")
         self.assertEqual(result.values["action_packets"][0]["proposal_id"], "ap-memory-1")
+
+    def test_invoke_stream_synthesizes_access_request_from_pending_access_packet(self):
+        packet = {
+            "proposal_id": "ap-access-help-1",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "account_login / cookies",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "这一步需要先向你请求账号入口和 cookies。",
+                }
+            ],
+            "expected_effect": "这一步需要先向你请求账号入口和 cookies。",
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "session_context": {
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "expired",
+                    "missing_access": ["account_login", "cookies"],
+                    "requestable_access": ["account_login", "cookies", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": [
+                        {
+                            "target": "account_login",
+                            "mode": "operator_login",
+                            "summary": "先把账号登录补回来。",
+                            "operator_action": "登录目标账号。",
+                            "grants": ["account_login", "browser_session"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "account_login",
+                        "mode": "operator_login",
+                        "summary": "先把账号登录补回来。",
+                        "operator_action": "登录目标账号。",
+                        "grants": ["account_login", "browser_session"],
+                        "requires_operator": True,
+                    },
+                }
+            },
+            "digital_body_state": {
+                "access_state": {
+                    "mode": "approval_pending",
+                    "requestable_access": ["account_login", "cookies", "human_approval"],
+                    "missing_access": ["account_login", "cookies"],
+                    "session_recovery_mode": "restore_cookies",
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "expired",
+                }
+            },
+        }
+        graph = FakeStreamGraph(
+            stream_rows=[("values", values)],
+            state_values=values,
+        )
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "hi"}]})
+
+        self.assertIsNotNone(result.approval_request)
+        assert result.approval_request is not None
+        self.assertEqual(result.approval_request.kind, "access_request")
+        self.assertEqual(result.approval_request.source, "access")
+        self.assertEqual(result.approval_request.payload["proposal_id"], "ap-access-help-1")
+        self.assertEqual(result.approval_request.tool_calls[0]["name"], "access_request_help")
+        self.assertIn("account_login", result.approval_request.tool_calls[0]["args"]["requested_access"])
+        self.assertIn("cookies", result.approval_request.tool_calls[0]["args"]["missing_access"])
+        proposals = result.approval_request.tool_calls[0]["args"].get("access_acquire_proposals") or []
+        self.assertTrue(proposals)
+        self.assertEqual(proposals[0]["target"], "account_login")
+        self.assertEqual(proposals[0]["mode"], "operator_login")
+        self.assertEqual(result.values["pending_action_proposal"]["proposal_id"], "ap-access-help-1")
+
+    def test_invoke_stream_defaults_selected_access_proposal_from_candidates(self):
+        packet = {
+            "proposal_id": "ap-access-help-1b",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "account_login",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "先决定走现有账号还是新注册账号。",
+                }
+            ],
+            "expected_effect": "先决定走现有账号还是新注册账号。",
+            "access_acquire_proposals": [
+                {
+                    "target": "account_login",
+                    "mode": "operator_login",
+                    "path_kind": "acquire_existing",
+                    "summary": "先把现有账号登录补回来。",
+                    "operator_action": "登录目标账号。",
+                    "grants": ["account_login", "browser_session"],
+                    "requires_operator": True,
+                },
+                {
+                    "target": "account_login",
+                    "mode": "operator_register_account",
+                    "path_kind": "create_new",
+                    "summary": "如果没有现成账号，也可以先注册一个新的可用入口。",
+                    "operator_action": "注册一个新的账号入口。",
+                    "grants": ["account_login", "browser_session"],
+                    "requires_operator": True,
+                },
+            ],
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "session_context": {
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "missing_access": ["account_login", "browser_session"],
+                    "requestable_access": ["account_login", "browser_session", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": list(packet["access_acquire_proposals"]),
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[("values", values)], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "hi"}]})
+
+        assert result.approval_request is not None
+        selected = result.approval_request.tool_calls[0]["args"].get("selected_access_proposal") or {}
+        self.assertEqual(selected.get("mode"), "operator_login")
+        self.assertEqual(selected.get("path_kind"), "acquire_existing")
+
+    def test_resume_stream_resolves_pending_access_request_without_graph_interrupt(self):
+        packet = {
+            "proposal_id": "ap-access-help-2",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "account_login / cookies",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "这一步需要先向你请求账号入口和 cookies。",
+                }
+            ],
+            "expected_effect": "这一步需要先向你请求账号入口和 cookies。",
+            "result_summary": "",
+            "writeback_ready": False,
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "这一步需要先向你请求账号入口和 cookies。",
+                "primary_proposal_id": "ap-access-help-2",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "expired",
+                    "missing_access": ["account_login", "cookies"],
+                    "requestable_access": ["account_login", "cookies", "human_approval"],
+                    "requested_help": True,
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream(
+            [
+                {
+                    "action": "edit",
+                    "reason": "operator restored session",
+                    "args": {
+                        "access_updates": {
+                            "browser_session": "present",
+                            "account_state": "logged_in",
+                            "cookie_state": "present",
+                            "missing_access": [],
+                            "requestable_access": [],
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(result.streamed_text, "")
+        self.assertIsNone(result.approval_request)
+        self.assertEqual(result.values["action_packets"][0]["status"], "completed")
+        self.assertEqual(result.values["action_packets"][0]["result_summary"], "operator restored session")
+        self.assertTrue(result.values["action_packets"][0]["writeback_ready"])
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "access_request_resolved")
+        self.assertEqual(result.values["autonomy_intent"]["reason"], "operator restored session")
+        self.assertEqual(result.values["pending_action_proposal"], {})
+        self.assertFalse(result.values["session_context"]["digital_body_hints"]["requested_help"])
+        self.assertEqual(result.values["session_context"]["digital_body_hints"]["browser_session"], "present")
+        self.assertNotIn("selected_access_proposal", result.values["session_context"]["digital_body_hints"])
+        self.assertEqual(result.values["action_trace"][-1]["event"], "resolved_by_user")
+        self.assertEqual(len(graph.updated_states), 1)
+        self.assertEqual(graph.updated_states[0][2], "prepare_turn")
+
+    def test_resume_stream_can_approve_access_acquire_path_without_claiming_access_fixed(self):
+        packet = {
+            "proposal_id": "ap-access-help-3",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "api_key",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "这一步需要先补一个可用 API key。",
+                }
+            ],
+            "expected_effect": "这一步需要先补一个可用 API key。",
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": [
+                {
+                    "target": "api_key",
+                    "mode": "operator_provide_api_key",
+                    "summary": "先补一个可用 API key。",
+                    "operator_action": "填入一个可用 key。",
+                    "grants": ["api_key"],
+                    "requires_operator": True,
+                }
+            ],
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "这一步需要先补一个可用 API key。",
+                "primary_proposal_id": "ap-access-help-3",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "api_key_state": "missing",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": list(packet["access_acquire_proposals"]),
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream(
+            [
+                {
+                    "action": "approve",
+                    "reason": "operator accepted api key path",
+                    "args": {
+                        "selected_access_proposal": {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(result.streamed_text, "")
+        self.assertIsNone(result.approval_request)
+        self.assertEqual(result.values["action_packets"][0]["status"], "approved")
+        self.assertFalse(result.values["action_packets"][0]["writeback_ready"])
+        self.assertEqual(result.values["action_packets"][0]["result_summary"], "operator accepted api key path")
+        selected = result.values["action_packets"][0].get("selected_access_proposal") if isinstance(result.values["action_packets"][0].get("selected_access_proposal"), dict) else {}
+        self.assertEqual(selected.get("target"), "api_key")
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "access_acquire_planned")
+        self.assertEqual(result.values["autonomy_intent"]["reason"], "先补一个可用 API key。")
+        self.assertEqual(result.values["pending_action_proposal"], {})
+        hints = result.values["session_context"]["digital_body_hints"]
+        self.assertFalse(hints["requested_help"])
+        self.assertEqual(hints["selected_access_proposal"]["mode"], "operator_provide_api_key")
+        self.assertEqual(result.values["action_trace"][-1]["event"], "approved_by_user")
+
+    def test_resume_stream_persists_operator_selected_access_path(self):
+        proposals = [
+            {
+                "target": "account_login",
+                "mode": "operator_login",
+                "path_kind": "acquire_existing",
+                "summary": "先把现有账号登录补回来。",
+                "operator_action": "登录目标账号。",
+                "grants": ["account_login", "browser_session"],
+                "requires_operator": True,
+            },
+            {
+                "target": "account_login",
+                "mode": "operator_register_account",
+                "path_kind": "create_new",
+                "summary": "如果没有现成账号，也可以先注册一个新的可用入口。",
+                "operator_action": "注册一个新的账号入口。",
+                "grants": ["account_login", "browser_session"],
+                "requires_operator": True,
+            },
+        ]
+        packet = {
+            "proposal_id": "ap-access-help-3b",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "account_login",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "先决定走现有账号还是新注册账号。",
+                }
+            ],
+            "expected_effect": "先决定走现有账号还是新注册账号。",
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": proposals,
+            "selected_access_proposal": proposals[0],
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "先决定走现有账号还是新注册账号。",
+                "primary_proposal_id": "ap-access-help-3b",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "missing_access": ["account_login", "browser_session"],
+                    "requestable_access": ["account_login", "browser_session", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": proposals,
+                    "selected_access_proposal": proposals[0],
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream(
+            [
+                {
+                    "action": "approve",
+                    "reason": "operator selected fresh-account path",
+                    "args": {
+                        "selected_access_proposal": proposals[1],
+                    },
+                }
+            ]
+        )
+
+        selected = result.values["action_packets"][0].get("selected_access_proposal") if isinstance(result.values["action_packets"][0].get("selected_access_proposal"), dict) else {}
+        self.assertEqual(result.values["action_packets"][0]["status"], "approved")
+        self.assertEqual(selected.get("mode"), "operator_register_account")
+        self.assertEqual(selected.get("path_kind"), "create_new")
+        self.assertEqual(result.values["session_context"]["digital_body_hints"]["selected_access_proposal"]["mode"], "operator_register_account")
+        self.assertEqual(result.values["autonomy_intent"]["reason"], "如果没有现成账号，也可以先注册一个新的可用入口。")
+
+    def test_resume_stream_keeps_partial_access_arrival_as_approved(self):
+        proposal = {
+            "target": "account_login",
+            "mode": "operator_login",
+            "summary": "先把账号登录补回来，这条外部入口才接得上后面。",
+            "operator_action": "登录目标账号，或把现成登录态交给我。",
+            "grants": ["account_login", "browser_session"],
+            "requires_operator": True,
+        }
+        packet = {
+            "proposal_id": "ap-access-help-4",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "account_login",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "需要先补回登录和会话。",
+                }
+            ],
+            "expected_effect": "需要先补回登录和会话。",
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": [proposal],
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "需要先补回登录和会话。",
+                "primary_proposal_id": "ap-access-help-4",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "missing_access": ["account_login", "browser_session"],
+                    "requestable_access": ["account_login", "browser_session", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": [proposal],
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream(
+            [
+                {
+                    "action": "edit",
+                    "args": {
+                        "access_updates": {
+                            "account_state": "logged_in",
+                            "browser_session": "missing",
+                            "missing_access": ["browser_session"],
+                            "requestable_access": ["browser_session"],
+                            "selected_access_proposal": proposal,
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(result.values["action_packets"][0]["status"], "approved")
+        self.assertFalse(result.values["action_packets"][0]["writeback_ready"])
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "access_acquire_planned")
+        self.assertEqual(result.values["action_trace"][-1]["event"], "approved_by_user")
+        self.assertIn("还没完全接通", result.values["action_packets"][0]["result_summary"])
+        selected = result.values["action_packets"][0].get("selected_access_proposal") if isinstance(result.values["action_packets"][0].get("selected_access_proposal"), dict) else {}
+        self.assertEqual(selected.get("resolved_grants"), ["account_login"])
+        self.assertEqual(selected.get("pending_grants"), ["browser_session"])
+        self.assertEqual(selected.get("completion_ratio"), 0.5)
+        hints = result.values["session_context"]["digital_body_hints"]
+        self.assertFalse(hints["requested_help"])
+        self.assertEqual(hints["missing_access"], ["browser_session"])
+        self.assertIn("selected_access_proposal", hints)
 
     def test_extract_final_text_prefers_explicit_final_text_field(self):
         session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
@@ -420,12 +981,24 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline["counterpart_assessment_history"][0]["scene"], "care_bid")
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["created_at"], 1710000003)
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
+        self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
+        self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(
+            worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_title"],
+            "Persistence",
+        )
         self.assertEqual(worldline["proactive_continuity_history"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["trace_family"], "own_rhythm_busy_window")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
         self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
         self.assertEqual(worldline["proactive_continuity_preview"][0]["created_at"], 1710000004)
         self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(
+            worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_title"],
+            "Persistence",
+        )
 
         persona = session.persona_view()
         self.assertEqual(persona["persona_state"]["role"], "kurisu_amadeus")
@@ -438,11 +1011,15 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(bond["counterpart_assessment_preview"][0]["stance"], "open")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["created_at"], 1710000003)
         self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
+        self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
+        self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
         self.assertEqual(bond["proactive_continuity_history"][0]["kind"], "released_to_self_activity")
         self.assertEqual(bond["proactive_continuity_preview"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
         self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_identity_gravity"], 0.64)
         self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
+        self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
+        self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
 
         sources = session.sources_view()
         self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
@@ -1189,6 +1766,28 @@ class BackendSessionTests(unittest.TestCase):
                 "kind": "user_utterance",
                 "perception": {"channel": "dialogue", "modality": "text"},
             },
+            "digital_body_state": {
+                "active_surface": "tooling",
+                "available_toolsets": ["browser"],
+                "active_tools": ["search_web"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                },
+                "resource_state": {
+                    "action_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "source_ref",
+                    "active_artifact_ref": "src:17",
+                    "active_artifact_label": "Persistence",
+                    "artifact_reacquisition_mode": "reuse_saved_source",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
+                }
+            },
             "action_packets": [
                 {
                     "proposal_id": "ap-1",
@@ -1203,6 +1802,12 @@ class BackendSessionTests(unittest.TestCase):
                 "digital_body_consequence": {
                     "kind": "access_request_pending",
                     "summary": "这轮留下的是一个待审批入口。",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                     "requested_help": True,
                 }
             },
@@ -1217,12 +1822,21 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(digital_body.get("active_tools"), ["search_web"])
         self.assertEqual(digital_body.get("access", {}).get("mode"), "tool_enabled")
         self.assertEqual(digital_body.get("resources", {}).get("action_packet_count"), 1)
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(
+            digital_body.get("resources", {}).get("artifact_source_title"),
+            "Persistence",
+        )
         summary_consequence = (
             summary.get("digital_body_consequence")
             if isinstance(summary.get("digital_body_consequence"), dict)
             else {}
         )
         self.assertEqual(summary_consequence.get("kind"), "access_request_pending")
+        self.assertEqual(summary_consequence.get("artifact_carrier"), "source_ref")
+        self.assertEqual(summary_consequence.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(summary_consequence.get("artifact_source_title"), "Persistence")
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_surface"), "tooling")
         self.assertEqual(current_turn.get("digital_body_access_mode"), "tool_enabled")
@@ -1235,6 +1849,9 @@ class BackendSessionTests(unittest.TestCase):
             else {}
         )
         self.assertEqual(event_bodyfx.get("kind"), "access_request_pending")
+        self.assertEqual(event_bodyfx.get("artifact_carrier"), "source_ref")
+        self.assertEqual(event_bodyfx.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(event_bodyfx.get("artifact_source_title"), "Persistence")
         self.assertTrue(bool(event_bodyfx.get("requested_help")))
 
         persona = session.persona_view()
@@ -1261,6 +1878,12 @@ class BackendSessionTests(unittest.TestCase):
                     "summary": "她把动作推进到了审批门口。",
                     "requested_access": ["workspace_write"],
                     "missing_access": ["workspace_write"],
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
                     "requested_help": True,
                     "primary_status": "awaiting_approval",
                 },
@@ -1275,6 +1898,9 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(digital_body.get("access", {}).get("mode"), "approval_pending")
         self.assertIn("workspace_write", digital_body.get("access", {}).get("missing_access") or [])
         self.assertIn("human_approval", digital_body.get("access", {}).get("requestable_access") or [])
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(digital_body.get("resources", {}).get("artifact_source_title"), "Persistence")
 
     def test_build_evolution_summary_surfaces_digital_body_cooldown(self):
         values = {

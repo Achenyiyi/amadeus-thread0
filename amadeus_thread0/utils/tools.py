@@ -27,7 +27,17 @@ except Exception:
     MultiServerMCPClient = None  # type: ignore[assignment]
 
 from ..config import SOURCE_RELIABILITY_DEFAULT, TOOL_POLICIES, TOOL_RELIABILITY_WEIGHTS
+from ..graph_parts.digital_body_runtime import (
+    access_proposal_identity,
+    derive_digital_body_state,
+    derive_session_lifecycle,
+    normalize_access_acquire_proposal,
+    normalize_access_acquire_proposals,
+    prune_resolved_access_hints,
+    selected_access_proposal_resolved,
+)
 from ..memory_store import MemoryStore
+from ..runtime.modeling import _normalize_provider, _resolve_api_key
 from ..runtime.settings import BASE_DIR, get_settings
 from .revision_trace_export import normalize_revision_trace_exports
 
@@ -215,6 +225,177 @@ def _overlap_score(a: str, b: str) -> float:
     overlap = len(au & bu)
     denom = max(1, min(len(au), 8))
     return max(0.0, min(1.0, float(overlap) / float(denom)))
+
+
+def _clean_lower_text(value: Any, *, limit: int = 80) -> str:
+    return str(value or "").strip().lower()[:limit]
+
+
+def _clean_lower_list(value: Any, *, limit: int = 12) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    items: list[str] = []
+    for item in value:
+        text = _clean_lower_text(item, limit=64)
+        if text and text not in items:
+            items.append(text)
+        if len(items) >= max(1, int(limit)):
+            break
+    return items
+
+
+def _env_access_override(*names: str) -> str:
+    for name in names:
+        value = _clean_lower_text(os.getenv(name, ""))
+        if value:
+            return value
+    return ""
+
+
+def _probe_filesystem_state(path: Path) -> str:
+    try:
+        candidate = path if path.exists() else path.parent
+        if not candidate.exists():
+            return "missing"
+        if os.access(str(candidate), os.W_OK):
+            return "writable"
+        if os.access(str(candidate), os.R_OK):
+            return "read_only"
+        return "unavailable"
+    except Exception:
+        return "unavailable"
+
+
+def _summary_from_access_state(access_state: dict[str, Any], before: dict[str, Any]) -> str:
+    changed: list[str] = []
+    for key in (
+        "session_continuity",
+        "session_recovery_mode",
+        "api_key_state",
+        "quota_state",
+        "filesystem_state",
+        "network_access",
+        "sandbox_mode",
+    ):
+        after_value = str(access_state.get(key) or "").strip().lower()
+        before_value = str(before.get(key) or "").strip().lower()
+        if after_value and after_value != before_value:
+            changed.append(f"{key}={after_value}")
+    missing_access = [
+        str(item).strip().lower()
+        for item in (access_state.get("missing_access") if isinstance(access_state.get("missing_access"), list) else [])
+        if str(item or "").strip()
+    ]
+    session_continuity = str(access_state.get("session_continuity") or "").strip().lower()
+    session_recovery_mode = str(access_state.get("session_recovery_mode") or "").strip().lower()
+    session_expires_in_s = int(access_state.get("session_expires_in_s") or 0)
+    if changed:
+        return "已重新检查当前入口状态：" + "，".join(changed[:4]) + "。"
+    if session_continuity == "expiring" and session_expires_in_s > 0:
+        return (
+            f"已重新检查当前会话状态，离过期大约还有 {session_expires_in_s}s，"
+            f"当前恢复路径是 {session_recovery_mode or 'refresh_session'}。"
+        )
+    if missing_access:
+        return "已重新检查当前入口状态，暂时还缺 " + "、".join(missing_access[:3]) + "。"
+    if session_continuity in {"expired", "missing"}:
+        return "已重新检查当前入口状态，这段会话连续性还没有补回来。"
+    return "已重新检查当前入口状态，眼下这条路径是稳定的。"
+
+
+def _slugify_workspace_name(raw: Any, *, fallback: str = "workspace") -> str:
+    text = str(raw or "").strip().lower()
+    if not text:
+        return fallback
+    text = re.sub(r"[^a-z0-9._-]+", "-", text)
+    text = re.sub(r"-{2,}", "-", text).strip("-.")
+    return text or fallback
+
+
+def _workspace_preview(path: Path, *, limit: int = 24) -> tuple[str, bool]:
+    if not path.exists() or not path.is_dir():
+        return "", False
+    names: list[str] = []
+    try:
+        for entry in sorted(path.iterdir(), key=lambda item: item.name.lower()):
+            names.append(entry.name)
+            if len(names) >= max(1, int(limit)):
+                break
+    except Exception:
+        return "", False
+    preview = "\n".join(names)
+    truncated = False
+    try:
+        truncated = sum(1 for _ in path.iterdir()) > len(names)
+    except Exception:
+        truncated = False
+    return preview[:1200], truncated
+
+
+def _workspace_artifact_context(path: Path) -> dict[str, Any]:
+    preview, preview_truncated = _workspace_preview(path)
+    try:
+        updated_at = int(path.stat().st_mtime)
+    except Exception:
+        updated_at = 0
+    return {
+        "carrier": "filesystem",
+        "artifact_kind": "workspace",
+        "artifact_ref": str(path),
+        "artifact_label": path.name,
+        "reacquisition_mode": "reattach_workspace",
+        "preview": preview,
+        "preview_truncated": preview_truncated,
+        "exists": path.exists(),
+        "size_bytes": 0,
+        "updated_at": updated_at,
+        "source_ref_ids": [],
+        "source_url": "",
+        "source_query": "",
+        "source_title": path.name,
+        "source_tool_name": "create_workspace_access",
+    }
+
+
+def _workspace_access_hints(*, hints: dict[str, Any], workspace_path: Path) -> dict[str, Any]:
+    refreshed = dict(hints or {})
+    refreshed.update(
+        {
+            "filesystem_state": "writable",
+            "artifact_continuity": "attached",
+            "active_artifact_kind": "workspace",
+            "active_artifact_ref": str(workspace_path),
+            "active_artifact_label": workspace_path.name,
+            "artifact_age_s": 0,
+            "artifact_reacquisition_mode": "reattach_workspace",
+            "artifact_carrier": "filesystem",
+            "artifact_source_ref_ids": [],
+            "artifact_source_url": "",
+            "artifact_source_query": "",
+            "artifact_source_title": workspace_path.name,
+            "artifact_source_tool_name": "create_workspace_access",
+        }
+    )
+    refreshed.setdefault("world_surfaces", [])
+    if isinstance(refreshed.get("world_surfaces"), list):
+        surfaces = [str(item).strip().lower() for item in refreshed.get("world_surfaces", []) if str(item or "").strip()]
+        if "filesystem" not in surfaces:
+            surfaces.append("filesystem")
+        refreshed["world_surfaces"] = surfaces[:12]
+    refreshed = prune_resolved_access_hints(refreshed)
+
+    selected = normalize_access_acquire_proposal(refreshed.get("selected_access_proposal"))
+    proposals = normalize_access_acquire_proposals(refreshed.get("access_acquire_proposals"))
+    if selected and selected_access_proposal_resolved(hints=refreshed, proposal=selected):
+        refreshed.pop("selected_access_proposal", None)
+        refreshed["access_acquire_proposals"] = [
+            proposal
+            for proposal in proposals
+            if access_proposal_identity(proposal) != access_proposal_identity(selected)
+        ]
+    elif proposals:
+        refreshed["access_acquire_proposals"] = proposals
+    return refreshed
 
 
 def _langchain_requested_topics(query: str) -> set[str]:
@@ -1700,8 +1881,13 @@ def reacquire_artifact(
 ) -> dict[str, Any]:
     """在受限只读范围内重新接回当前工作面。
 
-    目前支持本地文件/文档/工作区类 artifact。
-    浏览器页面和检索结果仍保持显式阻塞，等待未来 browser/search surface 落地。
+    目前支持两类受限只读重接回：
+    - 本地文件 / 文档 / 工作区类 artifact
+    - 基于已保存 `source_ref` 的 page / search_result 类 surface
+
+    真正的 live browser session 仍未落地。
+    对 browser/search-like surface，目前只允许复用已经存入 `source_refs`
+    的 `url/title/query/snippet`，不模拟虚假的在线浏览器状态。
     """
 
     tool_name = "reacquire_artifact"
@@ -1825,6 +2011,195 @@ def reacquire_artifact(
         "artifact path could not be resolved in the current workspace",
         {"mode": reacquire_mode, "artifact_kind": kind, "artifact_ref": ref, "artifact_label": label},
     )
+
+
+@tool
+def refresh_access_state(access_hints: dict[str, Any] | None = None) -> dict[str, Any]:
+    """只读刷新当前数字身体的 access/session 入口状态。
+
+    这不是外部登录或真实浏览器操作。
+    它只会：
+    - 读取当前运行环境里真正可见的局部状态（例如 API key、文件系统可写性）
+    - 结合现有 access hints 重新计算 session/access 连续性
+    - 返回可写回的最新 hints 与规范化 access_state
+    """
+
+    tool_name = "refresh_access_state"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        settings = get_settings()
+        provider = _normalize_provider(settings.model_provider)
+        browser_session = _clean_lower_text(hints.get("browser_session"))
+        account_state = _clean_lower_text(hints.get("account_state"))
+        cookie_state = _clean_lower_text(hints.get("cookie_state"))
+        quota_state = _clean_lower_text(hints.get("quota_state"))
+        retry_after_s = max(0, int(hints.get("retry_after_s") or 0))
+        cooldown_scope = _clean_lower_text(hints.get("cooldown_scope"))
+        api_key_state = "present" if _resolve_api_key(provider) else (_clean_lower_text(hints.get("api_key_state")) or "missing")
+        filesystem_state = _probe_filesystem_state(settings.data_dir)
+        sandbox_mode = _env_access_override("AMADEUS_SANDBOX_MODE") or _clean_lower_text(hints.get("sandbox_mode")) or "open"
+        network_access = (
+            _env_access_override("AMADEUS_NETWORK_ACCESS", "AMADEUS_NETWORK_ACCESS_STATE")
+            or _clean_lower_text(hints.get("network_access"))
+            or "enabled"
+        )
+        session_lifecycle = derive_session_lifecycle(
+            browser_session=browser_session,
+            account_state=account_state,
+            cookie_state=cookie_state,
+            session_continuity=hints.get("session_continuity"),
+            session_expires_in_s=hints.get("session_expires_in_s"),
+            session_recovery_mode=hints.get("session_recovery_mode"),
+        )
+        refreshed_hints = {
+            **hints,
+            "browser_session": browser_session,
+            "account_state": account_state,
+            "cookie_state": cookie_state,
+            "api_key_state": api_key_state,
+            "quota_state": quota_state,
+            "retry_after_s": retry_after_s,
+            "cooldown_scope": cooldown_scope,
+            "filesystem_state": filesystem_state,
+            "sandbox_mode": sandbox_mode,
+            "network_access": network_access,
+            "session_continuity": str(session_lifecycle.get("session_continuity") or "").strip().lower(),
+            "session_expires_in_s": int(session_lifecycle.get("session_expires_in_s") or 0),
+            "session_recovery_mode": str(session_lifecycle.get("session_recovery_mode") or "").strip().lower(),
+            "missing_access": _clean_lower_list(hints.get("missing_access"), limit=12),
+            "requestable_access": _clean_lower_list(hints.get("requestable_access"), limit=12),
+            "constraints": _clean_lower_list(hints.get("constraints"), limit=12),
+            "world_surfaces": _clean_lower_list(hints.get("world_surfaces"), limit=12),
+        }
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "state"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        summary = _summary_from_access_state(access_state, hints)
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "browser_session": str(access_state.get("browser_session") or "").strip().lower(),
+                "account_state": str(access_state.get("account_state") or "").strip().lower(),
+                "cookie_state": str(access_state.get("cookie_state") or "").strip().lower(),
+                "api_key_state": str(access_state.get("api_key_state") or "").strip().lower(),
+                "quota_state": str(access_state.get("quota_state") or "").strip().lower(),
+                "filesystem_state": str(access_state.get("filesystem_state") or "").strip().lower(),
+                "sandbox_mode": str(access_state.get("sandbox_mode") or "").strip().lower(),
+                "network_access": str(access_state.get("network_access") or "").strip().lower(),
+                "session_continuity": str(access_state.get("session_continuity") or "").strip().lower(),
+                "session_expires_in_s": int(access_state.get("session_expires_in_s") or 0),
+                "session_recovery_mode": str(access_state.get("session_recovery_mode") or "").strip().lower(),
+                "missing_access": [
+                    str(item).strip().lower()
+                    for item in (access_state.get("missing_access") if isinstance(access_state.get("missing_access"), list) else [])
+                    if str(item or "").strip()
+                ][:12],
+                "requestable_access": [
+                    str(item).strip().lower()
+                    for item in (access_state.get("requestable_access") if isinstance(access_state.get("requestable_access"), list) else [])
+                    if str(item or "").strip()
+                ][:12],
+            },
+        )
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e), {"access_hints": hints})
+
+
+@tool
+def create_workspace_access(
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """在当前 runtime 的受控目录里创建一个真实可写工作区。
+
+    约束：
+    - 只会在 `AMADEUS_DATA_DIR/workspaces/` 下创建目录
+    - 不接受任意绝对路径写入
+    - 结果会回写当前 digital-body 的 filesystem / artifact 连续性
+    """
+
+    tool_name = "create_workspace_access"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        settings = get_settings()
+        workspace_root = settings.data_dir / "workspaces"
+        workspace_root.mkdir(parents=True, exist_ok=True)
+
+        preferred_name = _slugify_workspace_name(
+            workspace_name
+            or hints.get("workspace_name")
+            or hints.get("active_artifact_label")
+            or settings.thread_id,
+            fallback="workspace",
+        )
+        workspace_path = workspace_root / preferred_name
+        created_new = False
+        if workspace_path.exists() and not workspace_path.is_dir():
+            return _err(
+                tool_name,
+                "INVALID_TARGET",
+                "workspace target exists but is not a directory",
+                {"workspace_path": str(workspace_path)},
+            )
+        if not workspace_path.exists():
+            workspace_path.mkdir(parents=True, exist_ok=True)
+            created_new = True
+
+        refreshed_hints = _workspace_access_hints(
+            hints=hints,
+            workspace_path=workspace_path,
+        )
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=["create_workspace_access"],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        artifact_context = _workspace_artifact_context(workspace_path)
+        summary = (
+            f"已新建可写工作区 {workspace_path.name}，这条落盘路径现在接上了。"
+            if created_new
+            else f"已接回可写工作区 {workspace_path.name}，这条落盘路径现在接上了。"
+        )
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(workspace_path),
+                "workspace_name": workspace_path.name,
+                "workspace_root": str(workspace_root),
+                "created_new": created_new,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+            },
+        )
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"workspace_name": workspace_name, "access_hints": hints},
+        )
 
 
 @tool

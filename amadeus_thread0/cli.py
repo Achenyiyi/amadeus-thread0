@@ -1327,6 +1327,10 @@ def main():
                     print("- tool=" + preview.name)
                     if preview.requested_tools:
                         print("  requested_tools=" + json.dumps(preview.requested_tools, ensure_ascii=False))
+                    if preview.access_acquire_proposals:
+                        print("  access_acquire_proposals=" + json.dumps(preview.access_acquire_proposals, ensure_ascii=False))
+                    if preview.selected_access_proposal:
+                        print("  selected_access_proposal=" + json.dumps(preview.selected_access_proposal, ensure_ascii=False))
                     if preview.reason:
                         print("  reason=" + preview.reason)
                     if preview.note:

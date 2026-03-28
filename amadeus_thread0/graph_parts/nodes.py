@@ -65,6 +65,7 @@ def _node_prepare_turn(state: ThreadState, config: RunnableConfig | None = None)
         turn_now_ts=turn_now_ts,
         prepared_turn=prepared_turn,
     )
+    session_context = _prefer_nonempty_mapping(runtime_state.get("session_context"), session_context)
     current_event = _prefer_nonempty_mapping(runtime_state.get("current_event"), current_event)
     interaction_carryover = _prefer_nonempty_mapping(
         runtime_state.get("interaction_carryover"),

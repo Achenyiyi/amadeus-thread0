@@ -2,8 +2,28 @@ from __future__ import annotations
 
 from typing import Any
 
-from .action_packets import build_behavior_action_packet, make_proposal_id, normalize_action_packet, normalize_action_packets
-from .digital_body_runtime import normalize_embodied_context
+from .action_packets import (
+    build_behavior_action_packet,
+    derive_action_packet_origin,
+    make_proposal_id,
+    normalize_action_packet,
+    normalize_action_packets,
+)
+from .digital_body_runtime import (
+    access_grant_satisfied,
+    access_proposal_identity,
+    access_proposal_progress,
+    derive_access_acquire_proposals,
+    derive_session_lifecycle,
+    enrich_access_acquire_proposal,
+    merge_digital_body_hints,
+    normalize_access_acquire_proposal,
+    normalize_access_acquire_proposals,
+    normalize_embodied_context,
+    prune_resolved_access_hints,
+    select_access_acquire_proposal,
+    selected_access_proposal_resolved,
+)
 
 _OWN_RHYTHM_EVENT_KINDS = {
     "self_activity_state",
@@ -23,6 +43,27 @@ _ARTIFACT_KIND_LABELS = {
     "site": "前面的站点",
     "browser_page": "前面的页面",
     "search_result": "前面的检索结果",
+}
+
+_ACCESS_REFRESH_TARGETS = {
+    "api_key": "模型入口",
+    "api_quota": "配额状态",
+    "workspace_write": "工作区写入权限",
+    "filesystem": "文件系统入口",
+    "sandbox": "执行环境",
+    "network": "网络入口",
+    "browser_session": "浏览器会话",
+    "account_login": "账号登录状态",
+    "cookies": "cookies 状态",
+    "session_refresh": "会话连续性",
+}
+
+_ACCESS_HELP_TARGETS = {
+    "browser_session",
+    "account_login",
+    "cookies",
+    "api_key",
+    "api_quota",
 }
 
 
@@ -50,6 +91,25 @@ def _clean_list(value: Any, *, limit: int = 3) -> list[str]:
 
 def _clean_text(value: Any, *, limit: int = 220) -> str:
     return str(value or "").strip()[:limit]
+
+
+def _merge_labels(*values: Any, limit: int = 8) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, list):
+            items = value
+        else:
+            items = [value]
+        for item in items:
+            text = _clean_text(item).lower()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            merged.append(text)
+            if len(merged) >= max(1, int(limit)):
+                return merged
+    return merged
 
 
 def _clamp01(value: Any, default: float = 0.0) -> float:
@@ -139,6 +199,482 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
             "writeback_ready": False,
         }
     )
+
+
+def _access_refresh_reason(hints: dict[str, Any]) -> str:
+    browser_session = _clean_text(hints.get("browser_session")).lower()
+    account_state = _clean_text(hints.get("account_state")).lower()
+    cookie_state = _clean_text(hints.get("cookie_state")).lower()
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=hints.get("session_continuity"),
+        session_expires_in_s=hints.get("session_expires_in_s"),
+        session_recovery_mode=hints.get("session_recovery_mode"),
+    )
+    session_continuity = _clean_text(session_lifecycle.get("session_continuity")).lower()
+    session_expires_in_s = int(session_lifecycle.get("session_expires_in_s") or 0)
+    session_recovery_mode = _clean_text(session_lifecycle.get("session_recovery_mode")).lower()
+    missing_access = _clean_list(hints.get("missing_access"), limit=4)
+    requestable_access = _clean_list(hints.get("requestable_access"), limit=4)
+    access_focus = next(
+        (
+            _ACCESS_REFRESH_TARGETS.get(item, item)
+            for item in [*missing_access, *requestable_access]
+            if _ACCESS_REFRESH_TARGETS.get(item, item)
+        ),
+        "",
+    )
+    if session_continuity == "expiring":
+        if session_expires_in_s > 0:
+            return f"先把当前会话状态重新检查一遍，确认离过期还剩 {session_expires_in_s}s，以及要不要刷新。"
+        return "先把当前会话状态重新检查一遍，确认这段连续性还稳不稳。"
+    if session_continuity in {"expired", "missing"}:
+        recovery_hint = {
+            "refresh_session": "刷新会话",
+            "restore_cookies": "恢复 cookies",
+            "relogin": "重新登录",
+        }.get(session_recovery_mode, "补回当前入口")
+        return f"先把当前入口状态重新检查一遍，确认是不是还要{recovery_hint}。"
+    if _clean_text(hints.get("api_key_state")).lower() in {"missing", "required", "unset", "invalid", "expired"}:
+        return "先重新检查当前模型/API 入口状态，确认 key 是否已经补上。"
+    if _clean_text(hints.get("quota_state")).lower() in {"low", "exhausted", "blocked", "missing", "required", "unavailable"}:
+        return "先重新检查当前配额和冷却状态，再决定下一步怎么走。"
+    if _clean_text(hints.get("filesystem_state")).lower() in {"read_only", "missing", "unavailable", "required"}:
+        return "先重新检查当前工作区和写入权限状态，再决定后面的动作。"
+    if _clean_text(hints.get("network_access")).lower() in {"restricted", "disabled", "blocked"}:
+        return "先重新检查当前网络入口状态，再决定接下来是继续还是换路。"
+    if _clean_text(hints.get("sandbox_mode")).lower() in {"restricted", "blocked"}:
+        return "先重新检查当前执行环境的限制状态，再决定后面的动作。"
+    if access_focus:
+        return f"先把{access_focus}重新检查一遍，再决定后面的动作。"
+    return "先把当前数字环境入口状态重新检查一遍，再决定后面的动作。"
+
+
+def _access_refresh_packet(hints: dict[str, Any]) -> dict[str, Any]:
+    row = _dict_or_empty(hints)
+    if not row:
+        return {}
+    browser_session = _clean_text(row.get("browser_session")).lower()
+    account_state = _clean_text(row.get("account_state")).lower()
+    cookie_state = _clean_text(row.get("cookie_state")).lower()
+    api_key_state = _clean_text(row.get("api_key_state")).lower()
+    quota_state = _clean_text(row.get("quota_state")).lower()
+    filesystem_state = _clean_text(row.get("filesystem_state")).lower()
+    sandbox_mode = _clean_text(row.get("sandbox_mode")).lower()
+    network_access = _clean_text(row.get("network_access")).lower()
+    retry_after_s = int(row.get("retry_after_s") or 0)
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+    )
+    session_continuity = _clean_text(session_lifecycle.get("session_continuity")).lower()
+    session_recovery_mode = _clean_text(session_lifecycle.get("session_recovery_mode")).lower()
+    missing_access = _clean_list(row.get("missing_access"), limit=6)
+    requestable_access = _clean_list(row.get("requestable_access"), limit=6)
+    inspectable = any(
+        (
+            session_continuity,
+            api_key_state,
+            quota_state,
+            filesystem_state,
+            sandbox_mode,
+            network_access,
+            retry_after_s > 0,
+        )
+    )
+    actionable = any(
+        (
+            session_continuity in {"expiring", "expired", "missing"},
+            api_key_state in {"missing", "required", "unset", "invalid", "expired"},
+            quota_state in {"low", "exhausted", "blocked", "missing", "required", "unavailable"},
+            filesystem_state in {"read_only", "missing", "unavailable", "required"},
+            sandbox_mode in {"restricted", "blocked"},
+            network_access in {"restricted", "disabled", "blocked"},
+            retry_after_s > 0,
+        )
+    )
+    if not inspectable or not actionable:
+        return {}
+    reason = _access_refresh_reason(row)
+    target_items = [
+        session_continuity,
+        session_recovery_mode,
+        *missing_access[:3],
+        *requestable_access[:3],
+    ]
+    target = " / ".join([item for item in target_items if item][:4]) or "runtime_access"
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("access", target, reason),
+            "origin": "motive_goal",
+            "intent": "access:refresh_state",
+            "status": "proposed",
+            "risk": "read",
+            "requires_approval": False,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "refresh_state",
+                    "target": target,
+                    "status": "pending",
+                    "requires_approval": False,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+        }
+    )
+
+
+def _access_help_targets(hints: dict[str, Any]) -> list[str]:
+    row = _dict_or_empty(hints)
+    if not row:
+        return []
+    browser_session = _clean_text(row.get("browser_session")).lower()
+    account_state = _clean_text(row.get("account_state")).lower()
+    cookie_state = _clean_text(row.get("cookie_state")).lower()
+    api_key_state = _clean_text(row.get("api_key_state")).lower()
+    quota_state = _clean_text(row.get("quota_state")).lower()
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+    )
+    session_recovery_mode = _clean_text(session_lifecycle.get("session_recovery_mode")).lower()
+
+    targets: list[str] = []
+    if browser_session in {"missing", "required", "expired"}:
+        targets.append("browser_session")
+    if account_state in {"missing", "logged_out", "required"} or session_recovery_mode == "relogin":
+        targets.append("account_login")
+    if cookie_state in {"missing", "expired", "required"} or session_recovery_mode == "restore_cookies":
+        targets.append("cookies")
+    if api_key_state in {"missing", "required", "unset", "invalid", "expired"}:
+        targets.append("api_key")
+    if quota_state in {"missing", "required", "unavailable", "exhausted", "blocked"}:
+        targets.append("api_quota")
+    requested = _clean_list(row.get("requestable_access"), limit=8)
+    missing = _clean_list(row.get("missing_access"), limit=8)
+    return _merge_labels(targets, [item for item in [*requested, *missing] if item in _ACCESS_HELP_TARGETS], limit=4)
+
+
+def _access_help_reason(hints: dict[str, Any], request_targets: list[str]) -> str:
+    row = _dict_or_empty(hints)
+    labels = [
+        _ACCESS_REFRESH_TARGETS.get(item, item)
+        for item in request_targets
+        if _ACCESS_REFRESH_TARGETS.get(item, item)
+    ]
+    request_phrase = " / ".join(labels[:3]) or "额外入口"
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=_clean_text(row.get("browser_session")).lower(),
+        account_state=_clean_text(row.get("account_state")).lower(),
+        cookie_state=_clean_text(row.get("cookie_state")).lower(),
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+    )
+    session_recovery_mode = _clean_text(session_lifecycle.get("session_recovery_mode")).lower()
+    if "account_login" in request_targets or session_recovery_mode == "relogin":
+        return f"这一步需要先补上{request_phrase}这类外部入口，我得先向你请求这些条件。"
+    if "cookies" in request_targets or session_recovery_mode == "restore_cookies":
+        return f"这一步已经卡在 {request_phrase} 上了，我得先向你确认或补齐这些条件。"
+    if "browser_session" in request_targets:
+        return f"这一步需要先把{request_phrase}接回来，我得先向你请求相应入口。"
+    if "api_key" in request_targets:
+        return "这一步已经需要模型/API 入口本身了，我得先向你请求可用 key 或对应接入条件。"
+    if "api_quota" in request_targets:
+        return "这一步已经被配额或服务额度卡住了，我得先向你确认可用额度或后续处理方式。"
+    return f"这一步还缺着{request_phrase}这类条件，我得先向你请求这些入口。"
+
+
+def _access_request_help_packet(
+    *,
+    hints: dict[str, Any],
+    event_hints: dict[str, Any],
+    origin: str,
+) -> dict[str, Any]:
+    event_targets = _access_help_targets(event_hints)
+    if not event_targets:
+        return {}
+    request_targets = _access_help_targets(hints)
+    if not request_targets:
+        return {}
+    reason = _access_help_reason(hints, request_targets)
+    target = " / ".join(request_targets) or "external_access"
+    access_acquire_proposals = normalize_access_acquire_proposals(
+        derive_access_acquire_proposals(
+            hints={
+                **hints,
+                "missing_access": _merge_labels(hints.get("missing_access"), request_targets),
+                "requestable_access": _merge_labels(hints.get("requestable_access"), request_targets, ["human_approval"]),
+            }
+        )
+    )
+    selected_access_proposal = select_access_acquire_proposal(
+        proposals=access_acquire_proposals,
+        preferred=hints.get("selected_access_proposal"),
+    )
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("access_help", origin, target, reason),
+            "origin": origin,
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": target,
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": access_acquire_proposals,
+            "selected_access_proposal": selected_access_proposal,
+        }
+    )
+
+
+def _access_arrival_reason(hints: dict[str, Any], selected_proposal: dict[str, Any]) -> str:
+    progress = access_proposal_progress(hints=hints, proposal=selected_proposal)
+    resolved_labels = [
+        _ACCESS_REFRESH_TARGETS.get(item, item)
+        for item in progress.get("resolved_grants", [])
+    ]
+    pending_labels = [
+        _ACCESS_REFRESH_TARGETS.get(item, item)
+        for item in progress.get("pending_grants", [])
+    ]
+    resolved_phrase = " / ".join(resolved_labels[:3]) or "这条外部入口"
+    pending_phrase = " / ".join(pending_labels[:3])
+    if progress.get("resolved", False):
+        return f"{resolved_phrase}已经补回来了，这条路径现在可以继续。"
+    if progress.get("partial", False) and pending_phrase:
+        return f"{resolved_phrase}已经补回来了一部分，但还差{pending_phrase}，这条路径还没完全接通。"
+    if pending_phrase:
+        return f"这条路径还差{pending_phrase}，现在还不能算真的接通。"
+    return f"{resolved_phrase}这边有变化，但这条路径还没完全接通。"
+
+
+def _access_arrival_packet(hints: dict[str, Any]) -> dict[str, Any]:
+    row = _dict_or_empty(hints)
+    if not row:
+        return {}
+    selected_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
+    primary_status = _clean_text(row.get("primary_status")).lower()
+    primary_intent = _clean_text(row.get("primary_intent")).lower()
+    requested_help = bool(row.get("requested_help", False))
+    if not selected_proposal:
+        return {}
+    if not selected_access_proposal_resolved(hints=row, proposal=selected_proposal):
+        return {}
+    if not (requested_help or primary_status in {"awaiting_approval", "approved", "queued"} or primary_intent == "access:request_help"):
+        return {}
+    reason = _access_arrival_reason(row, selected_proposal)
+    target = _clean_text(selected_proposal.get("target")).lower() or "external_access"
+    proposal_id = _clean_text(row.get("primary_proposal_id")) or make_proposal_id("access_help", "arrival", target, reason)
+    enriched_selected = enrich_access_acquire_proposal(hints=row, proposal=selected_proposal)
+    enriched_proposals = [
+        enrich_access_acquire_proposal(hints=row, proposal=proposal) or proposal
+        for proposal in (normalize_access_acquire_proposals(row.get("access_acquire_proposals")) or [selected_proposal])
+    ]
+    return normalize_action_packet(
+        {
+            "proposal_id": proposal_id,
+            "origin": _clean_text(row.get("primary_origin")).lower() or "counterpart_request",
+            "intent": _clean_text(row.get("primary_intent")).lower() or "access:request_help",
+            "status": "completed",
+            "risk": "external_mutation",
+            "requires_approval": False,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": target,
+                    "status": "completed",
+                    "requires_approval": False,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": _clean_text(selected_proposal.get("summary")) or reason,
+            "result_summary": reason,
+            "writeback_ready": True,
+            "access_acquire_proposals": enriched_proposals,
+            "selected_access_proposal": enriched_selected,
+        }
+    )
+
+
+def _partial_access_arrival_packet(hints: dict[str, Any]) -> dict[str, Any]:
+    row = _dict_or_empty(hints)
+    if not row:
+        return {}
+    selected_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
+    primary_status = _clean_text(row.get("primary_status")).lower()
+    requested_help = bool(row.get("requested_help", False))
+    if not selected_proposal:
+        return {}
+    progress = access_proposal_progress(hints=row, proposal=selected_proposal)
+    if not progress.get("partial", False):
+        return {}
+    if requested_help or primary_status not in {"approved", "queued"}:
+        return {}
+    reason = _access_arrival_reason(row, selected_proposal)
+    target = _clean_text(selected_proposal.get("target")).lower() or "external_access"
+    proposal_id = _clean_text(row.get("primary_proposal_id")) or make_proposal_id("access_help", "partial", target, reason)
+    enriched_selected = enrich_access_acquire_proposal(hints=row, proposal=selected_proposal)
+    enriched_proposals = [
+        enrich_access_acquire_proposal(hints=row, proposal=proposal) or proposal
+        for proposal in (normalize_access_acquire_proposals(row.get("access_acquire_proposals")) or [selected_proposal])
+    ]
+    return normalize_action_packet(
+        {
+            "proposal_id": proposal_id,
+            "origin": _clean_text(row.get("primary_origin")).lower() or "counterpart_request",
+            "intent": _clean_text(row.get("primary_intent")).lower() or "access:request_help",
+            "status": "approved",
+            "risk": "external_mutation",
+            "requires_approval": False,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": target,
+                    "status": "approved",
+                    "requires_approval": False,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": _clean_text(selected_proposal.get("summary")) or reason,
+            "result_summary": reason,
+            "writeback_ready": False,
+            "access_acquire_proposals": enriched_proposals,
+            "selected_access_proposal": enriched_selected,
+        }
+    )
+
+
+def _session_context_with_access_request(
+    *,
+    session_context: dict[str, Any],
+    hints: dict[str, Any],
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    context = dict(session_context or {})
+    if not packet or _clean_text(packet.get("intent")).lower() != "access:request_help":
+        return context
+    request_targets = _access_help_targets(hints)
+    if not request_targets:
+        return context
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=_clean_text(hints.get("browser_session")).lower(),
+        account_state=_clean_text(hints.get("account_state")).lower(),
+        cookie_state=_clean_text(hints.get("cookie_state")).lower(),
+        session_continuity=hints.get("session_continuity"),
+        session_expires_in_s=hints.get("session_expires_in_s"),
+        session_recovery_mode=hints.get("session_recovery_mode"),
+    )
+    digital_body_hints = merge_digital_body_hints(session_context=context)
+    digital_body_hints.update(
+        {
+            "missing_access": _merge_labels(digital_body_hints.get("missing_access"), hints.get("missing_access"), request_targets),
+            "requestable_access": _merge_labels(
+                digital_body_hints.get("requestable_access"),
+                hints.get("requestable_access"),
+                request_targets,
+                ["human_approval"],
+            ),
+            "requested_help": True,
+            "session_continuity": _clean_text(session_lifecycle.get("session_continuity")).lower(),
+            "session_expires_in_s": int(session_lifecycle.get("session_expires_in_s") or 0),
+            "session_recovery_mode": _clean_text(session_lifecycle.get("session_recovery_mode")).lower(),
+            "primary_proposal_id": _clean_text(packet.get("proposal_id")),
+            "primary_status": _clean_text(packet.get("status")).lower(),
+            "primary_origin": _clean_text(packet.get("origin")).lower(),
+            "primary_intent": _clean_text(packet.get("intent")).lower(),
+            "access_acquire_proposals": normalize_access_acquire_proposals(packet.get("access_acquire_proposals")),
+        }
+    )
+    selected_access_proposal = normalize_access_acquire_proposal(packet.get("selected_access_proposal"))
+    if selected_access_proposal:
+        digital_body_hints["selected_access_proposal"] = selected_access_proposal
+    context["digital_body_hints"] = digital_body_hints
+    return context
+
+
+def _session_context_with_access_arrival(
+    *,
+    session_context: dict[str, Any],
+    hints: dict[str, Any],
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    context = dict(session_context or {})
+    if not packet or _clean_text(packet.get("intent")).lower() != "access:request_help":
+        return context
+    if _clean_text(packet.get("status")).lower() != "completed":
+        return context
+    selected_proposal = normalize_access_acquire_proposal(packet.get("selected_access_proposal"))
+    digital_body_hints = merge_digital_body_hints(session_context=context)
+    digital_body_hints.update(_dict_or_empty(hints))
+    digital_body_hints = prune_resolved_access_hints(digital_body_hints)
+    digital_body_hints["requested_help"] = False
+    digital_body_hints["primary_proposal_id"] = _clean_text(packet.get("proposal_id"))
+    digital_body_hints["primary_status"] = "completed"
+    digital_body_hints["primary_origin"] = _clean_text(packet.get("origin")).lower()
+    digital_body_hints["primary_intent"] = _clean_text(packet.get("intent")).lower()
+    if selected_proposal and selected_access_proposal_resolved(hints=digital_body_hints, proposal=selected_proposal):
+        digital_body_hints.pop("selected_access_proposal", None)
+        digital_body_hints["access_acquire_proposals"] = [
+            proposal
+            for proposal in normalize_access_acquire_proposals(digital_body_hints.get("access_acquire_proposals"))
+            if access_proposal_identity(proposal) != access_proposal_identity(selected_proposal)
+        ]
+    context["digital_body_hints"] = digital_body_hints
+    return context
+
+
+def _session_context_with_access_partial_arrival(
+    *,
+    session_context: dict[str, Any],
+    hints: dict[str, Any],
+    packet: dict[str, Any],
+) -> dict[str, Any]:
+    context = dict(session_context or {})
+    if not packet or _clean_text(packet.get("intent")).lower() != "access:request_help":
+        return context
+    if _clean_text(packet.get("status")).lower() != "approved":
+        return context
+    digital_body_hints = merge_digital_body_hints(session_context=context)
+    digital_body_hints.update(_dict_or_empty(hints))
+    digital_body_hints = prune_resolved_access_hints(digital_body_hints)
+    digital_body_hints["requested_help"] = False
+    digital_body_hints["primary_proposal_id"] = _clean_text(packet.get("proposal_id"))
+    digital_body_hints["primary_status"] = "approved"
+    digital_body_hints["primary_origin"] = _clean_text(packet.get("origin")).lower()
+    digital_body_hints["primary_intent"] = _clean_text(packet.get("intent")).lower()
+    selected_proposal = normalize_access_acquire_proposal(packet.get("selected_access_proposal"))
+    if selected_proposal:
+        digital_body_hints["selected_access_proposal"] = selected_proposal
+    context["digital_body_hints"] = digital_body_hints
+    return context
 
 
 def _embodied_carryover_autonomy_signal(carryover: dict[str, Any]) -> dict[str, Any]:
@@ -250,6 +786,10 @@ def _derive_intent_mode(
     requires_approval = bool(packet.get("requires_approval", False))
     if block_reason or status in {"blocked", "rejected"}:
         return "blocked"
+    if intent == "access:request_help" and status == "completed":
+        return "access_request_resolved"
+    if intent == "access:request_help" and status == "approved":
+        return "access_acquire_planned"
     if status == "awaiting_approval" or (requires_approval and status in {"proposed", "approved"}):
         return "approval_pending"
     if tool_name and status in {"approved", "executing"}:
@@ -258,6 +798,8 @@ def _derive_intent_mode(
         return "tool_completed"
     if intent.startswith("artifact:"):
         return "reacquire_artifact"
+    if intent.startswith("access:"):
+        return "refresh_access_state"
     if status == "queued" or linked_queue_id:
         return "queue_followthrough"
     if event_kind in _OWN_RHYTHM_EVENT_KINDS:
@@ -291,6 +833,31 @@ def _derive_intent_reason(
 
 
 def _packet_reason_text(packet: dict[str, Any]) -> str:
+    intent = _clean_text(packet.get("intent")).lower()
+    status = _clean_text(packet.get("status")).lower()
+    if intent == "access:request_help" and status == "completed":
+        for candidate in (
+            packet.get("result_summary"),
+            packet.get("expected_effect"),
+        ):
+            text = _clean_text(candidate)
+            if text:
+                return text
+    if intent == "access:request_help" and status == "approved":
+        selected_proposal = normalize_access_acquire_proposal(packet.get("selected_access_proposal"))
+        if selected_proposal.get("resolved_grants") and selected_proposal.get("pending_grants"):
+            text = _clean_text(packet.get("result_summary"))
+            if text:
+                return text
+        for candidate in (
+            selected_proposal.get("summary"),
+            selected_proposal.get("operator_action"),
+            packet.get("result_summary"),
+            packet.get("expected_effect"),
+        ):
+            text = _clean_text(candidate)
+            if text:
+                return text
     for candidate in (
         packet.get("expected_effect"),
         packet.get("result_summary"),
@@ -304,7 +871,6 @@ def _packet_reason_text(packet: dict[str, Any]) -> str:
             return note
     tool_name = _clean_text(packet.get("tool_name"))
     intent = _clean_text(packet.get("intent"))
-    status = _clean_text(packet.get("status")).lower()
     if status == "awaiting_approval":
         label = tool_name or intent
         if label:
@@ -368,8 +934,13 @@ def refresh_autonomy_intent_from_packets(
     mode = _derive_intent_mode(current_event=current, packet=primary, block_reason=block)
     base_primary_proposal_id = _clean_text(base.get("primary_proposal_id"))
     primary_proposal_id = _clean_text(primary.get("proposal_id"))
+    primary_status = _clean_text(primary.get("status")).lower()
     primary_reason = _packet_reason_text(primary) or block
-    if base_primary_proposal_id and base_primary_proposal_id == primary_proposal_id:
+    if (
+        base_primary_proposal_id
+        and base_primary_proposal_id == primary_proposal_id
+        and primary_status in {"awaiting_approval", "proposed"}
+    ):
         reason = _clean_text(base.get("reason")) or primary_reason
     else:
         reason = primary_reason or _clean_text(base.get("reason")) or block
@@ -401,6 +972,7 @@ def derive_autonomy_runtime(
     semantic_narrative_profile: dict[str, Any] | None = None,
     interaction_carryover: dict[str, Any] | None = None,
     agenda_lifecycle_residue: dict[str, Any] | None = None,
+    session_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = _dict_or_empty(current_event)
     action = _dict_or_empty(behavior_action)
@@ -409,8 +981,24 @@ def derive_autonomy_runtime(
     semantic = _dict_or_empty(semantic_narrative_profile)
     carryover = _dict_or_empty(interaction_carryover)
     agenda_lifecycle = _dict_or_empty(agenda_lifecycle_residue)
+    context = _dict_or_empty(session_context)
+    access_hints = merge_digital_body_hints(session_context=context, current_event=event)
+    event_access_hints = merge_digital_body_hints(current_event=event)
+    primary_origin = derive_action_packet_origin(
+        current_event=event,
+        behavior_action=action,
+        behavior_plan=plan,
+    )
     embodied_signal = _embodied_carryover_autonomy_signal(carryover)
     embodied_packet = _artifact_reacquisition_packet(normalize_embodied_context(carryover.get("embodied_context")))
+    access_arrival_packet = _access_arrival_packet(access_hints)
+    access_partial_packet = _partial_access_arrival_packet(access_hints)
+    access_help_packet = _access_request_help_packet(
+        hints=access_hints,
+        event_hints=event_access_hints,
+        origin=primary_origin,
+    )
+    access_packet = _access_refresh_packet(access_hints)
     behavior_packet = build_behavior_action_packet(
         current_event=event,
         behavior_action=action,
@@ -425,6 +1013,22 @@ def derive_autonomy_runtime(
         action_packets = [embodied_packet]
         primary_packet = dict(embodied_packet)
         primary_packet_source = "embodied_carryover"
+    elif access_arrival_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [access_arrival_packet]
+        primary_packet = dict(access_arrival_packet)
+        primary_packet_source = "access_arrival"
+    elif access_partial_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [access_partial_packet]
+        primary_packet = dict(access_partial_packet)
+        primary_packet_source = "access_partial_arrival"
+    elif access_help_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [access_help_packet]
+        primary_packet = dict(access_help_packet)
+        primary_packet_source = "access_request"
+    elif access_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [access_packet]
+        primary_packet = dict(access_packet)
+        primary_packet_source = "access_refresh"
     elif primary_packet and embodied_signal and _packet_is_default_language_shell(primary_packet):
         primary_packet = {}
         action_packets = []
@@ -513,6 +1117,27 @@ def derive_autonomy_runtime(
         if primary_packet and bool(primary_packet.get("requires_approval", False))
         else {}
     )
+    updated_session_context = (
+        _session_context_with_access_arrival(
+            session_context=context,
+            hints=access_hints,
+            packet=primary_packet,
+        )
+        if primary_packet_source == "access_arrival"
+        else _session_context_with_access_partial_arrival(
+            session_context=context,
+            hints=access_hints,
+            packet=primary_packet,
+        )
+        if primary_packet_source == "access_partial_arrival"
+        else _session_context_with_access_request(
+            session_context=context,
+            hints=access_hints,
+            packet=primary_packet,
+        )
+        if primary_packet_source == "access_request"
+        else context
+    )
     action_trace: list[dict[str, Any]] = []
     if primary_packet:
         action_trace.append(
@@ -523,7 +1148,19 @@ def derive_autonomy_runtime(
                 "status": _clean_text(primary_packet.get("status")).lower() or "proposed",
                 "risk": _clean_text(primary_packet.get("risk")).lower() or "read",
                 "source": "interaction_carryover" if primary_packet_source == "embodied_carryover" else "prepare_turn_runtime",
-                "event": "derived_from_embodied_carryover" if primary_packet_source == "embodied_carryover" else "derived_from_behavior",
+                "event": (
+                    "derived_from_embodied_carryover"
+                    if primary_packet_source == "embodied_carryover"
+                    else "derived_from_access_arrival"
+                    if primary_packet_source == "access_arrival"
+                    else "derived_from_access_partial_arrival"
+                    if primary_packet_source == "access_partial_arrival"
+                    else "derived_from_access_request"
+                    if primary_packet_source == "access_request"
+                    else "derived_from_access_refresh"
+                    if primary_packet_source == "access_refresh"
+                    else "derived_from_behavior"
+                ),
                 "requires_approval": bool(primary_packet.get("requires_approval", False)),
                 "linked_queue_id": _clean_text(primary_packet.get("linked_queue_id")),
             }
@@ -534,6 +1171,7 @@ def derive_autonomy_runtime(
         "pending_action_proposal": pending_action_proposal,
         "action_trace": action_trace,
         "autonomy_block_reason": block_reason,
+        "session_context": updated_session_context,
     }
 
 

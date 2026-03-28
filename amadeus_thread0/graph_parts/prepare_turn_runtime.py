@@ -620,6 +620,7 @@ def _prepare_turn_runtime(
         world_model_state=world_model_state,
         semantic_narrative_profile=semantic_narrative_profile,
     )
+    session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
     autonomy_runtime = derive_autonomy_runtime(
         current_event=current_event,
         behavior_action=behavior_action,
@@ -629,7 +630,9 @@ def _prepare_turn_runtime(
         semantic_narrative_profile=semantic_narrative_profile,
         interaction_carryover=interaction_carryover,
         agenda_lifecycle_residue=agenda_lifecycle_residue,
+        session_context=session_context,
     )
+    session_context = autonomy_runtime.get("session_context") if isinstance(autonomy_runtime.get("session_context"), dict) else session_context
     digital_body_state = derive_digital_body_state(
         current_event=current_event,
         behavior_queue=behavior_agenda,
@@ -637,7 +640,7 @@ def _prepare_turn_runtime(
         interaction_carryover=interaction_carryover,
         toolset_unlocks=state.get("toolset_unlocks") if isinstance(state.get("toolset_unlocks"), dict) else {},
         autonomy_block_reason=str(autonomy_runtime.get("autonomy_block_reason") or ""),
-        session_context=state.get("session_context") if isinstance(state.get("session_context"), dict) else {},
+        session_context=session_context,
         last_external_tools=state.get("last_external_tools"),
     )
     writeback_reconsolidation_snapshot = build_reconsolidation_snapshot(
@@ -856,5 +859,6 @@ def _prepare_turn_runtime(
         "action_trace": list(autonomy_runtime.get("action_trace") or []),
         "autonomy_block_reason": str(autonomy_runtime.get("autonomy_block_reason") or ""),
         "digital_body_state": digital_body_state,
+        "session_context": session_context,
         "tsundere": tsundere,
     }

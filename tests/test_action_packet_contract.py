@@ -63,6 +63,53 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertEqual(len(artifact_context["preview"]), 1200)
         self.assertTrue(artifact_context["preview_truncated"])
 
+    def test_normalize_action_packet_preserves_access_acquire_proposals(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-access-help-1",
+                "origin": "counterpart_request",
+                "intent": "access:request_help",
+                "status": "approved",
+                "risk": "external_mutation",
+                "requires_approval": True,
+                "access_acquire_proposals": [
+                    {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "path_kind": "create_new",
+                        "summary": "需要先提供可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    }
+                ],
+                "selected_access_proposal": {
+                    "target": "api_key",
+                    "mode": "operator_provide_api_key",
+                    "path_kind": "create_new",
+                    "summary": "需要先提供可用 API key。",
+                    "operator_action": "填入一个可用 key。",
+                    "grants": ["api_key"],
+                    "requires_operator": True,
+                    "resolved_grants": ["api_key"],
+                    "pending_grants": [],
+                    "completion_ratio": 1.0,
+                },
+            }
+        )
+        proposals = packet.get("access_acquire_proposals") if isinstance(packet.get("access_acquire_proposals"), list) else []
+        selected = packet.get("selected_access_proposal") if isinstance(packet.get("selected_access_proposal"), dict) else {}
+        self.assertEqual(proposals[0]["target"], "api_key")
+        self.assertEqual(proposals[0]["mode"], "operator_provide_api_key")
+        self.assertEqual(proposals[0]["path_kind"], "create_new")
+        self.assertEqual(proposals[0]["grants"], ["api_key"])
+        self.assertEqual(selected["target"], "api_key")
+        self.assertEqual(selected["mode"], "operator_provide_api_key")
+        self.assertEqual(selected["path_kind"], "create_new")
+        self.assertEqual(selected["resolved_grants"], ["api_key"])
+        self.assertEqual(selected["pending_grants"], [])
+        self.assertEqual(selected["completion_ratio"], 1.0)
+
     def test_build_behavior_action_packet_links_behavior_queue(self):
         packet = build_behavior_action_packet(
             current_event={"kind": "scheduled_life_due"},
@@ -122,6 +169,7 @@ class ActionPacketContractTests(unittest.TestCase):
     def test_risk_from_tool_name_matches_autonomy_policy(self):
         self.assertEqual(risk_from_tool_name("set_profile"), "memory_write")
         self.assertEqual(risk_from_tool_name("request_toolset_upgrade"), "read")
+        self.assertEqual(risk_from_tool_name("create_workspace_access"), "external_mutation")
         self.assertEqual(risk_from_tool_name("write_diary"), "external_mutation")
 
 

@@ -124,6 +124,54 @@ class ToolApprovalPolicyTests(unittest.TestCase):
         )
         self.assertEqual(decisions, [{"action": "approve"}, {"action": "approve"}])
 
+    def test_summarize_tool_approval_request_surfaces_access_acquire_proposals(self):
+        batch = summarize_tool_approval_request(
+            source="access",
+            tool_calls=[
+                {
+                    "name": "access_request_help",
+                    "args": {
+                        "requested_access": ["api_key", "human_approval"],
+                        "missing_access": ["api_key"],
+                        "expected_effect": "这一步需要先补一个可用 API key。",
+                        "access_acquire_proposals": [
+                            {
+                                "target": "api_key",
+                                "mode": "operator_provide_api_key",
+                                "path_kind": "create_new",
+                                "summary": "先补一个可用 API key。",
+                                "operator_action": "填入一个可用 key。",
+                                "grants": ["api_key"],
+                                "requires_operator": True,
+                            }
+                        ],
+                        "selected_access_proposal": {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "path_kind": "create_new",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        },
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        self.assertTrue(batch.show_logs)
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "access_request_help")
+        self.assertEqual(preview.reason, "这一步需要先补一个可用 API key。")
+        self.assertEqual(preview.access_acquire_proposals[0]["target"], "api_key")
+        self.assertEqual(preview.access_acquire_proposals[0]["path_kind"], "create_new")
+        self.assertEqual(preview.selected_access_proposal["mode"], "operator_provide_api_key")
+        self.assertEqual(preview.selected_access_proposal["path_kind"], "create_new")
+        self.assertIn("不代表外部入口已经补齐", preview.note)
+
 
 if __name__ == "__main__":
     unittest.main()

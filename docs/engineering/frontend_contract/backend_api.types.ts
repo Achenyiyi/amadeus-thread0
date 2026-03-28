@@ -194,6 +194,19 @@ export interface CapabilityStep extends JsonRecord {
   note?: string;
 }
 
+export interface AccessAcquireProposal extends JsonRecord {
+  target?: string;
+  mode?: string;
+  path_kind?: string;
+  summary?: string;
+  operator_action?: string;
+  grants?: string[];
+  requires_operator?: boolean;
+  resolved_grants?: string[];
+  pending_grants?: string[];
+  completion_ratio?: number;
+}
+
 export interface ActionPacket extends JsonRecord {
   proposal_id?: string;
   origin?: string;
@@ -208,6 +221,8 @@ export interface ActionPacket extends JsonRecord {
   linked_queue_id?: string;
   tool_name?: string;
   block_reason?: string;
+  access_acquire_proposals?: AccessAcquireProposal[];
+  selected_access_proposal?: AccessAcquireProposal | JsonRecord;
 }
 
 export interface AutonomyIntent extends JsonRecord {
@@ -264,6 +279,8 @@ export interface DigitalBodyAccessPayload extends JsonRecord {
   filesystem_state?: string;
   sandbox_mode?: string;
   network_access?: string;
+  access_acquire_proposals?: AccessAcquireProposal[];
+  selected_access_proposal?: AccessAcquireProposal | JsonRecord;
 }
 
 export interface DigitalBodyResourcePayload extends JsonRecord {
@@ -281,6 +298,12 @@ export interface DigitalBodyResourcePayload extends JsonRecord {
   active_artifact_label?: string;
   artifact_age_s?: number;
   artifact_reacquisition_mode?: string;
+  artifact_carrier?: string;
+  artifact_source_ref_ids?: number[];
+  artifact_source_url?: string;
+  artifact_source_query?: string;
+  artifact_source_title?: string;
+  artifact_source_tool_name?: string;
 }
 
 export interface DigitalBodyPayload extends JsonRecord {
@@ -317,6 +340,8 @@ export interface DigitalBodyAccessSummary extends JsonRecord {
   filesystem_state: string;
   sandbox_mode: string;
   network_access: string;
+  access_acquire_proposals: AccessAcquireProposal[];
+  selected_access_proposal: AccessAcquireProposal | JsonRecord;
 }
 
 export interface DigitalBodyResourceSummary extends JsonRecord {
@@ -334,6 +359,12 @@ export interface DigitalBodyResourceSummary extends JsonRecord {
   active_artifact_label: string;
   artifact_age_s: number;
   artifact_reacquisition_mode: string;
+  artifact_carrier: string;
+  artifact_source_ref_ids: number[];
+  artifact_source_url: string;
+  artifact_source_query: string;
+  artifact_source_title: string;
+  artifact_source_tool_name: string;
 }
 
 export interface DigitalBodySummary extends JsonRecord {
@@ -370,6 +401,12 @@ export interface DigitalBodyConsequenceSummary extends JsonRecord {
   active_artifact_label: string;
   artifact_age_s: number;
   artifact_reacquisition_mode: string;
+  artifact_carrier: string;
+  artifact_source_ref_ids: number[];
+  artifact_source_url: string;
+  artifact_source_query: string;
+  artifact_source_title: string;
+  artifact_source_tool_name: string;
   primary_proposal_id: string;
   primary_status: string;
   primary_origin: string;
@@ -378,6 +415,8 @@ export interface DigitalBodyConsequenceSummary extends JsonRecord {
   procedural_growth: boolean;
   environmental_friction: boolean;
   requested_help: boolean;
+  access_acquire_proposals: AccessAcquireProposal[];
+  selected_access_proposal: AccessAcquireProposal | JsonRecord;
 }
 
 export interface EventResidueSummary {

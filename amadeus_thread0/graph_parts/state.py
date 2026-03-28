@@ -270,6 +270,8 @@ class ActionPacketPayload(TypedDict, total=False):
     tool_name: str
     block_reason: str
     artifact_context: dict[str, Any]
+    access_acquire_proposals: list[dict[str, Any]]
+    selected_access_proposal: dict[str, Any]
 
 
 class AutonomyIntentPayload(TypedDict, total=False):
@@ -297,6 +299,8 @@ class DigitalBodyAccessPayload(TypedDict, total=False):
     granted_toolsets: list[str]
     missing_access: list[str]
     requestable_access: list[str]
+    access_acquire_proposals: list[dict[str, Any]]
+    selected_access_proposal: dict[str, Any]
     browser_session: str
     account_state: str
     cookie_state: str

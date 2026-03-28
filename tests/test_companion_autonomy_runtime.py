@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -66,6 +67,28 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(intent["mode"], "approval_pending")
         self.assertTrue(intent["requires_approval"])
         self.assertEqual(intent["primary_proposal_id"], "ap-1")
+
+    def test_refresh_autonomy_intent_marks_completed_access_request_as_resolved(self):
+        intent = refresh_autonomy_intent_from_packets(
+            {"mode": "approval_pending", "origin": "counterpart_request", "primary_proposal_id": "ap-access-1"},
+            [
+                {
+                    "proposal_id": "ap-access-1",
+                    "origin": "counterpart_request",
+                    "intent": "access:request_help",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "expected_effect": "这一步需要先向你请求账号入口和 cookies。",
+                    "result_summary": "用户已经补上账号入口和 cookies。",
+                }
+            ],
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertEqual(intent["mode"], "access_request_resolved")
+        self.assertEqual(intent["reason"], "用户已经补上账号入口和 cookies。")
+        self.assertTrue(intent["requires_approval"])
+        self.assertEqual(intent["primary_proposal_id"], "ap-access-1")
 
     def test_derive_autonomy_runtime_reuses_carried_embodied_access_request_for_pending_intent(self):
         runtime = derive_autonomy_runtime(
@@ -136,6 +159,169 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_embodied_carryover")
         self.assertIn("plan.md", str(runtime["autonomy_intent"]["reason"]))
 
+    def test_derive_autonomy_runtime_builds_access_refresh_packet_from_session_hints(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "session_expires_in_s": 600,
+                    "api_key_state": "missing",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "refresh_access_state")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "access:refresh_state")
+        self.assertEqual(runtime["action_packets"][0]["risk"], "read")
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_refresh")
+
+    def test_derive_autonomy_runtime_builds_access_request_help_packet_from_event_scoped_gap(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "digital_body_hints": {
+                    "browser_session": "missing",
+                    "account_state": "logged_out",
+                    "cookie_state": "expired",
+                    "missing_access": ["browser_session", "account_login", "cookies"],
+                    "requestable_access": ["browser_session", "account_login", "cookies"],
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                }
+            },
+        )
+
+        packet = runtime["action_packets"][0]
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "approval_pending")
+        self.assertEqual(packet["intent"], "access:request_help")
+        self.assertEqual(packet["status"], "awaiting_approval")
+        self.assertEqual(packet["risk"], "external_mutation")
+        self.assertTrue(packet["requires_approval"])
+        self.assertEqual(runtime["pending_action_proposal"]["proposal_id"], packet["proposal_id"])
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_request")
+        self.assertTrue(bool(runtime["session_context"]["digital_body_hints"]["requested_help"]))
+        self.assertIn("account_login", runtime["session_context"]["digital_body_hints"]["requestable_access"])
+        self.assertIn("human_approval", runtime["session_context"]["digital_body_hints"]["requestable_access"])
+        self.assertEqual(runtime["session_context"]["digital_body_hints"]["primary_intent"], "access:request_help")
+        proposals = packet.get("access_acquire_proposals") if isinstance(packet.get("access_acquire_proposals"), list) else []
+        selected = packet.get("selected_access_proposal") if isinstance(packet.get("selected_access_proposal"), dict) else {}
+        self.assertTrue(proposals)
+        self.assertEqual(proposals[0]["target"], "account_login")
+        self.assertEqual(proposals[0]["mode"], "operator_login")
+        self.assertEqual(selected.get("target"), "account_login")
+        self.assertEqual(selected.get("mode"), "operator_login")
+        self.assertEqual(runtime["session_context"]["digital_body_hints"]["selected_access_proposal"]["mode"], "operator_login")
+        self.assertTrue(any(item.get("mode") == "operator_register_account" and item.get("path_kind") == "create_new" for item in proposals))
+
+    def test_derive_autonomy_runtime_consolidates_resolved_selected_access_proposal(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "api_key_state": "present",
+                    "missing_access": [],
+                    "requestable_access": [],
+                    "requested_help": False,
+                    "primary_proposal_id": "ap-access-help-arrived-1",
+                    "primary_status": "approved",
+                    "primary_origin": "counterpart_request",
+                    "primary_intent": "access:request_help",
+                    "access_acquire_proposals": [
+                        {
+                            "target": "api_key",
+                            "mode": "operator_provide_api_key",
+                            "summary": "先补一个可用 API key。",
+                            "operator_action": "填入一个可用 key。",
+                            "grants": ["api_key"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                }
+            },
+        )
+
+        packet = runtime["action_packets"][0]
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "access_request_resolved")
+        self.assertEqual(packet["intent"], "access:request_help")
+        self.assertEqual(packet["status"], "completed")
+        self.assertTrue(packet["writeback_ready"])
+        self.assertIn("已经补回来了", str(packet["result_summary"]))
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_arrival")
+        hints = runtime["session_context"]["digital_body_hints"]
+        self.assertEqual(hints["primary_status"], "completed")
+        self.assertNotIn("selected_access_proposal", hints)
+
+    def test_derive_autonomy_runtime_surfaces_partial_selected_access_progress(self):
+        proposal = {
+            "target": "account_login",
+            "mode": "operator_login",
+            "summary": "先把账号登录补回来，这条外部入口才接得上后面。",
+            "operator_action": "登录目标账号，或把现成登录态交给我。",
+            "grants": ["account_login", "browser_session"],
+            "requires_operator": True,
+        }
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "account_state": "logged_in",
+                    "browser_session": "missing",
+                    "missing_access": ["browser_session"],
+                    "requestable_access": ["browser_session"],
+                    "requested_help": False,
+                    "primary_proposal_id": "ap-access-help-partial-1",
+                    "primary_status": "approved",
+                    "primary_origin": "counterpart_request",
+                    "primary_intent": "access:request_help",
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                }
+            },
+        )
+
+        packet = runtime["action_packets"][0]
+        self.assertEqual(packet["status"], "approved")
+        self.assertFalse(packet["writeback_ready"])
+        self.assertIn("还差", str(packet["result_summary"]))
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "access_acquire_planned")
+        self.assertIn("还差", str(runtime["autonomy_intent"]["reason"]))
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_partial_arrival")
+        selected = packet.get("selected_access_proposal") if isinstance(packet.get("selected_access_proposal"), dict) else {}
+        self.assertEqual(selected.get("resolved_grants"), ["account_login"])
+        self.assertEqual(selected.get("pending_grants"), ["browser_session"])
+        self.assertEqual(selected.get("completion_ratio"), 0.5)
+        hints = runtime["session_context"]["digital_body_hints"]
+        self.assertEqual(hints["primary_status"], "approved")
+        self.assertIn("selected_access_proposal", hints)
+
     def test_derive_autonomy_runtime_does_not_override_meaningful_behavior_packet_with_artifact_bias(self):
         runtime = derive_autonomy_runtime(
             current_event={"kind": "scheduled_life_due", "self_activity_momentum": 0.63},
@@ -193,6 +379,56 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             }
         )
         self.assertEqual(route, "autonomy_execute")
+
+    def test_route_after_prepare_can_branch_into_autonomy_execute_for_access_packet(self):
+        route = _route_after_prepare(
+            {
+                "current_event": {"kind": "user_utterance"},
+                "behavior_action": {"channel": "speech"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-1",
+                        "origin": "motive_goal",
+                        "intent": "access:refresh_state",
+                        "status": "proposed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "capability_steps": [
+                            {"kind": "access", "name": "refresh_state", "target": "session_refresh", "status": "pending"}
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(route, "autonomy_execute")
+
+    def test_route_after_prepare_keeps_access_request_help_on_model_path(self):
+        route = _route_after_prepare(
+            {
+                "current_event": {"kind": "user_utterance"},
+                "behavior_action": {"channel": "speech"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-help-1",
+                        "origin": "counterpart_request",
+                        "intent": "access:request_help",
+                        "status": "awaiting_approval",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "capability_steps": [
+                            {
+                                "kind": "access",
+                                "name": "request_help",
+                                "target": "account_login / cookies",
+                                "status": "awaiting_approval",
+                                "requires_approval": True,
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertEqual(route, "call_model")
 
     def test_autonomy_execute_can_complete_local_file_reacquisition(self):
         with TemporaryDirectory() as td:
@@ -253,7 +489,11 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(out["action_packets"][0]["status"], "completed")
         self.assertEqual(out["autonomy_intent"]["mode"], "reacquire_artifact")
         self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_continuity"], "attached")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_carrier"], "filesystem")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [])
         self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_continuity"], "attached")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_carrier"], "filesystem")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [])
         self.assertIsInstance(out["messages"][0], AIMessage)
         self.assertIsInstance(out["messages"][1], ToolMessage)
         self.assertIn("plan.md", str(out["action_packets"][0]["result_summary"]))
@@ -387,7 +627,15 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
 
         self.assertEqual(out["action_packets"][0]["status"], "completed")
         self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_continuity"], "attached")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_carrier"], "source_ref")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_title"], "Persistence")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "search_langchain_docs")
         self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_continuity"], "attached")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_carrier"], "source_ref")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_title"], "Persistence")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_tool_name"], "search_langchain_docs")
         self.assertEqual(out["evidence_pack"][0]["source_id"], 17)
         self.assertIn("docs.langchain.com", str(out["evidence_pack"][0]["url"]))
         artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
@@ -398,6 +646,224 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(artifact_context.get("source_ref_ids"), [17])
         self.assertIn("checkpointers", str(artifact_context.get("preview") or ""))
         self.assertIn("docs.langchain.com", str(artifact_context.get("source_url") or ""))
+
+    def test_autonomy_execute_can_refresh_access_state_and_write_back_hints(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            runtime_dir.mkdir()
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "先看看当前入口状态。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "browser_session": "present",
+                        "account_state": "logged_in",
+                        "cookie_state": "present",
+                        "session_expires_in_s": 600,
+                        "api_key_state": "missing",
+                    }
+                },
+                "autonomy_intent": {"mode": "refresh_access_state", "origin": "motive_goal"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-2",
+                        "origin": "motive_goal",
+                        "intent": "access:refresh_state",
+                        "status": "proposed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "capability_steps": [
+                            {
+                                "kind": "access",
+                                "name": "refresh_state",
+                                "target": "session_refresh / api_key",
+                                "status": "pending",
+                                "requires_approval": False,
+                                "note": "先把当前入口状态重新检查一遍。",
+                            }
+                        ],
+                        "expected_effect": "先把当前入口状态重新检查一遍。",
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = dict(os.environ)
+            env.update(
+                {
+                    "AMADEUS_DATA_DIR": str(runtime_dir),
+                    "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+                    "DASHSCOPE_API_KEY": "sk-test",
+                    "AMADEUS_NETWORK_ACCESS": "restricted",
+                }
+            )
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["autonomy_intent"]["mode"], "refresh_access_state")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["api_key_state"], "present")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["session_continuity"], "expiring")
+        self.assertEqual(out["digital_body_state"]["access_state"]["api_key_state"], "present")
+        self.assertEqual(out["digital_body_state"]["access_state"]["session_recovery_mode"], "refresh_session")
+        self.assertIn("session_refresh", out["digital_body_state"]["access_state"]["requestable_access"])
+        self.assertIsInstance(out["messages"][0], AIMessage)
+        self.assertIsInstance(out["messages"][1], ToolMessage)
+
+    def test_autonomy_execute_can_create_workspace_from_approved_access_path(self):
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_create_workspace",
+            "path_kind": "create_new",
+            "summary": "先新建一个可写工作区。",
+            "operator_action": "新建一个可写工作区。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            runtime_dir.mkdir()
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "那就新建一个工作区继续。"},
+                "interaction_carryover": {},
+                "session_context": {
+                    "digital_body_hints": {
+                        "filesystem_state": "missing",
+                        "missing_access": ["filesystem", "workspace_write"],
+                        "requestable_access": ["filesystem", "workspace_write"],
+                        "requested_help": False,
+                        "primary_proposal_id": "ap-access-create-1",
+                        "primary_status": "approved",
+                        "primary_origin": "counterpart_request",
+                        "primary_intent": "access:request_help",
+                        "access_acquire_proposals": [proposal],
+                        "selected_access_proposal": proposal,
+                    }
+                },
+                "autonomy_intent": {"mode": "access_acquire_planned", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-access-create-1",
+                        "origin": "counterpart_request",
+                        "intent": "access:request_help",
+                        "status": "approved",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "capability_steps": [
+                            {
+                                "kind": "access",
+                                "name": "request_help",
+                                "target": "filesystem",
+                                "status": "approved",
+                                "requires_approval": True,
+                                "note": "先新建一个可写工作区。",
+                            }
+                        ],
+                        "expected_effect": "先新建一个可写工作区。",
+                        "selected_access_proposal": proposal,
+                        "access_acquire_proposals": [proposal],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertTrue(out["action_packets"][0]["writeback_ready"])
+        self.assertEqual(out["digital_body_state"]["access_state"]["filesystem_state"], "writable")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_kind"], "workspace")
+        self.assertNotIn("selected_access_proposal", out["session_context"]["digital_body_hints"])
+        self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "workspace")
+        self.assertEqual(out["autonomy_intent"]["mode"], "access_request_resolved")
+        self.assertIsInstance(out["messages"][0], AIMessage)
+        self.assertIsInstance(out["messages"][1], ToolMessage)
+
+    def test_tool_execute_create_workspace_updates_session_context(self):
+        with TemporaryDirectory() as td:
+            runtime_dir = Path(td) / "runtime"
+            runtime_dir.mkdir()
+            state = {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[{"id": "tc-1", "name": "create_workspace_access", "args": {"workspace_name": "lab"}}],
+                    )
+                ],
+                "approval_actions": [
+                    {
+                        "id": "tc-1",
+                        "name": "create_workspace_access",
+                        "args": {"workspace_name": "lab"},
+                        "proposal_id": "ap-workspace-1",
+                        "action": "approve",
+                    }
+                ],
+                "session_context": {"digital_body_hints": {"filesystem_state": "missing", "missing_access": ["filesystem"]}},
+                "toolset_unlocks": {},
+                "evidence_pack": [],
+                "last_external_tools": [],
+                "memory_guard_checked": 0,
+                "memory_guard_blocked": 0,
+                "current_event": {"kind": "user_utterance"},
+                "turn_appraisal": {},
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "interaction_carryover": {},
+                "agenda_lifecycle_residue": {},
+                "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+                "action_packets": [],
+                "action_trace": [],
+            }
+            env = {
+                "AMADEUS_DATA_DIR": str(runtime_dir),
+                "AMADEUS_MODEL_PROVIDER": "openai_compatible",
+            }
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                with patch.dict(os.environ, env, clear=True):
+                    out = _node_tool_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["filesystem_state"], "writable")
+        self.assertEqual(out["digital_body_state"]["access_state"]["filesystem_state"], "writable")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_kind"], "workspace")
 
     def test_tool_gate_attaches_proposal_id_and_keeps_external_mutation_human_gated(self):
         state = {
