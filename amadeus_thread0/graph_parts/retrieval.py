@@ -241,6 +241,37 @@ def _behavior_reactivation_priority(item: dict[str, Any]) -> float:
     return _clamp01(base, 0.0)
 
 
+def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
+    kind = str(_record_value(item, "body_consequence_kind", _record_value(item, "kind", "")) or "").strip().lower()
+    carrier = str(_record_value(item, "artifact_carrier", "") or "").strip().lower()
+    source_title = str(_record_value(item, "artifact_source_title", "") or "").strip()
+    try:
+        source_ref_count = len(_record_value(item, "artifact_source_ref_ids", []) or [])
+    except Exception:
+        source_ref_count = 0
+    if kind == "source_material_compared":
+        return _clamp01(
+            0.34
+            + (0.16 if carrier == "source_ref" else 0.0)
+            + 0.08 * min(2, max(0, source_ref_count - 1))
+            + (0.06 if source_title else 0.0),
+            0.0,
+        )
+    if kind in {"source_material_inspected", "artifact_reacquired"} and carrier == "source_ref":
+        return _clamp01(0.22 + 0.06 * min(2, source_ref_count), 0.0)
+    return 0.0
+
+
+def _digital_body_consequence_trace_line(item: dict[str, Any]) -> str:
+    summary = str(_record_value(item, "after_summary", "") or "").strip()
+    if not summary:
+        return ""
+    kind = str(_record_value(item, "body_consequence_kind", _record_value(item, "kind", "")) or "").strip().lower()
+    if not kind:
+        return summary
+    return f"D:{kind}: {summary}"
+
+
 def _agenda_lifecycle_priority(item: dict[str, Any]) -> float:
     kind = str(_record_value(item, "lifecycle_kind", _record_value(item, "kind", "")) or "").strip().lower()
     trigger_family = str(_record_value(item, "trigger_family", "") or "").strip().lower()
@@ -431,6 +462,7 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
             "behavior_plan_traces": [],
             "agenda_lifecycle_traces": [],
             "behavior_consequence_traces": [],
+            "digital_body_consequence_traces": [],
             "working_items": [],
             "working_chars": 0,
         }
@@ -479,10 +511,17 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         if str(_record_value(item, "namespace", "") or "").strip().lower() == "behavior_consequence"
         and str(_record_value(item, "after_summary", "") or "").strip()
     ]
+    digital_body_consequence_candidates = [
+        item
+        for item in revision_traces
+        if str(_record_value(item, "namespace", "") or "").strip().lower() == "digital_body_consequence"
+        and str(_record_value(item, "after_summary", "") or "").strip()
+    ]
     behavior_reactivation_scored: list[tuple[float, dict[str, Any]]] = []
     behavior_plan_scored: list[tuple[float, dict[str, Any]]] = []
     agenda_lifecycle_scored: list[tuple[float, dict[str, Any]]] = []
     behavior_consequence_scored: list[tuple[float, dict[str, Any]]] = []
+    digital_body_consequence_scored: list[tuple[float, dict[str, Any]]] = []
 
     scored: list[tuple[float, str]] = []
     for item in moments:
@@ -631,6 +670,29 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         if txt:
             scored.append((score, txt))
 
+    for item in digital_body_consequence_candidates:
+        summary = str(_record_value(item, "after_summary", "") or "").strip()
+        if not summary:
+            continue
+        source_title = str(_record_value(item, "artifact_source_title", "") or "").strip()
+        source_query = str(_record_value(item, "artifact_source_query", "") or "").strip()
+        relevance = max(
+            _query_overlap_score(query, summary),
+            _query_overlap_score(query, source_title),
+            _query_overlap_score(query, source_query),
+        )
+        recency = _recency_score(item.get("updated_at") or item.get("created_at"), 18.0)
+        priority = _digital_body_consequence_priority(item)
+        if priority <= 0.0:
+            continue
+        score = 0.14 + 0.28 * relevance + 0.24 * recency + 0.34 * priority
+        if not query:
+            score = max(score, 0.24 + 0.30 * recency + 0.46 * priority)
+        digital_body_consequence_scored.append((score, item))
+        txt = _digital_body_consequence_trace_line(item)
+        if txt:
+            scored.append((score, txt))
+
     for item in reflections:
         text = str(_record_value(item, "text", "") or "").strip()
         if not text:
@@ -653,6 +715,8 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
     agenda_lifecycle_traces = [item for _, item in agenda_lifecycle_scored[:6]]
     behavior_consequence_scored.sort(key=lambda row: row[0], reverse=True)
     behavior_consequence_traces = [item for _, item in behavior_consequence_scored[:6]]
+    digital_body_consequence_scored.sort(key=lambda row: row[0], reverse=True)
+    digital_body_consequence_traces = [item for _, item in digital_body_consequence_scored[:6]]
 
     scored.sort(key=lambda x: x[0], reverse=True)
     working_items: list[str] = []
@@ -706,6 +770,7 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         "behavior_plan_traces": behavior_plan_traces,
         "agenda_lifecycle_traces": agenda_lifecycle_traces,
         "behavior_consequence_traces": behavior_consequence_traces,
+        "digital_body_consequence_traces": digital_body_consequence_traces,
         "working_items": working_items,
         "working_chars": cur_chars,
     }
@@ -726,6 +791,7 @@ def _empty_retrieved_context(store: MemoryStore) -> dict[str, Any]:
         "behavior_plan_traces": [],
         "agenda_lifecycle_traces": [],
         "behavior_consequence_traces": [],
+        "digital_body_consequence_traces": [],
         "working_items": [],
         "working_chars": 0,
     }

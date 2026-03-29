@@ -402,6 +402,12 @@ def _build_retrieved_behavior_trace_bridge(
             ("retrieved_behavior_consequence", item if isinstance(item, dict) else {})
             for item in consequence_traces
         )
+    digital_body_traces = retrieved.get("digital_body_consequence_traces")
+    if isinstance(digital_body_traces, list):
+        traces.extend(
+            ("retrieved_digital_body_consequence", item if isinstance(item, dict) else {})
+            for item in digital_body_traces
+        )
     plan_traces = retrieved.get("behavior_plan_traces")
     if isinstance(plan_traces, list):
         traces.extend(
@@ -436,8 +442,15 @@ def _build_retrieved_behavior_trace_bridge(
         source_plan_kind = str(_trace_value(trace, "source_plan_kind", "") or "").strip().lower()
         plan_kind = current_plan_kind or source_plan_kind
         consequence_kind = str(_trace_value(trace, "consequence_kind", "") or "").strip().lower()
+        body_consequence_kind = str(_trace_value(trace, "body_consequence_kind", _trace_value(trace, "kind", "")) or "").strip().lower()
         if trace_source == "retrieved_behavior_consequence":
             if consequence_kind in {"", "none"}:
+                continue
+        elif trace_source == "retrieved_digital_body_consequence":
+            artifact_carrier = str(_trace_value(trace, "artifact_carrier", "") or "").strip().lower()
+            if body_consequence_kind not in {"source_material_compared", "source_material_inspected", "artifact_reacquired"}:
+                continue
+            if artifact_carrier != "source_ref":
                 continue
         elif plan_kind in {"", "none", "observe_only", "respond_now", "speak_now"}:
             continue
@@ -447,7 +460,6 @@ def _build_retrieved_behavior_trace_bridge(
             or ""
         ).strip().lower()
         event_mode = str(_trace_value(trace, "carryover_mode", "") or "").strip().lower()
-        bridge_mode = _bridge_mode_from_behavior_trace(trace)
         attention_target = str(_trace_value(trace, "attention_target", "") or "").strip().lower()
         nonverbal_signal = str(_trace_value(trace, "nonverbal_signal", "") or "").strip().lower()
         relationship_weather = str(_trace_value(trace, "relationship_weather", "") or "").strip().lower()
@@ -457,6 +469,19 @@ def _build_retrieved_behavior_trace_bridge(
         self_activity_momentum = _clamp01(_trace_value(trace, "self_activity_momentum", 0.0), 0.0)
         embodied_context = normalize_embodied_context(_trace_value(trace, "embodied_context", {}))
         summary = _embodied_aware_summary(summary, embodied_context)
+        if trace_source == "retrieved_digital_body_consequence":
+            bridge_mode = "task_window"
+            trigger_family = trigger_family or "source_anchor"
+            if carryover_strength <= 0.0:
+                carryover_strength = 0.36 if body_consequence_kind == "source_material_compared" else 0.24
+            if presence_residue <= 0.0:
+                presence_residue = 0.12 if body_consequence_kind == "source_material_compared" else 0.08
+            if ambient_resonance <= 0.0:
+                ambient_resonance = 0.18 if body_consequence_kind == "source_material_compared" else 0.12
+            if not summary:
+                summary = "前面那组材料已经对照过一遍了，当前判断会顺着重新锚定后的资料线继续。"
+        else:
+            bridge_mode = _bridge_mode_from_behavior_trace(trace)
         derived_strength = _clamp01(
             max(
                 carryover_strength,
@@ -480,6 +505,7 @@ def _build_retrieved_behavior_trace_bridge(
             "continuity_anchor",
             f"plan_kind:{plan_kind}" if plan_kind else "",
             f"consequence_kind:{consequence_kind}" if consequence_kind else "",
+            f"body_consequence_kind:{body_consequence_kind}" if body_consequence_kind else "",
             f"trigger_family:{trigger_family}" if trigger_family else "",
         ]
         if source_plan_kind and source_plan_kind != plan_kind:

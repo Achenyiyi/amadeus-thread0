@@ -737,6 +737,130 @@ class FinalStateTests(unittest.TestCase):
         self.assertFalse(bool(consequence["procedural_growth"]))
         self.assertIn("Persistence", consequence["summary"])
 
+    def test_resolve_digital_body_consequence_derives_source_material_inspected_from_source_ref_surface(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-inspect-source-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:inspect_source_ref",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "inspect_source_ref",
+                    "result_summary": "已查看外部材料 Persistence，当前内容已经接回视野。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_label": "Persistence",
+                        "reacquisition_mode": "inspect_source_ref",
+                        "source_ref_ids": [17],
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread",
+                        "source_title": "Persistence",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "source_material_inspected")
+        self.assertEqual(consequence["primary_tool_name"], "inspect_source_ref")
+        self.assertEqual(consequence["active_artifact_kind"], "search_result")
+        self.assertEqual(consequence["artifact_carrier"], "source_ref")
+        self.assertEqual(consequence["artifact_source_ref_ids"], [17])
+        self.assertEqual(consequence["artifact_source_tool_name"], "search_web")
+        self.assertFalse(bool(consequence["procedural_growth"]))
+        self.assertIn("Persistence", consequence["summary"])
+
+    def test_resolve_digital_body_consequence_derives_source_material_compared_from_source_ref_surface(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence v2",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    "artifact_source_title": "Persistence v2",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-compare-source-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:compare_source_refs",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "compare_source_refs",
+                    "result_summary": "已把 Persistence v2 和 Persistence 对照过一遍，两条材料是紧邻的延续，当前判断会优先沿着这条相连线索继续。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_label": "Persistence v2",
+                        "reacquisition_mode": "compare_source_refs",
+                        "source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread recovery",
+                        "source_title": "Persistence v2",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "source_material_compared")
+        self.assertEqual(consequence["primary_tool_name"], "compare_source_refs")
+        self.assertEqual(consequence["active_artifact_kind"], "search_result")
+        self.assertEqual(consequence["artifact_carrier"], "source_ref")
+        self.assertEqual(consequence["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(consequence["preferred_source_ref_id"], 21)
+        self.assertEqual(consequence["preferred_anchor_reason"], "primary_more_current")
+        self.assertEqual(consequence["artifact_source_tool_name"], "search_web")
+        self.assertFalse(bool(consequence["procedural_growth"]))
+        self.assertIn("Persistence v2", consequence["summary"])
+
     def test_resolve_digital_body_consequence_derives_access_state_refreshed_when_refresh_packet_stabilizes_runtime(self):
         consequence = resolve_digital_body_consequence(
             digital_body_state={

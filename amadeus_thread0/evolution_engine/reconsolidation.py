@@ -804,6 +804,13 @@ def derive_digital_body_consequence(
     primary_artifact_identity = compact_artifact_identity(primary_packet.get("artifact_context"))
     artifact_carrier = str(resource_state.get("artifact_carrier") or primary_artifact_identity.get("artifact_carrier") or "").strip().lower()
     artifact_source_ref_ids = list(resource_state.get("artifact_source_ref_ids") or primary_artifact_identity.get("artifact_source_ref_ids") or [])[:8]
+    preferred_source_ref_id = max(
+        0,
+        int(resource_state.get("preferred_source_ref_id") or primary_artifact_identity.get("preferred_source_ref_id") or 0),
+    )
+    preferred_anchor_reason = str(
+        resource_state.get("preferred_anchor_reason") or primary_artifact_identity.get("preferred_anchor_reason") or ""
+    ).strip().lower()[:120]
     artifact_source_url = str(resource_state.get("artifact_source_url") or primary_artifact_identity.get("artifact_source_url") or "").strip()[:320]
     artifact_source_query = str(resource_state.get("artifact_source_query") or primary_artifact_identity.get("artifact_source_query") or "").strip()[:220]
     artifact_source_title = str(resource_state.get("artifact_source_title") or primary_artifact_identity.get("artifact_source_title") or "").strip()[:160]
@@ -843,6 +850,20 @@ def derive_digital_body_consequence(
         and active_artifact_kind in {"file", "workspace"}
         and artifact_continuity == "attached"
     )
+    source_ref_inspection_signal = bool(
+        primary_status == "completed"
+        and primary_tool_name == "inspect_source_ref"
+        and active_artifact_kind in {"page", "search_result"}
+        and artifact_carrier == "source_ref"
+        and artifact_continuity == "attached"
+    )
+    source_ref_compare_signal = bool(
+        primary_status == "completed"
+        and primary_tool_name == "compare_source_refs"
+        and active_artifact_kind in {"page", "search_result"}
+        and artifact_carrier == "source_ref"
+        and artifact_continuity == "attached"
+    )
     artifact_reacquired_signal = bool(
         primary_status == "completed"
         and (
@@ -862,6 +883,8 @@ def derive_digital_body_consequence(
     growth_signal = bool(
         completed_packet_count > 0
         and not workspace_inspection_signal
+        and not source_ref_inspection_signal
+        and not source_ref_compare_signal
         and not artifact_reacquired_signal
         and (
             primary_origin == "capability_upgrade"
@@ -957,6 +980,32 @@ def derive_digital_body_consequence(
             "agency_style": "她会把重新确认过的工作面记成一次真实感知，而不是把所有 read-side 行为都压平进抽象的工具完成。",
             "presence_style": "对她来说，重新看一眼当前工作面本身就是连续性的一部分，这能保证后续动作建立在真实表面上。",
             "boundary_style": "她不会把“已经检查确认”的状态冒充成“已经改动完成”；感知和改动在她那里是两种不同事实。",
+        }
+    elif source_ref_inspection_signal and not approval_signal and not friction_signal:
+        kind = "source_material_inspected"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        source_label = active_artifact_label or artifact_source_title or active_artifact_ref or "外部材料"
+        if not summary:
+            summary = f"已经把 {source_label} 重新看了一遍，当前内容就在眼前。"
+        category_summaries = {
+            "agency_style": "她会把当前检视到的外部材料记成一次真实感知，而不是把保存过的来源都压平成抽象引用。",
+            "presence_style": "对她来说，重新翻看这条材料本身就是当前视野的一部分，后续判断要建立在这块真实材料上。",
+            "boundary_style": "她不会把看过一遍的资料冒充成已经改写了来源本身；这只是检视，不是篡改。",
+        }
+    elif source_ref_compare_signal and not approval_signal and not friction_signal:
+        kind = "source_material_compared"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        source_label = active_artifact_label or artifact_source_title or active_artifact_ref or "当前外部材料"
+        compare_ids = [int(item) for item in artifact_source_ref_ids if int(item) > 0]
+        if not summary:
+            if len(compare_ids) >= 2:
+                summary = f"已经把 {source_label} 和前一条相关材料对照过一遍，当前判断会沿着这条连续性继续。"
+            else:
+                summary = f"已经把 {source_label} 和邻近材料对照过一遍，当前判断会优先以这条材料为准。"
+        category_summaries = {
+            "agency_style": "她会把当前材料和前一条相关材料放到同一张桌面上核对，而不是把每条外部来源都当成彼此断开的孤立引用。",
+            "presence_style": "对她来说，对照两条相连材料是在重新找回判断落点，这能让后续动作继续建立在同一条资料线索上。",
+            "boundary_style": "她不会把两条材料混成一条，也不会把对照关系冒充成来源已经被改写；这仍然只是核对和再锚定。",
         }
     elif artifact_reacquired_signal and not approval_signal and not friction_signal:
         kind = "artifact_reacquired"
@@ -1129,6 +1178,8 @@ def derive_digital_body_consequence(
         "artifact_reacquisition_mode": artifact_reacquisition_mode,
         "artifact_carrier": artifact_carrier,
         "artifact_source_ref_ids": artifact_source_ref_ids,
+        "preferred_source_ref_id": preferred_source_ref_id,
+        "preferred_anchor_reason": preferred_anchor_reason,
         "artifact_source_url": artifact_source_url,
         "artifact_source_query": artifact_source_query,
         "artifact_source_title": artifact_source_title,

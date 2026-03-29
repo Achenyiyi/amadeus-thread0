@@ -14,7 +14,7 @@ from ..memory_store import MemoryStore
 from .autonomy_runtime import derive_autonomy_runtime
 from .behavior_agenda import _merge_behavior_agenda
 from .behavior_runtime import _behavior_action_from_state, _behavior_plan_from_action
-from .digital_body_runtime import derive_digital_body_state
+from .digital_body_runtime import derive_digital_body_state, normalize_embodied_context
 from .memory_evolution import (
     _passive_evolution_memory_update,
     _record_behavior_trace_writeback,
@@ -56,6 +56,7 @@ def _apply_retrieved_behavior_trace_runtime_bias(
         "retrieved_behavior_plan",
         "retrieved_behavior_reactivation",
         "retrieved_behavior_consequence",
+        "retrieved_digital_body_consequence",
     }:
         return dict(world_model_state or {}), dict(counterpart_assessment or {})
 
@@ -66,6 +67,8 @@ def _apply_retrieved_behavior_trace_runtime_bias(
     carryover_mode = str(carryover.get("carryover_mode") or "").strip().lower()
     relationship_weather = str(carryover.get("relationship_weather") or "").strip().lower()
     strength = _clamp01(carryover.get("strength"), 0.0)
+    embodied_context = normalize_embodied_context(carryover.get("embodied_context"))
+    embodied_kind = str(embodied_context.get("kind") or "").strip().lower()
     presence_residue = _clamp01(event.get("presence_residue"), 0.0)
     ambient_resonance = _clamp01(event.get("ambient_resonance"), 0.0)
     self_activity_momentum = _clamp01(event.get("self_activity_momentum"), 0.0)
@@ -142,6 +145,38 @@ def _apply_retrieved_behavior_trace_runtime_bias(
             3,
         )
 
+    if carryover_source == "retrieved_digital_body_consequence" and embodied_kind == "source_material_compared":
+        world["task_pull"] = round(
+            max(
+                _clamp01(world.get("task_pull"), 0.0),
+                0.30 + 0.46 * continuity_anchor,
+            ),
+            3,
+        )
+        world["memory_gravity"] = round(
+            max(
+                _clamp01(world.get("memory_gravity"), 0.0),
+                0.86 * continuity_anchor,
+                0.64 * ambient_bias,
+                0.54 * presence_bias,
+            ),
+            3,
+        )
+        world["agency_lineage"] = round(
+            max(
+                _clamp01(world.get("agency_lineage"), 0.0),
+                0.40 * continuity_anchor,
+            ),
+            3,
+        )
+        world["lineage_gravity"] = round(
+            max(
+                _clamp01(world.get("lineage_gravity"), 0.0),
+                0.46 * continuity_anchor,
+            ),
+            3,
+        )
+
     stance = str(assessment.get("stance") or "").strip().lower()
     if relationship_weather == "guarded_residue":
         if stance != "guarded":
@@ -205,6 +240,98 @@ def _refresh_retrieved_behavior_runtime_signals(
         counterpart_assessment=counterpart_assessment if isinstance(counterpart_assessment, dict) else {},
     )
     return refreshed_event, refreshed_carryover, refreshed_world, refreshed_assessment
+
+
+def _refresh_session_context_from_retrieved_source_lineage(
+    *,
+    session_context: dict[str, Any] | None,
+    current_event: dict[str, Any] | None,
+    interaction_carryover: dict[str, Any] | None,
+) -> dict[str, Any]:
+    context = dict(session_context or {})
+    carryover = dict(interaction_carryover or {})
+    if str(carryover.get("source") or "").strip().lower() != "retrieved_digital_body_consequence":
+        return context
+
+    embodied = normalize_embodied_context(carryover.get("embodied_context"))
+    if str(embodied.get("kind") or "").strip().lower() != "source_material_compared":
+        return context
+    if str(embodied.get("artifact_carrier") or "").strip().lower() != "source_ref":
+        return context
+
+    candidate_source_ref_ids = [
+        int(item)
+        for item in (embodied.get("artifact_source_ref_ids") if isinstance(embodied.get("artifact_source_ref_ids"), list) else [])
+        if int(item or 0) > 0
+    ][:4]
+    if len(candidate_source_ref_ids) < 2:
+        return context
+
+    event = dict(current_event or {})
+    event_hints = dict(event.get("digital_body_hints") or {}) if isinstance(event.get("digital_body_hints"), dict) else {}
+    perception = dict(event.get("perception") or {}) if isinstance(event.get("perception"), dict) else {}
+    perception_hints = (
+        dict(perception.get("digital_body_hints") or {}) if isinstance(perception.get("digital_body_hints"), dict) else {}
+    )
+    hints = dict(context.get("digital_body_hints") or {}) if isinstance(context.get("digital_body_hints"), dict) else {}
+
+    def _hint_source_ref_ids(source: dict[str, Any]) -> list[int]:
+        return [
+            int(item)
+            for item in (source.get("artifact_source_ref_ids") if isinstance(source.get("artifact_source_ref_ids"), list) else [])
+            if int(item or 0) > 0
+        ][:4]
+
+    visible_source_ref = any(
+        any(
+            (
+                str(source.get("artifact_carrier") or "").strip().lower() == "source_ref",
+                bool(_hint_source_ref_ids(source)),
+                "source_ref"
+                in {
+                    str(item).strip().lower()
+                    for item in (source.get("world_surfaces") if isinstance(source.get("world_surfaces"), list) else [])
+                    if str(item or "").strip()
+                },
+            )
+        )
+        for source in (hints, event_hints, perception_hints)
+        if isinstance(source, dict)
+    )
+    if not visible_source_ref:
+        return context
+
+    hints["artifact_carrier"] = "source_ref"
+    hints["artifact_source_ref_ids"] = candidate_source_ref_ids
+
+    preferred_source_ref_id = int(embodied.get("preferred_source_ref_id") or 0)
+    preferred_anchor_reason = str(embodied.get("preferred_anchor_reason") or "").strip().lower()
+    if preferred_source_ref_id > 0 and preferred_source_ref_id in candidate_source_ref_ids:
+        hints["preferred_source_ref_id"] = preferred_source_ref_id
+        if preferred_anchor_reason:
+            hints["preferred_anchor_reason"] = preferred_anchor_reason
+
+    for key in (
+        "artifact_source_url",
+        "artifact_source_query",
+        "artifact_source_title",
+        "artifact_source_tool_name",
+        "active_artifact_kind",
+        "active_artifact_ref",
+        "active_artifact_label",
+    ):
+        if hints.get(key) in (None, "", []):
+            value = embodied.get(key)
+            if value not in (None, "", []):
+                hints[key] = value
+
+    surfaces = [str(item).strip().lower() for item in (hints.get("world_surfaces") if isinstance(hints.get("world_surfaces"), list) else []) if str(item or "").strip()]
+    for surface in ("source_ref", "browser"):
+        if surface not in surfaces:
+            surfaces.append(surface)
+    hints["world_surfaces"] = surfaces[:12]
+    context["digital_body_hints"] = hints
+    return context
 
 
 def _derive_runtime_behavior_action(
@@ -621,6 +748,11 @@ def _prepare_turn_runtime(
         semantic_narrative_profile=semantic_narrative_profile,
     )
     session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
+    session_context = _refresh_session_context_from_retrieved_source_lineage(
+        session_context=session_context,
+        current_event=current_event,
+        interaction_carryover=interaction_carryover,
+    )
     autonomy_runtime = derive_autonomy_runtime(
         current_event=current_event,
         behavior_action=behavior_action,

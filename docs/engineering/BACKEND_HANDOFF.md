@@ -167,6 +167,37 @@ Interpretation rules:
         - `digital_body_consequence.kind=workspace_path_inspected`
         - this is truthful perception, not `procedural_growth`
       - when the currently active artifact is only a subdirectory inside a workspace, later workspace-relative writes must still resolve against the containing runtime workspace root rather than shrinking the trust boundary to that subdirectory
+    - backend now also has one bounded read-only inspection surface on the existing saved external-material carrier:
+      - `inspect_source_ref`
+      - it may inspect a previously saved `source_ref` by id / ref / label
+      - it does not claim a live browser session; it only re-enters already stored external material inside the current runtime
+      - it updates active artifact continuity truthfully onto the `source_ref` carrier
+      - when the active `source_ref` surface is still attached but marked `stale`, backend may derive an automatic read-only `artifact:inspect_source_ref` packet so continuity repair stays an inspection fact rather than being mislabeled as generic reacquisition
+      - when inspection completes on an attached external-material surface, frozen readback may surface:
+        - `digital_body_consequence.kind=source_material_inspected`
+        - this is truthful material inspection, not `procedural_growth`
+    - backend now also has one bounded read-only comparison surface on the same saved-material carrier:
+      - `compare_source_refs`
+      - it compares two already saved `source_ref` materials; it does not fetch new material and does not claim a live browser
+      - when runtime continuity still carries two related saved refs and the active surface is stale, backend may derive `artifact:compare_source_refs` before falling back to plain re-inspection
+      - when runtime continuity carries a bounded candidate set instead of just a pair, `compare_source_refs` may select the comparison partner from that candidate set at execution time
+      - comparison should preserve the same compact carrier identity, with `artifact_source_ref_ids` carrying an ordered continuity set:
+        - preferred anchor first
+        - directly compared partner next
+        - remaining saved candidates only as bounded follow-up continuity
+      - preferred-anchor state should also stay explicit in the same compact identity payload:
+        - `preferred_source_ref_id`
+        - `preferred_anchor_reason`
+      - if one side becomes the preferred anchor after comparison, live artifact continuity should now point at that preferred saved material rather than staying pinned to the original stale side by accident
+      - if a later stale turn already carries that stable preferred anchor, backend should derive `artifact:inspect_source_ref` for the preferred saved material rather than re-running the same pairwise compare by default
+      - when comparison completes on an attached external-material surface, frozen readback may surface:
+        - `digital_body_consequence.kind=source_material_compared`
+        - this is truthful material re-anchoring, not `procedural_growth`
+      - retrieved `source_material_compared` traces may later feed runtime continuity bias so downstream behavior / motive selection can continue along the re-anchored material line
+      - the same retrieved compare trace may also refresh `session_context.digital_body_hints` when the current turn already exposes a visible `source_ref` context:
+        - refreshable fields include `artifact_source_ref_ids`, `preferred_source_ref_id`, `preferred_anchor_reason`, and missing saved-material metadata
+        - this is a continuity refresh, not permission to invent a new active `source_ref` surface from retrieval alone
+        - if the live turn exposes no visible `source_ref` context, the retrieved compare trace must remain non-seeding and stay only as carryover bias
     - completed read-side artifact reacquisition may now also freeze as its own consequence family instead of disappearing into generic continuity:
       - `tool_name=reacquire_artifact`
       - `digital_body_consequence.kind=artifact_reacquired`
@@ -178,6 +209,9 @@ Interpretation rules:
         - `artifact_source_query`
         - `artifact_source_title`
         - `artifact_source_tool_name`
+    - any completed tool result that returns `artifact_context` must now be allowed to refresh `session_context.digital_body_hints` through the same compact artifact identity path:
+      - packet-only artifact facts are not enough
+      - live `digital_body_state`, frozen `digital_body_consequence`, backend payloads, and CLI summaries must all be able to converge on the same active artifact truth
     - completed read-side access verification may now freeze as a concrete stable-path fact when no friction remains:
       - `tool_name=refresh_access_state`
       - `digital_body_consequence.kind=access_state_refreshed`

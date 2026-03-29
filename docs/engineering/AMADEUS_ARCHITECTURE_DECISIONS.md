@@ -316,10 +316,45 @@ This status does not change the intentional guardrails below:
       - `digital_body_consequence.kind=workspace_path_inspected`
       - `procedural_growth=false`
     - if the active artifact becomes a subdirectory path, later workspace-relative mutation must still resolve against the containing runtime workspace root rather than silently collapsing the write boundary to the subdirectory itself
+  - the existing `saved source_refs` carrier should now also expose a bounded read-only inspection surface rather than relying on reacquisition semantics for every external-material turn:
+    - `inspect_source_ref`
+    - it may inspect one previously saved source by id / ref / label
+    - it does not pretend to reopen a live browser; it only re-enters already stored external material
+    - when an attached `source_ref` surface is still present but marked `stale`, autonomy may derive a read-only `inspect_source_ref` packet directly instead of flattening that state back into generic artifact reacquisition
+    - when runtime continuity still carries two related saved source refs on the same material line, backend may also expose a bounded read-only comparison surface:
+      - `compare_source_refs`
+      - it compares two already saved materials; it does not open a live browser or fetch a third unseen source
+      - when an attached `source_ref` surface is stale and continuity still holds two related saved refs, autonomy may derive `artifact:compare_source_refs` before falling back to plain re-inspection
+      - when continuity carries a bounded ordered candidate set rather than only a pair, `compare_source_refs` may choose the comparison partner from that saved candidate set instead of blindly fixing the second id up front
+    - when that inspection completes against an attached external-material surface, frozen writeback may carry:
+      - `digital_body_consequence.kind=source_material_inspected`
+      - `procedural_growth=false`
+    - when that bounded comparison completes against an attached external-material surface, frozen writeback may carry:
+      - `digital_body_consequence.kind=source_material_compared`
+      - `procedural_growth=false`
+    - bounded saved-material comparison is no longer allowed to stop at “a comparison happened”:
+      - compare completion should re-anchor the live artifact surface to the preferred saved material when one side is clearly the better continuity anchor
+      - that preferred anchor must remain bounded to real saved `source_ref` ids rather than free text or invented URLs
+      - preferred-anchor semantics should stay explicit across runtime layers:
+        - preserve `preferred_source_ref_id`
+        - preserve `preferred_anchor_reason`
+      - `artifact_source_ref_ids` may now carry a bounded ordered continuity set rather than only one compared pair, but the ordering must stay meaningful:
+        - preferred anchor first
+        - directly compared partner next
+        - remaining saved candidates only as bounded follow-up continuity
+      - when a stale `source_ref` line already carries a stable preferred anchor from a prior compare, autonomy should inspect that preferred saved material directly instead of redundantly comparing the same pair again
+      - later turns may retrieve `source_material_compared` traces and reapply them as runtime continuity bias so the re-anchored material line can affect later `task_pull / memory_gravity / behavior` selection instead of dying inside the frozen snapshot
+      - retrieved compare continuity may also refresh the saved-material lineup already held in `session_context.digital_body_hints`, but only when a visible `source_ref` context is already present in runtime state:
+        - allowed visible carriers: current session hints, event `digital_body_hints`, or perception `digital_body_hints`
+        - this refresh may widen `artifact_source_ref_ids`, preserve `preferred_source_ref_id`, preserve `preferred_anchor_reason`, and backfill missing saved-material metadata
+        - it must not seed a brand-new `source_ref` line from retrieval alone when the live turn has no visible saved-material context
   - completed read-side reacquisition and access refresh should also survive as concrete digital-body facts instead of flattening back into generic state:
     - `tool_name=reacquire_artifact` -> `digital_body_consequence.kind=artifact_reacquired`
     - `tool_name=refresh_access_state` -> `digital_body_consequence.kind=access_state_refreshed`
     - both are verification/reattachment facts, not procedural growth
+  - `artifact_context` returned by a completed tool is not allowed to remain packet-only:
+    - it must be able to refresh live `digital_body_hints`
+    - otherwise runtime state, frozen consequence, backend envelope, and CLI summary drift apart on what artifact is actually in view
   - with `artifact reacquisition`, `access refresh`, `workspace creation`, and workspace file mutation now all aligned, the current direct-execution families share one contract:
     - packet owns the runtime binding
     - execution prefers packet binding

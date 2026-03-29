@@ -87,6 +87,8 @@ def _iter_builtin_tools() -> Iterable[BaseTool]:
         builtin_tools.arxiv_search,
         builtin_tools.get_worldline_snapshot,
         builtin_tools.list_source_refs,
+        builtin_tools.inspect_source_ref,
+        builtin_tools.compare_source_refs,
         builtin_tools.list_memory_ledger,
         builtin_tools.list_memory_quarantine,
         builtin_tools.reacquire_artifact,

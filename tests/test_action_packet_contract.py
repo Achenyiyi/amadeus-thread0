@@ -221,6 +221,8 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertEqual(risk_from_tool_name("set_profile"), "memory_write")
         self.assertEqual(risk_from_tool_name("request_toolset_upgrade"), "read")
         self.assertEqual(risk_from_tool_name("create_workspace_access"), "external_mutation")
+        self.assertEqual(risk_from_tool_name("inspect_source_ref"), "read")
+        self.assertEqual(risk_from_tool_name("compare_source_refs"), "read")
         self.assertEqual(risk_from_tool_name("inspect_workspace_path"), "read")
         self.assertEqual(risk_from_tool_name("write_workspace_file"), "external_mutation")
         self.assertEqual(risk_from_tool_name("append_workspace_file"), "external_mutation")

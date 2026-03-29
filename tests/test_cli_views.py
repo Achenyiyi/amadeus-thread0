@@ -1147,6 +1147,122 @@ class CliViewsTests(unittest.TestCase):
         line = build_evolution_summary_line(summary)
         self.assertIn("bodyfx=artifact_reacquired", line)
 
+    def test_build_evolution_cli_summary_surfaces_source_material_inspected_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_title": "Persistence",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            digital_body_consequence={
+                "kind": "source_material_inspected",
+                "summary": "已查看外部材料 Persistence，当前内容已经接回视野。",
+                "access_mode": "native_only",
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "active_artifact_kind": "search_result",
+                "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "active_artifact_label": "Persistence",
+                "artifact_continuity": "attached",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [17],
+                "artifact_source_title": "Persistence",
+                "artifact_source_tool_name": "search_web",
+                "primary_status": "completed",
+                "primary_intent": "artifact:inspect_source_ref",
+                "primary_tool_name": "inspect_source_ref",
+                "procedural_growth": False,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "source_material_inspected")
+        self.assertEqual(digital_body_consequence.get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body_consequence.get("artifact_source_ref_ids"), [17])
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "source_material_inspected")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=source_material_inspected", line)
+
+    def test_build_evolution_cli_summary_surfaces_source_material_compared_consequence(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "access_state": {
+                    "mode": "native_only",
+                    "network_access": "enabled",
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "Persistence v2",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "artifact_source_title": "Persistence v2",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            digital_body_consequence={
+                "kind": "source_material_compared",
+                "summary": "已把 Persistence v2 和 Persistence 对照过一遍，两条材料是紧邻的延续，当前判断会优先沿着这条相连线索继续。",
+                "access_mode": "native_only",
+                "active_surface": "tooling",
+                "world_surfaces": ["browser", "source_ref"],
+                "active_artifact_kind": "search_result",
+                "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "active_artifact_label": "Persistence v2",
+                "artifact_continuity": "attached",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [21, 17],
+                "artifact_source_title": "Persistence v2",
+                "artifact_source_tool_name": "search_web",
+                "primary_status": "completed",
+                "primary_intent": "artifact:compare_source_refs",
+                "primary_tool_name": "compare_source_refs",
+                "procedural_growth": False,
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "source_material_compared")
+        self.assertEqual(digital_body_consequence.get("artifact_carrier"), "source_ref")
+        self.assertEqual(digital_body_consequence.get("artifact_source_ref_ids"), [21, 17])
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "source_material_compared")
+        self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=source_material_compared", line)
+
     def test_build_evolution_cli_summary_surfaces_access_state_refreshed_consequence(self):
         summary = build_evolution_cli_summary(
             digital_body_state={

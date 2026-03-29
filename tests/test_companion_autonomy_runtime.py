@@ -162,6 +162,234 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_embodied_carryover")
         self.assertIn("plan.md", str(runtime["autonomy_intent"]["reason"]))
 
+    def test_derive_autonomy_runtime_turns_stale_saved_source_ref_into_inspection_packet(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                    "primary_origin": "counterpart_request",
+                },
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(runtime["autonomy_intent"]["origin"], "counterpart_request")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "artifact:inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["risk"], "read")
+        self.assertFalse(runtime["action_packets"][0]["requires_approval"])
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 17)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
+        self.assertIn("Persistence", str(runtime["autonomy_intent"]["reason"]))
+
+    def test_derive_autonomy_runtime_turns_stale_saved_source_ref_pair_into_comparison_packet(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.33,
+                "embodied_context": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    "artifact_source_title": "Persistence v2",
+                    "primary_origin": "counterpart_request",
+                },
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(runtime["autonomy_intent"]["origin"], "counterpart_request")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "artifact:compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["compare_source_ref_id"], 17)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_compare")
+        self.assertIn("Persistence v2", str(runtime["autonomy_intent"]["reason"]))
+
+    def test_derive_autonomy_runtime_preserves_candidate_set_for_stale_saved_source_ref_comparison(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.33,
+                "embodied_context": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [31, 33, 32],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Spec Draft",
+                    "active_artifact_ref": "https://docs.example.com/spec",
+                    "artifact_source_query": "amadeus source anchor draft",
+                    "artifact_source_title": "Spec Draft",
+                    "primary_origin": "counterpart_request",
+                },
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 31)
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_ids"], [31, 33, 32])
+        self.assertNotIn("compare_source_ref_id", runtime["action_packets"][0]["tool_args"])
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_compare")
+
+    def test_derive_autonomy_runtime_prefers_inspection_after_saved_source_ref_pair_is_reanchored(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.33,
+                "embodied_context": {
+                    "kind": "source_material_compared",
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    "artifact_source_title": "Persistence v2",
+                    "primary_origin": "counterpart_request",
+                },
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "artifact:inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
+
+    def test_derive_autonomy_runtime_turns_stale_session_source_ref_into_inspection_packet(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread",
+                    "artifact_source_title": "Persistence",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 17)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
+
+    def test_derive_autonomy_runtime_turns_stale_session_source_ref_pair_into_comparison_packet(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    "artifact_source_title": "Persistence v2",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["compare_source_ref_id"], 17)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_compare")
+
+    def test_derive_autonomy_runtime_preserves_candidate_set_for_stale_session_source_ref_comparison(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [31, 33, 32],
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Spec Draft",
+                    "active_artifact_ref": "https://docs.example.com/spec",
+                    "artifact_source_query": "amadeus source anchor draft",
+                    "artifact_source_title": "Spec Draft",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 31)
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_ids"], [31, 33, 32])
+        self.assertNotIn("compare_source_ref_id", runtime["action_packets"][0]["tool_args"])
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_compare")
+
+    def test_derive_autonomy_runtime_prefers_inspection_after_session_source_ref_pair_is_reanchored(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            session_context={
+                "digital_body_hints": {
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    "artifact_source_title": "Persistence v2",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
+
     def test_derive_autonomy_runtime_builds_access_refresh_packet_from_session_hints(self):
         runtime = derive_autonomy_runtime(
             current_event={"kind": "user_utterance"},
@@ -1517,6 +1745,556 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_ref"], str(target))
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+
+    def test_tool_execute_inspect_source_ref_updates_session_context(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-1",
+                            "name": "inspect_source_ref",
+                            "args": {
+                                "source_ref_id": 17,
+                                "access_hints": {
+                                    "world_surfaces": ["source_ref"],
+                                },
+                            },
+                        }
+                    ],
+                )
+            ],
+            "approval_actions": [
+                {
+                    "id": "tc-1",
+                    "name": "inspect_source_ref",
+                    "args": {
+                        "source_ref_id": 17,
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                        },
+                    },
+                    "proposal_id": "ap-inspect-source-1",
+                    "action": "approve",
+                }
+            ],
+            "session_context": {
+                "digital_body_hints": {
+                    "world_surfaces": ["source_ref"],
+                }
+            },
+            "toolset_unlocks": {},
+            "evidence_pack": [],
+            "last_external_tools": [],
+            "memory_guard_checked": 0,
+            "memory_guard_blocked": 0,
+            "current_event": {"kind": "user_utterance"},
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "interaction_carryover": {},
+            "agenda_lifecycle_residue": {},
+            "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+            "action_packets": [],
+            "action_trace": [],
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 17,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence",
+                    "query": "langgraph persistence checkpointer thread",
+                    "tool_name": "search_web",
+                    "snippet": "checkpointers keep thread state stable",
+                    "retrieved_at": 1712345678,
+                }
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_tool_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["carrier"], "source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "search_result")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [17])
+        self.assertEqual(out["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "search_result")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence")
+
+    def test_autonomy_execute_can_inspect_source_ref_from_packet_binding(self):
+        state = {
+            "messages": [],
+            "session_context": {"digital_body_hints": {"world_surfaces": ["source_ref"]}},
+            "current_event": {"kind": "user_utterance"},
+            "autonomy_intent": {"mode": "inspect_source_ref", "origin": "counterpart_request"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-inspect-source-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:inspect_source_ref",
+                    "status": "approved",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "inspect_source_ref",
+                    "tool_args": {
+                        "source_ref_id": 17,
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                        },
+                    },
+                    "capability_steps": [
+                        {
+                            "kind": "tool_call",
+                            "name": "inspect_source_ref",
+                            "target": "source_ref:17",
+                            "status": "approved",
+                            "requires_approval": False,
+                        }
+                    ],
+                    "expected_effect": "把这条外部材料重新看一遍，确认当前判断依据。",
+                }
+            ],
+            "action_trace": [],
+            "behavior_queue": [],
+            "toolset_unlocks": {},
+            "last_external_tools": [],
+            "evidence_pack": [],
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "turn_appraisal": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 17,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence",
+                    "query": "langgraph persistence checkpointer thread",
+                    "tool_name": "search_web",
+                    "snippet": "checkpointers keep thread state stable",
+                    "retrieved_at": 1712345678,
+                }
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "inspect_source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["carrier"], "source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "search_result")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [17])
+        self.assertEqual(out["autonomy_intent"]["mode"], "inspect_source_ref")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence")
+
+    def test_tool_execute_compare_source_refs_updates_session_context(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-1",
+                            "name": "compare_source_refs",
+                            "args": {
+                                "source_ref_id": 21,
+                                "compare_source_ref_id": 17,
+                                "access_hints": {
+                                    "world_surfaces": ["source_ref"],
+                                    "artifact_source_ref_ids": [21, 17],
+                                },
+                            },
+                        }
+                    ],
+                )
+            ],
+            "approval_actions": [
+                {
+                    "id": "tc-1",
+                    "name": "compare_source_refs",
+                    "args": {
+                        "source_ref_id": 21,
+                        "compare_source_ref_id": 17,
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                            "artifact_source_ref_ids": [21, 17],
+                        },
+                    },
+                    "proposal_id": "ap-compare-source-1",
+                    "action": "approve",
+                }
+            ],
+            "session_context": {
+                "digital_body_hints": {
+                    "world_surfaces": ["source_ref"],
+                    "artifact_source_ref_ids": [21, 17],
+                }
+            },
+            "toolset_unlocks": {},
+            "evidence_pack": [],
+            "last_external_tools": [],
+            "memory_guard_checked": 0,
+            "memory_guard_blocked": 0,
+            "current_event": {"kind": "user_utterance"},
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "interaction_carryover": {},
+            "agenda_lifecycle_residue": {},
+            "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+            "action_packets": [],
+            "action_trace": [],
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 21,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence v2",
+                    "query": "langgraph persistence checkpointer thread recovery",
+                    "tool_name": "search_web",
+                    "snippet": "Recovery keeps the same persistence thread coherent.",
+                    "retrieved_at": 1712345688,
+                },
+                {
+                    "id": 17,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence",
+                    "query": "langgraph persistence checkpointer thread",
+                    "tool_name": "search_web",
+                    "snippet": "checkpointers keep thread state stable",
+                    "retrieved_at": 1712345678,
+                },
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_tool_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["carrier"], "source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [21, 17])
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["preferred_source_ref_id"], 21)
+        self.assertEqual(out["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(int(out["session_context"]["digital_body_hints"]["preferred_source_ref_id"]), 21)
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence v2")
+
+    def test_tool_execute_compare_source_refs_can_select_from_candidate_set(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-1",
+                            "name": "compare_source_refs",
+                            "args": {
+                                "source_ref_id": 31,
+                                "source_ref_ids": [31, 33, 32],
+                                "access_hints": {
+                                    "world_surfaces": ["source_ref"],
+                                    "artifact_source_ref_ids": [31, 33, 32],
+                                },
+                            },
+                        }
+                    ],
+                )
+            ],
+            "approval_actions": [
+                {
+                    "id": "tc-1",
+                    "name": "compare_source_refs",
+                    "args": {
+                        "source_ref_id": 31,
+                        "source_ref_ids": [31, 33, 32],
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                            "artifact_source_ref_ids": [31, 33, 32],
+                        },
+                    },
+                    "proposal_id": "ap-compare-source-candidate-set-1",
+                    "action": "approve",
+                }
+            ],
+            "session_context": {
+                "digital_body_hints": {
+                    "world_surfaces": ["source_ref"],
+                    "artifact_source_ref_ids": [31, 33, 32],
+                }
+            },
+            "toolset_unlocks": {},
+            "evidence_pack": [],
+            "last_external_tools": [],
+            "memory_guard_checked": 0,
+            "memory_guard_blocked": 0,
+            "current_event": {"kind": "user_utterance"},
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "interaction_carryover": {},
+            "agenda_lifecycle_residue": {},
+            "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+            "action_packets": [],
+            "action_trace": [],
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 31,
+                    "url": "https://docs.example.com/spec",
+                    "title": "Spec Draft",
+                    "query": "amadeus source anchor draft",
+                    "tool_name": "search_web",
+                    "snippet": "Older draft with a short note.",
+                    "retrieved_at": 1712000000,
+                },
+                {
+                    "id": 32,
+                    "url": "https://docs.example.com/spec",
+                    "title": "Spec Final",
+                    "query": "amadeus source anchor final",
+                    "tool_name": "search_web",
+                    "snippet": "Final spec with the stable anchor details and the longer resolved summary.",
+                    "retrieved_at": 1712999999,
+                },
+                {
+                    "id": 33,
+                    "url": "https://docs.example.com/side-note",
+                    "title": "Side Note",
+                    "query": "amadeus unrelated note",
+                    "tool_name": "search_web",
+                    "snippet": "A weaker side note that should not outrank the final spec.",
+                    "retrieved_at": 1712500000,
+                },
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_tool_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [32, 31, 33])
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["preferred_source_ref_id"], 32)
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [32, 31, 33])
+        self.assertEqual(int(out["session_context"]["digital_body_hints"]["preferred_source_ref_id"]), 32)
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Spec Final")
+
+    def test_autonomy_execute_can_compare_source_refs_from_packet_binding(self):
+        state = {
+            "messages": [],
+            "session_context": {"digital_body_hints": {"world_surfaces": ["source_ref"], "artifact_source_ref_ids": [21, 17]}},
+            "current_event": {"kind": "user_utterance"},
+            "autonomy_intent": {"mode": "compare_source_refs", "origin": "counterpart_request"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-compare-source-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:compare_source_refs",
+                    "status": "approved",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "compare_source_refs",
+                    "tool_args": {
+                        "source_ref_id": 21,
+                        "compare_source_ref_id": 17,
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                            "artifact_source_ref_ids": [21, 17],
+                        },
+                    },
+                    "capability_steps": [
+                        {
+                            "kind": "tool_call",
+                            "name": "compare_source_refs",
+                            "target": "source_ref:21<->source_ref:17",
+                            "status": "approved",
+                            "requires_approval": False,
+                        }
+                    ],
+                    "expected_effect": "把当前这条材料和前一条相关材料对一遍，确认现在该沿哪条线索继续判断。",
+                }
+            ],
+            "action_trace": [],
+            "behavior_queue": [],
+            "toolset_unlocks": {},
+            "last_external_tools": [],
+            "evidence_pack": [],
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "turn_appraisal": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 21,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence v2",
+                    "query": "langgraph persistence checkpointer thread recovery",
+                    "tool_name": "search_web",
+                    "snippet": "Recovery keeps the same persistence thread coherent.",
+                    "retrieved_at": 1712345688,
+                },
+                {
+                    "id": 17,
+                    "url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "title": "Persistence",
+                    "query": "langgraph persistence checkpointer thread",
+                    "tool_name": "search_web",
+                    "snippet": "checkpointers keep thread state stable",
+                    "retrieved_at": 1712345678,
+                },
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["carrier"], "source_ref")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [21, 17])
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["preferred_source_ref_id"], 21)
+        self.assertEqual(out["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(int(out["session_context"]["digital_body_hints"]["preferred_source_ref_id"]), 21)
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence v2")
+
+    def test_autonomy_execute_can_compare_source_refs_from_candidate_set_packet_binding(self):
+        state = {
+            "messages": [],
+            "session_context": {"digital_body_hints": {"world_surfaces": ["source_ref"], "artifact_source_ref_ids": [31, 33, 32]}},
+            "current_event": {"kind": "user_utterance"},
+            "autonomy_intent": {"mode": "compare_source_refs", "origin": "counterpart_request"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-compare-source-candidate-set-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:compare_source_refs",
+                    "status": "approved",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "compare_source_refs",
+                    "tool_args": {
+                        "source_ref_id": 31,
+                        "source_ref_ids": [31, 33, 32],
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                            "artifact_source_ref_ids": [31, 33, 32],
+                        },
+                    },
+                    "capability_steps": [
+                        {
+                            "kind": "tool_call",
+                            "name": "compare_source_refs",
+                            "target": "source_ref:31<->candidate_set:33,32",
+                            "status": "approved",
+                            "requires_approval": False,
+                        }
+                    ],
+                    "expected_effect": "把当前这条材料和前一条相关材料对一遍，确认现在该沿哪条线索继续判断。",
+                }
+            ],
+            "action_trace": [],
+            "behavior_queue": [],
+            "toolset_unlocks": {},
+            "last_external_tools": [],
+            "evidence_pack": [],
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "turn_appraisal": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": 31,
+                    "url": "https://docs.example.com/spec",
+                    "title": "Spec Draft",
+                    "query": "amadeus source anchor draft",
+                    "tool_name": "search_web",
+                    "snippet": "Older draft with a short note.",
+                    "retrieved_at": 1712000000,
+                },
+                {
+                    "id": 32,
+                    "url": "https://docs.example.com/spec",
+                    "title": "Spec Final",
+                    "query": "amadeus source anchor final",
+                    "tool_name": "search_web",
+                    "snippet": "Final spec with the stable anchor details and the longer resolved summary.",
+                    "retrieved_at": 1712999999,
+                },
+                {
+                    "id": 33,
+                    "url": "https://docs.example.com/side-note",
+                    "title": "Side Note",
+                    "query": "amadeus unrelated note",
+                    "tool_name": "search_web",
+                    "snippet": "A weaker side note that should not outrank the final spec.",
+                    "retrieved_at": 1712500000,
+                },
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["tool_name"], "compare_source_refs")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [32, 31, 33])
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["preferred_source_ref_id"], 32)
+        self.assertEqual(out["autonomy_intent"]["mode"], "compare_source_refs")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [32, 31, 33])
+        self.assertEqual(int(out["session_context"]["digital_body_hints"]["preferred_source_ref_id"]), 32)
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Spec Final")
 
     def test_tool_execute_write_workspace_file_updates_session_context(self):
         with TemporaryDirectory() as td:

@@ -144,6 +144,8 @@ def derive_artifact_identity(
     *,
     artifact_carrier: Any = None,
     artifact_source_ref_ids: Any = None,
+    preferred_source_ref_id: Any = None,
+    preferred_anchor_reason: Any = None,
     artifact_source_url: Any = None,
     artifact_source_query: Any = None,
     artifact_source_title: Any = None,
@@ -153,6 +155,8 @@ def derive_artifact_identity(
         {
             "carrier": artifact_carrier,
             "source_ref_ids": artifact_source_ref_ids,
+            "preferred_source_ref_id": preferred_source_ref_id,
+            "preferred_anchor_reason": preferred_anchor_reason,
             "source_url": artifact_source_url,
             "source_query": artifact_source_query,
             "source_title": artifact_source_title,
@@ -163,6 +167,8 @@ def derive_artifact_identity(
         return {
             "artifact_carrier": "",
             "artifact_source_ref_ids": [],
+            "preferred_source_ref_id": 0,
+            "preferred_anchor_reason": "",
             "artifact_source_url": "",
             "artifact_source_query": "",
             "artifact_source_title": "",
@@ -171,6 +177,8 @@ def derive_artifact_identity(
     return {
         "artifact_carrier": str(normalized.get("artifact_carrier") or "").strip(),
         "artifact_source_ref_ids": list(normalized.get("artifact_source_ref_ids") or [])[:8],
+        "preferred_source_ref_id": _clean_nonnegative_int(normalized.get("preferred_source_ref_id")),
+        "preferred_anchor_reason": _clean_text(normalized.get("preferred_anchor_reason"), limit=120).lower(),
         "artifact_source_url": str(normalized.get("artifact_source_url") or "").strip(),
         "artifact_source_query": str(normalized.get("artifact_source_query") or "").strip(),
         "artifact_source_title": str(normalized.get("artifact_source_title") or "").strip(),
@@ -772,6 +780,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     artifact_identity = derive_artifact_identity(
         artifact_carrier=row.get("artifact_carrier"),
         artifact_source_ref_ids=row.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=row.get("preferred_source_ref_id"),
+        preferred_anchor_reason=row.get("preferred_anchor_reason"),
         artifact_source_url=row.get("artifact_source_url"),
         artifact_source_query=row.get("artifact_source_query"),
         artifact_source_title=row.get("artifact_source_title"),
@@ -809,6 +819,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip(),
         "artifact_carrier": str(artifact_identity.get("artifact_carrier") or "").strip(),
         "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or [])[:8],
+        "preferred_source_ref_id": _clean_nonnegative_int(artifact_identity.get("preferred_source_ref_id")),
+        "preferred_anchor_reason": _clean_text(artifact_identity.get("preferred_anchor_reason"), limit=120).lower(),
         "artifact_source_url": str(artifact_identity.get("artifact_source_url") or "").strip(),
         "artifact_source_query": str(artifact_identity.get("artifact_source_query") or "").strip(),
         "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
@@ -842,6 +854,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["artifact_reacquisition_mode"],
             normalized["artifact_carrier"],
             bool(normalized["artifact_source_ref_ids"]),
+            normalized["preferred_source_ref_id"] > 0,
+            normalized["preferred_anchor_reason"],
             normalized["artifact_source_url"],
             normalized["artifact_source_query"],
             normalized["artifact_source_title"],
@@ -910,6 +924,8 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
     artifact_identity = derive_artifact_identity(
         artifact_carrier=resource_state.get("artifact_carrier"),
         artifact_source_ref_ids=resource_state.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=resource_state.get("preferred_source_ref_id"),
+        preferred_anchor_reason=resource_state.get("preferred_anchor_reason"),
         artifact_source_url=resource_state.get("artifact_source_url"),
         artifact_source_query=resource_state.get("artifact_source_query"),
         artifact_source_title=resource_state.get("artifact_source_title"),
@@ -965,6 +981,8 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip(),
             "artifact_carrier": str(artifact_identity.get("artifact_carrier") or "").strip(),
             "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or [])[:8],
+            "preferred_source_ref_id": _clean_nonnegative_int(artifact_identity.get("preferred_source_ref_id")),
+            "preferred_anchor_reason": _clean_text(artifact_identity.get("preferred_anchor_reason"), limit=120).lower(),
             "artifact_source_url": str(artifact_identity.get("artifact_source_url") or "").strip(),
             "artifact_source_query": str(artifact_identity.get("artifact_source_query") or "").strip(),
             "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
@@ -1029,6 +1047,8 @@ def derive_digital_body_state(
     carried_artifact_identity = derive_artifact_identity(
         artifact_carrier=carried_embodied.get("artifact_carrier"),
         artifact_source_ref_ids=carried_embodied.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=carried_embodied.get("preferred_source_ref_id"),
+        preferred_anchor_reason=carried_embodied.get("preferred_anchor_reason"),
         artifact_source_url=carried_embodied.get("artifact_source_url"),
         artifact_source_query=carried_embodied.get("artifact_source_query"),
         artifact_source_title=carried_embodied.get("artifact_source_title"),
@@ -1142,6 +1162,10 @@ def derive_digital_body_state(
         artifact_carrier=hints.get("artifact_carrier") or carried_artifact_identity.get("artifact_carrier"),
         artifact_source_ref_ids=hints.get("artifact_source_ref_ids")
         or carried_artifact_identity.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=hints.get("preferred_source_ref_id")
+        or carried_artifact_identity.get("preferred_source_ref_id"),
+        preferred_anchor_reason=hints.get("preferred_anchor_reason")
+        or carried_artifact_identity.get("preferred_anchor_reason"),
         artifact_source_url=hints.get("artifact_source_url") or carried_artifact_identity.get("artifact_source_url"),
         artifact_source_query=hints.get("artifact_source_query") or carried_artifact_identity.get("artifact_source_query"),
         artifact_source_title=hints.get("artifact_source_title") or carried_artifact_identity.get("artifact_source_title"),
@@ -1156,6 +1180,8 @@ def derive_digital_body_state(
     artifact_reacquisition_mode = _clean_state_label(artifact.get("artifact_reacquisition_mode"))
     artifact_carrier = _clean_state_label(artifact_identity.get("artifact_carrier"))
     artifact_source_ref_ids = list(artifact_identity.get("artifact_source_ref_ids") or [])[:8]
+    preferred_source_ref_id = _clean_nonnegative_int(artifact_identity.get("preferred_source_ref_id"))
+    preferred_anchor_reason = _clean_text(artifact_identity.get("preferred_anchor_reason"), limit=120).lower()
     artifact_source_url = _clean_text(artifact_identity.get("artifact_source_url"), limit=320)
     artifact_source_query = _clean_text(artifact_identity.get("artifact_source_query"), limit=220)
     artifact_source_title = _clean_text(artifact_identity.get("artifact_source_title"), limit=160)
@@ -1403,6 +1429,8 @@ def derive_digital_body_state(
                 "artifact_reacquisition_mode": artifact_reacquisition_mode,
                 "artifact_carrier": artifact_carrier,
                 "artifact_source_ref_ids": artifact_source_ref_ids,
+                "preferred_source_ref_id": preferred_source_ref_id,
+                "preferred_anchor_reason": preferred_anchor_reason,
                 "artifact_source_url": artifact_source_url,
                 "artifact_source_query": artifact_source_query,
                 "artifact_source_title": artifact_source_title,

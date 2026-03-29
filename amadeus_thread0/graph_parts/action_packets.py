@@ -266,6 +266,8 @@ def normalize_artifact_context(value: Any) -> dict[str, Any]:
         "size_bytes": max(0, _coerce_int(row.get("size_bytes") if "size_bytes" in row else row.get("artifact_size_bytes"), 0)),
         "updated_at": max(0, _coerce_int(row.get("updated_at") if "updated_at" in row else row.get("artifact_updated_at"), 0)),
         "source_ref_ids": _normalize_source_ref_ids(row.get("source_ref_ids")),
+        "preferred_source_ref_id": max(0, _coerce_int(row.get("preferred_source_ref_id"), 0)),
+        "preferred_anchor_reason": _clean_text(row.get("preferred_anchor_reason"), limit=120).lower(),
         "source_url": _clean_text(row.get("source_url"), limit=320),
         "source_query": _clean_text(row.get("source_query"), limit=220),
         "source_title": _clean_text(row.get("source_title"), limit=160),
@@ -284,6 +286,8 @@ def normalize_artifact_context(value: Any) -> dict[str, Any]:
             normalized["size_bytes"] > 0,
             normalized["updated_at"] > 0,
             bool(normalized["source_ref_ids"]),
+            normalized["preferred_source_ref_id"] > 0,
+            normalized["preferred_anchor_reason"],
             normalized["source_url"],
             normalized["source_query"],
             normalized["source_title"],
@@ -301,6 +305,8 @@ def compact_artifact_identity(value: Any) -> dict[str, Any]:
     normalized = {
         "artifact_carrier": _clean_text(artifact.get("carrier"), limit=64).lower(),
         "artifact_source_ref_ids": _normalize_source_ref_ids(artifact.get("source_ref_ids")),
+        "preferred_source_ref_id": max(0, _coerce_int(artifact.get("preferred_source_ref_id"), 0)),
+        "preferred_anchor_reason": _clean_text(artifact.get("preferred_anchor_reason"), limit=120).lower(),
         "artifact_source_url": _clean_text(artifact.get("source_url"), limit=320),
         "artifact_source_query": _clean_text(artifact.get("source_query"), limit=220),
         "artifact_source_title": _clean_text(artifact.get("source_title"), limit=160),
@@ -310,6 +316,8 @@ def compact_artifact_identity(value: Any) -> dict[str, Any]:
         (
             normalized["artifact_carrier"],
             bool(normalized["artifact_source_ref_ids"]),
+            normalized["preferred_source_ref_id"] > 0,
+            normalized["preferred_anchor_reason"],
             normalized["artifact_source_url"],
             normalized["artifact_source_query"],
             normalized["artifact_source_title"],
@@ -584,7 +592,14 @@ def risk_from_tool_name(name: str) -> str:
     tool_name = _clean_text(name).lower()
     if tool_name in MEMORY_WRITE_TOOLS:
         return "memory_write"
-    if tool_name in {"request_toolset_upgrade", "reacquire_artifact", "inspect_workspace_path", "refresh_access_state"}:
+    if tool_name in {
+        "request_toolset_upgrade",
+        "reacquire_artifact",
+        "inspect_source_ref",
+        "compare_source_refs",
+        "inspect_workspace_path",
+        "refresh_access_state",
+    }:
         return "read"
     return "external_mutation"
 

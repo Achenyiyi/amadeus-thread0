@@ -197,6 +197,8 @@ TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
     "search_langchain_docs": 0.88,
     "arxiv_search": 0.92,
     "reacquire_artifact": 0.9,
+    "inspect_source_ref": 0.9,
+    "compare_source_refs": 0.9,
     "inspect_workspace_path": 0.9,
     "refresh_access_state": 0.86,
 }
@@ -240,6 +242,8 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "arxiv_search": {"risk": "read", "auto_approve": True},
     "get_worldline_snapshot": {"risk": "read", "auto_approve": True},
     "list_source_refs": {"risk": "read", "auto_approve": True},
+    "inspect_source_ref": {"risk": "read", "auto_approve": True},
+    "compare_source_refs": {"risk": "read", "auto_approve": True},
     "search_langchain_docs": {"risk": "read", "auto_approve": True},
     "list_skills": {"risk": "read", "auto_approve": True},
     "list_memory_ledger": {"risk": "read", "auto_approve": True},

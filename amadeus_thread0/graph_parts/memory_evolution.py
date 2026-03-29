@@ -4266,6 +4266,9 @@ def _record_digital_body_consequence(
         if isinstance(consequence.get("selected_access_proposal"), dict)
         else {},
     }
+    embodied_context = _normalized_embodied_context(consequence)
+    if embodied_context:
+        metadata["embodied_context"] = embodied_context
 
     recent = [
         item
