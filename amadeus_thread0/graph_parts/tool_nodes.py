@@ -75,6 +75,8 @@ _WORKSPACE_FILE_MUTATION_INTENTS = {
 }
 
 _WORKSPACE_INSPECTION_TOOL_NAMES = {"inspect_workspace_path"}
+_SOURCE_REF_INSPECTION_TOOL_NAMES = {"inspect_source_ref"}
+_SOURCE_REF_COMPARISON_TOOL_NAMES = {"compare_source_refs"}
 
 
 def _available_tools_for_state(state: ThreadState) -> list[BaseTool]:
@@ -562,6 +564,127 @@ def _workspace_path_inspection_candidate(
     }
 
 
+def _source_ref_inspection_candidate(
+    packet: dict[str, Any],
+    *,
+    session_context: dict[str, Any],
+    current_event: dict[str, Any],
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    status = str(row.get("status") or "").strip().lower()
+    risk = str(row.get("risk") or "").strip().lower()
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if bool(row.get("requires_approval", False)) or risk not in {"", "read"}:
+        return {}
+    if status not in {"", "proposed", "queued", "approved"} or not proposal_id:
+        return {}
+
+    tool_name = str(row.get("tool_name") or "").strip().lower()
+    if tool_name not in _SOURCE_REF_INSPECTION_TOOL_NAMES:
+        if str(row.get("intent") or "").strip().lower() != "artifact:inspect_source_ref":
+            return {}
+        tool_name = "inspect_source_ref"
+
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
+    steps = row.get("capability_steps") if isinstance(row.get("capability_steps"), list) else []
+    primary_step = next((dict(item) for item in steps if isinstance(item, dict)), {})
+    merged_hints = merge_digital_body_hints(
+        session_context=session_context,
+        current_event=current_event,
+    )
+    provided_hints = dict(tool_args.get("access_hints") or {}) if isinstance(tool_args.get("access_hints"), dict) else {}
+    tool_args["access_hints"] = {**merged_hints, **provided_hints}
+    if not str(tool_args.get("artifact_ref") or "").strip():
+        artifact_ref = str(primary_step.get("target") or row.get("result_summary") or "").strip()
+        if artifact_ref:
+            tool_args["artifact_ref"] = artifact_ref
+    if not str(tool_args.get("artifact_label") or "").strip():
+        artifact_label = str(primary_step.get("note") or "").strip()
+        if artifact_label:
+            tool_args["artifact_label"] = artifact_label
+
+    target = str(tool_args.get("artifact_ref") or tool_args.get("artifact_label") or "").strip() or "saved-source"
+    return {
+        "candidate_kind": "source_ref_inspection",
+        "proposal_id": proposal_id,
+        "intent": str(row.get("intent") or "").strip().lower(),
+        "mode": "inspect_source_ref",
+        "target": target,
+        "label": target,
+        "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+    }
+
+
+def _source_ref_comparison_candidate(
+    packet: dict[str, Any],
+    *,
+    session_context: dict[str, Any],
+    current_event: dict[str, Any],
+) -> dict[str, Any]:
+    row = dict(packet or {})
+    status = str(row.get("status") or "").strip().lower()
+    risk = str(row.get("risk") or "").strip().lower()
+    proposal_id = str(row.get("proposal_id") or "").strip()
+    if bool(row.get("requires_approval", False)) or risk not in {"", "read"}:
+        return {}
+    if status not in {"", "proposed", "queued", "approved"} or not proposal_id:
+        return {}
+
+    tool_name = str(row.get("tool_name") or "").strip().lower()
+    if tool_name not in _SOURCE_REF_COMPARISON_TOOL_NAMES:
+        if str(row.get("intent") or "").strip().lower() != "artifact:compare_source_refs":
+            return {}
+        tool_name = "compare_source_refs"
+
+    tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
+    merged_hints = merge_digital_body_hints(
+        session_context=session_context,
+        current_event=current_event,
+    )
+    provided_hints = dict(tool_args.get("access_hints") or {}) if isinstance(tool_args.get("access_hints"), dict) else {}
+    tool_args["access_hints"] = {**merged_hints, **provided_hints}
+    source_ref_ids = [
+        int(item)
+        for item in (
+            tool_args.get("source_ref_ids")
+            if isinstance(tool_args.get("source_ref_ids"), list)
+            else tool_args.get("access_hints", {}).get("artifact_source_ref_ids")
+            if isinstance(tool_args.get("access_hints"), dict)
+            else []
+        )
+        if str(item or "").strip().isdigit()
+    ]
+    if int(tool_args.get("source_ref_id") or 0) <= 0 and source_ref_ids:
+        tool_args["source_ref_id"] = int(source_ref_ids[0])
+    if int(tool_args.get("compare_source_ref_id") or 0) <= 0 and len(source_ref_ids) <= 2:
+        for item in source_ref_ids:
+            if item > 0 and item != int(tool_args.get("source_ref_id") or 0):
+                tool_args["compare_source_ref_id"] = item
+                break
+    if int(tool_args.get("source_ref_id") or 0) <= 0:
+        return {}
+
+    compare_target = int(tool_args.get("compare_source_ref_id") or 0)
+    target = (
+        f"source_ref:{int(tool_args['source_ref_id'])}<->source_ref:{compare_target}"
+        if compare_target > 0
+        else f"source_ref:{int(tool_args['source_ref_id'])}<->candidate_set"
+    )
+    return {
+        "candidate_kind": "source_ref_comparison",
+        "proposal_id": proposal_id,
+        "intent": str(row.get("intent") or "").strip().lower(),
+        "mode": "compare_source_refs",
+        "target": target,
+        "label": target,
+        "packet": row,
+        "tool_name": tool_name,
+        "tool_args": tool_args,
+    }
+
+
 def _first_autonomy_execution_candidate(state: ThreadState) -> dict[str, Any]:
     packets = normalize_action_packets(state.get("action_packets"))
     session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
@@ -588,6 +711,20 @@ def _first_autonomy_execution_candidate(state: ThreadState) -> dict[str, Any]:
         if candidate:
             return candidate
         candidate = _workspace_path_inspection_candidate(
+            packet,
+            session_context=session_context,
+            current_event=current_event,
+        )
+        if candidate:
+            return candidate
+        candidate = _source_ref_inspection_candidate(
+            packet,
+            session_context=session_context,
+            current_event=current_event,
+        )
+        if candidate:
+            return candidate
+        candidate = _source_ref_comparison_candidate(
             packet,
             session_context=session_context,
             current_event=current_event,
@@ -700,6 +837,8 @@ def _artifact_context_from_reacquisition_result(
             "size_bytes": row.get("artifact_size_bytes"),
             "updated_at": row.get("artifact_updated_at"),
             "source_ref_ids": source_ref_ids,
+            "preferred_source_ref_id": row.get("preferred_source_ref_id"),
+            "preferred_anchor_reason": row.get("preferred_anchor_reason"),
             "source_url": str(row.get("source_url") or "").strip(),
             "source_query": str(row.get("source_query") or "").strip(),
             "source_title": str(row.get("artifact_label") or artifact_label or "").strip(),
@@ -756,6 +895,53 @@ def _access_packet_fields_from_tool_result(result: Any) -> tuple[list[dict[str, 
 def _artifact_context_from_tool_result(result: Any) -> dict[str, Any]:
     row = dict(result) if isinstance(result, dict) else {}
     return normalize_artifact_context(row.get("artifact_context"))
+
+
+def _artifact_hints_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    hints = dict(row.get("access_hints") or {}) if isinstance(row.get("access_hints"), dict) else {}
+    artifact_context = _artifact_context_from_tool_result(result)
+    if not artifact_context:
+        return hints
+
+    artifact_identity = compact_artifact_identity(artifact_context)
+    artifact_kind = str(artifact_context.get("artifact_kind") or "").strip().lower()
+    artifact_ref = str(artifact_context.get("artifact_ref") or "").strip()
+    artifact_label = (
+        str(artifact_context.get("artifact_label") or "").strip()
+        or str(artifact_context.get("source_title") or "").strip()
+        or artifact_ref
+    )
+    artifact_continuity = "attached" if bool(artifact_context.get("exists", True)) else "missing"
+    hints.update(
+        {
+            "artifact_continuity": artifact_continuity,
+            "active_artifact_kind": artifact_kind,
+            "active_artifact_ref": artifact_ref,
+            "active_artifact_label": artifact_label[:160],
+            "artifact_age_s": 0,
+            "artifact_reacquisition_mode": str(artifact_context.get("reacquisition_mode") or "").strip().lower(),
+        }
+    )
+    if artifact_identity:
+        hints.update(artifact_identity)
+
+    world_surfaces = [
+        str(item).strip().lower()
+        for item in (hints.get("world_surfaces") if isinstance(hints.get("world_surfaces"), list) else [])
+        if str(item or "").strip()
+    ]
+    carrier = str(artifact_context.get("carrier") or "").strip().lower()
+    if carrier == "filesystem":
+        if "filesystem" not in world_surfaces:
+            world_surfaces.append("filesystem")
+    elif carrier == "source_ref":
+        for surface in ("source_ref", "browser"):
+            if surface not in world_surfaces:
+                world_surfaces.append(surface)
+    if world_surfaces:
+        hints["world_surfaces"] = world_surfaces[:12]
+    return hints
 
 
 def _rebuild_reconsolidation_with_autonomy(
@@ -1013,10 +1199,11 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
                         "source_id": int(((result or {}).get("source_ref_ids") or [0])[0] or 0),
                         "url": str((result or {}).get("source_url") or (result or {}).get("artifact_ref") or ""),
                         "span_hint": "artifact_reacquired",
-                    }
+            }
                 )
         else:
             hints.update(_access_hints_from_refresh_result(result))
+            hints.update(_artifact_hints_from_tool_result(result))
             access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
             hints["access_acquire_proposals"] = access_acquire_proposals
             if selected_access_proposal:
@@ -1331,11 +1518,13 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             _audit_jsonl("tool_audit.jsonl", record)
             result_summary = _tool_result_summary(result)
             tool_hints = _access_hints_from_refresh_result(result)
+            artifact_hints = _artifact_hints_from_tool_result(result)
             access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
             artifact_context = _artifact_context_from_tool_result(result)
-            if tool_hints:
+            if tool_hints or artifact_hints:
                 hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
                 hints.update(tool_hints)
+                hints.update(artifact_hints)
                 hints["access_acquire_proposals"] = access_acquire_proposals
                 if selected_access_proposal:
                     hints["selected_access_proposal"] = selected_access_proposal

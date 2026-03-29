@@ -467,6 +467,268 @@ def _workspace_file_hints(*, hints: dict[str, Any], file_path: Path, source_tool
     return prune_resolved_access_hints(refreshed)
 
 
+def _source_ref_hints(
+    *,
+    hints: dict[str, Any],
+    source_ref: dict[str, Any],
+    artifact_kind: str,
+) -> dict[str, Any]:
+    refreshed = dict(hints or {})
+    try:
+        source_id = int(source_ref.get("id") or 0)
+    except Exception:
+        source_id = 0
+    title = str(source_ref.get("title") or "").strip() or "saved-source"
+    url = str(source_ref.get("url") or "").strip()
+    query = str(source_ref.get("query") or "").strip()
+    source_tool_name = str(source_ref.get("tool_name") or "").strip() or "source_ref"
+    artifact_ref = url or query or (f"source_ref:{source_id}" if source_id > 0 else title)
+    related_source_ref_ids: list[int] = [source_id] if source_id > 0 else []
+    previous_source_ref_ids = [
+        int(item)
+        for item in (refreshed.get("artifact_source_ref_ids") if isinstance(refreshed.get("artifact_source_ref_ids"), list) else [])
+        if str(item or "").strip().isdigit()
+    ]
+    previous_title = str(refreshed.get("artifact_source_title") or refreshed.get("active_artifact_label") or "").strip()
+    previous_query = str(refreshed.get("artifact_source_query") or "").strip()
+    previous_url = str(refreshed.get("artifact_source_url") or refreshed.get("active_artifact_ref") or "").strip()
+    previous_preferred_source_ref_id = _parse_source_ref_id(refreshed.get("preferred_source_ref_id"))
+    previous_preferred_anchor_reason = str(refreshed.get("preferred_anchor_reason") or "").strip().lower()
+    exact_match = bool(
+        (url and previous_url and url == previous_url)
+        or (query and previous_query and query == previous_query)
+        or (title and previous_title and title == previous_title)
+    )
+    continuity_overlap = max(
+        _overlap_score(title, previous_title),
+        _overlap_score(query, previous_query),
+        _overlap_score(url, previous_url),
+    )
+    if previous_source_ref_ids and (exact_match or continuity_overlap >= 0.42):
+        for previous_id in previous_source_ref_ids:
+            if previous_id > 0 and previous_id not in related_source_ref_ids:
+                related_source_ref_ids.append(previous_id)
+            if len(related_source_ref_ids) >= 4:
+                break
+    refreshed.update(
+        {
+            "artifact_continuity": "attached",
+            "active_artifact_kind": str(artifact_kind or "page").strip().lower() or "page",
+            "active_artifact_ref": artifact_ref,
+            "active_artifact_label": title,
+            "artifact_age_s": 0,
+            "artifact_reacquisition_mode": "inspect_source_ref",
+            "artifact_carrier": "source_ref",
+            "artifact_source_ref_ids": related_source_ref_ids[:4],
+            "artifact_source_url": url,
+            "artifact_source_query": query,
+            "artifact_source_title": title,
+            "artifact_source_tool_name": source_tool_name,
+        }
+    )
+    if previous_preferred_source_ref_id > 0 and previous_preferred_source_ref_id == source_id:
+        refreshed["preferred_source_ref_id"] = previous_preferred_source_ref_id
+        if previous_preferred_anchor_reason:
+            refreshed["preferred_anchor_reason"] = previous_preferred_anchor_reason
+    else:
+        refreshed.pop("preferred_source_ref_id", None)
+        refreshed.pop("preferred_anchor_reason", None)
+    refreshed.setdefault("world_surfaces", [])
+    if isinstance(refreshed.get("world_surfaces"), list):
+        surfaces = [str(item).strip().lower() for item in refreshed.get("world_surfaces", []) if str(item or "").strip()]
+        for surface in ("source_ref", "browser"):
+            if surface not in surfaces:
+                surfaces.append(surface)
+        refreshed["world_surfaces"] = surfaces[:12]
+    return prune_resolved_access_hints(refreshed)
+
+
+def _clean_nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except Exception:
+        return 0
+
+
+def _source_ref_anchor_quality(source_ref: dict[str, Any]) -> float:
+    row = dict(source_ref or {})
+    title = str(row.get("title") or "").strip()
+    query = str(row.get("query") or "").strip()
+    url = str(row.get("url") or "").strip()
+    snippet = str(row.get("snippet") or "").strip()
+    tool_name = str(row.get("tool_name") or "").strip()
+    try:
+        reliability = max(0.0, min(1.0, float(row.get("reliability_score"))))
+    except Exception:
+        reliability = 0.0
+    return max(
+        0.0,
+        min(
+            1.0,
+            0.20 * (1.0 if url else 0.0)
+            + 0.24 * (1.0 if query else 0.0)
+            + 0.14 * min(1.0, len(title) / 72.0)
+            + 0.16 * min(1.0, len(snippet) / 320.0)
+            + 0.10 * (1.0 if tool_name else 0.0)
+            + 0.16 * reliability,
+        ),
+    )
+
+
+def _ordered_unique_source_ref_ids(*values: Any, limit: int = 4) -> list[int]:
+    ordered: list[int] = []
+    for value in values:
+        items = value if isinstance(value, list) else [value]
+        for item in items:
+            source_id = _parse_source_ref_id(item)
+            if source_id <= 0 or source_id in ordered:
+                continue
+            ordered.append(source_id)
+            if len(ordered) >= max(2, int(limit)):
+                return ordered
+    return ordered
+
+
+def _source_ref_relation_metrics(primary: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
+    primary_title = str(primary.get("title") or "").strip()
+    primary_url = str(primary.get("url") or "").strip()
+    primary_query = str(primary.get("query") or "").strip()
+    primary_snippet = str(primary.get("snippet") or "").strip()
+    baseline_title = str(baseline.get("title") or "").strip()
+    baseline_url = str(baseline.get("url") or "").strip()
+    baseline_query = str(baseline.get("query") or "").strip()
+    baseline_snippet = str(baseline.get("snippet") or "").strip()
+    same_url = bool(primary_url and baseline_url and primary_url == baseline_url)
+    same_query = bool(primary_query and baseline_query and primary_query == baseline_query)
+    title_overlap = _overlap_score(primary_title, baseline_title)
+    query_overlap = _overlap_score(primary_query, baseline_query)
+    snippet_overlap = _overlap_score(primary_snippet, baseline_snippet)
+    overlap_score = max(
+        1.0 if same_url or same_query else 0.0,
+        title_overlap,
+        query_overlap,
+        min(1.0, snippet_overlap * 0.72),
+    )
+    if same_url or same_query:
+        relation = "same_thread"
+    elif overlap_score >= 0.58:
+        relation = "close_followup"
+    elif overlap_score >= 0.34:
+        relation = "adjacent"
+    else:
+        relation = "weak_relation"
+    return {
+        "same_url": same_url,
+        "same_query": same_query,
+        "title_overlap": title_overlap,
+        "query_overlap": query_overlap,
+        "snippet_overlap": snippet_overlap,
+        "overlap_score": overlap_score,
+        "relation": relation,
+    }
+
+
+def _candidate_compare_score(
+    *,
+    primary: dict[str, Any],
+    candidate: dict[str, Any],
+    ordinal: int,
+) -> float:
+    metrics = _source_ref_relation_metrics(primary, candidate)
+    closeness = float(metrics.get("overlap_score") or 0.0)
+    quality = _source_ref_anchor_quality(candidate)
+    primary_ts = _clean_nonnegative_int(primary.get("retrieved_at") or primary.get("created_at"))
+    candidate_ts = _clean_nonnegative_int(candidate.get("retrieved_at") or candidate.get("created_at"))
+    recency_bonus = 0.0
+    if candidate_ts > primary_ts > 0:
+        recency_bonus = 1.0
+    elif candidate_ts > 0 and primary_ts <= 0:
+        recency_bonus = 0.5
+    order_bonus = max(0.0, 0.08 - 0.02 * max(0, int(ordinal)))
+    return round(0.62 * closeness + 0.24 * quality + 0.08 * recency_bonus + order_bonus, 6)
+
+
+def _select_comparison_source_from_candidates(
+    *,
+    primary: dict[str, Any],
+    candidate_source_refs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    best: dict[str, Any] = {}
+    best_score = -1.0
+    for ordinal, candidate in enumerate(candidate_source_refs):
+        row = dict(candidate or {})
+        try:
+            candidate_id = int(row.get("id") or 0)
+        except Exception:
+            candidate_id = 0
+        try:
+            primary_id = int(primary.get("id") or 0)
+        except Exception:
+            primary_id = 0
+        if candidate_id <= 0 or candidate_id == primary_id:
+            continue
+        score = _candidate_compare_score(primary=primary, candidate=row, ordinal=ordinal)
+        if score > best_score:
+            best = row
+            best_score = score
+    return best
+
+
+def _select_preferred_source_anchor(
+    *,
+    primary: dict[str, Any],
+    baseline: dict[str, Any],
+    relation: str,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    primary_row = dict(primary or {})
+    baseline_row = dict(baseline or {})
+    if not baseline_row:
+        return primary_row, baseline_row, "current_material_still_best"
+
+    try:
+        primary_id = int(primary_row.get("id") or 0)
+    except Exception:
+        primary_id = 0
+    try:
+        baseline_id = int(baseline_row.get("id") or 0)
+    except Exception:
+        baseline_id = 0
+
+    primary_ts = _clean_nonnegative_int(primary_row.get("retrieved_at") or primary_row.get("created_at"))
+    baseline_ts = _clean_nonnegative_int(baseline_row.get("retrieved_at") or baseline_row.get("created_at"))
+    primary_quality = _source_ref_anchor_quality(primary_row)
+    baseline_quality = _source_ref_anchor_quality(baseline_row)
+
+    if primary_ts > baseline_ts:
+        primary_recency = 1.0
+        baseline_recency = 0.0
+    elif baseline_ts > primary_ts:
+        primary_recency = 0.0
+        baseline_recency = 1.0
+    elif primary_ts > 0 and baseline_ts > 0:
+        primary_recency = 0.5
+        baseline_recency = 0.5
+    else:
+        primary_recency = 0.0
+        baseline_recency = 0.0
+
+    primary_score = primary_quality + 0.18 * primary_recency
+    baseline_score = baseline_quality + 0.18 * baseline_recency
+    if relation == "same_thread":
+        primary_score += 0.03
+    elif relation == "weak_relation":
+        primary_score += 0.10
+
+    if relation == "weak_relation":
+        return primary_row, baseline_row, "relation_too_weak_to_reanchor"
+
+    if baseline_score > primary_score + 0.08 and baseline_id > 0:
+        reason = "baseline_more_current" if baseline_recency > primary_recency else "baseline_more_complete"
+        return baseline_row, primary_row, reason
+
+    return primary_row, baseline_row, "current_material_still_best"
+
+
 def _path_within_root(path: Path, root: Path) -> bool:
     try:
         path.resolve(strict=False).relative_to(root.resolve(strict=False))
@@ -1871,6 +2133,383 @@ def list_source_refs(limit: int = 20) -> dict[str, Any]:
         return _ok(tool_name, store.list_source_refs(limit=lim))
     except Exception as e:
         return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def inspect_source_ref(
+    source_ref_id: int = 0,
+    artifact_ref: str = "",
+    artifact_label: str = "",
+    preview_chars: int = 1200,
+    access_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """检视已经存入 source_refs 的外部材料（只读）。"""
+
+    tool_name = "inspect_source_ref"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        if int(source_ref_id or 0) > 0 and not str(artifact_ref or "").strip():
+            artifact_ref = f"source_ref:{int(source_ref_id)}"
+        rec = _resolve_source_ref_surface(
+            artifact_ref=str(artifact_ref or "").strip(),
+            artifact_label=str(artifact_label or "").strip(),
+        )
+        if not rec:
+            return _err(
+                tool_name,
+                "NOT_FOUND",
+                "saved source_ref could not be resolved in the current runtime",
+                {
+                    "source_ref_id": int(source_ref_id or 0),
+                    "artifact_ref": str(artifact_ref or "").strip(),
+                    "artifact_label": str(artifact_label or "").strip(),
+                },
+            )
+
+        title = str(rec.get("title") or artifact_label or artifact_ref or "saved-source").strip()
+        url = str(rec.get("url") or "").strip()
+        query = str(rec.get("query") or "").strip()
+        snippet = str(rec.get("snippet") or "").strip()
+        artifact_kind = "search_result" if query else "page"
+        limit = max(80, min(2400, int(preview_chars or 1200)))
+        preview = snippet[:limit]
+        preview_truncated = len(snippet) > len(preview)
+        refreshed_hints = _source_ref_hints(
+            hints=hints,
+            source_ref=rec,
+            artifact_kind=artifact_kind,
+        )
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "source_ref"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        try:
+            retrieved_at = int(rec.get("retrieved_at") or rec.get("created_at") or 0)
+        except Exception:
+            retrieved_at = 0
+        try:
+            resolved_source_id = int(rec.get("id") or 0)
+        except Exception:
+            resolved_source_id = 0
+        artifact_context = {
+            "carrier": "source_ref",
+            "artifact_kind": artifact_kind,
+            "artifact_ref": url or query or str(artifact_ref or f"source_ref:{resolved_source_id}"),
+            "artifact_label": title,
+            "reacquisition_mode": "inspect_source_ref",
+            "preview": preview,
+            "preview_truncated": preview_truncated,
+            "exists": True,
+            "updated_at": retrieved_at,
+            "source_ref_ids": [resolved_source_id] if resolved_source_id > 0 else [],
+            "source_url": url,
+            "source_query": query,
+            "source_title": title,
+            "source_tool_name": str(rec.get("tool_name") or "").strip() or tool_name,
+        }
+        summary = f"已查看外部材料 {title}，当前内容已经接回视野。"
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "source_ref_id": resolved_source_id,
+                "artifact_kind": artifact_kind,
+                "artifact_ref": artifact_context["artifact_ref"],
+                "artifact_label": title,
+                "artifact_preview": preview,
+                "artifact_preview_truncated": preview_truncated,
+                "artifact_exists": True,
+                "artifact_updated_at": retrieved_at,
+                "source_ref_ids": [resolved_source_id] if resolved_source_id > 0 else [],
+                "source_url": url,
+                "source_query": query,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+            },
+        )
+    except ValueError as e:
+        return _err(tool_name, "BAD_INPUT", str(e))
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {
+                "source_ref_id": int(source_ref_id or 0),
+                "artifact_ref": str(artifact_ref or "").strip(),
+                "artifact_label": str(artifact_label or "").strip(),
+            },
+        )
+
+
+@tool
+def compare_source_refs(
+    source_ref_id: int = 0,
+    compare_source_ref_id: int = 0,
+    source_ref_ids: list[int] | None = None,
+    artifact_ref: str = "",
+    artifact_label: str = "",
+    compare_artifact_ref: str = "",
+    compare_artifact_label: str = "",
+    preview_chars: int = 900,
+    access_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """对照已经存入 source_refs 的两条外部材料（只读）。"""
+
+    tool_name = "compare_source_refs"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        if int(source_ref_id or 0) > 0 and not str(artifact_ref or "").strip():
+            artifact_ref = f"source_ref:{int(source_ref_id)}"
+        primary = _resolve_source_ref_surface(
+            artifact_ref=str(artifact_ref or "").strip(),
+            artifact_label=str(artifact_label or "").strip(),
+        )
+        if not primary:
+            return _err(
+                tool_name,
+                "NOT_FOUND",
+                "primary saved source_ref could not be resolved in the current runtime",
+                {
+                    "source_ref_id": int(source_ref_id or 0),
+                    "artifact_ref": str(artifact_ref or "").strip(),
+                    "artifact_label": str(artifact_label or "").strip(),
+                },
+            )
+
+        try:
+            primary_source_id = int(primary.get("id") or 0)
+        except Exception:
+            primary_source_id = 0
+
+        candidate_source_ref_ids = _ordered_unique_source_ref_ids(
+            primary_source_id,
+            source_ref_ids,
+            hints.get("artifact_source_ref_ids"),
+            limit=4,
+        )
+
+        if int(compare_source_ref_id or 0) <= 0 and not any(
+            (str(compare_artifact_ref or "").strip(), str(compare_artifact_label or "").strip())
+        ):
+            candidate_refs = []
+            for candidate_id in candidate_source_ref_ids[1:]:
+                rec = _resolve_source_ref_surface(artifact_ref=f"source_ref:{candidate_id}", artifact_label="")
+                if rec:
+                    candidate_refs.append(rec)
+            selected_candidate = _select_comparison_source_from_candidates(
+                primary=primary,
+                candidate_source_refs=candidate_refs,
+            )
+            try:
+                compare_source_ref_id = int(selected_candidate.get("id") or 0)
+            except Exception:
+                compare_source_ref_id = 0
+        if int(compare_source_ref_id or 0) > 0 and not str(compare_artifact_ref or "").strip():
+            compare_artifact_ref = f"source_ref:{int(compare_source_ref_id)}"
+
+        baseline = _resolve_source_ref_surface(
+            artifact_ref=str(compare_artifact_ref or "").strip(),
+            artifact_label=str(compare_artifact_label or "").strip(),
+        )
+        if not baseline:
+            return _err(
+                tool_name,
+                "NOT_FOUND",
+                "comparison saved source_ref could not be resolved in the current runtime",
+                {
+                    "compare_source_ref_id": int(compare_source_ref_id or 0),
+                    "compare_artifact_ref": str(compare_artifact_ref or "").strip(),
+                    "compare_artifact_label": str(compare_artifact_label or "").strip(),
+                },
+            )
+
+        try:
+            baseline_source_id = int(baseline.get("id") or 0)
+        except Exception:
+            baseline_source_id = 0
+
+        primary_title = str(primary.get("title") or artifact_label or artifact_ref or "saved-source").strip()
+        primary_url = str(primary.get("url") or "").strip()
+        primary_query = str(primary.get("query") or "").strip()
+        primary_snippet = str(primary.get("snippet") or "").strip()
+        baseline_title = str(baseline.get("title") or compare_artifact_label or compare_artifact_ref or "saved-source").strip()
+        baseline_url = str(baseline.get("url") or "").strip()
+        baseline_query = str(baseline.get("query") or "").strip()
+        baseline_snippet = str(baseline.get("snippet") or "").strip()
+        primary_kind = "search_result" if primary_query else "page"
+        metrics = _source_ref_relation_metrics(primary, baseline)
+        same_url = bool(metrics.get("same_url"))
+        same_query = bool(metrics.get("same_query"))
+        title_overlap = float(metrics.get("title_overlap") or 0.0)
+        query_overlap = float(metrics.get("query_overlap") or 0.0)
+        snippet_overlap = float(metrics.get("snippet_overlap") or 0.0)
+        overlap_score = float(metrics.get("overlap_score") or 0.0)
+        relation = str(metrics.get("relation") or "").strip()
+        if same_url or same_query:
+            summary = (
+                f"已把 {primary_title} 和 {baseline_title} 对照过一遍，它们属于同一条资料线，"
+                "当前判断可以直接顺着这条连续性往下走。"
+            )
+        elif overlap_score >= 0.58:
+            summary = (
+                f"已把 {primary_title} 和 {baseline_title} 对照过一遍，两条材料是紧邻的延续，"
+                "当前判断会优先沿着这条相连线索继续。"
+            )
+        elif overlap_score >= 0.34:
+            summary = (
+                f"已把 {primary_title} 和 {baseline_title} 并到一起看过，它们有部分相连的线索，"
+                "当前判断会把这段连续性保留下来。"
+            )
+        else:
+            summary = (
+                f"已把 {primary_title} 和 {baseline_title} 对照过一遍，但它们关联不强，"
+                "后面的判断仍以当前这条材料为主。"
+            )
+
+        preferred_source, secondary_source, preferred_anchor_reason = _select_preferred_source_anchor(
+            primary=primary,
+            baseline=baseline,
+            relation=relation,
+        )
+        try:
+            preferred_source_id = int(preferred_source.get("id") or 0)
+        except Exception:
+            preferred_source_id = 0
+        try:
+            secondary_source_id = int(secondary_source.get("id") or 0)
+        except Exception:
+            secondary_source_id = 0
+        preferred_title = str(preferred_source.get("title") or primary_title).strip() or primary_title
+        preferred_url = str(preferred_source.get("url") or "").strip()
+        preferred_query = str(preferred_source.get("query") or "").strip()
+        preferred_snippet = str(preferred_source.get("snippet") or "").strip()
+        preferred_kind = "search_result" if preferred_query else "page"
+        preferred_tool_name = str(preferred_source.get("tool_name") or "").strip() or tool_name
+        try:
+            preferred_retrieved_at = int(preferred_source.get("retrieved_at") or preferred_source.get("created_at") or 0)
+        except Exception:
+            preferred_retrieved_at = 0
+        if preferred_source_id > 0 and preferred_source_id != primary_source_id and relation != "weak_relation":
+            summary = (
+                f"已把 {primary_title} 和 {baseline_title} 对照过一遍，当前判断会改为优先沿着 "
+                f"{preferred_title} 这条更稳的资料线继续。"
+            )
+
+        refreshed_hints = _source_ref_hints(
+            hints=hints,
+            source_ref=preferred_source,
+            artifact_kind=preferred_kind,
+        )
+        if preferred_source_id > 0:
+            refreshed_hints["preferred_source_ref_id"] = preferred_source_id
+        if preferred_anchor_reason:
+            refreshed_hints["preferred_anchor_reason"] = preferred_anchor_reason
+        compared_ids: list[int] = []
+        for sid in [preferred_source_id, secondary_source_id, *candidate_source_ref_ids]:
+            if sid > 0 and sid not in compared_ids:
+                compared_ids.append(sid)
+        if compared_ids:
+            refreshed_hints["artifact_source_ref_ids"] = compared_ids[:4]
+
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "source_ref"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        limit = max(120, min(2400, int(preview_chars or 900)))
+        preview = preferred_snippet[:limit]
+        preview_truncated = len(preferred_snippet) > len(preview)
+        artifact_context = {
+            "carrier": "source_ref",
+            "artifact_kind": preferred_kind,
+            "artifact_ref": preferred_url or preferred_query or str(artifact_ref or f"source_ref:{preferred_source_id}"),
+            "artifact_label": preferred_title,
+            "reacquisition_mode": "compare_source_refs",
+            "preview": preview,
+            "preview_truncated": preview_truncated,
+            "exists": True,
+            "updated_at": preferred_retrieved_at,
+            "source_ref_ids": compared_ids[:4],
+            "preferred_source_ref_id": preferred_source_id,
+            "preferred_anchor_reason": preferred_anchor_reason,
+            "source_url": preferred_url,
+            "source_query": preferred_query,
+            "source_title": preferred_title,
+            "source_tool_name": preferred_tool_name,
+        }
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "relation": relation,
+                "overlap_score": round(max(0.0, min(1.0, overlap_score)), 3),
+                "source_ref_id": primary_source_id,
+                "compare_source_ref_id": baseline_source_id,
+                "source_ref_ids": compared_ids[:4],
+                "artifact_kind": preferred_kind,
+                "artifact_ref": artifact_context["artifact_ref"],
+                "artifact_label": preferred_title,
+                "artifact_preview": preview,
+                "artifact_preview_truncated": preview_truncated,
+                "artifact_exists": True,
+                "artifact_updated_at": preferred_retrieved_at,
+                "preferred_source_ref_id": preferred_source_id,
+                "preferred_source_title": preferred_title,
+                "preferred_source_url": preferred_url,
+                "preferred_source_query": preferred_query,
+                "preferred_anchor_reason": preferred_anchor_reason,
+                "source_url": primary_url,
+                "source_query": primary_query,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "comparison": {
+                    "primary_title": primary_title,
+                    "primary_url": primary_url,
+                    "primary_query": primary_query,
+                    "baseline_title": baseline_title,
+                    "baseline_url": baseline_url,
+                    "baseline_query": baseline_query,
+                    "relation": relation,
+                    "same_url": same_url,
+                    "same_query": same_query,
+                    "title_overlap": round(title_overlap, 3),
+                    "query_overlap": round(query_overlap, 3),
+                    "snippet_overlap": round(snippet_overlap, 3),
+                },
+            },
+        )
+    except ValueError as e:
+        return _err(tool_name, "BAD_INPUT", str(e))
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {
+                "source_ref_id": int(source_ref_id or 0),
+                "compare_source_ref_id": int(compare_source_ref_id or 0),
+                "artifact_ref": str(artifact_ref or "").strip(),
+                "compare_artifact_ref": str(compare_artifact_ref or "").strip(),
+            },
+        )
 
 
 @tool

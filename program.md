@@ -6517,3 +6517,405 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - continue the digital-body mainline on the next truthful non-filesystem body surface only if it can close the same full contract (`runtime -> consequence -> backend -> CLI -> writeback`) rather than stopping at tool existence
   - the most likely next target is a bounded external-material/body slice that goes beyond reattachment, while still staying inside saved carriers / approved runtime boundaries rather than inventing a fake live browser
+
+## 2026-03-29 Run 163
+
+- Focus:
+  - land the next truthful non-filesystem digital-body surface on top of `saved source_refs`
+  - fix the live-state gap where completed tool results could preserve `artifact_context` in packets but fail to refresh live `digital_body_hints`
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `tests/test_inspect_source_ref_tool.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_cli_views.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `inspect_source_ref` as a new bounded read-only tool over the existing `saved source_refs` carrier:
+    - inspect by `source_ref_id`, `artifact_ref`, or `artifact_label`
+    - no fake live-browser claim
+    - returns `artifact_context`, `access_hints`, `access_state`, and `resource_state`
+  - added `_source_ref_hints()` so inspecting saved external material updates the same live `digital_body_hints` path as other body surfaces
+  - root-fixed the packet-vs-live-state gap in `tool_nodes`:
+    - completed tool results with `artifact_context` now refresh live `digital_body_hints`
+    - active artifact truth no longer depends on packet-only storage
+  - added direct execution support and intent-mode recognition for source-material inspection:
+    - packet binding path can now execute `inspect_source_ref`
+    - completed packet -> `autonomy_intent.mode=inspect_source_ref`
+  - added the frozen read-side consequence family for this surface:
+    - `tool_name=inspect_source_ref` -> `digital_body_consequence.kind=source_material_inspected`
+    - it is explicit perception, not `procedural_growth`
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\config.py amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_inspect_source_ref_tool.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_backend_api.py tests\test_cli_views.py`
+  - `python -m pytest tests\test_inspect_source_ref_tool.py tests\test_action_packet_contract.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_backend_api.py tests\test_cli_views.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_inspect_source_ref_tool.py -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ...`
+- Result:
+  - the digital body now has one truthful bounded non-filesystem inspection surface on top of `saved source_refs`, without inventing a browser runtime
+  - external-material inspection now closes through the full contract:
+    - tool/runtime
+    - live `digital_body_state`
+    - frozen `digital_body_consequence`
+    - backend envelope
+    - CLI summary
+  - regression sets stayed green:
+    - `133 passed`
+    - `752 passed, 35 subtests passed`
+    - `121 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the digital-body mainline only on slices that keep the same “truthful bounded body” standard
+  - the most likely next target is no longer another filesystem move, but a stronger `saved external material -> compare / revisit / continuity bias` path that still stays inside stored carriers rather than pretending to have a live browser or arbitrary web shell
+
+## 2026-03-29 Run 164
+
+- Focus:
+  - close the `attached + stale + source_ref` autonomy gap so saved external material can be re-inspected as truthful perception instead of being flattened into generic artifact reacquisition
+- Files changed:
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - added a bounded stale-source-material packet derivation path:
+    - `artifact_continuity=stale`
+    - `artifact_carrier=source_ref`
+    - derives `intent=artifact:inspect_source_ref`
+    - uses `tool_name=inspect_source_ref`
+  - fixed `autonomy_intent.mode` derivation so `artifact:inspect_source_ref` and `artifact:inspect_path` are no longer misclassified as generic `reacquire_artifact` before completion
+  - merged live `session_context.digital_body_hints` artifact identity into the packet-derivation path, so stale saved-material inspection can arise from live runtime state, not only from carried embodied context
+  - added regression coverage for both:
+    - stale carried `source_ref` continuity
+    - stale live session-hint `source_ref` continuity
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/autonomy_runtime.py tests/test_companion_autonomy_runtime.py`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ...`
+  - post-fix recheck after tightening the `source_ref` label fallback expression:
+    - `python -m py_compile amadeus_thread0/graph_parts/autonomy_runtime.py`
+    - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+- Result:
+  - the digital body now treats stale saved external material as a first-class inspection continuation path instead of collapsing it into generic artifact reacquisition semantics
+  - autonomy/runtime/writeback naming is more honest:
+    - `inspect_source_ref` stays `inspect_source_ref`
+    - `inspect_workspace_path` stays `inspect_workspace_path`
+    before and after execution, rather than borrowing the generic artifact-reacquire label
+  - regression sets stayed green:
+    - `39 passed`
+    - `754 passed, 35 subtests passed`
+    - `120 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the saved external material mainline on the next truthful slice rather than opening a fake browser runtime
+  - the best next target is a bounded `saved source_ref -> revisit / compare / continuity bias` path so later turns can explicitly compare or re-anchor against previously inspected material instead of only reopening it
+
+## 2026-03-29 Run 165
+
+- Focus:
+  - land the next bounded `saved source_ref -> revisit / compare / continuity bias` slice instead of stopping at plain re-inspection
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `tests/test_inspect_source_ref_tool.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_cli_views.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - added `compare_source_refs` as a new bounded read-only tool over existing saved external materials:
+    - compares exactly two already saved `source_ref` records
+    - does not claim a live browser and does not fetch unseen sources
+    - returns stable comparison summary, compact compared ids, refreshed artifact context, and the same digital-body state surface used by other read-side tools
+  - tightened `inspect_source_ref` continuity bias so it only preserves the previous `source_ref` id when the previous material is actually related:
+    - related source pairs now carry `[current, previous]`
+    - unrelated previous source ids are dropped instead of polluting later compare derivation
+  - added autonomy packet derivation for stale attached saved-material pairs:
+    - `artifact_continuity=stale`
+    - `artifact_carrier=source_ref`
+    - `artifact_source_ref_ids=[current, previous]`
+    - derives `intent=artifact:compare_source_refs`
+  - added direct execution support for compare packets through the same packet-owned runtime binding path used by other bounded body actions
+  - added frozen compare-side consequence family:
+    - `tool_name=compare_source_refs` -> `digital_body_consequence.kind=source_material_compared`
+    - treated as truthful re-anchoring, not procedural growth
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/config.py amadeus_thread0/utils/tool_registry.py amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/graph_parts/autonomy_runtime.py amadeus_thread0/evolution_engine/reconsolidation.py tests/test_inspect_source_ref_tool.py tests/test_compare_source_refs_tool.py tests/test_action_packet_contract.py tests/test_companion_autonomy_runtime.py tests/test_final_state.py tests/test_backend_api.py tests/test_cli_views.py`
+  - `python -m pytest tests/test_inspect_source_ref_tool.py tests/test_compare_source_refs_tool.py tests/test_action_packet_contract.py tests/test_companion_autonomy_runtime.py tests/test_final_state.py tests/test_backend_api.py tests/test_cli_views.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_inspect_source_ref_tool.py tests/test_compare_source_refs_tool.py -q`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ...`
+- Result:
+  - the digital body can now do one bounded step beyond “re-open / re-inspect”: it can re-anchor current judgment by explicitly comparing the current saved material against a related earlier saved material in the same continuity line
+  - the compare path is still truthful and bounded:
+    - no fake browser
+    - no arbitrary web shell
+    - no open-ended source synthesis
+    - only already saved materials inside the current runtime carrier
+  - regression sets stayed green:
+    - `145 passed`
+    - `758 passed, 35 subtests passed`
+    - `126 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the saved external material mainline on a still-truthful slice such as:
+    - `source_ref revisit ranking / preferred anchor selection`, or
+    - `source_ref comparison result -> later continuity bias in behavior / motive selection`
+  - do not open a fake live browser runtime; keep extending only from real saved carriers and runtime-visible state
+
+## 2026-03-29 Run 166
+
+- Focus:
+  - close the next saved-material convergence slice:
+    - preferred anchor selection on bounded `compare_source_refs`
+    - feed `source_material_compared` back into later runtime behavior / motive bias instead of leaving it frozen-only
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/graph_parts/retrieval.py`
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - `compare_source_refs` now performs bounded preferred-anchor selection inside the real saved pair instead of treating the first id as permanently authoritative:
+    - compares two already saved materials only
+    - can re-anchor live artifact continuity to the more current / more complete saved side
+    - returns `preferred_source_ref_id` plus the preferred carrier identity
+    - keeps `artifact_source_ref_ids` ordered by preferred anchor first
+  - digital-body consequence writeback now stores normalized `embodied_context` metadata on `digital_body_consequence` revision traces, so later retrieval can reuse truthful body-level outcomes instead of only summary text
+  - retrieval now surfaces `digital_body_consequence_traces`, including `source_material_compared`, as a first-class continuity source
+  - relational carryover can now bridge retrieved saved-material compare traces into:
+    - `interaction_carryover.source=retrieved_digital_body_consequence`
+    - `carryover_mode=task_window`
+    - source-tagged continuity anchored to the compared saved-material line
+  - `prepare_turn_runtime` now turns retrieved compare traces into concrete runtime bias:
+    - stronger `task_pull`
+    - stronger `memory_gravity`
+    - stronger lineage carry
+    so later motive / behavior selection can keep following the re-anchored material line
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\tools.py amadeus_thread0\\graph_parts\\memory_evolution.py amadeus_thread0\\graph_parts\\retrieval.py amadeus_thread0\\graph_parts\\relational_carryover.py amadeus_thread0\\graph_parts\\prepare_turn_runtime.py tests\\test_compare_source_refs_tool.py tests\\test_prepare_turn_runtime.py`
+  - `python -m pytest tests\\test_compare_source_refs_tool.py tests\\test_prepare_turn_runtime.py -q`
+  - `python -m pytest tests\\test_companion_autonomy_runtime.py tests\\test_final_state.py tests\\test_world_model_residue.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0\\agent.py amadeus_thread0\\graph.py`
+  - `python - <<'PY' ... from amadeus_thread0.agent import agent ...`
+- Result:
+  - saved external-material continuity no longer stops at “compared once”
+  - compare completion can now choose and preserve the preferred saved anchor truthfully
+  - later turns can retrieve that compare trace and let it influence runtime state, rather than recomputing from scratch or losing the re-anchoring entirely
+  - regressions stayed green:
+    - `22 passed`
+    - `214 passed`
+    - `758 passed, 35 subtests passed`
+    - `122 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the saved external-material mainline on one of the remaining truthful slices:
+    - widen preferred-anchor selection from pairwise compare to larger saved continuity candidate sets, or
+    - let re-anchored source continuity bias later autonomy packet derivation more directly when stale saved materials reappear
+
+## 2026-03-29 Run 167
+
+- Focus:
+  - close the next saved-material continuity gap:
+    - preserve preferred-anchor semantics through the runtime/writeback contract
+    - stop stale saved-material autonomy from redundantly re-comparing a pair that has already been re-anchored
+- Files changed:
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_final_state.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - preferred source-anchor semantics now survive the full bounded saved-material path:
+    - `compare_source_refs` now writes `preferred_source_ref_id` and `preferred_anchor_reason` into returned `artifact_context` and refreshed `access_hints`
+    - compact artifact identity / normalized embodied context / frozen `digital_body_consequence` / final-state resolution now all preserve those two fields
+  - stale saved-material autonomy no longer re-compares blindly:
+    - if `artifact_carrier=source_ref`
+    - and `artifact_continuity=stale`
+    - and the carried/runtime identity already has a stable preferred anchor from a prior compare
+    - autonomy now derives `artifact:inspect_source_ref` on that preferred saved material instead of repeating `artifact:compare_source_refs`
+  - runtime continuity retrieval now keeps preferred-anchor metadata visible in carried `embodied_context`, so later turns can reuse a real prior re-anchor rather than inferring it from pair ordering alone
+- Validation:
+  - `python -m py_compile amadeus_thread0\runtime\final_state.py amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\utils\tools.py amadeus_thread0\evolution_engine\reconsolidation.py tests\test_compare_source_refs_tool.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_prepare_turn_runtime.py`
+  - `python -m pytest tests\test_compare_source_refs_tool.py tests\test_companion_autonomy_runtime.py tests\test_final_state.py tests\test_prepare_turn_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_compare_source_refs_tool.py tests/test_inspect_source_ref_tool.py -q`
+  - `python -m py_compile amadeus_thread0\agent.py amadeus_thread0\graph.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - saved external-material continuity now has a truthful “compare once, reuse the chosen anchor later” contract instead of a repeated pairwise compare loop
+  - preferred-anchor state is explicit across tool result, live body hints, frozen consequence, final-state export, and retrieved carryover
+  - regression sets stayed green:
+    - `96 passed`
+    - `760 passed, 35 subtests passed`
+    - `127 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the saved external-material mainline only if the next slice stays equally truthful and bounded
+  - the best next target is widening re-anchored source continuity from pair reuse into stronger multi-candidate saved-material selection, without inventing a fake live browser surface
+
+## 2026-03-29 Run 168
+
+- Focus:
+  - widen saved-material continuity from pair reuse into bounded multi-candidate selection without introducing a fake browser runtime
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - `compare_source_refs` no longer needs to be limited to one fixed saved-material pair:
+    - it can now accept a bounded ordered `source_ref_ids` candidate set
+    - when `compare_source_ref_id` is absent, it selects the best comparison partner from the saved candidate set using saved-material overlap plus anchor quality, not by blindly taking the second id
+  - `artifact_source_ref_ids` on the compare path can now carry a bounded ordered continuity set rather than only one pair:
+    - preferred anchor first
+    - directly compared partner next
+    - remaining saved candidates after that
+  - `_source_ref_hints()` now preserves a slightly wider related saved-material line and clears stale preferred-anchor flags when the active material changes away from the old preferred anchor
+  - stale `source_ref` autonomy packets now preserve the candidate set into `compare_source_refs` tool args instead of prematurely hard-fixing a `compare_source_ref_id`
+  - packet execution now respects that contract:
+    - for real pairs it still binds an explicit compare id
+    - for candidate sets it leaves partner selection to the compare tool
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\graph_parts\autonomy_runtime.py amadeus_thread0\graph_parts\tool_nodes.py tests\test_compare_source_refs_tool.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_compare_source_refs_tool.py tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_compare_source_refs_tool.py tests/test_inspect_source_ref_tool.py -q`
+  - `python -m py_compile amadeus_thread0\agent.py amadeus_thread0\graph.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - saved external-material continuity is no longer capped at “one stale pair, one forced compare partner”
+  - the compare tool can now choose the most relevant saved comparison partner from a bounded continuity set while staying fully inside the real `source_ref` carrier
+  - regression sets stayed green:
+    - `52 passed`
+    - `764 passed, 35 subtests passed`
+    - `128 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue only on equally bounded saved-material slices
+  - the best next target is to let retrieved/reconsolidated `source_material_compared` continuity feed a slightly stronger saved-material lineup refresh, so stale turns can surface the right candidate set earlier instead of waiting until compare time
+
+## 2026-03-29 Run 169
+
+- Focus:
+  - let retrieved saved-material compare continuity refresh stale `source_ref` lineup earlier in prepare-turn runtime, without letting retrieval invent a new visible carrier
+- Files changed:
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - `prepare_turn_runtime` now refreshes `session_context.digital_body_hints` from retrieved `source_material_compared` continuity before autonomy derivation, so later runtime layers can see the re-anchored saved-material lineup earlier in the same turn
+  - the refresh stays explicitly bounded:
+    - it only activates for `interaction_carryover.source=retrieved_digital_body_consequence`
+    - it only accepts `embodied_context.kind=source_material_compared`
+    - it only accepts `artifact_carrier=source_ref`
+    - it requires a bounded candidate set with at least two saved ids
+  - the refresh is visibility-gated instead of retrieval-seeded:
+    - an existing visible `source_ref` context must already exist in session hints, event hints, or perception hints
+    - if no visible `source_ref` context exists, retrieval may bias runtime but may not create a new saved-material line in `session_context`
+  - when the gate is satisfied, runtime now carries forward the re-anchored saved-material identity more faithfully:
+    - refreshes `artifact_source_ref_ids`
+    - preserves `preferred_source_ref_id`
+    - preserves `preferred_anchor_reason`
+    - backfills missing saved-material metadata
+    - ensures `world_surfaces` still reflects `source_ref/browser`
+  - fixed the actual visibility-gate bug at the root:
+    - the initial implementation accidentally used `any(tuple)` semantics, which would treat any non-empty tuple as truthy
+    - the final version evaluates the underlying boolean members explicitly, so the refresh only happens when a real visible `source_ref` signal exists
+  - added focused regressions proving both sides of the contract:
+    - positive case: retrieved compare continuity refreshes stale session lineup from `[21]` to `[21, 17, 15]`
+    - negative case: no visible `source_ref` context means no session seeding
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\prepare_turn_runtime.py tests\test_prepare_turn_runtime.py`
+  - `python -m pytest tests\test_prepare_turn_runtime.py -q`
+- Result:
+  - re-anchored saved-material continuity now reaches persisted runtime state earlier instead of living only inside `interaction_carryover.embodied_context`
+  - the runtime remains truthful: retrieval can refresh an already-visible saved-material line, but it still cannot conjure one from nothing
+  - targeted prepare-turn regressions stayed green: `22 passed`
+- Next:
+  - run the broader AGENTS-required graph/backend regressions on the updated baseline
+  - if they stay green, continue the next bounded saved-`source_ref` slice around retrieval/relational carryover/writeback alignment for stale lineup freshness
+
+## 2026-03-29 Run 170
+
+- Focus:
+  - close the next root-cause gap after Run 169: preferred saved-material anchor fields were refreshed into runtime hints, but still dropped in derived `digital_body_state.resource_state`
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `program.md`
+- Key changes:
+  - fixed the carried-artifact identity path so `interaction_carryover.embodied_context` no longer loses:
+    - `preferred_source_ref_id`
+    - `preferred_anchor_reason`
+  - fixed the final `resource_state` assembly path in `derive_digital_body_state()`:
+    - preferred anchor fields are now materialized alongside `artifact_source_ref_ids`
+    - this closes the real truncation where `artifact_identity` was already correct, but the final returned `resource_state` silently omitted the preferred-anchor fields
+  - extended the prepare-turn regression coverage so both continuity paths are locked:
+    - visible saved-material context: refreshed lineup reaches both `session_context.digital_body_hints` and `digital_body_state.resource_state`
+    - no visible saved-material context: runtime still refuses to seed `session_context`, but the current-turn `digital_body_state` may still carry truthful retrieved preferred-anchor semantics from carryover
+- Validation:
+  - `python -m pytest tests\test_prepare_turn_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_compare_source_refs_tool.py tests/test_inspect_source_ref_tool.py tests/test_prepare_turn_runtime.py -q`
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\prepare_turn_runtime.py tests\test_prepare_turn_runtime.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - preferred saved-material anchor semantics now survive all the way through:
+    - retrieved carryover
+    - session/runtime hints
+    - derived `digital_body_state.resource_state`
+  - this removes the remaining “lineup survived but preferred anchor vanished” inconsistency on the saved `source_ref` path
+  - regression baseline stayed green:
+    - `22 passed`
+    - `764 passed, 35 subtests passed`
+    - `150 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the bounded `source_ref` mainline only if the next slice stays root-cause-oriented
+  - the next highest-value audit lane is whether retrieved/reconsolidated saved-material freshness is still thinned out anywhere in `final_state / backend envelope / CLI summary` after the preferred-anchor fix

@@ -1047,6 +1047,162 @@ class BackendApiTests(unittest.TestCase):
                     payload["digital_body_consequence"]["summary"],
                 )
 
+    def test_turn_and_event_responses_surface_source_material_inspected_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "browser"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["browser", "source_ref"],
+                    "access_state": {
+                        "mode": "native_only",
+                        "network_access": "enabled",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "search_result",
+                        "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "active_artifact_label": "Persistence",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [17],
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread",
+                        "artifact_source_title": "Persistence",
+                        "artifact_source_tool_name": "search_web",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-inspect-source-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:inspect_source_ref",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "inspect_source_ref",
+                        "result_summary": "已查看外部材料 Persistence，当前内容已经接回视野。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "source_ref",
+                            "artifact_kind": "search_result",
+                            "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_label": "Persistence",
+                            "reacquisition_mode": "inspect_source_ref",
+                            "source_ref_ids": [17],
+                            "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "source_query": "langgraph persistence checkpointer thread",
+                            "source_title": "Persistence",
+                            "source_tool_name": "search_web",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把那条资料重新翻出来看了一遍。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "search_result")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "Persistence")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "source_material_inspected")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "inspect_source_ref")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_carrier"], "source_ref")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_ref_ids"], [17])
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_tool_name"], "search_web")
+                self.assertFalse(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "source_material_inspected",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
+    def test_turn_and_event_responses_surface_source_material_compared_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "browser"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["browser", "source_ref"],
+                    "access_state": {
+                        "mode": "native_only",
+                        "network_access": "enabled",
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "search_result",
+                        "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "active_artifact_label": "Persistence v2",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [21, 17],
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                        "artifact_source_title": "Persistence v2",
+                        "artifact_source_tool_name": "search_web",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-compare-source-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:compare_source_refs",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "compare_source_refs",
+                        "result_summary": "已把 Persistence v2 和 Persistence 对照过一遍，两条材料是紧邻的延续，当前判断会优先沿着这条相连线索继续。",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "source_ref",
+                            "artifact_kind": "search_result",
+                            "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_label": "Persistence v2",
+                            "reacquisition_mode": "compare_source_refs",
+                            "source_ref_ids": [21, 17],
+                            "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "source_query": "langgraph persistence checkpointer thread recovery",
+                            "source_title": "Persistence v2",
+                            "source_tool_name": "search_web",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="我把这两条资料对照了一遍。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_kind"], "search_result")
+                self.assertEqual(payload["digital_body"]["resource_state"]["active_artifact_label"], "Persistence v2")
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "source_material_compared")
+                self.assertEqual(payload["digital_body_consequence"]["primary_tool_name"], "compare_source_refs")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_carrier"], "source_ref")
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_ref_ids"], [21, 17])
+                self.assertEqual(payload["digital_body_consequence"]["artifact_source_tool_name"], "search_web")
+                self.assertFalse(bool(payload["digital_body_consequence"]["procedural_growth"]))
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_kind"],
+                    "source_material_compared",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["digital_body_consequence_summary"],
+                    payload["digital_body_consequence"]["summary"],
+                )
+
     def test_turn_and_event_responses_surface_access_state_refreshed_consequence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -220,6 +220,180 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _source_ref_inspection_reason(embodied: dict[str, Any]) -> str:
+    label = (
+        _clean_text(embodied.get("active_artifact_label"))
+        or _clean_text(embodied.get("artifact_source_title"))
+        or _clean_text(embodied.get("active_artifact_ref"))
+        or "前面的外部材料"
+    )
+    return f"先把{label}重新看一遍，确认当前判断还是落在这份材料上。"
+
+
+def _source_ref_comparison_reason(embodied: dict[str, Any]) -> str:
+    label = (
+        _clean_text(embodied.get("active_artifact_label"))
+        or _clean_text(embodied.get("artifact_source_title"))
+        or _clean_text(embodied.get("active_artifact_ref"))
+        or "前面的外部材料"
+    )
+    return f"先把{label}和前一条相关材料对一遍，确认现在该沿哪条线索继续判断。"
+
+
+def _normalized_source_ref_ids(embodied: dict[str, Any]) -> list[int]:
+    return [
+        int(item)
+        for item in _list_or_empty(embodied.get("artifact_source_ref_ids"))
+        if str(item or "").strip().isdigit()
+    ][:8]
+
+
+def _preferred_source_ref_id(embodied: dict[str, Any]) -> int:
+    preferred = _clean_text(embodied.get("preferred_source_ref_id"))
+    if preferred.isdigit():
+        preferred_id = int(preferred)
+        if preferred_id > 0:
+            return preferred_id
+    return 0
+
+
+def _has_stable_preferred_source_anchor(embodied: dict[str, Any]) -> bool:
+    source_ref_ids = _normalized_source_ref_ids(embodied)
+    preferred_source_ref_id = _preferred_source_ref_id(embodied)
+    if preferred_source_ref_id <= 0 or preferred_source_ref_id not in source_ref_ids:
+        return False
+    return bool(_clean_text(embodied.get("preferred_anchor_reason")))
+
+
+def _source_ref_inspection_packet(embodied: dict[str, Any]) -> dict[str, Any]:
+    continuity = _clean_text(embodied.get("artifact_continuity")).lower()
+    carrier = _clean_text(embodied.get("artifact_carrier")).lower()
+    source_ref_ids = _normalized_source_ref_ids(embodied)
+    if continuity != "stale":
+        return {}
+    if carrier != "source_ref" and not source_ref_ids:
+        return {}
+
+    origin = _normalized_intent_origin(embodied.get("primary_origin")) or "motive_goal"
+    preferred_source_ref_id = _preferred_source_ref_id(embodied)
+    source_ref_id = preferred_source_ref_id if preferred_source_ref_id in source_ref_ids else int(source_ref_ids[0]) if source_ref_ids else 0
+    artifact_ref = (
+        _clean_text(embodied.get("active_artifact_ref"))
+        or _clean_text(embodied.get("artifact_source_url"))
+        or _clean_text(embodied.get("artifact_source_query"))
+    )
+    label = (
+        _clean_text(embodied.get("active_artifact_label"))
+        or _clean_text(embodied.get("artifact_source_title"))
+        or artifact_ref
+        or (f"source_ref:{source_ref_id}" if source_ref_id > 0 else "saved-source")
+    )
+    target = artifact_ref or (f"source_ref:{source_ref_id}" if source_ref_id > 0 else label)
+    reason = _source_ref_inspection_reason(embodied)
+    tool_args: dict[str, Any] = {
+        "artifact_ref": artifact_ref,
+        "artifact_label": label,
+    }
+    if source_ref_id > 0:
+        tool_args["source_ref_id"] = source_ref_id
+
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("artifact", "stale", "inspect_source_ref", target, origin),
+            "origin": origin,
+            "intent": "artifact:inspect_source_ref",
+            "status": "proposed",
+            "risk": "read",
+            "requires_approval": False,
+            "tool_name": "inspect_source_ref",
+            "tool_args": tool_args,
+            "capability_steps": [
+                {
+                    "kind": "artifact",
+                    "name": "inspect_source_ref",
+                    "target": target,
+                    "status": "pending",
+                    "requires_approval": False,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+        }
+    )
+
+
+def _source_ref_comparison_packet(embodied: dict[str, Any]) -> dict[str, Any]:
+    continuity = _clean_text(embodied.get("artifact_continuity")).lower()
+    carrier = _clean_text(embodied.get("artifact_carrier")).lower()
+    source_ref_ids = _normalized_source_ref_ids(embodied)
+    if continuity != "stale":
+        return {}
+    if carrier != "source_ref" or len(source_ref_ids) < 2:
+        return {}
+    if _has_stable_preferred_source_anchor(embodied):
+        return {}
+
+    origin = _normalized_intent_origin(embodied.get("primary_origin")) or "motive_goal"
+    source_ref_id = int(source_ref_ids[0])
+    compare_source_ref_id = next((item for item in source_ref_ids[1:] if item != source_ref_id), 0)
+    if source_ref_id <= 0 or compare_source_ref_id <= 0:
+        return {}
+
+    artifact_ref = (
+        _clean_text(embodied.get("active_artifact_ref"))
+        or _clean_text(embodied.get("artifact_source_url"))
+        or _clean_text(embodied.get("artifact_source_query"))
+    )
+    label = (
+        _clean_text(embodied.get("active_artifact_label"))
+        or _clean_text(embodied.get("artifact_source_title"))
+        or artifact_ref
+        or f"source_ref:{source_ref_id}"
+    )
+    candidate_source_ref_ids = source_ref_ids[:4]
+    target = (
+        f"source_ref:{source_ref_id}<->source_ref:{compare_source_ref_id}"
+        if len(candidate_source_ref_ids) <= 2
+        else f"source_ref:{source_ref_id}<->candidate_set:{','.join(str(item) for item in candidate_source_ref_ids[1:])}"
+    )
+    reason = _source_ref_comparison_reason(embodied)
+    tool_args = {
+        "source_ref_id": source_ref_id,
+        "artifact_ref": artifact_ref,
+        "artifact_label": label,
+        "source_ref_ids": candidate_source_ref_ids,
+    }
+    if len(candidate_source_ref_ids) <= 2:
+        tool_args["compare_source_ref_id"] = compare_source_ref_id
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("artifact", "stale", "compare_source_refs", target, origin),
+            "origin": origin,
+            "intent": "artifact:compare_source_refs",
+            "status": "proposed",
+            "risk": "read",
+            "requires_approval": False,
+            "tool_name": "compare_source_refs",
+            "tool_args": tool_args,
+            "capability_steps": [
+                {
+                    "kind": "artifact",
+                    "name": "compare_source_refs",
+                    "target": target,
+                    "status": "pending",
+                    "requires_approval": False,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+        }
+    )
+
+
 def _access_refresh_reason(hints: dict[str, Any]) -> str:
     browser_session = _clean_text(hints.get("browser_session")).lower()
     account_state = _clean_text(hints.get("account_state")).lower()
@@ -746,6 +920,45 @@ def _embodied_carryover_autonomy_signal(carryover: dict[str, Any]) -> dict[str, 
             "active_artifact_label": _artifact_surface_label(embodied),
             "active_artifact_ref": _clean_text(embodied.get("active_artifact_ref")),
         }
+    if (
+        artifact_continuity == "stale"
+        and (
+            _clean_text(embodied.get("artifact_carrier")).lower() == "source_ref"
+            or bool(_list_or_empty(embodied.get("artifact_source_ref_ids")))
+        )
+    ):
+        source_ref_ids = [
+            int(item)
+            for item in _list_or_empty(embodied.get("artifact_source_ref_ids"))
+            if str(item or "").strip().isdigit()
+        ]
+        if len(source_ref_ids) >= 2:
+            return {
+                "mode": "compare_source_refs",
+                "origin": primary_origin or "motive_goal",
+                "reason": _source_ref_comparison_reason(embodied),
+                "requires_approval": False,
+                "continuity_floor": 0.46,
+                "confidence_floor": 0.52,
+                "block_reason": "",
+                "artifact_continuity": artifact_continuity,
+                "active_artifact_kind": _clean_text(embodied.get("active_artifact_kind")).lower(),
+                "active_artifact_label": _artifact_surface_label(embodied),
+                "active_artifact_ref": _clean_text(embodied.get("active_artifact_ref")),
+            }
+        return {
+            "mode": "inspect_source_ref",
+            "origin": primary_origin or "motive_goal",
+            "reason": _source_ref_inspection_reason(embodied),
+            "requires_approval": False,
+            "continuity_floor": 0.44,
+            "confidence_floor": 0.5,
+            "block_reason": "",
+            "artifact_continuity": artifact_continuity,
+            "active_artifact_kind": _clean_text(embodied.get("active_artifact_kind")).lower(),
+            "active_artifact_label": _artifact_surface_label(embodied),
+            "active_artifact_ref": _clean_text(embodied.get("active_artifact_ref")),
+        }
 
     if kind == "environmental_friction" or block_reason or missing_access:
         if block_reason:
@@ -817,12 +1030,16 @@ def _derive_intent_mode(
         return "approval_pending"
     if tool_name and status in {"approved", "executing"}:
         return "autonomy_executing"
+    if tool_name == "compare_source_refs" or intent == "artifact:compare_source_refs":
+        return "compare_source_refs"
+    if tool_name == "inspect_source_ref" or intent == "artifact:inspect_source_ref":
+        return "inspect_source_ref"
+    if tool_name == "inspect_workspace_path" or intent == "artifact:inspect_path":
+        return "inspect_workspace_path"
     if status == "completed" and (intent == "access:refresh_state" or tool_name == "refresh_access_state"):
         return "refresh_access_state"
     if status == "completed" and (intent in _ARTIFACT_REACQUISITION_INTENTS or tool_name == "reacquire_artifact"):
         return "reacquire_artifact"
-    if status == "completed" and tool_name == "inspect_workspace_path":
-        return "inspect_workspace_path"
     if tool_name and status == "completed":
         return "tool_completed"
     if intent.startswith("artifact:"):
@@ -1018,8 +1235,38 @@ def derive_autonomy_runtime(
         behavior_action=action,
         behavior_plan=plan,
     )
+    carried_embodied = normalize_embodied_context(carryover.get("embodied_context"))
+    artifact_runtime_embodied = normalize_embodied_context(
+        {
+            **carried_embodied,
+            "artifact_continuity": access_hints.get("artifact_continuity") or carried_embodied.get("artifact_continuity"),
+            "active_artifact_kind": access_hints.get("active_artifact_kind") or carried_embodied.get("active_artifact_kind"),
+            "active_artifact_ref": access_hints.get("active_artifact_ref") or carried_embodied.get("active_artifact_ref"),
+            "active_artifact_label": access_hints.get("active_artifact_label") or carried_embodied.get("active_artifact_label"),
+            "artifact_age_s": access_hints.get("artifact_age_s") or carried_embodied.get("artifact_age_s"),
+            "artifact_reacquisition_mode": access_hints.get("artifact_reacquisition_mode")
+            or carried_embodied.get("artifact_reacquisition_mode"),
+            "artifact_carrier": access_hints.get("artifact_carrier") or carried_embodied.get("artifact_carrier"),
+            "artifact_source_ref_ids": access_hints.get("artifact_source_ref_ids")
+            or carried_embodied.get("artifact_source_ref_ids"),
+            "preferred_source_ref_id": access_hints.get("preferred_source_ref_id")
+            or carried_embodied.get("preferred_source_ref_id"),
+            "preferred_anchor_reason": access_hints.get("preferred_anchor_reason")
+            or carried_embodied.get("preferred_anchor_reason"),
+            "artifact_source_url": access_hints.get("artifact_source_url") or carried_embodied.get("artifact_source_url"),
+            "artifact_source_query": access_hints.get("artifact_source_query")
+            or carried_embodied.get("artifact_source_query"),
+            "artifact_source_title": access_hints.get("artifact_source_title")
+            or carried_embodied.get("artifact_source_title"),
+            "artifact_source_tool_name": access_hints.get("artifact_source_tool_name")
+            or carried_embodied.get("artifact_source_tool_name"),
+            "primary_origin": carried_embodied.get("primary_origin") or primary_origin,
+        }
+    )
     embodied_signal = _embodied_carryover_autonomy_signal(carryover)
-    embodied_packet = _artifact_reacquisition_packet(normalize_embodied_context(carryover.get("embodied_context")))
+    embodied_packet = _artifact_reacquisition_packet(artifact_runtime_embodied)
+    source_ref_compare_packet = _source_ref_comparison_packet(artifact_runtime_embodied)
+    source_ref_refresh_packet = _source_ref_inspection_packet(artifact_runtime_embodied)
     access_arrival_packet = _access_arrival_packet(access_hints)
     access_partial_packet = _partial_access_arrival_packet(access_hints)
     access_help_packet = _access_request_help_packet(
@@ -1042,6 +1289,14 @@ def derive_autonomy_runtime(
         action_packets = [embodied_packet]
         primary_packet = dict(embodied_packet)
         primary_packet_source = "embodied_carryover"
+    elif source_ref_compare_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [source_ref_compare_packet]
+        primary_packet = dict(source_ref_compare_packet)
+        primary_packet_source = "source_ref_compare"
+    elif source_ref_refresh_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [source_ref_refresh_packet]
+        primary_packet = dict(source_ref_refresh_packet)
+        primary_packet_source = "source_ref_refresh"
     elif access_arrival_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
         action_packets = [access_arrival_packet]
         primary_packet = dict(access_arrival_packet)
@@ -1180,6 +1435,10 @@ def derive_autonomy_runtime(
                 "event": (
                     "derived_from_embodied_carryover"
                     if primary_packet_source == "embodied_carryover"
+                    else "derived_from_source_ref_compare"
+                    if primary_packet_source == "source_ref_compare"
+                    else "derived_from_source_ref_refresh"
+                    if primary_packet_source == "source_ref_refresh"
                     else "derived_from_access_arrival"
                     if primary_packet_source == "access_arrival"
                     else "derived_from_access_partial_arrival"
