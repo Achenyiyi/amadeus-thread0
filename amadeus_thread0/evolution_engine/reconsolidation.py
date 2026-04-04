@@ -13,7 +13,16 @@ from ..graph_parts.action_packets import (
     normalize_artifact_context,
 )
 from ..graph_parts.autonomy_runtime import normalize_autonomy_intent
-from ..graph_parts.digital_body_runtime import normalize_digital_body_state, normalize_embodied_context
+from ..graph_parts.digital_body_runtime import (
+    derive_account_surface_state,
+    derive_artifact_identity,
+    derive_permission_surface_state,
+    derive_quota_surface_state,
+    derive_sandbox_surface_state,
+    derive_session_surface_state,
+    normalize_digital_body_state,
+    normalize_embodied_context,
+)
 from ..utils.counterpart_profile import compact_counterpart_profile
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
@@ -772,6 +781,8 @@ def derive_digital_body_consequence(
     browser_session = str(access_state.get("browser_session") or "").strip().lower()
     account_state = str(access_state.get("account_state") or "").strip().lower()
     cookie_state = str(access_state.get("cookie_state") or "").strip().lower()
+    api_key_state = str(access_state.get("api_key_state") or "").strip().lower()
+    quota_state = str(access_state.get("quota_state") or "").strip().lower()
     retry_after_s = max(0, int(access_state.get("retry_after_s") or 0))
     cooldown_scope = str(access_state.get("cooldown_scope") or "").strip().lower()
     session_continuity = str(access_state.get("session_continuity") or "").strip().lower()
@@ -801,20 +812,86 @@ def derive_digital_body_consequence(
     primary_origin = str(primary_packet.get("origin") or "").strip().lower()
     primary_intent = str(primary_packet.get("intent") or "").strip().lower()
     primary_tool_name = str(primary_packet.get("tool_name") or "").strip().lower()
+    primary_execution_spec = dict(primary_packet.get("execution_spec") or {}) if isinstance(primary_packet.get("execution_spec"), dict) else {}
+    primary_execution_result = dict(primary_packet.get("execution_result") or {}) if isinstance(primary_packet.get("execution_result"), dict) else {}
+    primary_artifact_context = normalize_artifact_context(primary_packet.get("artifact_context"))
     primary_artifact_identity = compact_artifact_identity(primary_packet.get("artifact_context"))
-    artifact_carrier = str(resource_state.get("artifact_carrier") or primary_artifact_identity.get("artifact_carrier") or "").strip().lower()
-    artifact_source_ref_ids = list(resource_state.get("artifact_source_ref_ids") or primary_artifact_identity.get("artifact_source_ref_ids") or [])[:8]
-    preferred_source_ref_id = max(
-        0,
-        int(resource_state.get("preferred_source_ref_id") or primary_artifact_identity.get("preferred_source_ref_id") or 0),
+    resolved_artifact_identity = derive_artifact_identity(
+        artifact_carrier=resource_state.get("artifact_carrier") or primary_artifact_identity.get("artifact_carrier"),
+        artifact_source_ref_ids=resource_state.get("artifact_source_ref_ids")
+        or primary_artifact_identity.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=resource_state.get("preferred_source_ref_id")
+        or primary_artifact_identity.get("preferred_source_ref_id"),
+        preferred_anchor_reason=resource_state.get("preferred_anchor_reason")
+        or primary_artifact_identity.get("preferred_anchor_reason"),
+        artifact_source_url=resource_state.get("artifact_source_url") or primary_artifact_identity.get("artifact_source_url"),
+        artifact_source_query=resource_state.get("artifact_source_query") or primary_artifact_identity.get("artifact_source_query"),
+        artifact_source_title=resource_state.get("artifact_source_title") or primary_artifact_identity.get("artifact_source_title"),
+        artifact_source_tool_name=resource_state.get("artifact_source_tool_name")
+        or primary_artifact_identity.get("artifact_source_tool_name"),
     )
-    preferred_anchor_reason = str(
-        resource_state.get("preferred_anchor_reason") or primary_artifact_identity.get("preferred_anchor_reason") or ""
-    ).strip().lower()[:120]
-    artifact_source_url = str(resource_state.get("artifact_source_url") or primary_artifact_identity.get("artifact_source_url") or "").strip()[:320]
-    artifact_source_query = str(resource_state.get("artifact_source_query") or primary_artifact_identity.get("artifact_source_query") or "").strip()[:220]
-    artifact_source_title = str(resource_state.get("artifact_source_title") or primary_artifact_identity.get("artifact_source_title") or "").strip()[:160]
-    artifact_source_tool_name = str(resource_state.get("artifact_source_tool_name") or primary_artifact_identity.get("artifact_source_tool_name") or "").strip().lower()[:80]
+    artifact_carrier = str(resolved_artifact_identity.get("artifact_carrier") or "").strip().lower()
+    artifact_source_ref_ids = list(resolved_artifact_identity.get("artifact_source_ref_ids") or [])[:8]
+    preferred_source_ref_id = max(0, int(resolved_artifact_identity.get("preferred_source_ref_id") or 0))
+    preferred_anchor_reason = str(resolved_artifact_identity.get("preferred_anchor_reason") or "").strip().lower()[:120]
+    artifact_source_url = str(resolved_artifact_identity.get("artifact_source_url") or "").strip()[:320]
+    artifact_source_query = str(resolved_artifact_identity.get("artifact_source_query") or "").strip()[:220]
+    artifact_source_title = str(resolved_artifact_identity.get("artifact_source_title") or "").strip()[:160]
+    artifact_source_tool_name = str(resolved_artifact_identity.get("artifact_source_tool_name") or "").strip().lower()[:80]
+    workspace_root = str(resource_state.get("workspace_root") or primary_artifact_context.get("workspace_root") or "").strip()[:320]
+    permission_progress_hints = {
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+        "selected_access_proposal": selected_access_proposal,
+    }
+    session_state = derive_session_surface_state(
+        session_state=access_state.get("session_state"),
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=session_continuity,
+        session_expires_in_s=session_expires_in_s,
+        session_recovery_mode=session_recovery_mode,
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
+    )
+    account_state_detail = derive_account_surface_state(
+        account_state_detail=access_state.get("account_state_detail"),
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        api_key_state=api_key_state,
+    )
+    quota_state_detail = derive_quota_surface_state(
+        quota_state_detail=access_state.get("quota_state_detail"),
+        quota_state=quota_state,
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
+    )
+    permission_state = derive_permission_surface_state(
+        permission_state=access_state.get("permission_state"),
+        pending_approval_count=pending_approval_count,
+        external_mutation_pending=bool(access_state.get("external_mutation_pending", False)),
+        missing_access=missing_access,
+        requestable_access=requested_access,
+        access_acquire_proposals=access_acquire_proposals,
+        selected_access_proposal=selected_access_proposal,
+        progress_hints=permission_progress_hints,
+    )
+    sandbox_state = derive_sandbox_surface_state(
+        sandbox_state=access_state.get("sandbox_state"),
+        sandbox_mode=sandbox_mode,
+        workspace_root=workspace_root,
+    )
 
     selected_access_target = str(selected_access_proposal.get("target") or "").strip().lower()
     selected_access_mode = str(selected_access_proposal.get("mode") or "").strip().lower()
@@ -829,6 +906,19 @@ def derive_digital_body_consequence(
         else ""
     )
     growth_capabilities = list(dict.fromkeys([*granted_toolsets, *active_tools, primary_tool_name]))[:12]
+    sandbox_execution_signal = bool(primary_tool_name == "execute_workspace_command" and primary_status in {"completed", "blocked"})
+    sandbox_run_id = str(primary_execution_result.get("run_id") or "").strip()[:128]
+    sandbox_command_profile = str(primary_execution_spec.get("profile") or "").strip().lower()[:64]
+    sandbox_stdout_log_ref = str(primary_execution_result.get("stdout_log_ref") or "").strip()[:320]
+    sandbox_stderr_log_ref = str(primary_execution_result.get("stderr_log_ref") or "").strip()[:320]
+    sandbox_error_summary = str(primary_execution_result.get("error_summary") or "").strip()[:220]
+    sandbox_exit_code = int(primary_execution_result.get("exit_code") or 0)
+    sandbox_duration_ms = max(0, int(primary_execution_result.get("duration_ms") or 0))
+    sandbox_produced_artifacts = [
+        str(item).strip()
+        for item in (primary_execution_result.get("produced_artifacts") if isinstance(primary_execution_result.get("produced_artifacts"), list) else [])
+        if str(item or "").strip()
+    ][:8]
     access_resolution_signal = bool(primary_intent == "access:request_help" and primary_status == "completed")
     workspace_resolution_signal = bool(
         access_resolution_signal
@@ -890,6 +980,11 @@ def derive_digital_body_consequence(
             primary_origin == "capability_upgrade"
             or "upgrade" in primary_intent
             or file_mutation_signal
+            or (
+                not primary_status
+                and external_tool_count > 0
+                and bool(growth_capabilities)
+            )
         )
     )
     approval_signal = bool(
@@ -923,7 +1018,27 @@ def derive_digital_body_consequence(
         "reattach_workspace": "先把工作面重新接回当前上下文",
     }.get(artifact_reacquisition_mode, "先把前面的工作面重新接回来")
 
-    if access_resolution_signal:
+    if sandbox_execution_signal and primary_status == "completed" and not approval_signal:
+        kind = "sandbox_execution_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            summary = "当前这次受限执行已经真实完成，日志和产物都落回了同一个 workspace 表面。"
+        category_summaries = {
+            "agency_style": "她会把已经真实执行完成的受限命令记成发生过的行动，而不是只把它当成还停在审批里的想法。",
+            "presence_style": "执行一旦完成，后续注意力会顺着日志或产物继续，而不是回到抽象的命令说明。",
+            "boundary_style": "即使这次执行发生在宿主机上的受限 runner 里，她也只会把被批准过、真实跑过的那次动作写成事实。",
+        }
+    elif sandbox_execution_signal and primary_status == "blocked":
+        kind = "sandbox_execution_blocked"
+        summary = str(primary_packet.get("result_summary") or sandbox_error_summary or "").strip()[:220]
+        if not summary:
+            summary = "这次受限执行没有真正跑通，当前只留下被阻断的尝试和它的错误痕迹。"
+        category_summaries = {
+            "agency_style": "她会把被阻断的执行记成一次失败的尝试，而不是冒充成已经完成的工作。",
+            "presence_style": "即使执行没跑通，失败日志和退出状态也会留在当前工作面里，方便下一轮继续排查。",
+            "boundary_style": "审批通过不等于动作已经完成；执行真正失败时，她会老实保留失败事实而不是跳过它。",
+        }
+    elif access_resolution_signal:
         summary = str(primary_packet.get("result_summary") or "").strip()[:220]
         if workspace_resolution_signal:
             kind = "workspace_access_resolved"
@@ -1184,10 +1299,13 @@ def derive_digital_body_consequence(
         "artifact_source_query": artifact_source_query,
         "artifact_source_title": artifact_source_title,
         "artifact_source_tool_name": artifact_source_tool_name,
+        "workspace_root": workspace_root,
         "artifact_mutation_mode": artifact_mutation_mode,
         "browser_session": browser_session,
         "account_state": account_state,
         "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
         "filesystem_state": filesystem_state,
         "sandbox_mode": sandbox_mode,
         "network_access": network_access,
@@ -1200,11 +1318,24 @@ def derive_digital_body_consequence(
         "primary_origin": primary_origin,
         "primary_intent": primary_intent,
         "primary_tool_name": primary_tool_name,
+        "sandbox_run_id": sandbox_run_id,
+        "sandbox_command_profile": sandbox_command_profile,
+        "sandbox_stdout_log_ref": sandbox_stdout_log_ref,
+        "sandbox_stderr_log_ref": sandbox_stderr_log_ref,
+        "sandbox_error_summary": sandbox_error_summary,
+        "sandbox_exit_code": sandbox_exit_code,
+        "sandbox_duration_ms": sandbox_duration_ms,
+        "sandbox_produced_artifacts": sandbox_produced_artifacts,
         "procedural_growth": growth_signal,
         "environmental_friction": approval_signal or friction_signal,
         "requested_help": approval_signal,
         "access_acquire_proposals": access_acquire_proposals,
         "selected_access_proposal": selected_access_proposal,
+        "session_state": session_state,
+        "account_state_detail": account_state_detail,
+        "quota_state_detail": quota_state_detail,
+        "permission_state": permission_state,
+        "sandbox_state": sandbox_state,
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,
     }

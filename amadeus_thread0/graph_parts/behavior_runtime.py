@@ -4,6 +4,7 @@ from typing import Any
 
 from ..evolution_engine.motive import semantic_motive_vector
 from .digital_body_runtime import embodied_context_has_signal, normalize_embodied_context
+from .prompt_helpers import _digital_body_trace_prompt_text
 from .counterpart_dynamics import (
     _clamp01,
     _counterpart_dialogue_mode_profile,
@@ -168,6 +169,12 @@ def _compact_embodied_action_hint(action: dict[str, Any] | None) -> str:
     active_tools = _clean_list_text(embodied.get("active_tools"), limit=2)
     access_label = "、".join(requested_access or missing_access)
     growth_label = "、".join(granted_toolsets or active_tools)
+    anchor_label = str(
+        embodied.get("artifact_source_title")
+        or embodied.get("active_artifact_label")
+        or embodied.get("artifact_source_query")
+        or ""
+    ).strip()
 
     if kind == "access_request_pending" or primary_status == "awaiting_approval" or requested_help:
         if access_label and requested_help:
@@ -193,6 +200,21 @@ def _compact_embodied_action_hint(action: dict[str, Any] | None) -> str:
         if growth_label:
             return f"像{growth_label}这样的环境路径这轮已经能继续接上，不必装作又回到完全不会"
         return "这轮能沿着刚摸顺的环境路径继续做，不必装作一切都得从零开始"
+
+    if kind in {"source_material_compared", "source_material_inspected", "artifact_reacquired"}:
+        summary = str(embodied.get("summary") or row.get("summary") or row.get("note") or "").strip()
+        if not summary:
+            summary = {
+                "source_material_compared": "当前判断会顺着这条相连线索继续。",
+                "source_material_inspected": "当前判断会顺着这条资料面继续。",
+                "artifact_reacquired": "当前这条线已经重新接回上下文里了。",
+            }.get(kind, "")
+        return _digital_body_trace_prompt_text(
+            kind=kind,
+            summary=summary,
+            anchor_label=anchor_label,
+            style="natural",
+        )
 
     return ""
 

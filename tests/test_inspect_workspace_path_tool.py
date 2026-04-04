@@ -41,8 +41,10 @@ def test_inspect_workspace_path_reads_file_inside_bounded_workspace():
         assert "hello from workspace" in payload["artifact_preview"]
         assert payload["artifact_context"]["artifact_kind"] == "file"
         assert payload["artifact_context"]["source_tool_name"] == "inspect_workspace_path"
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
         assert payload["access_hints"]["active_artifact_kind"] == "file"
         assert payload["access_hints"]["artifact_source_tool_name"] == "inspect_workspace_path"
+        assert payload["access_hints"]["workspace_root"] == str(workspace)
 
 
 def test_inspect_workspace_path_reads_directory_inside_bounded_workspace():
@@ -74,10 +76,13 @@ def test_inspect_workspace_path_reads_directory_inside_bounded_workspace():
         assert payload["artifact_ref"] == str(folder)
         assert payload["artifact_context"]["artifact_kind"] == "workspace"
         assert payload["artifact_context"]["source_tool_name"] == "inspect_workspace_path"
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
         assert "a.txt" in payload["artifact_preview"]
         assert "b.txt" in payload["artifact_preview"]
         assert payload["access_hints"]["active_artifact_kind"] == "workspace"
         assert payload["access_hints"]["active_artifact_ref"] == str(folder)
+        assert payload["access_hints"]["workspace_path"] == str(folder)
+        assert payload["access_hints"]["workspace_root"] == str(workspace)
 
 
 def test_inspect_workspace_path_rejects_workspace_escape():
@@ -139,3 +144,5 @@ def test_write_workspace_file_keeps_workspace_root_when_active_surface_is_subdir
         assert target.exists()
         assert target.read_text(encoding="utf-8") == "top-level file"
         assert payload["file_path"] == str(target)
+        assert inspection["access_hints"]["workspace_root"] == str(workspace)
+        assert payload["access_hints"]["workspace_root"] == str(workspace)

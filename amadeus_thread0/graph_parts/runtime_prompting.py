@@ -5,7 +5,9 @@ from typing import Any
 
 from .behavior_runtime import _compact_behavior_action_hint, _compact_embodied_action_hint
 from .digital_body_runtime import (
+    derive_artifact_identity,
     derive_artifact_continuity,
+    derive_digital_body_state,
     derive_session_lifecycle,
     normalize_digital_body_state,
     normalize_embodied_context,
@@ -64,6 +66,16 @@ def _visible_digital_body_state(
     if not body and not hints:
         if not merged_hints:
             return {}
+    if not body and merged_hints:
+        body = derive_digital_body_state(
+            current_event=event,
+            behavior_queue=[],
+            action_packets=[],
+            interaction_carryover={},
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context=context,
+        )
 
     access = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
     resources = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
@@ -97,6 +109,23 @@ def _visible_digital_body_state(
         artifact_reacquisition_mode=resources.get("artifact_reacquisition_mode")
         or merged_hints.get("artifact_reacquisition_mode"),
     )
+    artifact_identity = derive_artifact_identity(
+        artifact_carrier=resources.get("artifact_carrier") or merged_hints.get("artifact_carrier"),
+        artifact_source_ref_ids=resources.get("artifact_source_ref_ids")
+        or merged_hints.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=resources.get("preferred_source_ref_id")
+        or merged_hints.get("preferred_source_ref_id"),
+        preferred_anchor_reason=resources.get("preferred_anchor_reason")
+        or merged_hints.get("preferred_anchor_reason"),
+        artifact_source_url=resources.get("artifact_source_url") or merged_hints.get("artifact_source_url"),
+        artifact_source_query=resources.get("artifact_source_query")
+        or merged_hints.get("artifact_source_query"),
+        artifact_source_title=resources.get("artifact_source_title")
+        or merged_hints.get("artifact_source_title"),
+        artifact_source_tool_name=resources.get("artifact_source_tool_name")
+        or merged_hints.get("artifact_source_tool_name"),
+    )
+    workspace_root = str(resources.get("workspace_root") or merged_hints.get("workspace_root") or "").strip()
 
     missing_access = _dedupe_lower_list(access.get("missing_access"), limit=12)
     requestable_access = _dedupe_lower_list(access.get("requestable_access"), limit=12)
@@ -160,31 +189,34 @@ def _visible_digital_body_state(
         "missing_access": missing_access,
         "requestable_access": requestable_access,
     }
+    normalized_resource_state = {
+        **resources,
+        "artifact_continuity": str(artifact.get("artifact_continuity") or "").strip().lower(),
+        "active_artifact_kind": str(artifact.get("active_artifact_kind") or "").strip().lower(),
+        "active_artifact_ref": str(artifact.get("active_artifact_ref") or "").strip(),
+        "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
+        "artifact_age_s": _nonnegative_int(artifact.get("artifact_age_s")),
+        "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip().lower(),
+        "artifact_carrier": str(artifact_identity.get("artifact_carrier") or "").strip(),
+        "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or [])[:8],
+        "preferred_source_ref_id": _nonnegative_int(artifact_identity.get("preferred_source_ref_id")),
+        "preferred_anchor_reason": str(artifact_identity.get("preferred_anchor_reason") or "").strip().lower(),
+        "artifact_source_url": str(artifact_identity.get("artifact_source_url") or "").strip(),
+        "artifact_source_query": str(artifact_identity.get("artifact_source_query") or "").strip(),
+        "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
+        "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or "").strip(),
+        "workspace_root": workspace_root,
+    }
     if body:
         return {
             **body,
             "access_state": normalized_access,
-            "resource_state": {
-                **resources,
-                "artifact_continuity": str(artifact.get("artifact_continuity") or "").strip().lower(),
-                "active_artifact_kind": str(artifact.get("active_artifact_kind") or "").strip().lower(),
-                "active_artifact_ref": str(artifact.get("active_artifact_ref") or "").strip(),
-                "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
-                "artifact_age_s": _nonnegative_int(artifact.get("artifact_age_s")),
-                "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip().lower(),
-            },
+            "resource_state": normalized_resource_state,
         }
     return {
         "active_surface": "dialogue",
         "access_state": normalized_access,
-        "resource_state": {
-            "artifact_continuity": str(artifact.get("artifact_continuity") or "").strip().lower(),
-            "active_artifact_kind": str(artifact.get("active_artifact_kind") or "").strip().lower(),
-            "active_artifact_ref": str(artifact.get("active_artifact_ref") or "").strip(),
-            "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
-            "artifact_age_s": _nonnegative_int(artifact.get("artifact_age_s")),
-            "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip().lower(),
-        },
+        "resource_state": normalized_resource_state,
     }
 
 
@@ -393,8 +425,13 @@ def _compact_digital_body_runtime_hint(
     active_artifact_kind = str(resources.get("active_artifact_kind") or "").strip().lower()
     active_artifact_ref = str(resources.get("active_artifact_ref") or "").strip()
     active_artifact_label = str(resources.get("active_artifact_label") or "").strip()
+    artifact_carrier = str(resources.get("artifact_carrier") or "").strip().lower()
+    artifact_source_title = str(resources.get("artifact_source_title") or "").strip()
+    artifact_source_query = str(resources.get("artifact_source_query") or "").strip()
     artifact_reacquisition_mode = str(resources.get("artifact_reacquisition_mode") or "").strip().lower()
+    workspace_root = str(resources.get("workspace_root") or "").strip()
     artifact_label = active_artifact_label or active_artifact_ref or active_artifact_kind
+    source_anchor_label = artifact_source_title or artifact_source_query
 
     if retry_after_s > 0:
         scope_label = {
@@ -447,6 +484,17 @@ def _compact_digital_body_runtime_hint(
         return f"还停在审批或入口确认阶段，像{access_label or 'human_approval'}这类条件没齐"
     if missing_access:
         return f"还缺着{access_label or '一些环境入口'}这类条件"
+    if workspace_root and active_artifact_kind in {"workspace", "file", "document", "buffer", "notebook"}:
+        workspace_hint = f"当前工作区根目录在{workspace_root}"
+        if access_mode == "tool_enabled" and tool_label:
+            return f"{workspace_hint}，能直接动用{tool_label}这类环境入口"
+        if artifact_label and artifact_label != workspace_root:
+            return f"{workspace_hint}，当前工作面还挂着{artifact_label}"
+        return workspace_hint
+    if source_anchor_label and (artifact_carrier == "source_ref" or active_artifact_kind == "source_ref"):
+        if access_mode == "tool_enabled" and tool_label:
+            return f"当前挂着的资料线是{source_anchor_label}，也能直接动用{tool_label}这类环境入口"
+        return f"当前挂着的资料线是{source_anchor_label}"
     if access_mode == "tool_enabled" and tool_label:
         return f"当前能直接动用{tool_label}这类环境入口"
     return ""

@@ -255,6 +255,7 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
 
     # write / sensitive
     "create_workspace_access": {"risk": "write", "auto_approve": False},
+    "execute_workspace_command": {"risk": "write", "auto_approve": False},
     "write_workspace_file": {"risk": "write", "auto_approve": False},
     "append_workspace_file": {"risk": "write", "auto_approve": False},
     "replace_workspace_text": {"risk": "write", "auto_approve": False},

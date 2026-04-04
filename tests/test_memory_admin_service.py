@@ -109,6 +109,150 @@ class MemoryAdminServiceTests(unittest.TestCase):
         self.assertEqual(store.profile_meta["nickname"]["source"], "user_correction")
         self.assertEqual(store.profile_meta["nickname"]["confirmed_by"], "tester")
 
+    def test_snapshot_view_normalizes_revision_trace_exports(self):
+        raw_snapshot = {
+            "profile": {"nickname": "旧昵称"},
+            "worldline_events": [
+                {
+                    "id": 5,
+                    "content": {
+                        "summary": "她把这次入口接通记成了一次真实发生过的共事。 ",
+                        "category": "shared_event",
+                        "importance": 0.73,
+                    },
+                }
+            ],
+            "commitments": [
+                {
+                    "id": 6,
+                    "content": {
+                        "text": "晚点继续看 lab-notes。",
+                        "status": "open",
+                    },
+                }
+            ],
+            "counterpart_assessment_history": [
+                {
+                    "id": 8,
+                    "content": {
+                        "summary": "她确认这次工作面真的接回来了。",
+                        "stance": "open",
+                        "scene": "co_work",
+                        "respect_level": "0.76",
+                        "assessment_profile": {
+                            "dominant_scene_signal": " Care ",
+                            "openness_drive": "0.74",
+                            "scene_strengths": {"care": "0.81"},
+                        },
+                        "embodied_context": {
+                            "kind": "workspace_access_resolved",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                            "filesystem_state": "writable",
+                            "session_continuity": "stable",
+                        },
+                    },
+                }
+            ],
+            "proactive_continuity_history": [
+                {
+                    "id": 9,
+                    "content": {
+                        "summary": "她把这条稳定入口继续带进后续连续性里。",
+                        "kind": "promoted",
+                        "trace_family": "access_state_refresh_followthrough",
+                        "carryover_strength": "0.53",
+                        "embodied_context": {
+                            "kind": "access_state_refreshed",
+                            "api_key_state": "present",
+                            "network_access": "enabled",
+                            "filesystem_state": "writable",
+                        },
+                    },
+                }
+            ],
+            "source_refs": [
+                {
+                    "content": {
+                        "source_id": "17",
+                        "title": " Persistence ",
+                        "tool_name": " search_web ",
+                        "embodied_context": {
+                            "kind": "source_material_compared",
+                            "artifact_source_ref_ids": ["17", "9"],
+                            "preferred_source_ref_id": "17",
+                            "preferred_anchor_reason": " currently_active ",
+                            "artifact_source_title": "Persistence",
+                            "artifact_source_tool_name": "search_web",
+                        },
+                    }
+                }
+            ],
+            "revision_traces": [
+                {
+                    "namespace": "semantic_self_narratives",
+                    "target_id": "14",
+                    "interaction_carryover": {
+                        "embodied_context": {
+                            "kind": "access_state_refreshed",
+                            "api_key_state": "present",
+                            "quota_state": "healthy",
+                            "filesystem_state": "writable",
+                            "network_access": "enabled",
+                        }
+                    },
+                }
+            ],
+        }
+        store = FakeMemoryStore()
+        store.snapshot = lambda: raw_snapshot
+        service = MemoryAdminService(memory_store=store, llm_factory=lambda **_: None)
+
+        snapshot = service.snapshot_view()
+
+        self.assertEqual(snapshot["revision_traces"][0]["embodied_context"]["kind"], "access_state_refreshed")
+        self.assertEqual(snapshot["revision_traces"][0]["embodied_context"]["api_key_state"], "present")
+        self.assertEqual(snapshot["revision_traces"][0]["embodied_context"]["quota_state"], "healthy")
+        self.assertIn("bodyfx=access_state_refreshed", snapshot["revision_traces"][0].get("preview_line") or "")
+        self.assertEqual(snapshot["worldline_events"][0]["summary"], "她把这次入口接通记成了一次真实发生过的共事。")
+        self.assertEqual(snapshot["worldline_events"][0]["category"], "shared_event")
+        self.assertEqual(snapshot["commitments"][0]["text"], "晚点继续看 lab-notes。")
+        self.assertEqual(snapshot["commitments"][0]["status"], "open")
+        self.assertEqual(snapshot["counterpart_assessment_history"][0]["scene"], "co_work")
+        self.assertEqual(snapshot["counterpart_assessment_history"][0]["embodied_context"]["kind"], "workspace_access_resolved")
+        self.assertIn(
+            "bodyfx=workspace_access_resolved",
+            snapshot["counterpart_assessment_history"][0].get("preview_line") or "",
+        )
+        self.assertEqual(snapshot["proactive_continuity_history"][0]["trace_family"], "access_state_refresh_followthrough")
+        self.assertEqual(snapshot["proactive_continuity_history"][0]["carryover_strength"], 0.53)
+        self.assertEqual(snapshot["proactive_continuity_history"][0]["embodied_context"]["kind"], "access_state_refreshed")
+        self.assertIn(
+            "bodyfx=access_state_refreshed",
+            snapshot["proactive_continuity_history"][0].get("preview_line") or "",
+        )
+        self.assertEqual(snapshot["counterpart_assessment_history"][0]["respect_level"], 0.76)
+        self.assertEqual(
+            snapshot["counterpart_assessment_history"][0]["assessment_profile"]["dominant_scene_signal"],
+            "care",
+        )
+        self.assertEqual(
+            snapshot["counterpart_assessment_history"][0]["content"]["assessment_profile"]["dominant_scene_signal"],
+            "care",
+        )
+        self.assertEqual(snapshot["source_refs"][0]["id"], 17)
+        self.assertEqual(snapshot["source_refs"][0]["source_id"], 17)
+        self.assertEqual(snapshot["source_refs"][0]["title"], "Persistence")
+        self.assertEqual(snapshot["source_refs"][0]["tool_name"], "search_web")
+        self.assertEqual(snapshot["source_refs"][0]["embodied_context"]["preferred_source_ref_id"], 17)
+        self.assertEqual(snapshot["source_refs"][0]["embodied_context"]["artifact_source_ref_ids"], [17, 9])
+        self.assertEqual(snapshot["source_refs"][0]["embodied_context"]["preferred_anchor_reason"], "currently_active")
+        self.assertIn("bodyfx=source_material_compared", snapshot["source_refs"][0].get("preview_line") or "")
+        self.assertIn("source=Persistence", snapshot["source_refs"][0].get("preview_line") or "")
+        self.assertNotIn("embodied_context", raw_snapshot["revision_traces"][0])
+        self.assertNotIn("embodied_context", raw_snapshot["counterpart_assessment_history"][0])
+        self.assertNotIn("embodied_context", raw_snapshot["proactive_continuity_history"][0])
+        self.assertNotIn("embodied_context", raw_snapshot["source_refs"][0])
+
     def test_prepare_undo_profile_correction_raises_with_details_on_conflict(self):
         store = FakeMemoryStore()
         store.profile["nickname"] = "已经变了"

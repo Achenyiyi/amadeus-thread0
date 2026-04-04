@@ -15,6 +15,7 @@ from ..config import (
     TOOL_TIMEOUT_S,
 )
 from ..memory_store import MemoryStore
+from ..utils.source_material_export import normalize_source_ref_exports
 from .tool_policies import MEMORY_WRITE_TOOLS
 
 
@@ -28,6 +29,7 @@ def _build_evidence_from_tool_result(
         return []
 
     source_ids: list[int] = []
+    refs = normalize_source_ref_exports(store.list_source_refs(limit=80))
     if isinstance(result, dict):
         sids = result.get("source_ref_ids")
         if isinstance(sids, list):
@@ -40,8 +42,7 @@ def _build_evidence_from_tool_result(
                     source_ids.append(value)
 
     if not source_ids:
-        refs = store.list_source_refs(limit=8)
-        for item in refs:
+        for item in refs[:8]:
             try:
                 sid = int(item.get("id") or 0)
             except Exception:
@@ -50,7 +51,7 @@ def _build_evidence_from_tool_result(
                 source_ids.append(sid)
         source_ids = source_ids[:3]
 
-    ref_map = {int(item.get("id")): item for item in store.list_source_refs(limit=80) if int(item.get("id") or 0) > 0}
+    ref_map = {int(item.get("id")): item for item in refs if int(item.get("id") or 0) > 0}
     out: list[dict[str, Any]] = []
     for sid in source_ids:
         ref = ref_map.get(int(sid))

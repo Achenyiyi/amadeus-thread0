@@ -4,11 +4,16 @@ import re
 from typing import Any
 
 from .behavior_agenda import _normalize_behavior_agenda
-from .common import _clamp01
+from .common import _clamp01, _norm_text
+from .digital_body_runtime import normalize_embodied_trace_context
 from .relational_runtime import _focus_text
 
 
 _WORKING_ITEM_PREFIX_RE = re.compile(r"^(?:[A-Z]{1,3}\d*(?:\([^)]*\))?)\s*:\s*")
+_DIGITAL_BODY_WORKING_ITEM_RE = re.compile(
+    r"^(?P<kind>[a-z_]+)(?:\((?P<label>[^)]*)\))?\s*:\s*(?P<summary>.+)$",
+    re.IGNORECASE,
+)
 _RELATIONSHIP_STAGE_TEXT = {
     "friend": "朋友阶段",
     "warming": "慢慢热起来的阶段",
@@ -19,6 +24,113 @@ _RELATIONSHIP_STAGE_TEXT = {
     "ambiguous": "还没完全定下来的阶段",
     "trusted_partner": "高信任搭档的阶段",
 }
+
+_DIGITAL_BODY_NATURAL_PREFIX = {
+    "source_material_compared": "前面对照过的材料线还挂着",
+    "source_material_inspected": "前面重新看过的材料线还挂着",
+    "artifact_reacquired": "前面重新接回当前上下文的那条线还挂着",
+    "workspace_file_updated": "前面正在推进的工作面还挂着",
+    "workspace_path_inspected": "前面刚确认过的工作面还挂着",
+}
+
+
+def _contains_prompt_anchor(summary: str, anchor: str) -> bool:
+    norm_summary = _norm_text(summary)
+    norm_anchor = _norm_text(anchor)
+    return bool(norm_anchor and norm_anchor in norm_summary)
+
+
+def _digital_body_trace_prompt_text(
+    *,
+    kind: str,
+    summary: str,
+    anchor_label: str = "",
+    style: str = "natural",
+) -> str:
+    compact_kind = str(kind or "").strip().lower()
+    compact_summary = str(summary or "").strip()
+    compact_anchor = str(anchor_label or "").strip()
+    if not compact_kind or not compact_summary:
+        return ""
+
+    if style == "structured":
+        if compact_anchor:
+            return f"digital_body:{compact_kind}[anchor={compact_anchor[:80]}]: {compact_summary[:180]}"
+        return f"digital_body:{compact_kind}: {compact_summary[:180]}"
+
+    if compact_anchor and _contains_prompt_anchor(compact_summary, compact_anchor):
+        return compact_summary[:180]
+
+    natural_prefix = _DIGITAL_BODY_NATURAL_PREFIX.get(compact_kind)
+    if natural_prefix and compact_anchor:
+        return f"{natural_prefix}，{compact_anchor[:80]}这条更该沿用；{compact_summary[:180]}"
+    if natural_prefix:
+        return f"{natural_prefix}；{compact_summary[:180]}"
+    if compact_anchor:
+        return f"前面还挂着的线索是{compact_anchor[:80]}；{compact_summary[:180]}"
+    return compact_summary[:180]
+
+
+def _compact_digital_body_trace_lines(
+    traces: Any,
+    *,
+    limit: int = 2,
+    style: str = "natural",
+) -> list[str]:
+    lines: list[str] = []
+    seen: set[str] = set()
+    if not isinstance(traces, list):
+        return lines
+    for item in traces:
+        if not isinstance(item, dict):
+            continue
+        embodied = normalize_embodied_trace_context(item)
+        kind = str(
+            embodied.get("kind")
+            or item.get("body_consequence_kind")
+            or item.get("kind")
+            or ""
+        ).strip().lower()
+        summary = str(item.get("after_summary") or item.get("summary") or "").strip()
+        anchor_label = str(
+            embodied.get("artifact_source_title")
+            or embodied.get("active_artifact_label")
+            or embodied.get("artifact_source_query")
+            or item.get("artifact_source_title")
+            or item.get("active_artifact_label")
+            or item.get("artifact_source_query")
+            or ""
+        ).strip()
+        line = _digital_body_trace_prompt_text(
+            kind=kind,
+            summary=summary,
+            anchor_label=anchor_label,
+            style=style,
+        )
+        if not line or line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
+        if len(lines) >= int(limit):
+            break
+    return lines
+
+
+def _naturalize_digital_body_working_item(text: str) -> str:
+    match = _DIGITAL_BODY_WORKING_ITEM_RE.match(str(text or "").strip())
+    if not match:
+        return ""
+    kind = str(match.group("kind") or "").strip().lower()
+    if kind not in _DIGITAL_BODY_NATURAL_PREFIX:
+        return ""
+    label = str(match.group("label") or "").strip()
+    summary = str(match.group("summary") or "").strip()
+    return _digital_body_trace_prompt_text(
+        kind=kind,
+        summary=summary,
+        anchor_label=label,
+        style="natural",
+    )
 
 
 def _source_tag_floor(source_tags: set[str], *names: str, floor: float = 0.52) -> float:
@@ -37,6 +149,9 @@ def _normalize_working_item_text(item: Any) -> str:
         stage_text = _RELATIONSHIP_STAGE_TEXT.get(stage, stage.replace("_", " "))
         return f"当前关系还大致停在{stage_text}"
     text = _WORKING_ITEM_PREFIX_RE.sub("", text).strip()
+    digital_body_text = _naturalize_digital_body_working_item(text)
+    if digital_body_text:
+        return digital_body_text
     return text
 
 
@@ -220,6 +335,12 @@ def _compact_embodied_carryover_hint(carryover: dict[str, Any] | None) -> str:
         if str(item).strip()
     ][:2]
     access_label = "、".join(requested_access or missing_access)
+    anchor_label = str(
+        embodied.get("artifact_source_title")
+        or embodied.get("active_artifact_label")
+        or embodied.get("artifact_source_query")
+        or ""
+    ).strip()
 
     if kind == "access_request_pending" or primary_status == "awaiting_approval" or requested_help:
         if access_label and requested_help:
@@ -234,6 +355,23 @@ def _compact_embodied_carryover_hint(carryover: dict[str, Any] | None) -> str:
         if access_label:
             return f"那件事暂时还缺着{access_label}这类环境条件，这不是关系判断变了，只是当前环境还没齐"
         return "那件事暂时还被环境条件卡着，这不是关系判断变了，只是当前环境还没齐"
+
+    if kind in _DIGITAL_BODY_NATURAL_PREFIX:
+        summary = str(embodied.get("summary") or "").strip()
+        if not summary:
+            summary = {
+                "source_material_compared": "当前判断会顺着这条相连线索继续。",
+                "source_material_inspected": "当前判断会顺着这条资料面继续。",
+                "artifact_reacquired": "当前这条线已经重新接回上下文里了。",
+                "workspace_file_updated": "当前可以顺着这块工作面继续往下走。",
+                "workspace_path_inspected": "当前可以顺着这块工作面继续往下看。",
+            }.get(kind, "")
+        return _digital_body_trace_prompt_text(
+            kind=kind,
+            summary=summary,
+            anchor_label=anchor_label,
+            style="natural",
+        )
 
     return ""
 

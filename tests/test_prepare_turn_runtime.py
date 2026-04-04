@@ -1932,6 +1932,289 @@ class PrepareTurnRuntimeTests(unittest.TestCase):
         self.assertEqual(int(result["digital_body_state"]["resource_state"]["preferred_source_ref_id"] or 0), 21)
         self.assertEqual(result["digital_body_state"]["resource_state"]["preferred_anchor_reason"], "primary_more_current")
 
+    def test_prepare_turn_runtime_reorders_source_ref_lineup_to_preferred_anchor_first(self):
+        def _fake_evolve_turn_state(**kwargs):
+            return {
+                "world_model_state": dict(kwargs.get("prev_world_model_state") or {}),
+                "evolution_state": {},
+                "emotion_state": {"label": "neutral"},
+                "bond_state": dict(kwargs.get("prev_bond_state") or {}),
+                "allostasis_state": dict(kwargs.get("prev_allostasis_state") or {}),
+                "counterpart_assessment": dict(kwargs.get("prev_counterpart_assessment") or {}),
+                "behavior_policy": {},
+                "behavior_action": {},
+                "reconsolidation_snapshot": {},
+            }
+
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["current_event"] = {"kind": "user_utterance", "event_frame": "dialogue", "tags": []}
+        prepared_turn["retrieved"] = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "digital_body_consequence_traces": [
+                {
+                    "after_summary": "已经把 Persistence v2 和 Persistence 对照过一遍。",
+                    "metadata": {
+                        "body_consequence_kind": "source_material_compared",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [17, 21, 15],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_title": "Persistence v2",
+                        "embodied_context": {
+                            "kind": "source_material_compared",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": [17, 21, 15],
+                            "preferred_source_ref_id": 21,
+                            "preferred_anchor_reason": "primary_more_current",
+                            "artifact_source_title": "Persistence v2",
+                        },
+                    },
+                }
+            ],
+        }
+
+        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", side_effect=_fake_evolve_turn_state):
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update", return_value=False):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot", side_effect=lambda **kwargs: kwargs["relationship"]):
+                            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary", return_value="summary"):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                    return_value={"interaction_mode": "steady_reply", "action_target": "respond_now"},
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                        return_value={"kind": "respond_now"},
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                            return_value=[],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                return_value={},
+                                            ):
+                                                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl", return_value=None):
+                                                    result = _prepare_turn_runtime(
+                                                        state={
+                                                            "persona_state": {},
+                                                            "session_context": {
+                                                                "digital_body_hints": {
+                                                                    "artifact_continuity": "stale",
+                                                                    "artifact_carrier": "source_ref",
+                                                                    "artifact_source_ref_ids": [17],
+                                                                    "active_artifact_kind": "search_result",
+                                                                    "active_artifact_label": "Persistence",
+                                                                    "world_surfaces": ["source_ref"],
+                                                                }
+                                                            },
+                                                        },
+                                                        store=object(),
+                                                        turn_now_ts=123,
+                                                        prepared_turn=prepared_turn,
+                                                    )
+
+        session_hints = (
+            result.get("session_context", {}).get("digital_body_hints", {})
+            if isinstance(result.get("session_context"), dict)
+            else {}
+        )
+        self.assertEqual(session_hints.get("artifact_source_ref_ids"), [21, 17, 15])
+        self.assertEqual(result["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [21, 17, 15])
+
+    def test_prepare_turn_runtime_refreshes_session_source_ref_lineup_from_legacy_trace_identity(self):
+        def _fake_evolve_turn_state(**kwargs):
+            return {
+                "world_model_state": dict(kwargs.get("prev_world_model_state") or {}),
+                "evolution_state": {},
+                "emotion_state": {"label": "neutral"},
+                "bond_state": dict(kwargs.get("prev_bond_state") or {}),
+                "allostasis_state": dict(kwargs.get("prev_allostasis_state") or {}),
+                "counterpart_assessment": dict(kwargs.get("prev_counterpart_assessment") or {}),
+                "behavior_policy": {},
+                "behavior_action": {},
+                "reconsolidation_snapshot": {},
+            }
+
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["current_event"] = {"kind": "user_utterance", "event_frame": "dialogue", "tags": []}
+        prepared_turn["retrieved"] = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "digital_body_consequence_traces": [
+                {
+                    "after_summary": "已经把 Persistence v2 和 Persistence 对照过一遍，当前判断会优先沿着这条相连线索继续。",
+                    "metadata": {
+                        "body_consequence_kind": "source_material_compared",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": ["21", "21", "17", "bad"],
+                        "preferred_source_ref_id": "21",
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_title": "Persistence v2",
+                        "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                        "embodied_context": {
+                            "kind": "source_material_compared",
+                            "artifact_carrier": "source_ref",
+                        },
+                    },
+                }
+            ],
+        }
+
+        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", side_effect=_fake_evolve_turn_state):
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update", return_value=False):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot", side_effect=lambda **kwargs: kwargs["relationship"]):
+                            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary", return_value="summary"):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                    return_value={"interaction_mode": "steady_reply", "action_target": "respond_now"},
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                        return_value={"kind": "respond_now"},
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                            return_value=[],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                return_value={},
+                                            ):
+                                                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl", return_value=None):
+                                                    result = _prepare_turn_runtime(
+                                                        state={
+                                                            "persona_state": {},
+                                                            "session_context": {
+                                                                "digital_body_hints": {
+                                                                    "artifact_continuity": "stale",
+                                                                    "artifact_carrier": "source_ref",
+                                                                    "artifact_source_ref_ids": [21],
+                                                                    "active_artifact_kind": "search_result",
+                                                                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                                                    "active_artifact_label": "Persistence v2",
+                                                                    "world_surfaces": ["source_ref"],
+                                                                }
+                                                            },
+                                                        },
+                                                        store=object(),
+                                                        turn_now_ts=123,
+                                                        prepared_turn=prepared_turn,
+                                                    )
+
+        session_hints = (
+            result.get("session_context", {}).get("digital_body_hints", {})
+            if isinstance(result.get("session_context"), dict)
+            else {}
+        )
+        self.assertEqual(session_hints.get("artifact_source_ref_ids"), [21, 17])
+        self.assertEqual(int(session_hints.get("preferred_source_ref_id") or 0), 21)
+        self.assertEqual(session_hints.get("preferred_anchor_reason"), "primary_more_current")
+        self.assertEqual(session_hints.get("artifact_source_query"), "langgraph persistence checkpointer thread recovery")
+        self.assertEqual(result["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(int(result["digital_body_state"]["resource_state"]["preferred_source_ref_id"] or 0), 21)
+        self.assertEqual(result["digital_body_state"]["resource_state"]["artifact_source_query"], "langgraph persistence checkpointer thread recovery")
+
+    def test_prepare_turn_runtime_preserves_workspace_root_from_retrieved_workspace_trace(self):
+        def _fake_evolve_turn_state(**kwargs):
+            return {
+                "world_model_state": dict(kwargs.get("prev_world_model_state") or {}),
+                "evolution_state": {},
+                "emotion_state": {"label": "neutral"},
+                "bond_state": dict(kwargs.get("prev_bond_state") or {}),
+                "allostasis_state": dict(kwargs.get("prev_allostasis_state") or {}),
+                "counterpart_assessment": dict(kwargs.get("prev_counterpart_assessment") or {}),
+                "behavior_policy": {},
+                "behavior_action": {},
+                "reconsolidation_snapshot": {},
+            }
+
+        prepared_turn = _prepared_turn_fixture()
+        prepared_turn["current_event"] = {"kind": "user_utterance", "event_frame": "dialogue", "tags": []}
+        prepared_turn["retrieved"] = {
+            "semantic_self_narratives": [],
+            "working_items": [],
+            "working_chars": 0,
+            "triggered": False,
+            "digital_body_consequence_traces": [
+                {
+                    "after_summary": "已经把 today.md 这条文件工作面重新接回来了，后面的推进可以顺着这块表面继续。",
+                    "metadata": {
+                        "body_consequence_kind": "artifact_reacquired",
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "notes/today.md",
+                        "active_artifact_label": "today.md",
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "artifact_reacquisition_mode": "reopen_file",
+                        "embodied_context": {
+                            "kind": "artifact_reacquired",
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "file",
+                            "active_artifact_ref": "notes/today.md",
+                            "active_artifact_label": "today.md",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                            "artifact_reacquisition_mode": "reopen_file",
+                            "artifact_mutation_mode": "replace",
+                            "primary_status": "completed",
+                        },
+                    },
+                }
+            ],
+        }
+
+        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._semantic_narrative_profile", return_value={}):
+            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime.evolve_turn_state", side_effect=_fake_evolve_turn_state):
+                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._tsundere_next", return_value=0.4):
+                    with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._passive_evolution_memory_update", return_value=False):
+                        with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._relationship_runtime_snapshot", side_effect=lambda **kwargs: kwargs["relationship"]):
+                            with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._counterpart_assessment_summary", return_value="summary"):
+                                with patch(
+                                    "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_action_from_state",
+                                    return_value={"interaction_mode": "steady_reply", "action_target": "respond_now"},
+                                ):
+                                    with patch(
+                                        "amadeus_thread0.graph_parts.prepare_turn_runtime._behavior_plan_from_action",
+                                        return_value={"kind": "respond_now"},
+                                    ):
+                                        with patch(
+                                            "amadeus_thread0.graph_parts.prepare_turn_runtime._merge_behavior_agenda",
+                                            return_value=[],
+                                        ):
+                                            with patch(
+                                                "amadeus_thread0.graph_parts.prepare_turn_runtime.build_reconsolidation_snapshot",
+                                                return_value={},
+                                            ):
+                                                with patch("amadeus_thread0.graph_parts.prepare_turn_runtime._audit_jsonl", return_value=None):
+                                                    result = _prepare_turn_runtime(
+                                                        state={"persona_state": {}, "session_context": {"digital_body_hints": {}}},
+                                                        store=object(),
+                                                        turn_now_ts=123,
+                                                        prepared_turn=prepared_turn,
+                                                    )
+
+        interaction_carryover = result.get("interaction_carryover") if isinstance(result.get("interaction_carryover"), dict) else {}
+        embodied = (
+            interaction_carryover.get("embodied_context")
+            if isinstance(interaction_carryover.get("embodied_context"), dict)
+            else {}
+        )
+        self.assertEqual(str(interaction_carryover.get("source") or ""), "retrieved_digital_body_consequence")
+        self.assertEqual(str(interaction_carryover.get("carryover_mode") or ""), "task_window")
+        self.assertEqual(str(embodied.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(result["digital_body_state"]["resource_state"]["active_artifact_kind"], "file")
+        self.assertEqual(result["digital_body_state"]["resource_state"]["active_artifact_label"], "today.md")
+        self.assertEqual(result["digital_body_state"]["resource_state"]["workspace_root"], "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(result["digital_body_state"]["resource_state"]["artifact_reacquisition_mode"], "reopen_file")
+
     def test_prepare_turn_runtime_does_not_seed_source_ref_lineup_without_visible_source_ref_context(self):
         def _fake_evolve_turn_state(**kwargs):
             return {

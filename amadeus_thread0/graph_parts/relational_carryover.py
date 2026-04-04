@@ -5,7 +5,7 @@ from typing import Any
 
 from .behavior_agenda import _agenda_long_horizon_snapshot
 from .common import _clamp01, _now_ts
-from .digital_body_runtime import normalize_embodied_context
+from .digital_body_runtime import normalize_embodied_context, normalize_embodied_trace_context
 from .prompt_helpers import _compact_embodied_carryover_hint
 from .state import AgendaLifecycleResiduePayload, InteractionCarryoverPayload, ThreadState
 
@@ -443,14 +443,61 @@ def _build_retrieved_behavior_trace_bridge(
         plan_kind = current_plan_kind or source_plan_kind
         consequence_kind = str(_trace_value(trace, "consequence_kind", "") or "").strip().lower()
         body_consequence_kind = str(_trace_value(trace, "body_consequence_kind", _trace_value(trace, "kind", "")) or "").strip().lower()
+        embodied_context = normalize_embodied_trace_context(trace)
         if trace_source == "retrieved_behavior_consequence":
             if consequence_kind in {"", "none"}:
                 continue
         elif trace_source == "retrieved_digital_body_consequence":
-            artifact_carrier = str(_trace_value(trace, "artifact_carrier", "") or "").strip().lower()
-            if body_consequence_kind not in {"source_material_compared", "source_material_inspected", "artifact_reacquired"}:
-                continue
-            if artifact_carrier != "source_ref":
+            artifact_carrier = str(
+                _trace_value(trace, "artifact_carrier", embodied_context.get("artifact_carrier", "")) or ""
+            ).strip().lower()
+            active_artifact_kind = str(
+                _trace_value(trace, "active_artifact_kind", embodied_context.get("active_artifact_kind", "")) or ""
+            ).strip().lower()
+            workspace_root = str(embodied_context.get("workspace_root") or "").strip()
+            work_surface_kinds = {"workspace_file_updated", "workspace_path_inspected"}
+            source_surface_kinds = {"source_material_compared", "source_material_inspected"}
+            access_state_kinds = {"workspace_access_resolved", "access_state_refreshed"}
+            if body_consequence_kind in source_surface_kinds:
+                if artifact_carrier != "source_ref":
+                    continue
+            elif body_consequence_kind == "artifact_reacquired":
+                if artifact_carrier == "source_ref":
+                    pass
+                elif artifact_carrier == "filesystem" or active_artifact_kind in {"file", "workspace"} or workspace_root:
+                    pass
+                else:
+                    continue
+            elif body_consequence_kind in work_surface_kinds:
+                if not (artifact_carrier == "filesystem" or active_artifact_kind in {"file", "workspace"} or workspace_root):
+                    continue
+            elif body_consequence_kind == "workspace_access_resolved":
+                if not any(
+                    (
+                        str(embodied_context.get("access_mode") or "").strip().lower(),
+                        workspace_root,
+                        active_artifact_kind in {"file", "workspace"},
+                        bool(embodied_context.get("granted_toolsets")),
+                        bool(embodied_context.get("active_tools")),
+                    )
+                ):
+                    continue
+            elif body_consequence_kind == "access_state_refreshed":
+                if not any(
+                    (
+                        str(embodied_context.get("session_continuity") or "").strip().lower(),
+                        str(embodied_context.get("session_recovery_mode") or "").strip().lower(),
+                        str(embodied_context.get("browser_session") or "").strip().lower(),
+                        str(embodied_context.get("account_state") or "").strip().lower(),
+                        str(embodied_context.get("cookie_state") or "").strip().lower(),
+                        str(embodied_context.get("filesystem_state") or "").strip().lower(),
+                        str(embodied_context.get("network_access") or "").strip().lower(),
+                        str(embodied_context.get("sandbox_mode") or "").strip().lower(),
+                        workspace_root,
+                    )
+                ):
+                    continue
+            else:
                 continue
         elif plan_kind in {"", "none", "observe_only", "respond_now", "speak_now"}:
             continue
@@ -467,19 +514,59 @@ def _build_retrieved_behavior_trace_bridge(
         presence_residue = _clamp01(_trace_value(trace, "presence_residue", 0.0), 0.0)
         ambient_resonance = _clamp01(_trace_value(trace, "ambient_resonance", 0.0), 0.0)
         self_activity_momentum = _clamp01(_trace_value(trace, "self_activity_momentum", 0.0), 0.0)
-        embodied_context = normalize_embodied_context(_trace_value(trace, "embodied_context", {}))
         summary = _embodied_aware_summary(summary, embodied_context)
         if trace_source == "retrieved_digital_body_consequence":
             bridge_mode = "task_window"
-            trigger_family = trigger_family or "source_anchor"
+            trigger_family = trigger_family or (
+                "source_anchor"
+                if body_consequence_kind in {"source_material_compared", "source_material_inspected"}
+                else "access_state"
+                if body_consequence_kind in {"workspace_access_resolved", "access_state_refreshed"}
+                else "workspace_surface"
+            )
             if carryover_strength <= 0.0:
-                carryover_strength = 0.36 if body_consequence_kind == "source_material_compared" else 0.24
+                carryover_strength = {
+                    "source_material_compared": 0.36,
+                    "source_material_inspected": 0.24,
+                    "workspace_access_resolved": 0.28,
+                    "access_state_refreshed": 0.22,
+                    "workspace_file_updated": 0.34,
+                    "workspace_path_inspected": 0.24,
+                    "artifact_reacquired": 0.28,
+                }.get(body_consequence_kind, 0.24)
             if presence_residue <= 0.0:
-                presence_residue = 0.12 if body_consequence_kind == "source_material_compared" else 0.08
+                presence_residue = {
+                    "source_material_compared": 0.12,
+                    "source_material_inspected": 0.08,
+                    "workspace_access_resolved": 0.08,
+                    "access_state_refreshed": 0.06,
+                    "workspace_file_updated": 0.10,
+                    "workspace_path_inspected": 0.08,
+                    "artifact_reacquired": 0.10,
+                }.get(body_consequence_kind, 0.08)
             if ambient_resonance <= 0.0:
-                ambient_resonance = 0.18 if body_consequence_kind == "source_material_compared" else 0.12
+                ambient_resonance = {
+                    "source_material_compared": 0.18,
+                    "source_material_inspected": 0.12,
+                    "workspace_access_resolved": 0.08,
+                    "access_state_refreshed": 0.06,
+                    "workspace_file_updated": 0.10,
+                    "workspace_path_inspected": 0.08,
+                    "artifact_reacquired": 0.10,
+                }.get(body_consequence_kind, 0.10)
             if not summary:
-                summary = "前面那组材料已经对照过一遍了，当前判断会顺着重新锚定后的资料线继续。"
+                summary = {
+                    "source_material_compared": "前面那组材料已经对照过一遍了，当前判断会顺着重新锚定后的资料线继续。",
+                    "source_material_inspected": "前面那条材料已经重新看过一遍了，当前判断会顺着这条资料面继续。",
+                    "workspace_access_resolved": "前面那条工作区入口已经接上了，后面的文件动作可以在同一个边界里继续。",
+                    "access_state_refreshed": "前面那条入口状态已经重新确认过了，后面的推进可以顺着这条路继续。",
+                    "workspace_file_updated": "前面那条文件工作面已经真的接上了，后面的推进可以顺着这块表面继续。",
+                    "workspace_path_inspected": "前面那条文件工作面已经重新看过一遍，后面的推进可以顺着这块表面继续。",
+                    "artifact_reacquired": "前面那块工作面已经重新接回当前上下文，后面的动作可以顺着它继续。",
+                }.get(
+                    body_consequence_kind,
+                    "前面那条工作面已经重新接回当前上下文，后面的推进可以顺着它继续。",
+                )
         else:
             bridge_mode = _bridge_mode_from_behavior_trace(trace)
         derived_strength = _clamp01(
@@ -589,7 +676,7 @@ def _hydrate_retrieved_agenda_lifecycle_residue(
         kind = str(_trace_value(trace, "lifecycle_kind", _trace_value(trace, "kind", "")) or "").strip().lower()
         carryover_mode = str(_trace_value(trace, "carryover_mode", "") or "").strip().lower()
         carryover_strength = _clamp01(_trace_value(trace, "carryover_strength", 0.0), 0.0)
-        embodied_context = normalize_embodied_context(_trace_value(trace, "embodied_context", {}))
+        embodied_context = normalize_embodied_trace_context(trace)
         summary = _embodied_aware_summary(summary, embodied_context)
         try:
             counterpart_boundary_delta = float(_trace_value(trace, "counterpart_boundary_delta", 0.0) or 0.0)
@@ -1071,41 +1158,6 @@ def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -
             return content.get(key)
         return row.get(key, default)
 
-    def _embodied_context(value: Any) -> dict[str, Any]:
-        body = value if isinstance(value, dict) else {}
-        kind = str(body.get("kind") or "").strip().lower()
-        if not kind:
-            return {}
-
-        def _list(key: str, *, limit: int = 8) -> list[str]:
-            values = body.get(key) if isinstance(body.get(key), list) else []
-            out: list[str] = []
-            for item in values:
-                text = str(item or "").strip().lower()
-                if not text:
-                    continue
-                out.append(text)
-                if len(out) >= max(1, int(limit)):
-                    break
-            return out
-
-        return {
-            "kind": kind,
-            "summary": str(body.get("summary") or "").strip()[:220],
-            "access_mode": str(body.get("access_mode") or "").strip().lower(),
-            "active_surface": str(body.get("active_surface") or "").strip().lower(),
-            "requested_access": _list("requested_access"),
-            "missing_access": _list("missing_access"),
-            "granted_toolsets": _list("granted_toolsets"),
-            "active_tools": _list("active_tools"),
-            "primary_proposal_id": str(body.get("primary_proposal_id") or "").strip()[:128],
-            "primary_status": str(body.get("primary_status") or "").strip().lower(),
-            "primary_origin": str(body.get("primary_origin") or "").strip().lower(),
-            "procedural_growth": bool(body.get("procedural_growth", False)),
-            "environmental_friction": bool(body.get("environmental_friction", False)),
-            "requested_help": bool(body.get("requested_help", False)),
-        }
-
     summary = str(_pick("summary") or "").strip()
     if not summary:
         return {}
@@ -1143,7 +1195,7 @@ def _normalized_proactive_continuity_history_item(item: dict[str, Any] | None) -
         "motive_tension": str(_pick("motive_tension") or "").strip().lower(),
         "goal_frame": str(_pick("goal_frame") or "").strip(),
     }
-    embodied_context = _embodied_context(_pick("embodied_context", {}))
+    embodied_context = normalize_embodied_trace_context(row)
     if embodied_context:
         normalized["embodied_context"] = embodied_context
     return normalized

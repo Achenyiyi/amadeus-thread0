@@ -44,19 +44,28 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 
 ## Current Phase Lock
 
-- Current objective is `Digital Embodiment Convergence`, not frontend polish.
+- `Digital Embodiment Convergence Phase 2` is formally closed and preserved as a baseline.
+- `Sandbox Embodied Execution Phase 1` is now also closed and preserved as the current execution baseline.
+- Current objective is to preserve the closed backend baselines, not widen execution scope or switch to frontend polish.
 - Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- `freeze_gate_ready` and `companion_autonomy_ready` are now baseline gates, not the final product target.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, and `digital_embodiment_phase2_ready` are preserved baselines.
 - While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
-- The active convergence target is:
+- The active preserved backend target is:
   - one fixed persona
   - one unified memory substrate
-  - one digital body that can perceive, act, verify, request access, and gradually learn how to use its environment
+  - one digital body whose Phase 2 access/resource truth and Phase 1 workspace-local execution truth both stay closed and must not regress
+- The preserved Phase 1 execution boundary remains:
+  - `host-local restricted execution`
+  - `workspace-only execution`
+  - `read auto / execute approval`
+  - no browser execution, no package install, no network download, no arbitrary host-side codegen
 - Default optimization order:
   1. preserve `freeze_gate_ready`
   2. preserve `companion_autonomy_ready`
-  3. formalize `digital body / access / resource` runtime surfaces
-  4. let embodied interaction feed unified memory and unified evolution rather than opening a separate work-only subsystem
+  3. preserve `digital_embodiment_phase1_ready`
+  4. preserve `digital_embodiment_phase2_ready`
+  5. preserve `sandbox_embodied_execution_phase1_ready`
+  6. do not widen beyond the approved workspace-local runner surface unless a new phase is explicitly selected
 
 ## Backend Freeze Gate Baseline
 
@@ -121,6 +130,120 @@ Autonomy work is not considered closed until all of the following are true:
     - overreach -> approval handoff
     - own-rhythm proactive continuation
 
+## Digital Embodiment Phase 2 Gate
+
+This gate is now satisfied and becomes a preserved backend baseline.
+Do not reopen it during ordinary maintenance unless one of the criteria below regresses.
+The next preserved execution baseline layered on top of it is `Sandbox Embodied Execution Phase 1`.
+
+Digital embodiment phase 2 work is not considered closed until all of the following are true:
+
+- preserved baselines stay true:
+  - `freeze_gate_ready`
+  - `companion_autonomy_ready`
+  - `digital_embodiment_phase1_ready`
+- access truth stays on one body contract:
+  - `digital_body.access_state.session_state`
+  - `digital_body.access_state.account_state_detail`
+  - `digital_body.access_state.quota_state_detail`
+  - `digital_body.access_state.permission_state`
+  - `digital_body.access_state.sandbox_state`
+- resource truth stays on one body contract:
+  - `artifact_continuity`
+  - `artifact_carrier`
+  - `workspace_root`
+  - `active_artifact_kind`
+  - `active_artifact_ref`
+  - `active_artifact_label`
+  - `artifact_source_ref_ids`
+  - `preferred_source_ref_id`
+  - `preferred_anchor_reason`
+- saved external material remains truthful before live browser exists:
+  - external webpages continue through the bounded `source_ref` / saved-material carrier
+  - no fake live browser reopen / cookie restore / resumed tab semantics are introduced
+- access lifecycle truth stays aligned across packet/state/writeback/retrieval surfaces:
+  - `selected_access_proposal`
+  - `resolved_grants`
+  - `pending_grants`
+  - `completion_ratio`
+- session/account/quota/permission/sandbox world facts must not drift between:
+  - `digital_body`
+  - `digital_body_consequence`
+  - `interaction_carryover.embodied_context`
+  - retrieved embodied traces
+- final embodied semantics stay singular:
+  - `autonomy_intent`
+  - the first effective `action_packet`
+  - `digital_body_consequence`
+  - `reconsolidation_snapshot`
+  - `turn_summary`
+  all describe the same final execution truth
+- only completed / executed embodied packets become facts:
+  - approved-but-not-executed
+  - blocked
+  - expired
+  remain unfinished intentions, blocked choices, or relation/environment consequences
+- retrieved `interaction_carryover.embodied_context` preserves real workspace/access continuity rather than flattening into abstract summaries
+- closure validation:
+  - `python evals/run_digital_embodiment_audit.py`
+  - digital embodiment audit must report `digital_embodiment_phase2_ready` for 3 consecutive runs
+  - 4 manual smokes must pass:
+    - workspace file inspect -> write/append -> resume same artifact
+    - missing workspace access -> request -> approve -> resolve -> continue task
+    - stale saved source + stable preferred anchor -> inspect, not redundant compare
+    - sandbox / external mutation overreach stays approval-pending and is not written back as completed fact
+
+## Sandbox Embodied Execution Phase 1 Gate
+
+Sandbox embodied execution is not considered closed until all of the following are true:
+
+- implementation boundary stays explicit:
+  - current runner is `host-local restricted execution`
+  - it is not a provider-grade sandbox, container, or VM
+  - execution is limited to approved workspace-local commands only
+- execution stays packet-owned:
+  - sandbox execution flows only through `action_packets`
+  - packet intent is `sandbox:execute_workspace_command`
+  - approval resumes the same `proposal_id` and the same `execution_spec`
+- packet contract stays stable:
+  - `execution_spec`
+  - `execution_preview`
+  - `execution_result`
+  are exposed on `action_packets[*]` when relevant
+- approval semantics stay strict:
+  - sandbox execute packets remain `risk=external_mutation`
+  - sandbox execute packets always require approval in Phase 1
+  - blocked / approved-but-not-executed packets never become completed facts
+- runner boundary stays explicit:
+  - `LocalRestrictedSandboxRunner` uses structured `argv` only
+  - allowed executors are bounded to workspace-local `python`, `pytest`, and `rg`
+  - `cwd` and produced artifacts stay within `allowed_roots`
+  - run traces are written under `<workspace_root>/.amadeus/sandbox-runs/<proposal_id>/`
+- embodied writeback stays singular:
+  - `digital_body.access_state.sandbox_state` exposes:
+    - `availability`
+    - `allowed_roots`
+    - `execution_policy`
+    - `last_status`
+    - `last_command_profile`
+    - `last_exit_code`
+    - `last_run_id`
+    - `runner_kind`
+    - `isolation_level`
+    - `arbitrary_execution=false`
+  - `digital_body_consequence.kind` uses truthful sandbox families:
+    - `sandbox_execution_completed`
+    - `sandbox_execution_blocked`
+  - later `interaction_carryover.embodied_context` and retrieval resurfacing preserve `run_id`, `cwd`, `profile`, `exit_code`, and filesystem artifact refs
+- closure validation:
+  - `python evals/run_sandbox_embodied_execution_audit.py`
+  - sandbox audit must report `sandbox_embodied_execution_phase1_ready` for 3 consecutive fresh runs
+  - 4 manual smokes must pass:
+    - `workspace_pytest_after_approval`
+    - `workspace_script_generates_artifact`
+    - `disallowed_command_or_outside_root_blocked`
+    - `followup_continue_from_last_run_log_or_artifact`
+
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
@@ -171,6 +294,7 @@ Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering
 - `amadeus_thread0/graph_parts/postprocess.py`
 - `amadeus_thread0/graph_parts/autonomy_runtime.py`
 - `amadeus_thread0/graph_parts/action_packets.py`
+- `amadeus_thread0/runtime/sandbox_runner.py`
 - `amadeus_thread0/memory_store.py`
 - `amadeus_thread0/cli.py`
 
@@ -211,6 +335,20 @@ python evals/run_companion_autonomy_audit.py
 ```
 
 Expected graph build result: `CompiledStateGraph`
+
+For `digital body / access / resource` closure edits, also verify:
+
+```powershell
+python evals/run_digital_embodiment_audit.py
+```
+
+For `sandbox embodied execution` edits, also verify:
+
+```powershell
+python -m pytest tests/test_sandbox_runner.py tests/test_sandbox_execution_runtime.py tests/test_sandbox_backend_contract.py
+python -m pytest tests/test_sandbox_embodied_execution_smokes.py tests/test_sandbox_embodied_execution_audit.py
+python evals/run_sandbox_embodied_execution_audit.py
+```
 
 ## Documentation Map
 

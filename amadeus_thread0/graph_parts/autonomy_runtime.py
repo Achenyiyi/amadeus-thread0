@@ -186,8 +186,17 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
     label = _artifact_surface_label(embodied)
     artifact_ref = _clean_text(embodied.get("active_artifact_ref"))
     artifact_kind = _clean_text(embodied.get("active_artifact_kind")).lower()
+    workspace_root = _clean_text(embodied.get("workspace_root"), limit=320)
     target = artifact_ref or label
     reason = _artifact_reacquisition_reason(embodied)
+    tool_args = {
+        "mode": mode,
+        "artifact_kind": artifact_kind,
+        "artifact_ref": artifact_ref or target,
+        "artifact_label": label,
+    }
+    if workspace_root and artifact_kind in {"file", "document", "buffer", "notebook", "workspace"}:
+        tool_args["workspace_root"] = workspace_root
     return normalize_action_packet(
         {
             "proposal_id": make_proposal_id("artifact", continuity, mode, target, origin),
@@ -197,12 +206,7 @@ def _artifact_reacquisition_packet(embodied: dict[str, Any]) -> dict[str, Any]:
             "risk": "read",
             "requires_approval": False,
             "tool_name": "reacquire_artifact",
-            "tool_args": {
-                "mode": mode,
-                "artifact_kind": artifact_kind,
-                "artifact_ref": artifact_ref or target,
-                "artifact_label": label,
-            },
+            "tool_args": tool_args,
             "capability_steps": [
                 {
                     "kind": "artifact",
@@ -932,7 +936,7 @@ def _embodied_carryover_autonomy_signal(carryover: dict[str, Any]) -> dict[str, 
             for item in _list_or_empty(embodied.get("artifact_source_ref_ids"))
             if str(item or "").strip().isdigit()
         ]
-        if len(source_ref_ids) >= 2:
+        if len(source_ref_ids) >= 2 and not _has_stable_preferred_source_anchor(embodied):
             return {
                 "mode": "compare_source_refs",
                 "origin": primary_origin or "motive_goal",

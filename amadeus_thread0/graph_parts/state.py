@@ -272,6 +272,10 @@ class ActionPacketPayload(TypedDict, total=False):
     artifact_context: dict[str, Any]
     access_acquire_proposals: list[dict[str, Any]]
     selected_access_proposal: dict[str, Any]
+    mutation_preview: dict[str, Any]
+    execution_spec: dict[str, Any]
+    execution_preview: dict[str, Any]
+    execution_result: dict[str, Any]
 
 
 class AutonomyIntentPayload(TypedDict, total=False):
@@ -309,6 +313,65 @@ class DigitalBodyAccessPayload(TypedDict, total=False):
     filesystem_state: str
     sandbox_mode: str
     network_access: str
+    session_state: "DigitalBodySessionStatePayload"
+    account_state_detail: "DigitalBodyAccountStateDetailPayload"
+    quota_state_detail: "DigitalBodyQuotaStateDetailPayload"
+    permission_state: "DigitalBodyPermissionStatePayload"
+    sandbox_state: "DigitalBodySandboxStatePayload"
+
+
+class DigitalBodySessionStatePayload(TypedDict, total=False):
+    continuity: str
+    expires_in_s: int
+    recovery_mode: str
+    retry_after_s: int
+    cooldown_scope: str
+    browser_session: str
+    needs_recovery: bool
+
+
+class DigitalBodyAccountStateDetailPayload(TypedDict, total=False):
+    browser_session: str
+    login_state: str
+    cookie_state: str
+    api_key_state: str
+    account_available: bool
+    cookie_available: bool
+    api_key_available: bool
+
+
+class DigitalBodyQuotaStateDetailPayload(TypedDict, total=False):
+    provider_state: str
+    retry_after_s: int
+    cooldown_scope: str
+    available: bool
+    cooldown_active: bool
+
+
+class DigitalBodyPermissionStatePayload(TypedDict, total=False):
+    pending_approval_count: int
+    external_mutation_pending: bool
+    missing_access: list[str]
+    requestable_access: list[str]
+    access_acquire_proposals: list[dict[str, Any]]
+    selected_access_proposal: dict[str, Any]
+    resolved_grants: list[str]
+    pending_grants: list[str]
+    completion_ratio: float
+    approval_state: str
+
+
+class DigitalBodySandboxStatePayload(TypedDict, total=False):
+    availability: str
+    allowed_roots: list[str]
+    execution_policy: str
+    last_status: str
+    runner_kind: str
+    isolation_level: str
+    last_command_profile: str
+    last_exit_code: int
+    last_run_id: str
+    arbitrary_execution: bool
 
 
 class DigitalBodyResourcePayload(TypedDict, total=False):
@@ -326,6 +389,15 @@ class DigitalBodyResourcePayload(TypedDict, total=False):
     active_artifact_label: str
     artifact_age_s: int
     artifact_reacquisition_mode: str
+    artifact_carrier: str
+    artifact_source_ref_ids: list[int]
+    preferred_source_ref_id: int
+    preferred_anchor_reason: str
+    artifact_source_url: str
+    artifact_source_query: str
+    artifact_source_title: str
+    artifact_source_tool_name: str
+    workspace_root: str
 
 
 class DigitalBodyStatePayload(TypedDict, total=False):

@@ -21,6 +21,8 @@ For handoff purposes, the current backend should already be treated as:
 - transport-neutral
 - stable enough for a thin frontend adapter
 - autonomy-contract-first
+- frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 1` closeout
+- explicit about current execution scope being `host-local restricted execution`, not a provider-grade sandbox
 
 ## Stable Backend Surfaces
 
@@ -28,6 +30,7 @@ For handoff purposes, the current backend should already be treated as:
 - transport-neutral API: `amadeus_thread0.runtime.backend_api`
 - turn/event/readback execution: `amadeus_thread0.runtime.backend_session`
 - final-state normalization: `amadeus_thread0.runtime.final_state`
+- restricted execution runner: `amadeus_thread0.runtime.sandbox_runner`
 
 ## Autonomy Envelope
 
@@ -43,10 +46,21 @@ Current turn/event/view payloads now expose:
 
 Frontend should treat `intent/status/risk/approval/result` as the stable autonomy packet contract.
 If backend-owned execution hints such as `tool_name` or `tool_args` appear on a packet, they are runtime binding details, not fields frontend code should depend on.
+For sandbox execution packets, the stable contract additions are:
+
+- `autonomy.action_packets[*].execution_spec`
+- `autonomy.action_packets[*].execution_preview`
+- `autonomy.action_packets[*].execution_result`
+- `autonomy.pending_approval.execution_preview`
+
+Frontend/CLI may render these as preview/result surfaces, but they must not reinterpret them as permission to widen execution scope.
 
 ## Embodiment Envelope
 
 Frontend consumers should also treat the embodied runtime as a stable sub-contract.
+
+Frontend consumes this contract only.
+It should not infer or rebuild backend internals from prompt text, legacy fields, or execution hints.
 
 Current turn/persona/summary payloads now expose:
 
@@ -61,12 +75,33 @@ Current turn/persona/summary payloads now expose:
 - `turn_summary.interaction_carryover.embodied_context` under the same provenance rule
 - `turn_summary.event_residue.digital_body_consequence` when a turn leaves an embodied consequence worth preserving at the event-residue layer
 - `writeback_trace.revision_traces[*].embodied_context` when an exported revision trace was written from final `behavior_action` / `behavior_plan` / `behavior_consequence` / `interaction_carryover` semantics carrying embodied continuity
+- `writeback_trace.revision_traces[*].preview_line` when a normalized revision trace carries embodied context and a compact read-model line is available
+- `writeback_trace.counterpart_assessment_history[*].preview_line` and `writeback_trace.proactive_continuity_history[*].preview_line` when the normalized history row carries embodied context and a compact read-model line is available
+- `writeback_trace.counterpart_assessment_history[*]` and `writeback_trace.proactive_continuity_history[*]` should be treated as typed normalized history rows, not raw `content` blobs:
+  - scalar fields such as `respect_level`, `carryover_strength`, `created_at`, and anchor metrics may already be coerced at the row surface
+  - nested compatibility `content` may also be normalized to match the same top-level typed contract
+- `sources[*].preview_line`, `claim_links[*].preview_line`, and `claim_links[*].sources[*].preview_line` when the normalized source / claim-link row carries embodied context and a compact source-bearing read-model line is available
 - `counterpart_assessment_preview[*].embodied_context` and `proactive_continuity_preview[*].embodied_context` only when persisted history explicitly carried embodied context
 
 Interpretation rules:
 
 - `behavior_queue` remains persona-owned continuity / life rhythm.
 - `action_packets` remain structured execution units.
+- current execution surface is `host-local restricted execution`:
+  - workspace-local only
+  - approval-gated for all sandbox execute packets
+  - not a claim of container, VM, or provider-side isolation
+- current sandbox execute family is:
+  - `intent=sandbox:execute_workspace_command`
+  - `risk=external_mutation`
+  - `requires_approval=true`
+- sandbox execution previews/results are stable packet payloads, not ad hoc tool-only blobs:
+  - `execution_spec`
+  - `execution_preview`
+  - `execution_result`
+- approval/resume must preserve the same:
+  - `proposal_id`
+  - `execution_spec`
 - completed `artifact:*` packets may now also carry `artifact_context`, which is the bounded structured reacquisition result:
   - `carrier`
   - `artifact_kind`
@@ -84,6 +119,35 @@ Interpretation rules:
   - `source_title`
   - `source_tool_name`
 - `digital_body` is the current runtime/body condition.
+- `digital_body.access_state` is the only stable access-truth container:
+  - flat compatibility fields such as `mode`, `session_continuity`, `browser_session`, `quota_state`
+  - phase 2 nested detail mirrors such as:
+    - `session_state`
+    - `account_state_detail`
+    - `quota_state_detail`
+    - `permission_state`
+    - `sandbox_state`
+- `digital_body.access_state.sandbox_state` is the stable sandbox truth surface:
+  - `availability`
+  - `allowed_roots`
+  - `execution_policy`
+  - `last_status`
+  - `runner_kind`
+  - `isolation_level`
+  - `last_command_profile`
+  - `last_exit_code`
+  - `last_run_id`
+  - `arbitrary_execution`
+- `digital_body.resource_state` is the only stable active-resource container:
+  - `artifact_continuity`
+  - `artifact_carrier`
+  - `active_artifact_kind`
+  - `active_artifact_ref`
+  - `active_artifact_label`
+  - `workspace_root`
+  - `artifact_source_ref_ids`
+  - `preferred_source_ref_id`
+  - `preferred_anchor_reason`
 - `digital_body.access_state` may now also carry provider-side world conditions such as `api_key_state`, `quota_state`, reusable session lifecycle metadata like `session_continuity` / `session_expires_in_s` / `session_recovery_mode`, and time-bound retry metadata like `retry_after_s` / `cooldown_scope` when the runtime knows them.
 - `digital_body.access_state` may now also carry structured access-acquisition guidance:
   - `access_acquire_proposals`
@@ -198,6 +262,12 @@ Interpretation rules:
         - refreshable fields include `artifact_source_ref_ids`, `preferred_source_ref_id`, `preferred_anchor_reason`, and missing saved-material metadata
         - this is a continuity refresh, not permission to invent a new active `source_ref` surface from retrieval alone
         - if the live turn exposes no visible `source_ref` context, the retrieved compare trace must remain non-seeding and stay only as carryover bias
+      - once preferred-anchor fields exist on a saved-material line, frontend-facing backend outputs should preserve them consistently across both direct and summarized surfaces:
+        - `digital_body.resource_state.preferred_source_ref_id`
+        - `digital_body.resource_state.preferred_anchor_reason`
+        - `digital_body_consequence.preferred_source_ref_id`
+        - `digital_body_consequence.preferred_anchor_reason`
+        - corresponding turn-summary / CLI summary views for the same active line
     - completed read-side artifact reacquisition may now also freeze as its own consequence family instead of disappearing into generic continuity:
       - `tool_name=reacquire_artifact`
       - `digital_body_consequence.kind=artifact_reacquired`
@@ -214,7 +284,10 @@ Interpretation rules:
       - live `digital_body_state`, frozen `digital_body_consequence`, backend payloads, and CLI summaries must all be able to converge on the same active artifact truth
     - completed read-side access verification may now freeze as a concrete stable-path fact when no friction remains:
       - `tool_name=refresh_access_state`
-      - `digital_body_consequence.kind=access_state_refreshed`
+    - `digital_body_consequence.kind=access_state_refreshed`
+- external web material is still a saved-material carrier in the current phase:
+  - use `source_ref` continuity
+  - do not interpret current payloads as proof of live browser reopen / restored cookies / resumed real session
       - this means the current access/session boundary was re-checked, not that login/cookies/browser mutation already happened
   - when a proposal path has already been accepted but the real access update has not yet happened:
     - packet `status=approved` means `acquisition path accepted`
@@ -240,12 +313,17 @@ Interpretation rules:
   - `artifact_continuity`
   - `active_artifact_kind`
   - `active_artifact_ref`
+  - `workspace_root` when the current artifact is attached inside a runtime workspace
   - `active_artifact_label`
   - `artifact_age_s`
   - `artifact_reacquisition_mode`
   - compact artifact identity when available:
     - `artifact_carrier`
     - `artifact_source_ref_ids`
+- `workspace_root` is the stable workspace trust boundary for summarized consumers:
+  - frontend/CLI may display it
+  - they should not infer a narrower write boundary from a subdirectory/file `active_artifact_ref`
+  - later relative workspace writes still resolve against `workspace_root`
     - `artifact_source_url`
     - `artifact_source_query`
     - `artifact_source_title`
@@ -263,6 +341,10 @@ Interpretation rules:
   - `selected_access_proposal`
   so later turns can remember which path was accepted without pretending the access is already fixed.
 - `digital_body_consequence` is the frozen embodied consequence of this turn, not a generic capability inventory.
+- sandbox execution consequences stay explicit:
+  - `sandbox_execution_completed`
+  - `sandbox_execution_blocked`
+- approved-but-not-executed sandbox packets must not be flattened into completed embodied facts.
 - `behavior_action.embodied_context` and `behavior_plan.embodied_context` expose body/access continuity only; they must not be reinterpreted into relationship stance shifts.
 - `interaction_carryover.embodied_context` is a carried-forward continuity trace, not a mirror of the current turn's runtime body state.
 - embodied context must not be inferred into relationship previews when it was never written there; the preview-level `embodied_context` fields are optional and provenance-bound.
@@ -295,4 +377,6 @@ Minimum contract checks:
 python -m pytest tests/test_backend_api.py tests/test_backend_session.py
 python -m pytest tests/test_final_state.py
 python -m pytest tests/test_autonomy_backend_contract.py tests/test_autonomy_writeback.py
+python -m pytest tests/test_sandbox_backend_contract.py tests/test_sandbox_embodied_execution_smokes.py tests/test_sandbox_embodied_execution_audit.py
+python evals/run_sandbox_embodied_execution_audit.py
 ```

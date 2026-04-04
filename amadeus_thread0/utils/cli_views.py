@@ -3,6 +3,27 @@ from __future__ import annotations
 from typing import Any
 
 from ..graph_parts.relational_runtime import _counterpart_assessment_profile
+from .embodied_preview import (
+    compact_counterpart_assessment_preview_line as _shared_compact_counterpart_assessment_preview_line,
+    compact_event_residue_preview_line as _shared_compact_event_residue_preview_line,
+    compact_proactive_continuity_preview_line as _shared_compact_proactive_continuity_preview_line,
+    compact_source_anchor_parts as _shared_compact_source_anchor_parts,
+    render_embodied_context_text as _shared_render_embodied_context_text,
+)
+from .relational_history_export import (
+    normalize_counterpart_assessment_exports,
+    normalize_proactive_continuity_exports,
+)
+from .turn_summary_export import (
+    summarize_agenda_lifecycle,
+    summarize_behavior_consequence,
+    summarize_digital_body,
+    summarize_digital_body_consequence,
+    summarize_embodied_context,
+    summarize_event_residue,
+    summarize_interaction_carryover,
+    summarize_opening_window_profile,
+)
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
     "continuity_anchor",
@@ -61,66 +82,6 @@ def _clean_int_list(values: Any, *, limit: int = 8) -> list[int]:
         if number <= 0:
             continue
         out.append(number)
-        if len(out) >= max(1, int(limit)):
-            break
-    return out
-
-
-def _clean_access_grants(values: Any, *, limit: int = 8) -> list[str]:
-    if not isinstance(values, list):
-        return []
-    out: list[str] = []
-    for item in values:
-        text = str(item or "").strip()
-        if not text:
-            continue
-        lowered = text.lower()
-        if lowered in out:
-            continue
-        out.append(lowered)
-        if len(out) >= max(1, int(limit)):
-            break
-    return out
-
-
-def _clean_access_acquire_proposal(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-    target = str(value.get("target") or "").strip().lower()
-    mode = str(value.get("mode") or "").strip().lower()
-    summary = str(value.get("summary") or "").strip()
-    operator_action = str(value.get("operator_action") or "").strip()
-    grants = _clean_access_grants(value.get("grants"), limit=8)
-    requires_operator = bool(value.get("requires_operator", False))
-    if not any((target, mode, summary, operator_action, grants, requires_operator)):
-        return {}
-    return {
-        "target": target,
-        "mode": mode,
-        "summary": summary[:220],
-        "operator_action": operator_action[:220],
-        "grants": grants,
-        "requires_operator": requires_operator,
-    }
-
-
-def _clean_access_acquire_proposals(values: Any, *, limit: int = 8) -> list[dict[str, Any]]:
-    if not isinstance(values, list):
-        return []
-    out: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for item in values:
-        proposal = _clean_access_acquire_proposal(item)
-        if not proposal:
-            continue
-        key = (
-            str(proposal.get("target") or "").strip(),
-            str(proposal.get("mode") or "").strip(),
-        )
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(proposal)
         if len(out) >= max(1, int(limit)):
             break
     return out
@@ -296,89 +257,11 @@ def _long_term_identity_preview(items: Any, *, limit: int = 3) -> list[dict[str,
 
 
 def _window_profile_summary(profile: Any) -> dict[str, Any]:
-    if not isinstance(profile, dict) or not profile:
-        return {}
-    profile_type = str(profile.get("profile_type") or "").strip()
-    if profile_type == "scheduled_window":
-        score = _metric(profile.get("maturity"), 0.0)
-        required = _metric(profile.get("required_maturity"), 0.0)
-        ready = bool(profile.get("invite_ready", False))
-        score_label = "maturity"
-        required_label = "required_maturity"
-        ready_label = "invite_ready"
-    elif profile_type == "self_opening":
-        score = _metric(profile.get("readiness"), 0.0)
-        required = _metric(profile.get("required_readiness"), 0.0)
-        ready = bool(profile.get("reopen_ready", False))
-        score_label = "readiness"
-        required_label = "required_readiness"
-        ready_label = "reopen_ready"
-    else:
-        score = _metric(profile.get("maturity"), 0.0)
-        required = _metric(profile.get("required_maturity"), 0.0)
-        ready = bool(profile.get("invite_ready", False) or profile.get("reopen_ready", False))
-        score_label = "score"
-        required_label = "required"
-        ready_label = "ready"
-    return {
-        "profile_type": profile_type,
-        "event_kind": str(profile.get("event_kind") or "").strip(),
-        "family": str(profile.get("family") or "").strip(),
-        "trigger_family": str(profile.get("trigger_family") or "").strip(),
-        "stance": str(profile.get("stance") or "").strip(),
-        "scene": str(profile.get("scene") or "").strip(),
-        "decision": str(profile.get("decision") or "").strip(),
-        score_label: score,
-        required_label: required,
-        "gap": round(score - required, 3),
-        ready_label: ready,
-        "recheck_min": _int_metric(profile.get("recheck_min"), 0),
-        "continuity_bonus": _metric(profile.get("continuity_bonus"), 0.0),
-        "continuity_discount": _metric(profile.get("continuity_discount"), 0.0),
-        "carryover_mode": str(profile.get("carryover_mode") or "").strip(),
-        "carryover_strength": _metric(profile.get("carryover_strength"), 0.0),
-        "event_carryover_mode": str(profile.get("event_carryover_mode") or "").strip(),
-        "event_carryover_strength": _metric(profile.get("event_carryover_strength"), 0.0),
-        "presence_residue": _metric(profile.get("presence_residue"), 0.0),
-        "ambient_resonance": _metric(profile.get("ambient_resonance"), 0.0),
-        "self_activity_momentum": _metric(profile.get("self_activity_momentum"), 0.0),
-        "recontact_echo": _metric(profile.get("recontact_echo"), 0.0),
-        "own_rhythm_load": _metric(profile.get("own_rhythm_load"), 0.0),
-    }
+    return summarize_opening_window_profile(profile)
 
 
 def _embodied_context_summary(state: Any) -> dict[str, Any]:
-    normalized = _digital_body_consequence_summary(state)
-    if not normalized:
-        return {}
-    return {
-        "kind": str(normalized.get("kind") or "").strip(),
-        "summary": str(normalized.get("summary") or "").strip(),
-        "access_mode": str(normalized.get("access_mode") or "").strip(),
-        "active_surface": str(normalized.get("active_surface") or "").strip(),
-        "requested_access": _clean_list(normalized.get("requested_access"), limit=8),
-        "missing_access": _clean_list(normalized.get("missing_access"), limit=8),
-        "granted_toolsets": _clean_list(normalized.get("granted_toolsets"), limit=8),
-        "active_tools": _clean_list(normalized.get("active_tools"), limit=8),
-        "block_reason": str(normalized.get("block_reason") or "").strip(),
-        "artifact_continuity": str(normalized.get("artifact_continuity") or "").strip(),
-        "active_artifact_kind": str(normalized.get("active_artifact_kind") or "").strip(),
-        "active_artifact_ref": str(normalized.get("active_artifact_ref") or "").strip(),
-        "active_artifact_label": str(normalized.get("active_artifact_label") or "").strip(),
-        "artifact_age_s": _int_metric(normalized.get("artifact_age_s"), 0),
-        "artifact_reacquisition_mode": str(normalized.get("artifact_reacquisition_mode") or "").strip(),
-        "artifact_carrier": str(normalized.get("artifact_carrier") or "").strip(),
-        "artifact_source_ref_ids": _clean_int_list(normalized.get("artifact_source_ref_ids"), limit=8),
-        "artifact_source_url": str(normalized.get("artifact_source_url") or "").strip(),
-        "artifact_source_query": str(normalized.get("artifact_source_query") or "").strip(),
-        "artifact_source_title": str(normalized.get("artifact_source_title") or "").strip(),
-        "artifact_source_tool_name": str(normalized.get("artifact_source_tool_name") or "").strip(),
-        "primary_proposal_id": str(normalized.get("primary_proposal_id") or "").strip(),
-        "primary_status": str(normalized.get("primary_status") or "").strip(),
-        "procedural_growth": bool(normalized.get("procedural_growth", False)),
-        "environmental_friction": bool(normalized.get("environmental_friction", False)),
-        "requested_help": bool(normalized.get("requested_help", False)),
-    }
+    return summarize_embodied_context(state)
 
 
 def _history_embodied_context(*sources: Any) -> dict[str, Any]:
@@ -394,401 +277,57 @@ def _history_embodied_context(*sources: Any) -> dict[str, Any]:
     return {}
 
 
-def _render_embodied_context_text(state: Any) -> str:
-    context = _embodied_context_summary(state)
-    if not context:
-        return ""
-    parts = ["bodyfx=" + (str(context.get("kind") or "").strip() or "-")]
-    requested_access = _clean_list(context.get("requested_access"), limit=2)
-    missing_access = _clean_list(context.get("missing_access"), limit=2)
-    granted_toolsets = _clean_list(context.get("granted_toolsets"), limit=2)
-    active_tools = _clean_list(context.get("active_tools"), limit=2)
-    artifact_continuity = str(context.get("artifact_continuity") or "").strip()
-    artifact_kind = str(context.get("active_artifact_kind") or "").strip()
-    artifact_label = (
-        str(context.get("active_artifact_label") or "").strip()
-        or str(context.get("active_artifact_ref") or "").strip()
-        or artifact_kind
+def _compact_source_anchor_parts(
+    state: Any,
+    *,
+    label_fallback: str = "",
+    include_refs: bool = True,
+) -> list[str]:
+    return _shared_compact_source_anchor_parts(
+        state,
+        label_fallback=label_fallback,
+        include_refs=include_refs,
     )
-    artifact_reacquisition = str(context.get("artifact_reacquisition_mode") or "").strip()
-    if requested_access:
-        parts.append("ask=" + ",".join(requested_access))
-    if missing_access:
-        parts.append("missing=" + ",".join(missing_access))
-    if granted_toolsets:
-        parts.append("grant=" + ",".join(granted_toolsets))
-    elif active_tools:
-        parts.append("tools=" + ",".join(active_tools))
-    if artifact_continuity:
-        artifact_text = artifact_kind or "artifact"
-        if artifact_label:
-            artifact_text += ":" + artifact_label[:40]
-        artifact_text += ":" + artifact_continuity
-        if artifact_reacquisition:
-            artifact_text += ":" + artifact_reacquisition
-        parts.append(artifact_text)
-    if bool(context.get("requested_help", False)):
-        parts.append("help=yes")
-    if bool(context.get("procedural_growth", False)):
-        parts.append("growth=yes")
-    if bool(context.get("environmental_friction", False)):
-        parts.append("friction=yes")
-    status = str(context.get("primary_status") or "").strip()
-    if status:
-        parts.append("status=" + status)
-    return " ".join(parts)
+
+
+def _render_embodied_context_text(state: Any) -> str:
+    return _shared_render_embodied_context_text(state)
+
+
+def _compact_counterpart_assessment_preview_line(row: dict[str, Any] | None) -> str:
+    return _shared_compact_counterpart_assessment_preview_line(row)
+
+
+def _compact_proactive_continuity_preview_line(row: dict[str, Any] | None) -> str:
+    return _shared_compact_proactive_continuity_preview_line(row)
+
+
+def _compact_event_residue_preview_line(summary: dict[str, Any] | None) -> str:
+    return _shared_compact_event_residue_preview_line(summary)
 
 
 def _interaction_carryover_summary(carryover: Any) -> dict[str, Any]:
-    if not isinstance(carryover, dict) or not carryover:
-        return {}
-    summary = {
-        "source": str(carryover.get("source") or "").strip(),
-        "source_event_kind": str(carryover.get("source_event_kind") or "").strip(),
-        "source_behavior_mode": str(carryover.get("source_behavior_mode") or "").strip(),
-        "source_action_target": str(carryover.get("source_action_target") or "").strip(),
-        "source_primary_motive": str(carryover.get("source_primary_motive") or "").strip(),
-        "source_motive_tension": str(carryover.get("source_motive_tension") or "").strip(),
-        "source_goal_frame": str(carryover.get("source_goal_frame") or "").strip(),
-        "source_text": str(carryover.get("source_text") or "").strip()[:180],
-        "source_tags": _clean_list(carryover.get("source_tags"), limit=10),
-        "carryover_mode": str(carryover.get("carryover_mode") or "").strip(),
-        "strength": _metric(carryover.get("strength"), 0.0),
-        "relationship_weather": str(carryover.get("relationship_weather") or "").strip(),
-        "idle_minutes": _int_metric(carryover.get("idle_minutes"), 0),
-        "source_turn_gap": _int_metric(carryover.get("source_turn_gap"), 0),
-        "attention_target": str(carryover.get("attention_target") or "").strip(),
-        "nonverbal_signal": str(carryover.get("nonverbal_signal") or "").strip(),
-        "note": str(carryover.get("note") or "").strip(),
-        "created_at": _int_metric(carryover.get("created_at"), 0),
-    }
-    embodied_context = _embodied_context_summary(carryover.get("embodied_context"))
-    if embodied_context:
-        summary["embodied_context"] = embodied_context
-    return summary
+    return summarize_interaction_carryover(carryover)
 
 
 def _event_residue_summary(current_event: Any, *, digital_body_consequence: Any = None) -> dict[str, Any]:
-    if not isinstance(current_event, dict) or not current_event:
-        return {}
-    perception = current_event.get("perception") if isinstance(current_event.get("perception"), dict) else {}
-    summary = {
-        "event_kind": str(current_event.get("kind") or "").strip(),
-        "source": str(current_event.get("source") or "").strip(),
-        "event_frame": str(current_event.get("event_frame") or "").strip(),
-        "response_style_hint": str(current_event.get("response_style_hint") or "").strip(),
-        "science_mode": bool(current_event.get("science_mode", False)),
-        "continuation_mode": bool(current_event.get("continuation_mode", False)),
-        "counterpart_name": str(current_event.get("counterpart_name") or "").strip(),
-        "appraisal_label": str(current_event.get("appraisal_label") or "").strip(),
-        "appraisal_confidence": _metric(current_event.get("appraisal_confidence"), 0.0),
-        "created_at": _int_metric(current_event.get("created_at"), 0),
-        "tags": _clean_list(current_event.get("tags"), limit=8),
-        "thread_id": str(perception.get("thread_id") or "").strip(),
-        "turn_id": str(perception.get("turn_id") or "").strip(),
-        "event_id": str(perception.get("event_id") or "").strip(),
-        "trigger_family": str(current_event.get("trigger_family") or "").strip(),
-        "derived_from_plan_kind": str(current_event.get("derived_from_plan_kind") or "").strip(),
-        "commitment_id": _int_metric(current_event.get("commitment_id"), 0),
-        "due_at": str(current_event.get("due_at") or "").strip(),
-        "carryover_mode": str(current_event.get("carryover_mode") or "").strip(),
-        "carryover_strength": _metric(current_event.get("carryover_strength"), 0.0),
-        "relationship_weather": str(current_event.get("relationship_weather") or "").strip(),
-        "channel": str(perception.get("channel") or "").strip(),
-        "modality": str(perception.get("modality") or "").strip(),
-        "source_role": str(perception.get("source_role") or "").strip(),
-        "trust_tier": str(perception.get("trust_tier") or "").strip(),
-        "salience": _metric(perception.get("salience"), 0.0),
-        "interruptibility": str(perception.get("interruptibility") or "").strip(),
-        "delivery_mode": str(perception.get("delivery_mode") or "").strip(),
-        "is_proactive": bool(perception.get("is_proactive", False)),
-        "presence_residue": _metric(current_event.get("presence_residue"), 0.0),
-        "ambient_resonance": _metric(current_event.get("ambient_resonance"), 0.0),
-        "self_activity_momentum": _metric(current_event.get("self_activity_momentum"), 0.0),
-        "attention_target_hint": str(current_event.get("attention_target_hint") or "").strip(),
-        "nonverbal_signal_hint": str(current_event.get("nonverbal_signal_hint") or "").strip(),
-        "scheduled_after_min": _int_metric(current_event.get("scheduled_after_min"), 0),
-        "idle_minutes": _int_metric(current_event.get("idle_minutes"), 0),
-    }
-    embodied = _embodied_context_summary(digital_body_consequence)
-    if embodied:
-        summary["digital_body_consequence"] = embodied
-    return summary
+    return summarize_event_residue(current_event, digital_body_consequence=digital_body_consequence)
 
 
 def _agenda_lifecycle_summary(residue: Any) -> dict[str, Any]:
-    if not isinstance(residue, dict) or not residue:
-        return {}
-    summary = {
-        "kind": str(residue.get("kind") or "").strip(),
-        "source_event_kind": str(residue.get("source_event_kind") or "").strip(),
-        "trigger_family": str(residue.get("trigger_family") or "").strip(),
-        "carryover_mode": str(residue.get("carryover_mode") or "").strip(),
-        "carryover_strength": _metric(residue.get("carryover_strength"), 0.0),
-        "relationship_weather": str(residue.get("relationship_weather") or "").strip(),
-        "hold_count": _int_metric(residue.get("hold_count"), 0),
-        "idle_minutes": _int_metric(residue.get("idle_minutes"), 0),
-        "attention_target": str(residue.get("attention_target") or "").strip(),
-        "nonverbal_signal": str(residue.get("nonverbal_signal") or "").strip(),
-        "presence_residue": _metric(residue.get("presence_residue"), 0.0),
-        "ambient_resonance": _metric(residue.get("ambient_resonance"), 0.0),
-        "self_activity_momentum": _metric(residue.get("self_activity_momentum"), 0.0),
-        "continuity_anchor": _metric(residue.get("continuity_anchor"), 0.0),
-        "own_rhythm_anchor": _metric(residue.get("own_rhythm_anchor"), 0.0),
-        "recontact_anchor": _metric(residue.get("recontact_anchor"), 0.0),
-        "boundary_anchor": _metric(residue.get("boundary_anchor"), 0.0),
-        "memory_anchor": _metric(residue.get("memory_anchor"), 0.0),
-        "semantic_continuity_depth": _metric(residue.get("semantic_continuity_depth"), 0.0),
-        "semantic_identity_gravity": _metric(residue.get("semantic_identity_gravity"), 0.0),
-        "lineage_gravity": _metric(residue.get("lineage_gravity"), 0.0),
-        "contact_lineage": _metric(residue.get("contact_lineage"), 0.0),
-        "repair_lineage": _metric(residue.get("repair_lineage"), 0.0),
-        "boundary_lineage": _metric(residue.get("boundary_lineage"), 0.0),
-        "selfhood_lineage": _metric(residue.get("selfhood_lineage"), 0.0),
-        "agency_lineage": _metric(residue.get("agency_lineage"), 0.0),
-        "long_term_axis_count": _int_metric(residue.get("long_term_axis_count"), 0),
-        "own_rhythm_bias": _metric(residue.get("own_rhythm_bias"), 0.0),
-        "recontact_cooldown": _metric(residue.get("recontact_cooldown"), 0.0),
-        "counterpart_scene_bias": str(residue.get("counterpart_scene_bias") or "").strip(),
-        "counterpart_boundary_delta": _metric(residue.get("counterpart_boundary_delta"), 0.0),
-        "created_at": _int_metric(residue.get("created_at"), 0),
-        "source_tags": _clean_list(residue.get("source_tags"), limit=6),
-        "note": str(residue.get("note") or "").strip()[:160],
-    }
-    embodied = _embodied_context_summary(residue.get("embodied_context"))
-    if embodied:
-        summary["embodied_context"] = embodied
-    return summary
+    return summarize_agenda_lifecycle(residue)
 
 
 def _behavior_consequence_summary(consequence: Any) -> dict[str, Any]:
-    if not isinstance(consequence, dict) or not consequence:
-        return {}
-    summary = {
-        "kind": str(consequence.get("kind") or "").strip(),
-        "summary": str(consequence.get("summary") or "").strip(),
-        "relationship_effect": str(consequence.get("relationship_effect") or "").strip(),
-        "self_effect": str(consequence.get("self_effect") or "").strip(),
-        "trigger_family": str(consequence.get("trigger_family") or "").strip(),
-        "relationship_weather": str(consequence.get("relationship_weather") or "").strip(),
-        "carryover_mode": str(consequence.get("carryover_mode") or "").strip(),
-        "timing_window_min": _int_metric(consequence.get("timing_window_min"), 0),
-        "silent": bool(consequence.get("silent", False)),
-        "delayed": bool(consequence.get("delayed", False)),
-        "stale_window": bool(consequence.get("stale_window", False)),
-    }
-    embodied = _embodied_context_summary(consequence.get("embodied_context"))
-    if embodied:
-        summary["embodied_context"] = embodied
-    return summary
+    return summarize_behavior_consequence(consequence)
 
 
 def _digital_body_summary(state: Any) -> dict[str, Any]:
-    if not isinstance(state, dict) or not state:
-        return {}
-    access_state = state.get("access_state") if isinstance(state.get("access_state"), dict) else {}
-    resource_state = state.get("resource_state") if isinstance(state.get("resource_state"), dict) else {}
-    summary = {
-        "active_surface": str(state.get("active_surface") or "").strip(),
-        "perception_channels": _clean_list(state.get("perception_channels"), limit=8),
-        "action_channels": _clean_list(state.get("action_channels"), limit=8),
-        "world_surfaces": _clean_list(state.get("world_surfaces"), limit=12),
-        "available_toolsets": _clean_list(state.get("available_toolsets"), limit=8),
-        "active_tools": _clean_list(state.get("active_tools"), limit=8),
-        "access": {
-            "mode": str(access_state.get("mode") or "").strip(),
-            "conditions": _clean_list(access_state.get("conditions"), limit=8),
-            "block_reason": str(access_state.get("block_reason") or "").strip(),
-            "retry_after_s": _int_metric(access_state.get("retry_after_s"), 0),
-            "cooldown_scope": str(access_state.get("cooldown_scope") or "").strip(),
-            "session_continuity": str(access_state.get("session_continuity") or "").strip(),
-            "session_expires_in_s": _int_metric(access_state.get("session_expires_in_s"), 0),
-            "session_recovery_mode": str(access_state.get("session_recovery_mode") or "").strip(),
-            "pending_approval_count": _int_metric(access_state.get("pending_approval_count"), 0),
-            "external_mutation_pending": bool(access_state.get("external_mutation_pending", False)),
-            "granted_toolsets": _clean_list(access_state.get("granted_toolsets"), limit=8),
-            "missing_access": _clean_list(access_state.get("missing_access"), limit=8),
-            "requestable_access": _clean_list(access_state.get("requestable_access"), limit=8),
-            "browser_session": str(access_state.get("browser_session") or "").strip(),
-            "account_state": str(access_state.get("account_state") or "").strip(),
-            "cookie_state": str(access_state.get("cookie_state") or "").strip(),
-            "api_key_state": str(access_state.get("api_key_state") or "").strip(),
-            "quota_state": str(access_state.get("quota_state") or "").strip(),
-            "filesystem_state": str(access_state.get("filesystem_state") or "").strip(),
-            "sandbox_mode": str(access_state.get("sandbox_mode") or "").strip(),
-            "network_access": str(access_state.get("network_access") or "").strip(),
-            "access_acquire_proposals": _clean_access_acquire_proposals(access_state.get("access_acquire_proposals"), limit=8),
-            "selected_access_proposal": _clean_access_acquire_proposal(access_state.get("selected_access_proposal")),
-        },
-        "resources": {
-            "behavior_queue_depth": _int_metric(resource_state.get("behavior_queue_depth"), 0),
-            "action_packet_count": _int_metric(resource_state.get("action_packet_count"), 0),
-            "pending_approval_count": _int_metric(resource_state.get("pending_approval_count"), 0),
-            "queued_packet_count": _int_metric(resource_state.get("queued_packet_count"), 0),
-            "executing_packet_count": _int_metric(resource_state.get("executing_packet_count"), 0),
-            "completed_packet_count": _int_metric(resource_state.get("completed_packet_count"), 0),
-            "blocked_packet_count": _int_metric(resource_state.get("blocked_packet_count"), 0),
-            "external_tool_count": _int_metric(resource_state.get("external_tool_count"), 0),
-            "artifact_continuity": str(resource_state.get("artifact_continuity") or "").strip(),
-            "active_artifact_kind": str(resource_state.get("active_artifact_kind") or "").strip(),
-            "active_artifact_ref": str(resource_state.get("active_artifact_ref") or "").strip(),
-            "active_artifact_label": str(resource_state.get("active_artifact_label") or "").strip(),
-            "artifact_age_s": _int_metric(resource_state.get("artifact_age_s"), 0),
-            "artifact_reacquisition_mode": str(resource_state.get("artifact_reacquisition_mode") or "").strip(),
-            "artifact_carrier": str(resource_state.get("artifact_carrier") or "").strip(),
-            "artifact_source_ref_ids": _clean_int_list(resource_state.get("artifact_source_ref_ids"), limit=8),
-            "artifact_source_url": str(resource_state.get("artifact_source_url") or "").strip(),
-            "artifact_source_query": str(resource_state.get("artifact_source_query") or "").strip(),
-            "artifact_source_title": str(resource_state.get("artifact_source_title") or "").strip(),
-            "artifact_source_tool_name": str(resource_state.get("artifact_source_tool_name") or "").strip(),
-        },
-        "constraints": _clean_list(state.get("body_constraints"), limit=8),
-    }
-    if any(
-        (
-            summary["active_surface"],
-            summary["perception_channels"],
-            summary["action_channels"],
-            summary["world_surfaces"],
-            summary["available_toolsets"],
-            summary["active_tools"],
-            summary["access"]["mode"],
-            summary["access"]["conditions"],
-            summary["access"]["block_reason"],
-            summary["access"]["retry_after_s"] > 0,
-            summary["access"]["cooldown_scope"],
-            summary["access"]["session_continuity"],
-            summary["access"]["session_expires_in_s"] > 0,
-            summary["access"]["session_recovery_mode"],
-            summary["access"]["pending_approval_count"] > 0,
-            summary["access"]["external_mutation_pending"],
-            summary["access"]["granted_toolsets"],
-            summary["access"]["missing_access"],
-            summary["access"]["requestable_access"],
-            summary["access"]["browser_session"],
-            summary["access"]["account_state"],
-            summary["access"]["cookie_state"],
-            summary["access"]["api_key_state"],
-            summary["access"]["quota_state"],
-            summary["access"]["filesystem_state"],
-            summary["access"]["sandbox_mode"],
-            summary["access"]["network_access"],
-            summary["access"]["access_acquire_proposals"],
-            summary["access"]["selected_access_proposal"],
-            summary["resources"]["behavior_queue_depth"] > 0,
-            summary["resources"]["action_packet_count"] > 0,
-            summary["resources"]["pending_approval_count"] > 0,
-            summary["resources"]["queued_packet_count"] > 0,
-            summary["resources"]["executing_packet_count"] > 0,
-            summary["resources"]["completed_packet_count"] > 0,
-            summary["resources"]["blocked_packet_count"] > 0,
-            summary["resources"]["external_tool_count"] > 0,
-            summary["resources"]["artifact_continuity"],
-            summary["resources"]["active_artifact_kind"],
-            summary["resources"]["active_artifact_ref"],
-            summary["resources"]["active_artifact_label"],
-            summary["resources"]["artifact_age_s"] > 0,
-            summary["resources"]["artifact_reacquisition_mode"],
-            summary["resources"]["artifact_carrier"],
-            summary["resources"]["artifact_source_ref_ids"],
-            summary["resources"]["artifact_source_url"],
-            summary["resources"]["artifact_source_query"],
-            summary["resources"]["artifact_source_title"],
-            summary["resources"]["artifact_source_tool_name"],
-            summary["constraints"],
-        )
-    ):
-        return summary
-    return {}
+    return summarize_digital_body(state)
 
 
 def _digital_body_consequence_summary(state: Any) -> dict[str, Any]:
-    if not isinstance(state, dict) or not state:
-        return {}
-    summary = {
-        "kind": str(state.get("kind") or "").strip(),
-        "summary": str(state.get("summary") or "").strip()[:220],
-        "access_mode": str(state.get("access_mode") or "").strip(),
-        "active_surface": str(state.get("active_surface") or "").strip(),
-        "world_surfaces": _clean_list(state.get("world_surfaces"), limit=12),
-        "missing_access": _clean_list(state.get("missing_access"), limit=8),
-        "requested_access": _clean_list(state.get("requested_access"), limit=8),
-        "granted_toolsets": _clean_list(state.get("granted_toolsets"), limit=8),
-        "active_tools": _clean_list(state.get("active_tools"), limit=8),
-        "block_reason": str(state.get("block_reason") or "").strip()[:220],
-        "retry_after_s": _int_metric(state.get("retry_after_s"), 0),
-        "cooldown_scope": str(state.get("cooldown_scope") or "").strip(),
-        "session_continuity": str(state.get("session_continuity") or "").strip(),
-        "session_expires_in_s": _int_metric(state.get("session_expires_in_s"), 0),
-        "session_recovery_mode": str(state.get("session_recovery_mode") or "").strip(),
-        "artifact_continuity": str(state.get("artifact_continuity") or "").strip(),
-        "active_artifact_kind": str(state.get("active_artifact_kind") or "").strip(),
-        "active_artifact_ref": str(state.get("active_artifact_ref") or "").strip()[:220],
-        "active_artifact_label": str(state.get("active_artifact_label") or "").strip()[:160],
-        "artifact_age_s": _int_metric(state.get("artifact_age_s"), 0),
-        "artifact_reacquisition_mode": str(state.get("artifact_reacquisition_mode") or "").strip(),
-        "artifact_mutation_mode": str(state.get("artifact_mutation_mode") or "").strip(),
-        "artifact_carrier": str(state.get("artifact_carrier") or "").strip(),
-        "artifact_source_ref_ids": _clean_int_list(state.get("artifact_source_ref_ids"), limit=8),
-        "artifact_source_url": str(state.get("artifact_source_url") or "").strip()[:320],
-        "artifact_source_query": str(state.get("artifact_source_query") or "").strip()[:220],
-        "artifact_source_title": str(state.get("artifact_source_title") or "").strip()[:160],
-        "artifact_source_tool_name": str(state.get("artifact_source_tool_name") or "").strip(),
-        "primary_proposal_id": str(state.get("primary_proposal_id") or "").strip(),
-        "primary_status": str(state.get("primary_status") or "").strip(),
-        "primary_origin": str(state.get("primary_origin") or "").strip(),
-        "primary_intent": str(state.get("primary_intent") or "").strip(),
-        "primary_tool_name": str(state.get("primary_tool_name") or "").strip(),
-        "procedural_growth": bool(state.get("procedural_growth", False)),
-        "environmental_friction": bool(state.get("environmental_friction", False)),
-        "requested_help": bool(state.get("requested_help", False)),
-        "access_acquire_proposals": _clean_access_acquire_proposals(state.get("access_acquire_proposals"), limit=8),
-        "selected_access_proposal": _clean_access_acquire_proposal(state.get("selected_access_proposal")),
-    }
-    if any(
-        (
-            summary["kind"],
-            summary["summary"],
-            summary["access_mode"],
-            summary["active_surface"],
-            summary["world_surfaces"],
-            summary["missing_access"],
-            summary["requested_access"],
-            summary["granted_toolsets"],
-            summary["active_tools"],
-            summary["block_reason"],
-            summary["retry_after_s"] > 0,
-            summary["cooldown_scope"],
-            summary["session_continuity"],
-            summary["session_expires_in_s"] > 0,
-            summary["session_recovery_mode"],
-            summary["artifact_continuity"],
-            summary["active_artifact_kind"],
-            summary["active_artifact_ref"],
-            summary["active_artifact_label"],
-            summary["artifact_age_s"] > 0,
-            summary["artifact_reacquisition_mode"],
-            summary["artifact_mutation_mode"],
-            summary["artifact_carrier"],
-            summary["artifact_source_ref_ids"],
-            summary["artifact_source_url"],
-            summary["artifact_source_query"],
-            summary["artifact_source_title"],
-            summary["artifact_source_tool_name"],
-            summary["primary_proposal_id"],
-            summary["primary_status"],
-            summary["primary_origin"],
-            summary["primary_intent"],
-            summary["primary_tool_name"],
-            summary["procedural_growth"],
-            summary["environmental_friction"],
-            summary["requested_help"],
-            summary["access_acquire_proposals"],
-            summary["selected_access_proposal"],
-        )
-    ):
-        return summary
-    return {}
+    return summarize_digital_body_consequence(state)
 
 
 def build_behavior_queue_cli_summary(queue: Any, *, limit: int = 3) -> list[dict[str, Any]]:
@@ -863,9 +402,17 @@ def render_action_packet_cli_text(packets: Any, *, limit: int = 4) -> str:
         risk = str(item.get("risk") or "").strip() or "-"
         origin = str(item.get("origin") or "").strip() or "-"
         effect = str(item.get("expected_effect") or item.get("result_summary") or "").strip()
+        execution_result = item.get("execution_result") if isinstance(item.get("execution_result"), dict) else {}
         line = f"- {proposal_id} | {origin} | {intent} | {status} | {risk}"
         if effect:
             line += " | " + effect[:120]
+        if execution_result:
+            run_id = str(execution_result.get("run_id") or "").strip()
+            exit_code = execution_result.get("exit_code")
+            if run_id:
+                line += f" | run={run_id}"
+            if isinstance(exit_code, int):
+                line += f" | exit={exit_code}"
         rows.append(line)
     return "\n".join(rows) if rows else "- no action packets"
 
@@ -982,16 +529,13 @@ def render_behavior_queue_cli_text(queue: Any, *, limit: int = 3) -> str:
 
 
 def build_counterpart_assessment_cli_summary(history: Any, *, limit: int = 5) -> list[dict[str, Any]]:
-    if not isinstance(history, list):
-        return []
     out: list[dict[str, Any]] = []
-    for item in history:
+    for item in normalize_counterpart_assessment_exports(history):
         if not isinstance(item, dict):
             continue
-        content = item.get("content") if isinstance(item.get("content"), dict) else {}
-        summary = str(content.get("summary") or item.get("summary") or "").strip()
-        stance = str(content.get("stance") or item.get("stance") or "").strip().lower()
-        scene = str(content.get("scene") or item.get("scene") or "").strip().lower()
+        summary = str(item.get("summary") or "").strip()
+        stance = str(item.get("stance") or "").strip().lower()
+        scene = str(item.get("scene") or "").strip().lower()
         if not any((summary, stance, scene)):
             continue
         row = {
@@ -999,23 +543,26 @@ def build_counterpart_assessment_cli_summary(history: Any, *, limit: int = 5) ->
             "summary": summary,
             "stance": stance,
             "scene": scene,
-            "created_at": _int_metric(content.get("created_at", item.get("created_at")), 0),
-            "respect_level": _metric(content.get("respect_level", item.get("respect_level")), 0.5),
-            "reciprocity": _metric(content.get("reciprocity", item.get("reciprocity")), 0.5),
-            "boundary_pressure": _metric(content.get("boundary_pressure", item.get("boundary_pressure")), 0.1),
-            "reliability_read": _metric(content.get("reliability_read", item.get("reliability_read")), 0.5),
-            "event_kind": str(content.get("event_kind") or item.get("event_kind") or "").strip(),
-            "interaction_frame": str(content.get("interaction_frame") or item.get("interaction_frame") or "").strip(),
-            "primary_motive": str(content.get("primary_motive") or item.get("primary_motive") or "").strip(),
-            "motive_tension": str(content.get("motive_tension") or item.get("motive_tension") or "").strip(),
-            "goal_frame": str(content.get("goal_frame") or item.get("goal_frame") or "").strip(),
+            "created_at": _int_metric(item.get("created_at"), 0),
+            "respect_level": _metric(item.get("respect_level"), 0.5),
+            "reciprocity": _metric(item.get("reciprocity"), 0.5),
+            "boundary_pressure": _metric(item.get("boundary_pressure"), 0.1),
+            "reliability_read": _metric(item.get("reliability_read"), 0.5),
+            "event_kind": str(item.get("event_kind") or "").strip(),
+            "interaction_frame": str(item.get("interaction_frame") or "").strip(),
+            "primary_motive": str(item.get("primary_motive") or "").strip(),
+            "motive_tension": str(item.get("motive_tension") or "").strip(),
+            "goal_frame": str(item.get("goal_frame") or "").strip(),
         }
-        profile = _counterpart_assessment_profile({**row, "assessment_profile": content.get("assessment_profile") or item.get("assessment_profile")})
+        profile = item.get("assessment_profile") if isinstance(item.get("assessment_profile"), dict) else {}
         if profile:
             row["assessment_profile"] = profile
-        embodied_context = _history_embodied_context(content, item)
+        embodied_context = _history_embodied_context(item)
         if embodied_context:
             row["embodied_context"] = embodied_context
+        preview_line = str(item.get("preview_line") or "").strip() or _compact_counterpart_assessment_preview_line(row)
+        if preview_line:
+            row["preview_line"] = preview_line
         out.append(row)
     capped = max(1, int(limit))
     return out[-capped:]
@@ -1078,17 +625,14 @@ def render_counterpart_assessment_cli_text(history: Any, *, limit: int = 5) -> s
 
 
 def build_proactive_continuity_cli_summary(history: Any, *, limit: int = 5) -> list[dict[str, Any]]:
-    if not isinstance(history, list):
-        return []
     out: list[dict[str, Any]] = []
-    for item in history:
+    for item in normalize_proactive_continuity_exports(history):
         if not isinstance(item, dict):
             continue
-        content = item.get("content") if isinstance(item.get("content"), dict) else {}
-        summary = str(content.get("summary") or item.get("summary") or "").strip()
-        kind = str(content.get("kind") or item.get("kind") or "").strip().lower()
-        trace_family = str(content.get("trace_family") or item.get("trace_family") or "").strip().lower()
-        carryover_mode = str(content.get("carryover_mode") or item.get("carryover_mode") or "").strip().lower()
+        summary = str(item.get("summary") or "").strip()
+        kind = str(item.get("kind") or "").strip().lower()
+        trace_family = str(item.get("trace_family") or "").strip().lower()
+        carryover_mode = str(item.get("carryover_mode") or "").strip().lower()
         if not any((summary, kind, trace_family, carryover_mode)):
             continue
         row = {
@@ -1096,45 +640,44 @@ def build_proactive_continuity_cli_summary(history: Any, *, limit: int = 5) -> l
             "summary": summary,
             "kind": kind,
             "trace_family": trace_family,
-            "source_event_kind": str(content.get("source_event_kind") or item.get("source_event_kind") or "").strip().lower(),
-            "trigger_family": str(content.get("trigger_family") or item.get("trigger_family") or "").strip().lower(),
+            "source_event_kind": str(item.get("source_event_kind") or "").strip().lower(),
+            "trigger_family": str(item.get("trigger_family") or "").strip().lower(),
             "carryover_mode": carryover_mode,
-            "relationship_weather": str(content.get("relationship_weather") or item.get("relationship_weather") or "").strip().lower(),
-            "counterpart_scene_bias": str(content.get("counterpart_scene_bias") or item.get("counterpart_scene_bias") or "").strip().lower(),
-            "hold_count": _int_metric(content.get("hold_count", item.get("hold_count")), 0),
-            "carryover_strength": _metric(content.get("carryover_strength", item.get("carryover_strength")), 0.0),
-            "recontact_cooldown": _metric(content.get("recontact_cooldown", item.get("recontact_cooldown")), 0.0),
-            "presence_residue": _metric(content.get("presence_residue", item.get("presence_residue")), 0.0),
-            "ambient_resonance": _metric(content.get("ambient_resonance", item.get("ambient_resonance")), 0.0),
-            "self_activity_momentum": _metric(content.get("self_activity_momentum", item.get("self_activity_momentum")), 0.0),
-            "continuity_anchor": _metric(content.get("continuity_anchor", item.get("continuity_anchor")), 0.0),
-            "own_rhythm_anchor": _metric(content.get("own_rhythm_anchor", item.get("own_rhythm_anchor")), 0.0),
-            "recontact_anchor": _metric(content.get("recontact_anchor", item.get("recontact_anchor")), 0.0),
-            "boundary_anchor": _metric(content.get("boundary_anchor", item.get("boundary_anchor")), 0.0),
-            "memory_anchor": _metric(content.get("memory_anchor", item.get("memory_anchor")), 0.0),
-            "semantic_continuity_depth": _metric(
-                content.get("semantic_continuity_depth", item.get("semantic_continuity_depth")), 0.0
-            ),
-            "semantic_identity_gravity": _metric(
-                content.get("semantic_identity_gravity", item.get("semantic_identity_gravity")), 0.0
-            ),
-            "lineage_gravity": _metric(content.get("lineage_gravity", item.get("lineage_gravity")), 0.0),
-            "contact_lineage": _metric(content.get("contact_lineage", item.get("contact_lineage")), 0.0),
-            "repair_lineage": _metric(content.get("repair_lineage", item.get("repair_lineage")), 0.0),
-            "boundary_lineage": _metric(content.get("boundary_lineage", item.get("boundary_lineage")), 0.0),
-            "selfhood_lineage": _metric(content.get("selfhood_lineage", item.get("selfhood_lineage")), 0.0),
-            "agency_lineage": _metric(content.get("agency_lineage", item.get("agency_lineage")), 0.0),
-            "long_term_axis_count": _int_metric(content.get("long_term_axis_count", item.get("long_term_axis_count")), 0),
-            "own_rhythm_bias": _metric(content.get("own_rhythm_bias", item.get("own_rhythm_bias")), 0.0),
-            "counterpart_boundary_delta": _metric(content.get("counterpart_boundary_delta", item.get("counterpart_boundary_delta")), 0.0),
-            "created_at": _int_metric(content.get("created_at", item.get("created_at")), 0),
-            "primary_motive": str(content.get("primary_motive") or item.get("primary_motive") or "").strip(),
-            "motive_tension": str(content.get("motive_tension") or item.get("motive_tension") or "").strip(),
-            "goal_frame": str(content.get("goal_frame") or item.get("goal_frame") or "").strip(),
+            "relationship_weather": str(item.get("relationship_weather") or "").strip().lower(),
+            "counterpart_scene_bias": str(item.get("counterpart_scene_bias") or "").strip().lower(),
+            "hold_count": _int_metric(item.get("hold_count"), 0),
+            "carryover_strength": _metric(item.get("carryover_strength"), 0.0),
+            "recontact_cooldown": _metric(item.get("recontact_cooldown"), 0.0),
+            "presence_residue": _metric(item.get("presence_residue"), 0.0),
+            "ambient_resonance": _metric(item.get("ambient_resonance"), 0.0),
+            "self_activity_momentum": _metric(item.get("self_activity_momentum"), 0.0),
+            "continuity_anchor": _metric(item.get("continuity_anchor"), 0.0),
+            "own_rhythm_anchor": _metric(item.get("own_rhythm_anchor"), 0.0),
+            "recontact_anchor": _metric(item.get("recontact_anchor"), 0.0),
+            "boundary_anchor": _metric(item.get("boundary_anchor"), 0.0),
+            "memory_anchor": _metric(item.get("memory_anchor"), 0.0),
+            "semantic_continuity_depth": _metric(item.get("semantic_continuity_depth"), 0.0),
+            "semantic_identity_gravity": _metric(item.get("semantic_identity_gravity"), 0.0),
+            "lineage_gravity": _metric(item.get("lineage_gravity"), 0.0),
+            "contact_lineage": _metric(item.get("contact_lineage"), 0.0),
+            "repair_lineage": _metric(item.get("repair_lineage"), 0.0),
+            "boundary_lineage": _metric(item.get("boundary_lineage"), 0.0),
+            "selfhood_lineage": _metric(item.get("selfhood_lineage"), 0.0),
+            "agency_lineage": _metric(item.get("agency_lineage"), 0.0),
+            "long_term_axis_count": _int_metric(item.get("long_term_axis_count"), 0),
+            "own_rhythm_bias": _metric(item.get("own_rhythm_bias"), 0.0),
+            "counterpart_boundary_delta": _metric(item.get("counterpart_boundary_delta"), 0.0),
+            "created_at": _int_metric(item.get("created_at"), 0),
+            "primary_motive": str(item.get("primary_motive") or "").strip(),
+            "motive_tension": str(item.get("motive_tension") or "").strip(),
+            "goal_frame": str(item.get("goal_frame") or "").strip(),
         }
-        embodied_context = _history_embodied_context(content, item)
+        embodied_context = _history_embodied_context(item)
         if embodied_context:
             row["embodied_context"] = embodied_context
+        preview_line = str(item.get("preview_line") or "").strip() or _compact_proactive_continuity_preview_line(row)
+        if preview_line:
+            row["preview_line"] = preview_line
         out.append(row)
     capped = max(1, int(limit))
     return out[-capped:]
@@ -1539,8 +1082,39 @@ def build_evolution_cli_summary(
                 ).get("artifact_reacquisition_mode")
                 or ""
             ).strip(),
+            "digital_body_preferred_source_ref_id": _int_metric(
+                (
+                    digital_body.get("resources")
+                    if isinstance(digital_body.get("resources"), dict)
+                    else {}
+                ).get("preferred_source_ref_id"),
+                0,
+            ),
+            "digital_body_workspace_root": str(
+                (
+                    digital_body.get("resources")
+                    if isinstance(digital_body.get("resources"), dict)
+                    else {}
+                ).get("workspace_root")
+                or ""
+            ).strip(),
+            "digital_body_preferred_anchor_reason": str(
+                (
+                    digital_body.get("resources")
+                    if isinstance(digital_body.get("resources"), dict)
+                    else {}
+                ).get("preferred_anchor_reason")
+                or ""
+            ).strip(),
             "digital_body_consequence_kind": str(digital_body_consequence.get("kind") or "").strip(),
             "digital_body_consequence_summary": str(digital_body_consequence.get("summary") or "").strip(),
+            "digital_body_consequence_preferred_source_ref_id": _int_metric(
+                digital_body_consequence.get("preferred_source_ref_id"),
+                0,
+            ),
+            "digital_body_consequence_preferred_anchor_reason": str(
+                digital_body_consequence.get("preferred_anchor_reason") or ""
+            ).strip(),
             "digital_body_artifact_mutation_mode": str(digital_body_consequence.get("artifact_mutation_mode") or "").strip(),
             "digital_body_procedural_growth": bool(digital_body_consequence.get("procedural_growth", False)),
             "digital_body_requested_help": bool(digital_body_consequence.get("requested_help", False)),
@@ -1606,6 +1180,13 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     lifecycle = summary.get("agenda_lifecycle") if isinstance(summary.get("agenda_lifecycle"), dict) else {}
     behavior_plan = summary.get("behavior_plan") if isinstance(summary.get("behavior_plan"), dict) else {}
     behavior_consequence = summary.get("behavior_consequence") if isinstance(summary.get("behavior_consequence"), dict) else {}
+    digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+    digital_body_resources = digital_body.get("resources") if isinstance(digital_body.get("resources"), dict) else {}
+    digital_body_consequence = (
+        summary.get("digital_body_consequence")
+        if isinstance(summary.get("digital_body_consequence"), dict)
+        else {}
+    )
 
     def _axis_text(name: str) -> str:
         axis = continuity.get(name) if isinstance(continuity.get(name), dict) else {}
@@ -1659,6 +1240,15 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     body_fx = str(current_turn.get("digital_body_consequence_kind") or "").strip()
     if body_fx:
         parts.append(f"bodyfx={body_fx}")
+    source_anchor_context = digital_body_consequence or digital_body_resources
+    source_anchor_fallback = str(current_turn.get("digital_body_active_artifact_label") or "").strip()
+    parts.extend(
+        _compact_source_anchor_parts(
+            source_anchor_context,
+            label_fallback=source_anchor_fallback,
+            include_refs=False,
+        )
+    )
     body_pending = _int_metric(current_turn.get("digital_body_pending_approval_count"), 0)
     if body_pending > 0:
         parts.append(f"approvals={body_pending}")
@@ -1685,14 +1275,24 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     body_artifact_kind = str(current_turn.get("digital_body_active_artifact_kind") or "").strip()
     body_artifact_label = str(current_turn.get("digital_body_active_artifact_label") or "").strip()
     body_artifact_reacquisition = str(current_turn.get("digital_body_artifact_reacquisition_mode") or "").strip()
+    body_artifact_mutation = str(current_turn.get("digital_body_artifact_mutation_mode") or "").strip()
     if body_artifact_continuity:
         artifact_label = body_artifact_kind or "artifact"
         if body_artifact_label:
             artifact_label += ":" + body_artifact_label[:40]
         artifact_label += ":" + body_artifact_continuity
+        if body_artifact_mutation:
+            artifact_label += ":" + body_artifact_mutation
         if body_artifact_reacquisition:
             artifact_label += ":" + body_artifact_reacquisition
         parts.append(f"artifact={artifact_label}")
+    elif body_artifact_mutation:
+        parts.append(f"mutate={body_artifact_mutation}")
+    body_workspace_root = str(current_turn.get("digital_body_workspace_root") or "").strip().replace("\\", "/")
+    if body_workspace_root:
+        if len(body_workspace_root) > 60:
+            body_workspace_root = "..." + body_workspace_root[-57:]
+        parts.append(f"root={body_workspace_root}")
     carry_mode = str(current_turn.get("carryover_mode") or "").strip()
     if carry_mode:
         parts.append(f"carry={carry_mode}:{_metric(current_turn.get('carryover_strength'), 0.0):.3f}")

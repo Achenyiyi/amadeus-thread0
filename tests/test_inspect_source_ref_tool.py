@@ -118,3 +118,30 @@ def test_inspect_source_ref_does_not_keep_unrelated_previous_source_ref_id():
         )
 
     assert result["access_hints"]["artifact_source_ref_ids"] == [21]
+
+
+def test_inspect_source_ref_normalizes_legacy_content_only_saved_source_ref():
+    store = _SourceRefStore(
+        [
+            {
+                "id": "17",
+                "content": {
+                    "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "title": " Persistence ",
+                    "query": " langgraph persistence checkpointer thread ",
+                    "tool_name": " search_web ",
+                    "snippet": " Checkpointers enable persistence across thread runs. ",
+                },
+                "retrieved_at": "1712345678",
+            }
+        ]
+    )
+    with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+        result = inspect_source_ref.invoke({"source_ref_id": 17})
+
+    assert result["source_ref_id"] == 17
+    assert result["artifact_label"] == "Persistence"
+    assert result["artifact_context"]["source_ref_ids"] == [17]
+    assert result["artifact_context"]["source_tool_name"] == "search_web"
+    assert result["artifact_context"]["source_url"] == "https://docs.langchain.com/oss/python/langgraph/persistence"
+    assert result["source_query"] == "langgraph persistence checkpointer thread"

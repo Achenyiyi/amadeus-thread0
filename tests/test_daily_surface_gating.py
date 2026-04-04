@@ -1007,6 +1007,84 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertNotIn("前面顺手还带着一点前情", structured_prompt)
         self.assertIn("前面还挂着一个说好的后续", structured_prompt)
 
+    def test_relationship_prompt_naturalizes_source_material_working_item_fallback(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.66, "closeness": 0.62, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.26},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.74, "reciprocity": 0.72},
+                    "behavior_policy": {"warmth": 0.58, "approach_vs_withdraw": 0.54, "self_directedness": 0.42},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {"presence_residue": 0.22},
+                    "semantic_narrative_profile": {"continuity_depth": 0.64},
+                    "interaction_carryover": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "working_items": [
+                            "D:source_material_compared(Persistence v2): 当前判断会顺着这条相连线索继续。"
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你还记得刚才看的那条资料吗？", store)
+            finally:
+                store.close()
+        self.assertIn("前面对照过的材料线还挂着", prompt)
+        self.assertIn("Persistence v2", prompt)
+        self.assertNotIn("source_material_compared(", prompt)
+
+    def test_relationship_prompt_surfaces_digital_body_source_anchor_from_traces(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "relationship",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.68, "closeness": 0.64, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.18, "autonomy_need": 0.24},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.76, "reciprocity": 0.74},
+                    "behavior_policy": {"warmth": 0.60, "approach_vs_withdraw": 0.56, "self_directedness": 0.40},
+                    "behavior_action": {"interaction_mode": "relationship_sensitive", "followup_intent": "soft"},
+                    "world_model_state": {"presence_residue": 0.18},
+                    "semantic_narrative_profile": {"continuity_depth": 0.60},
+                    "interaction_carryover": {},
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {
+                        "digital_body_consequence_traces": [
+                            {
+                                "after_summary": "当前判断会顺着这条相连线索继续。",
+                                "metadata": {
+                                    "namespace": "digital_body_consequence",
+                                    "body_consequence_kind": "source_material_compared",
+                                    "embodied_context": {
+                                        "kind": "source_material_compared",
+                                        "artifact_carrier": "source_ref",
+                                        "artifact_source_ref_ids": [21, 17],
+                                        "artifact_source_title": "Persistence v2",
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "relationship"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "你还记得刚才看的那条资料吗？", store)
+            finally:
+                store.close()
+        self.assertIn("前面对照过的材料线还挂着", prompt)
+        self.assertIn("Persistence v2", prompt)
+        self.assertNotIn("前面顺手还带着一点前情", prompt)
+
     def test_relationship_prompt_prefers_runtime_relationship_snapshot_over_store_baseline(self):
         with TemporaryDirectory() as td:
             store = MemoryStore(Path(td) / "memories.sqlite")
@@ -1820,6 +1898,87 @@ class DailySurfaceGatingTests(unittest.TestCase):
         self.assertIn("cookies", prompt)
         self.assertIn("workspace_write", prompt)
         self.assertNotIn("运行态摘记", prompt)
+
+    def test_structured_prompt_keeps_workspace_root_from_session_context_hints(self):
+        workspace_root = "E:/runtime/workspaces/lab-notes"
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "structured",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.6, "closeness": 0.58, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.12, "autonomy_need": 0.2},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.7, "reciprocity": 0.68},
+                    "behavior_policy": {"warmth": 0.44, "approach_vs_withdraw": 0.55},
+                    "behavior_action": {"interaction_mode": "companion_reply", "followup_intent": "soft"},
+                    "digital_body_state": {},
+                    "session_context": {
+                        "digital_body_hints": {
+                            "filesystem_state": "writable",
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "file",
+                            "active_artifact_label": "todo.md",
+                            "workspace_root": workspace_root,
+                        }
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "structured"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "把当前工作区的情况说清楚。", store)
+            finally:
+                store.close()
+        self.assertIn("digital_body_state", prompt)
+        self.assertIn("workspace_root", prompt)
+        self.assertIn(workspace_root, prompt)
+
+    def test_structured_prompt_keeps_access_proposal_from_session_context_hints(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                state = {
+                    "response_style_hint": "structured",
+                    "science_mode": False,
+                    "emotion_state": {"label": "neutral"},
+                    "bond_state": {"trust": 0.6, "closeness": 0.58, "hurt": 0.02},
+                    "allostasis_state": {"safety_need": 0.12, "autonomy_need": 0.2},
+                    "counterpart_assessment": {"stance": "open", "respect_level": 0.7, "reciprocity": 0.68},
+                    "behavior_policy": {"warmth": 0.44, "approach_vs_withdraw": 0.55},
+                    "behavior_action": {"interaction_mode": "companion_reply", "followup_intent": "soft"},
+                    "digital_body_state": {},
+                    "session_context": {
+                        "digital_body_hints": {
+                            "mode": "approval_pending",
+                            "pending_approval_count": 1,
+                            "api_key_state": "missing",
+                            "missing_access": ["api_key"],
+                            "requestable_access": ["api_key", "human_approval"],
+                            "selected_access_proposal": {
+                                "target": "api_key",
+                                "mode": "operator_provide_api_key",
+                                "summary": "先补一个可用 API key。",
+                                "operator_action": "填入一个可用 key。",
+                                "grants": ["api_key"],
+                                "requires_operator": True,
+                            },
+                        }
+                    },
+                    "pending_user_goal": "",
+                    "worldline_focus": [],
+                    "retrieved_context": {},
+                    "current_event": {"kind": "user_utterance", "response_style_hint": "structured"},
+                    "recent_events": [],
+                }
+                prompt = _build_task_prompt(state, "把当前缺的入口说清楚。", store)
+            finally:
+                store.close()
+        self.assertIn("approval_pending", prompt)
+        self.assertIn("selected_access_proposal", prompt)
+        self.assertIn("operator_provide_api_key", prompt)
 
     def test_light_dialog_rewrite_notes_cover_overexplained_smalltalk(self):
         notes = _light_dialog_rewrite_notes(

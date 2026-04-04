@@ -4,11 +4,17 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..utils.memory_history_export import normalize_memory_history_export
+from ..utils.relational_history_export import (
+    normalize_counterpart_assessment_export,
+    normalize_proactive_continuity_export,
+)
 from ..utils.revision_trace_export import normalize_revision_trace_export
 from ..utils.runtime_audit import audit_runtime_layout
+from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_material_exports
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -237,6 +243,7 @@ def _current_turn_history_slice(
     anchor_ts: int,
     limit: int,
     max_items: int,
+    normalizer: Callable[[Any], dict[str, Any]] = normalize_memory_history_export,
 ) -> list[dict[str, Any]]:
     if store is None or not hasattr(store, method_name):
         return []
@@ -250,7 +257,10 @@ def _current_turn_history_slice(
                 continue
             if item_ts < anchor_ts:
                 continue
-        items.append(dict(item))
+        normalized = normalizer(item)
+        if not normalized:
+            continue
+        items.append(normalized)
         if len(items) >= max_items:
             break
     return items
@@ -321,6 +331,7 @@ def _writeback_trace_payload(backend_session: Any, values: dict[str, Any] | None
         anchor_ts=anchor_ts,
         limit=12,
         max_items=6,
+        normalizer=normalize_counterpart_assessment_export,
     )
     proactive_history = _current_turn_history_slice(
         store,
@@ -328,6 +339,7 @@ def _writeback_trace_payload(backend_session: Any, values: dict[str, Any] | None
         anchor_ts=anchor_ts,
         limit=12,
         max_items=6,
+        normalizer=normalize_proactive_continuity_export,
     )
 
     return {
@@ -556,6 +568,7 @@ class BackendAPI:
         digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
         writeback_trace = _writeback_trace_payload(self.backend_session, values)
+        sources = normalize_source_material_exports(values.get("evidence_pack"))
         summary_values = _summary_state_values(
             values,
             behavior_action=behavior_action,
@@ -580,8 +593,8 @@ class BackendAPI:
             "current_event": current_event,
             "session_context": resolve_readback_session_context(values, thread_id=self.thread_id, current_event=current_event),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
-            "claim_links": _list_or_empty(values.get("claim_links")),
-            "sources": _list_or_empty(values.get("evidence_pack")),
+            "claim_links": normalize_claim_link_exports(values.get("claim_links"), source_rows=sources),
+            "sources": sources,
             "pending_utterance_fragment": str(values.get("pending_utterance_fragment") or "").strip(),
             "autonomy": autonomy,
             "digital_body": digital_body,

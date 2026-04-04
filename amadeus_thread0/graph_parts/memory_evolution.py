@@ -12,6 +12,7 @@ from ..evolution_engine.reconsolidation import (
 from ..memory_store import MemoryStore
 from ..utils.counterpart_profile import compact_counterpart_profile
 from .common import _clamp01
+from .digital_body_runtime import normalize_embodied_context
 from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
 from .postprocess import (
@@ -311,60 +312,43 @@ def _reconsolidation_digital_body_consequence_snapshot(
 
 
 def _normalized_embodied_context(consequence: dict[str, Any] | None) -> dict[str, Any]:
-    item = dict(consequence or {})
-    kind = str(item.get("kind") or "").strip().lower()
-    if not kind:
+    return normalize_embodied_context(consequence)
+
+
+def _explicit_record_embodied_context(item: dict[str, Any] | None) -> dict[str, Any]:
+    row = item if isinstance(item, dict) else {}
+    if not row:
         return {}
 
-    def _list(key: str, *, limit: int = 12) -> list[str]:
-        values = item.get(key) if isinstance(item.get(key), list) else []
-        out: list[str] = []
-        for value in values:
-            text = str(value or "").strip().lower()
-            if not text:
+    merged: dict[str, Any] = {}
+    sources = (
+        row,
+        row.get("content"),
+        row.get("metadata"),
+        row.get("behavior_action"),
+        row.get("behavior_plan"),
+        row.get("behavior_consequence"),
+        row.get("interaction_carryover"),
+        row.get("digital_body_consequence"),
+    )
+    for source in sources:
+        source_row = source if isinstance(source, dict) else {}
+        if not source_row:
+            continue
+        for key in ("embodied_context", "digital_body_consequence"):
+            nested_value = source_row.get(key)
+            nested = nested_value if isinstance(nested_value, dict) else {}
+            if not nested:
                 continue
-            out.append(text)
-            if len(out) >= max(1, int(limit)):
-                break
-        return out
-
-    normalized = {
-        "kind": kind,
-        "summary": str(item.get("summary") or "").strip()[:220],
-        "access_mode": str(item.get("access_mode") or "").strip().lower(),
-        "active_surface": str(item.get("active_surface") or "").strip().lower(),
-        "world_surfaces": _list("world_surfaces"),
-        "missing_access": _list("missing_access"),
-        "requested_access": _list("requested_access"),
-        "granted_toolsets": _list("granted_toolsets"),
-        "active_tools": _list("active_tools", limit=8),
-        "block_reason": str(item.get("block_reason") or "").strip()[:220],
-        "artifact_continuity": str(item.get("artifact_continuity") or "").strip().lower()[:64],
-        "active_artifact_kind": str(item.get("active_artifact_kind") or "").strip().lower()[:64],
-        "active_artifact_ref": str(item.get("active_artifact_ref") or "").strip()[:220],
-        "active_artifact_label": str(item.get("active_artifact_label") or "").strip()[:160],
-        "artifact_age_s": max(0, int(item.get("artifact_age_s") or 0)),
-        "artifact_reacquisition_mode": str(item.get("artifact_reacquisition_mode") or "").strip().lower()[:64],
-        "artifact_carrier": str(item.get("artifact_carrier") or "").strip().lower()[:64],
-        "artifact_source_ref_ids": [
-            int(value)
-            for value in (item.get("artifact_source_ref_ids") if isinstance(item.get("artifact_source_ref_ids"), list) else [])
-            if int(value or 0) > 0
-        ][:8],
-        "artifact_source_url": str(item.get("artifact_source_url") or "").strip()[:320],
-        "artifact_source_query": str(item.get("artifact_source_query") or "").strip()[:220],
-        "artifact_source_title": str(item.get("artifact_source_title") or "").strip()[:160],
-        "artifact_source_tool_name": str(item.get("artifact_source_tool_name") or "").strip().lower()[:80],
-        "primary_proposal_id": str(item.get("primary_proposal_id") or "").strip()[:128],
-        "primary_status": str(item.get("primary_status") or "").strip().lower(),
-        "primary_origin": str(item.get("primary_origin") or "").strip().lower(),
-        "primary_intent": str(item.get("primary_intent") or "").strip().lower()[:120],
-        "primary_tool_name": str(item.get("primary_tool_name") or "").strip().lower()[:120],
-        "procedural_growth": bool(item.get("procedural_growth", False)),
-        "environmental_friction": bool(item.get("environmental_friction", False)),
-        "requested_help": bool(item.get("requested_help", False)),
-    }
-    return normalized
+            normalized = normalize_embodied_context(nested)
+            if not normalized:
+                continue
+            for field, value in normalized.items():
+                if _embodied_field_has_signal(merged.get(field)):
+                    continue
+                if _embodied_field_has_signal(value):
+                    merged[field] = value
+    return normalize_embodied_context(merged)
 
 
 def _embodied_context_shift_score(current: dict[str, Any] | None, previous: dict[str, Any] | None) -> float:
@@ -391,6 +375,7 @@ def _embodied_context_shift_score(current: dict[str, Any] | None, previous: dict
         "active_artifact_label",
         "artifact_reacquisition_mode",
         "artifact_carrier",
+        "preferred_anchor_reason",
         "artifact_source_url",
         "artifact_source_query",
         "artifact_source_title",
@@ -402,6 +387,8 @@ def _embodied_context_shift_score(current: dict[str, Any] | None, previous: dict
         score += 0.06
     if list(curr.get("artifact_source_ref_ids") or []) != list(prev.get("artifact_source_ref_ids") or []):
         score += 0.10
+    if int(curr.get("preferred_source_ref_id") or 0) != int(prev.get("preferred_source_ref_id") or 0):
+        score += 0.08
     for key in ("procedural_growth", "environmental_friction", "requested_help"):
         if bool(curr.get(key, False)) != bool(prev.get(key, False)):
             score += 0.10
@@ -446,6 +433,19 @@ def _proactive_continuity_embodied_context(
     if not context:
         return {}
     kind = str(context.get("kind") or "").strip().lower()
+    work_surface_signal = any(
+        (
+            str(context.get("workspace_root") or "").strip(),
+            str(context.get("active_artifact_kind") or "").strip().lower(),
+            str(context.get("active_artifact_ref") or "").strip(),
+            str(context.get("active_artifact_label") or "").strip(),
+            str(context.get("artifact_continuity") or "").strip().lower(),
+            str(context.get("artifact_reacquisition_mode") or "").strip().lower(),
+            str(context.get("artifact_mutation_mode") or "").strip().lower(),
+            bool(context.get("granted_toolsets")),
+            bool(context.get("active_tools")),
+        )
+    )
     if kind == "embodied_growth" and bool(context.get("procedural_growth", False)):
         return context
     if kind == "access_request_pending" and (
@@ -454,6 +454,38 @@ def _proactive_continuity_embodied_context(
     ):
         return context
     if kind == "environmental_friction" and bool(context.get("environmental_friction", False)):
+        return context
+    if kind in {"access_request_resolved", "workspace_access_resolved"} and any(
+        (
+            str(context.get("access_mode") or "").strip().lower(),
+            str(context.get("workspace_root") or "").strip(),
+            str(context.get("active_artifact_kind") or "").strip().lower(),
+            str(context.get("active_artifact_ref") or "").strip(),
+            str(context.get("active_artifact_label") or "").strip(),
+            bool(context.get("granted_toolsets")),
+            bool(context.get("active_tools")),
+            bool(context.get("access_acquire_proposals")),
+            bool(context.get("selected_access_proposal")),
+        )
+    ):
+        return context
+    if kind in {"workspace_file_updated", "workspace_path_inspected", "artifact_reacquired"} and work_surface_signal:
+        return context
+    if kind == "access_state_refreshed" and any(
+        (
+            str(context.get("session_continuity") or "").strip().lower(),
+            str(context.get("session_recovery_mode") or "").strip().lower(),
+            str(context.get("browser_session") or "").strip().lower(),
+            str(context.get("account_state") or "").strip().lower(),
+            str(context.get("cookie_state") or "").strip().lower(),
+            str(context.get("filesystem_state") or "").strip().lower(),
+            str(context.get("network_access") or "").strip().lower(),
+            str(context.get("sandbox_mode") or "").strip().lower(),
+            str(context.get("workspace_root") or "").strip(),
+            bool(context.get("access_acquire_proposals")),
+            bool(context.get("selected_access_proposal")),
+        )
+    ):
         return context
     return {}
 
@@ -667,7 +699,7 @@ def _normalized_counterpart_assessment_record(item: dict[str, Any] | None) -> di
     profile = _counterpart_assessment_profile({**normalized, "assessment_profile": content.get("assessment_profile") or row.get("assessment_profile")})
     if profile:
         normalized["assessment_profile"] = profile
-    embodied_context = _normalized_embodied_context(content.get("embodied_context") or row.get("embodied_context"))
+    embodied_context = _explicit_record_embodied_context(row)
     if embodied_context:
         normalized["embodied_context"] = embodied_context
     return normalized
@@ -5088,7 +5120,7 @@ def _normalized_proactive_continuity_record(item: dict[str, Any] | None) -> dict
         "agency_lineage": _clamp01(_pick("agency_lineage"), 0.0),
         "counterpart_boundary_delta": max(-1.0, min(1.0, float(_pick("counterpart_boundary_delta", 0.0) or 0.0))),
     }
-    embodied_context = _normalized_embodied_context(_pick("embodied_context", {}))
+    embodied_context = _explicit_record_embodied_context(row)
     if embodied_context:
         normalized["embodied_context"] = embodied_context
     return normalized

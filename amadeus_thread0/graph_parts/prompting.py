@@ -9,6 +9,7 @@ from ..runtime.session_orchestrator import (
 )
 from .prompt_helpers import (
     _compact_behavior_agenda_hint,
+    _compact_digital_body_trace_lines,
     _compact_focus_lines,
     _compact_interaction_carryover_hint,
     _compact_long_horizon_continuity_hint,
@@ -103,6 +104,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         retrieved.get("behavior_reactivation_traces") if isinstance(retrieved.get("behavior_reactivation_traces"), list) else []
     )
     behavior_plan_traces = retrieved.get("behavior_plan_traces") if isinstance(retrieved.get("behavior_plan_traces"), list) else []
+    digital_body_consequence_traces = (
+        retrieved.get("digital_body_consequence_traces")
+        if isinstance(retrieved.get("digital_body_consequence_traces"), list)
+        else []
+    )
     continuity_trace_items = [item for item in behavior_consequence_traces if isinstance(item, dict)] + [
         item for item in behavior_reactivation_traces if isinstance(item, dict)
     ] + [item for item in behavior_plan_traces if isinstance(item, dict)]
@@ -203,6 +209,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         for item in continuity_trace_items[:3]
         if str(_record_value(item, "after_summary", "") or "").strip()
     ]
+    digital_body_trace_memory = _compact_digital_body_trace_lines(
+        digital_body_consequence_traces,
+        limit=2,
+        style="natural",
+    )
     if worldline_ablation:
         relationship = {
             "stage": "friend",
@@ -270,7 +281,17 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     tension_lines = [f"- {text[:160]}" for text in unresolved_tension_memory[:2] if text]
     working_item_fallback_texts = (
         _compact_working_item_fallback_texts(working_items, limit=2)
-        if not any([worldline_lines, commitment_lines, relationship_lines, repair_lines, tension_lines, continuity_plan_memory])
+        if not any(
+            [
+                worldline_lines,
+                commitment_lines,
+                relationship_lines,
+                repair_lines,
+                tension_lines,
+                continuity_plan_memory,
+                digital_body_trace_memory,
+            ]
+        )
         else []
     )
     rule_lines = _compact_rule_lines(user_rules, limit=3)
@@ -413,6 +434,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
                 context_lines.append(f"- 前面还有一点没完全化开的地方：{unresolved_tension_memory[0][:160]}")
             if continuity_plan_memory and not plain_contact_ping:
                 context_lines.append(f"- 前面还挂着的一点延续：{continuity_plan_memory[0][:160]}")
+            if digital_body_trace_memory and not plain_contact_ping:
+                context_lines.append(f"- {digital_body_trace_memory[0][:160]}")
             if working_item_fallback_texts and not plain_contact_ping:
                 context_lines.append(f"- 前面顺手还带着一点前情：{working_item_fallback_texts[0][:160]}")
             if motive_state_hint and not plain_contact_ping:
@@ -455,6 +478,9 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if continuity_plan_memory:
                 context_lines.append("- 前面还挂着的一点延续：")
                 context_lines.extend(f"- {item[:160]}" for item in continuity_plan_memory[:2])
+            if digital_body_trace_memory:
+                context_lines.append("- 前面刚接回当前判断的资料或工作面：")
+                context_lines.extend(f"- {item[:160]}" for item in digital_body_trace_memory[:2])
             if working_item_fallback_texts:
                 context_lines.append("- 前面顺手还带着的一点前情：")
                 context_lines.extend(f"- {item[:160]}" for item in working_item_fallback_texts[:2])
@@ -619,6 +645,8 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             runtime_brief_lines.append(f"- 前面还有一点没完全化开的地方：{unresolved_tension_memory[0][:160]}")
         if continuity_plan_memory:
             runtime_brief_lines.append(f"- 前面还挂着的一点延续：{continuity_plan_memory[0][:160]}")
+        if digital_body_trace_memory:
+            runtime_brief_lines.append(f"- {digital_body_trace_memory[0][:160]}")
         if working_item_fallback_texts:
             runtime_brief_lines.append(f"- 前面顺手还带着一点前情：{working_item_fallback_texts[0][:160]}")
         if user_turn_behavior_pref_lines:
@@ -725,6 +753,11 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             if continuity_plan_memory
             else ""
         )
+        digital_body_trace_block = (
+            "前面刚接回当前判断的资料或工作面：\n" + "\n".join(f"- {item[:160]}" for item in digital_body_trace_memory[:3]) + "\n"
+            if digital_body_trace_memory
+            else ""
+        )
         working_item_fallback_block = (
             "前面顺手还带着的一点前情：\n" + "\n".join(f"- {item[:160]}" for item in working_item_fallback_texts[:3]) + "\n"
             if working_item_fallback_texts
@@ -734,6 +767,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         runtime_state_block = f"- state_snapshot={state_snapshot_json}\n"
         commitment_block = ""
         unresolved_tension_block = ""
+        digital_body_trace_block = ""
         working_item_fallback_block = ""
     continuation_status_line = (
         f"- continuation_mode={continuation_mode}\n"
@@ -757,6 +791,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         f"{repair_block}"
         f"{unresolved_tension_block}"
         f"{continuity_plan_block}"
+        f"{digital_body_trace_block}"
         f"{working_item_fallback_block}"
         f"{evidence_block}"
         f"{current_event_block}"

@@ -117,6 +117,8 @@ class FakeMemoryStore:
                         "requested_access": ["workspace_write", "human_approval"],
                         "artifact_carrier": "source_ref",
                         "artifact_source_ref_ids": [17],
+                        "preferred_source_ref_id": 17,
+                        "preferred_anchor_reason": "primary_more_current",
                         "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                         "artifact_source_query": "langgraph persistence checkpointer thread",
                         "artifact_source_title": "Persistence",
@@ -154,6 +156,8 @@ class FakeMemoryStore:
                         "requested_access": ["workspace_write"],
                         "artifact_carrier": "source_ref",
                         "artifact_source_ref_ids": [17],
+                        "preferred_source_ref_id": 17,
+                        "preferred_anchor_reason": "primary_more_current",
                         "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                         "artifact_source_query": "langgraph persistence checkpointer thread",
                         "artifact_source_title": "Persistence",
@@ -201,6 +205,133 @@ class FakeMemoryStore:
 
 
 class BackendSessionTests(unittest.TestCase):
+    def _assert_backend_session_consequence_surface(self, *, values, expect):
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+        worldline = session.worldline_view()
+        persona = session.persona_view()
+
+        summary_views = [
+            summary,
+            worldline["worldline_summary"],
+            persona["evolution_summary"],
+        ]
+        for built_summary in summary_views:
+            digital_body_consequence = (
+                built_summary.get("digital_body_consequence")
+                if isinstance(built_summary.get("digital_body_consequence"), dict)
+                else {}
+            )
+            self.assertEqual(digital_body_consequence.get("kind"), expect["kind"])
+            self.assertEqual(digital_body_consequence.get("primary_tool_name"), expect["primary_tool_name"])
+            current_turn = built_summary.get("current_turn") if isinstance(built_summary.get("current_turn"), dict) else {}
+            self.assertEqual(current_turn.get("digital_body_consequence_kind"), expect["kind"])
+            self.assertEqual(
+                current_turn.get("digital_body_consequence_summary"),
+                digital_body_consequence.get("summary"),
+            )
+            self.assertTrue(bool(digital_body_consequence.get("summary")))
+            event_residue = (
+                built_summary.get("event_residue")
+                if isinstance(built_summary.get("event_residue"), dict)
+                else {}
+            )
+            event_bodyfx = (
+                event_residue.get("digital_body_consequence")
+                if isinstance(event_residue.get("digital_body_consequence"), dict)
+                else {}
+            )
+            self.assertEqual(event_bodyfx.get("kind"), expect["kind"])
+
+            for field in (
+                "active_artifact_kind",
+                "active_artifact_label",
+                "artifact_carrier",
+                "artifact_source_ref_ids",
+                "artifact_source_tool_name",
+                "preferred_source_ref_id",
+                "preferred_anchor_reason",
+                "session_continuity",
+                "artifact_mutation_mode",
+            ):
+                if field in expect:
+                    self.assertEqual(digital_body_consequence.get(field), expect[field])
+                    if field in {"preferred_source_ref_id", "preferred_anchor_reason"}:
+                        self.assertEqual(event_bodyfx.get(field), expect[field])
+
+            if "preferred_source_ref_id" in expect:
+                self.assertEqual(
+                    current_turn.get("digital_body_preferred_source_ref_id"),
+                    expect["preferred_source_ref_id"],
+                )
+                self.assertEqual(
+                    current_turn.get("digital_body_consequence_preferred_source_ref_id"),
+                    expect["preferred_source_ref_id"],
+                )
+            if "preferred_anchor_reason" in expect:
+                self.assertEqual(
+                    current_turn.get("digital_body_preferred_anchor_reason"),
+                    expect["preferred_anchor_reason"],
+                )
+                self.assertEqual(
+                    current_turn.get("digital_body_consequence_preferred_anchor_reason"),
+                    expect["preferred_anchor_reason"],
+                )
+            if "procedural_growth" in expect:
+                self.assertEqual(
+                    bool(digital_body_consequence.get("procedural_growth")),
+                    expect["procedural_growth"],
+                )
+                self.assertEqual(
+                    bool(current_turn.get("digital_body_procedural_growth")),
+                    expect["procedural_growth"],
+                )
+            if "workspace_root" in expect:
+                self.assertEqual(
+                    current_turn.get("digital_body_workspace_root"),
+                    expect["workspace_root"],
+                )
+
+        persona_digital_body = persona.get("digital_body") if isinstance(persona.get("digital_body"), dict) else {}
+        persona_bodyfx = (
+            persona.get("digital_body_consequence")
+            if isinstance(persona.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(persona_bodyfx.get("kind"), expect["kind"])
+        if "active_artifact_kind" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("resource_state") or {}).get("active_artifact_kind"),
+                expect["active_artifact_kind"],
+            )
+        if "active_artifact_label" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("resource_state") or {}).get("active_artifact_label"),
+                expect["active_artifact_label"],
+            )
+        if "workspace_root" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("resource_state") or {}).get("workspace_root"),
+                expect["workspace_root"],
+            )
+        if "preferred_source_ref_id" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("resource_state") or {}).get("preferred_source_ref_id"),
+                expect["preferred_source_ref_id"],
+            )
+        if "preferred_anchor_reason" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("resource_state") or {}).get("preferred_anchor_reason"),
+                expect["preferred_anchor_reason"],
+            )
+        if "session_continuity" in expect:
+            self.assertEqual(
+                (persona_digital_body.get("access_state") or {}).get("session_continuity"),
+                expect["session_continuity"],
+            )
+
     def test_build_run_config_consumes_pending_checkpoint_once(self):
         session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a", user_id="okabe")
         run_config, pending_after = session.build_run_config("cp-1")
@@ -320,6 +451,177 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(result.values["pending_action_proposal"]["proposal_id"], "ap-file-lines-1")
         self.assertEqual(result.values["pending_action_proposal"]["mutation_preview"]["relative_path"], "notes/todo.md")
         self.assertIn("+beta v2", result.values["pending_action_proposal"]["mutation_preview"]["diff_preview"])
+
+    def test_invoke_stream_preserves_sandbox_execution_preview_in_approval_request(self):
+        execution_spec = {
+            "executor": "python",
+            "profile": "python_script",
+            "argv": ["python", "emit_artifact.py"],
+            "cwd": "E:/runtime/workspaces/lab-notes",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "timeout_s": 25,
+            "writes_expected": True,
+            "expected_artifacts": ["notes/generated.txt"],
+        }
+        execution_preview = {
+            "runner_kind": "local_restricted_runner",
+            "isolation_level": "host_local_restricted",
+            "argv": ["python", "emit_artifact.py"],
+            "cwd": "E:/runtime/workspaces/lab-notes",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "timeout_s": 25,
+            "writes_expected": True,
+            "expected_artifacts": ["notes/generated.txt"],
+        }
+        graph = FakeStreamGraph(
+            stream_rows=[
+                (
+                    "values",
+                    {
+                        "__interrupt__": (
+                            {
+                                "value": {
+                                    "kind": "tool_approval",
+                                    "source": "dialog",
+                                    "tool_calls": [
+                                        {
+                                            "name": "execute_workspace_command",
+                                            "args": {
+                                                "argv": ["python", "emit_artifact.py"],
+                                                "cwd": ".",
+                                                "expected_artifacts": ["notes/generated.txt"],
+                                            },
+                                            "proposal_id": "ap-sandbox-1",
+                                            "execution_spec": execution_spec,
+                                            "execution_preview": execution_preview,
+                                        }
+                                    ],
+                                }
+                            },
+                        )
+                    },
+                )
+            ],
+            state_values={},
+        )
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "run tests"}]})
+
+        self.assertIsNotNone(result.approval_request)
+        assert result.approval_request is not None
+        self.assertEqual(result.approval_request.tool_calls[0]["proposal_id"], "ap-sandbox-1")
+        self.assertEqual(result.approval_request.tool_calls[0]["execution_preview"]["runner_kind"], "local_restricted_runner")
+        self.assertEqual(
+            result.values["pending_action_proposal"]["intent"],
+            "sandbox:execute_workspace_command",
+        )
+        self.assertEqual(
+            result.values["pending_action_proposal"]["execution_spec"]["allowed_roots"],
+            ["E:/runtime/workspaces/lab-notes"],
+        )
+        self.assertEqual(
+            result.values["pending_action_proposal"]["execution_preview"]["expected_artifacts"],
+            ["notes/generated.txt"],
+        )
+
+    def test_resume_stream_keeps_same_execution_spec_for_sandbox_approval(self):
+        execution_spec = {
+            "executor": "python",
+            "profile": "python_script",
+            "argv": ["python", "emit_artifact.py"],
+            "cwd": "E:/runtime/workspaces/lab-notes",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "timeout_s": 25,
+            "writes_expected": True,
+            "expected_artifacts": ["notes/generated.txt"],
+        }
+        execution_preview = {
+            "runner_kind": "local_restricted_runner",
+            "isolation_level": "host_local_restricted",
+            "argv": ["python", "emit_artifact.py"],
+            "cwd": "E:/runtime/workspaces/lab-notes",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "timeout_s": 25,
+            "writes_expected": True,
+            "expected_artifacts": ["notes/generated.txt"],
+        }
+        completed_packet = {
+            "proposal_id": "ap-sandbox-2",
+            "origin": "motive_goal",
+            "intent": "sandbox:execute_workspace_command",
+            "status": "completed",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "tool_name": "execute_workspace_command",
+            "execution_spec": execution_spec,
+            "execution_preview": execution_preview,
+            "execution_result": {
+                "run_id": "ap-sandbox-2",
+                "status": "completed",
+                "exit_code": 0,
+                "duration_ms": 84,
+                "stdout_log_ref": "E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/ap-sandbox-2/stdout.txt",
+                "stderr_log_ref": "E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/ap-sandbox-2/stderr.txt",
+                "produced_artifacts": ["E:/runtime/workspaces/lab-notes/notes/generated.txt"],
+                "error_summary": "",
+            },
+            "writeback_ready": True,
+        }
+
+        class FakeResumableStreamGraph(FakeStreamGraph):
+            def __init__(self):
+                super().__init__(
+                    stream_rows=[],
+                    state_values={},
+                )
+                self.initial_rows = [
+                    (
+                        "values",
+                        {
+                            "__interrupt__": (
+                                {
+                                    "value": {
+                                        "kind": "tool_approval",
+                                        "source": "dialog",
+                                        "tool_calls": [
+                                            {
+                                                "name": "execute_workspace_command",
+                                                "args": {
+                                                    "argv": ["python", "emit_artifact.py"],
+                                                    "cwd": ".",
+                                                    "expected_artifacts": ["notes/generated.txt"],
+                                                },
+                                                "proposal_id": "ap-sandbox-2",
+                                                "execution_spec": execution_spec,
+                                                "execution_preview": execution_preview,
+                                            }
+                                        ],
+                                    }
+                                },
+                            )
+                        },
+                    )
+                ]
+                self.resume_rows = [("values", {"action_packets": [completed_packet], "pending_action_proposal": {}})]
+
+            def stream(self, payload, config=None, stream_mode=None):
+                rows = self.initial_rows if isinstance(payload, dict) else self.resume_rows
+                for row in rows:
+                    yield row
+
+        graph = FakeResumableStreamGraph()
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        first = session.invoke_stream({"messages": [{"role": "user", "content": "run tests"}]})
+        resumed = session.resume_stream([{"action": "approve"}])
+
+        self.assertEqual(first.values["pending_action_proposal"]["execution_spec"], execution_spec)
+        self.assertEqual(resumed.values["action_packets"][0]["execution_spec"], execution_spec)
+        self.assertEqual(
+            resumed.values["action_packets"][0]["execution_result"]["produced_artifacts"],
+            ["E:/runtime/workspaces/lab-notes/notes/generated.txt"],
+        )
 
     def test_invoke_stream_synthesizes_access_request_from_pending_access_packet(self):
         packet = {
@@ -1116,10 +1418,17 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
         self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(worldline["counterpart_assessment_preview"][0]["embodied_context"]["preferred_source_ref_id"], 17)
+        self.assertEqual(
+            worldline["counterpart_assessment_preview"][0]["embodied_context"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
         self.assertEqual(
             worldline["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_title"],
             "Persistence",
         )
+        self.assertIn("bodyfx=access_request_pending", worldline["counterpart_assessment_preview"][0].get("preview_line") or "")
+        self.assertIn("source=Persistence", worldline["counterpart_assessment_preview"][0].get("preview_line") or "")
         self.assertEqual(worldline["proactive_continuity_history"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["trace_family"], "own_rhythm_busy_window")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
@@ -1128,10 +1437,17 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
         self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(worldline["proactive_continuity_preview"][0]["embodied_context"]["preferred_source_ref_id"], 17)
+        self.assertEqual(
+            worldline["proactive_continuity_preview"][0]["embodied_context"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
         self.assertEqual(
             worldline["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_title"],
             "Persistence",
         )
+        self.assertIn("bodyfx=access_request_pending", worldline["proactive_continuity_preview"][0].get("preview_line") or "")
+        self.assertIn("source=Persistence", worldline["proactive_continuity_preview"][0].get("preview_line") or "")
 
         persona = session.persona_view()
         self.assertEqual(persona["persona_state"]["role"], "kurisu_amadeus")
@@ -1146,6 +1462,13 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
         self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(bond["counterpart_assessment_preview"][0]["embodied_context"]["preferred_source_ref_id"], 17)
+        self.assertEqual(
+            bond["counterpart_assessment_preview"][0]["embodied_context"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
+        self.assertIn("bodyfx=access_request_pending", bond["counterpart_assessment_preview"][0].get("preview_line") or "")
+        self.assertIn("source=Persistence", bond["counterpart_assessment_preview"][0].get("preview_line") or "")
         self.assertEqual(bond["proactive_continuity_history"][0]["kind"], "released_to_self_activity")
         self.assertEqual(bond["proactive_continuity_preview"][0]["carryover_mode"], "own_rhythm")
         self.assertEqual(bond["proactive_continuity_preview"][0]["semantic_continuity_depth"], 0.68)
@@ -1153,10 +1476,605 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["kind"], "access_request_pending")
         self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["artifact_carrier"], "source_ref")
         self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(bond["proactive_continuity_preview"][0]["embodied_context"]["preferred_source_ref_id"], 17)
+        self.assertEqual(
+            bond["proactive_continuity_preview"][0]["embodied_context"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
+        self.assertIn("bodyfx=access_request_pending", bond["proactive_continuity_preview"][0].get("preview_line") or "")
+        self.assertIn("source=Persistence", bond["proactive_continuity_preview"][0].get("preview_line") or "")
 
         sources = session.sources_view()
         self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
         self.assertEqual(sources["claim_links"][0]["source_ids"], [9])
+
+    def test_sources_view_normalizes_source_material_exports(self):
+        store = FakeMemoryStore()
+        store._sources = [
+            {
+                "id": "9",
+                "content": {
+                    "title": " paper ",
+                    "url": " https://example.com/paper ",
+                    "query": " amadeus source contract ",
+                    "tool_name": " web_search ",
+                    "snippet": " saved snippet ",
+                    "embodied_context": {
+                        "kind": "source_material_compared",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": ["9", "17", "9"],
+                        "preferred_source_ref_id": "9",
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_title": " paper ",
+                    },
+                },
+            }
+        ]
+        values = {
+            "claim_links": [
+                {
+                    "content": {
+                        "claim_excerpt": " 这一句需要引用 ",
+                        "source_ids": ["9", "9", "0", -1],
+                        "embodied_context": {
+                            "kind": "source_material_compared",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": ["9", "17", "9"],
+                            "preferred_source_ref_id": "9",
+                            "preferred_anchor_reason": "primary_more_current",
+                            "artifact_source_title": " paper ",
+                        },
+                        "sources": [
+                            {
+                                "source_id": "9",
+                                "content": {
+                                    "title": " paper ",
+                                    "url": " https://example.com/paper ",
+                                    "tool_name": " web_search ",
+                                    "query": " amadeus source contract ",
+                                    "snippet": " excerpt ",
+                                    "embodied_context": {
+                                        "kind": "source_material_compared",
+                                        "artifact_carrier": "source_ref",
+                                        "artifact_source_ref_ids": ["9", "17", "9"],
+                                        "preferred_source_ref_id": "9",
+                                        "preferred_anchor_reason": "primary_more_current",
+                                        "artifact_source_title": " paper ",
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=store, thread_id="thread-a")
+
+        sources = session.sources_view()
+
+        self.assertEqual(sources["sources"][0]["id"], 9)
+        self.assertEqual(sources["sources"][0]["source_id"], 9)
+        self.assertEqual(sources["sources"][0]["title"], "paper")
+        self.assertEqual(sources["sources"][0]["tool_name"], "web_search")
+        self.assertEqual(sources["sources"][0]["embodied_context"]["kind"], "source_material_compared")
+        self.assertIn("bodyfx=source_material_compared", sources["sources"][0].get("preview_line") or "")
+        self.assertIn("source=paper", sources["sources"][0].get("preview_line") or "")
+        self.assertEqual(sources["claim_links"][0]["claim_excerpt"], "这一句需要引用")
+        self.assertEqual(sources["claim_links"][0]["source_ids"], [9])
+        self.assertEqual(sources["claim_links"][0]["embodied_context"]["preferred_source_ref_id"], 9)
+        self.assertEqual(sources["claim_links"][0]["embodied_context"]["artifact_source_ref_ids"], [9, 17])
+        self.assertEqual(sources["claim_links"][0]["embodied_context"]["preferred_anchor_reason"], "primary_more_current")
+        self.assertIn("bodyfx=source_material_compared", sources["claim_links"][0].get("preview_line") or "")
+        self.assertIn("source=paper", sources["claim_links"][0].get("preview_line") or "")
+        self.assertEqual(sources["claim_links"][0]["sources"][0]["source_id"], 9)
+        self.assertEqual(sources["claim_links"][0]["sources"][0]["title"], "paper")
+        self.assertEqual(
+            sources["claim_links"][0]["sources"][0]["embodied_context"]["preferred_source_ref_id"],
+            9,
+        )
+        self.assertIn(
+            "bodyfx=source_material_compared",
+            sources["claim_links"][0]["sources"][0].get("preview_line") or "",
+        )
+        self.assertIn("source=paper", sources["claim_links"][0]["sources"][0].get("preview_line") or "")
+
+    def test_session_preview_views_preserve_workspace_surface_embodied_context(self):
+        store = FakeMemoryStore()
+        work_surface_counterpart = {
+            "id": 12,
+            "summary": "她已经顺着那块文件工作面继续往前走了。",
+            "stance": "open",
+            "scene": "co_work",
+            "created_at": 1710000103,
+            "embodied_context": {
+                "kind": "workspace_file_updated",
+                "summary": "她已经在 today.md 上继续写了一段。",
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/today.md",
+                "active_artifact_label": "today.md",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                "artifact_mutation_mode": "append",
+                "procedural_growth": True,
+                "primary_status": "completed",
+            },
+        }
+        work_surface_proactive = {
+            "id": 13,
+            "summary": "前面那块文件工作面已经重新接回当前上下文，后面的动作可以顺着它继续。",
+            "kind": "promoted",
+            "trace_family": "artifact_reacquired_followthrough",
+            "carryover_mode": "continue_work_surface",
+            "created_at": 1710000104,
+            "embodied_context": {
+                "kind": "artifact_reacquired",
+                "summary": "她已经重新把 notes/today.md 接回当前上下文。",
+                "artifact_continuity": "detached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/today.md",
+                "active_artifact_label": "today.md",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                "artifact_reacquisition_mode": "reopen_file",
+                "artifact_mutation_mode": "replace",
+                "primary_status": "completed",
+            },
+        }
+        store._snapshot["counterpart_assessment_history"] = [work_surface_counterpart]
+        store._snapshot["proactive_continuity_history"] = [work_surface_proactive]
+        store._counterpart_history = [work_surface_counterpart]
+        store._proactive_history = [work_surface_proactive]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        bond = session.bond_view()
+
+        for preview in (
+            worldline["counterpart_assessment_preview"][0],
+            bond["counterpart_assessment_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "workspace_file_updated")
+            self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+            self.assertEqual(embodied.get("artifact_mutation_mode"), "append")
+            self.assertEqual(embodied.get("active_artifact_kind"), "file")
+            self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+            self.assertTrue(bool(embodied.get("procedural_growth")))
+
+        for preview in (
+            worldline["proactive_continuity_preview"][0],
+            bond["proactive_continuity_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "artifact_reacquired")
+            self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+            self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
+            self.assertEqual(embodied.get("artifact_mutation_mode"), "replace")
+            self.assertEqual(embodied.get("active_artifact_kind"), "file")
+            self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+
+    def test_session_preview_views_preserve_workspace_path_inspection_embodied_context(self):
+        store = FakeMemoryStore()
+        work_surface_counterpart = {
+            "id": 14,
+            "summary": "她已经把那块文件工作面重新看过一遍了。",
+            "stance": "open",
+            "scene": "co_work",
+            "created_at": 1710000105,
+            "embodied_context": {
+                "kind": "workspace_path_inspected",
+                "summary": "她已经重新看过 today.md 的当前内容。",
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/today.md",
+                "active_artifact_label": "today.md",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                "primary_status": "completed",
+            },
+        }
+        work_surface_proactive = {
+            "id": 15,
+            "summary": "前面那条文件工作面已经重新看过一遍，后面的动作可以顺着它继续。",
+            "kind": "promoted",
+            "trace_family": "workspace_path_inspected_followthrough",
+            "carryover_mode": "continue_work_surface",
+            "created_at": 1710000106,
+            "embodied_context": {
+                "kind": "workspace_path_inspected",
+                "summary": "她已经重新看过 notes/today.md 的当前内容。",
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/today.md",
+                "active_artifact_label": "today.md",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                "primary_status": "completed",
+            },
+        }
+        store._snapshot["counterpart_assessment_history"] = [work_surface_counterpart]
+        store._snapshot["proactive_continuity_history"] = [work_surface_proactive]
+        store._counterpart_history = [work_surface_counterpart]
+        store._proactive_history = [work_surface_proactive]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        bond = session.bond_view()
+
+        for preview in (
+            worldline["counterpart_assessment_preview"][0],
+            bond["counterpart_assessment_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "workspace_path_inspected")
+            self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+            self.assertEqual(embodied.get("active_artifact_kind"), "file")
+            self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+            self.assertFalse(bool(embodied.get("artifact_mutation_mode")))
+
+        for preview in (
+            worldline["proactive_continuity_preview"][0],
+            bond["proactive_continuity_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "workspace_path_inspected")
+            self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+            self.assertEqual(embodied.get("artifact_continuity"), "attached")
+            self.assertEqual(embodied.get("active_artifact_kind"), "file")
+            self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+            self.assertFalse(bool(embodied.get("artifact_mutation_mode")))
+
+    def test_session_preview_views_preserve_access_state_embodied_context(self):
+        store = FakeMemoryStore()
+        access_resolved_counterpart = {
+            "id": 16,
+            "summary": "权限已经接通，这次不是悬空的提案了。",
+            "stance": "open",
+            "scene": "co_work",
+            "created_at": 1710000107,
+            "embodied_context": {
+                "kind": "workspace_access_resolved",
+                "summary": "可写工作区 lab-notes 已经真的创建好并接入当前上下文。",
+                "access_mode": "tool_enabled",
+                "filesystem_state": "writable",
+                "session_continuity": "stable",
+                "session_recovery_mode": "refresh_session",
+                "active_artifact_kind": "workspace",
+                "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                "active_artifact_label": "lab-notes",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                "artifact_continuity": "attached",
+                "access_acquire_proposals": [
+                    {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "summary": "先新建一个可写工作区。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    }
+                ],
+                "selected_access_proposal": {
+                    "target": "filesystem",
+                    "mode": "operator_create_workspace",
+                    "summary": "先新建一个可写工作区。",
+                    "grants": ["filesystem", "workspace_write"],
+                    "requires_operator": True,
+                },
+                "primary_status": "completed",
+            },
+        }
+        access_refreshed_proactive = {
+            "id": 17,
+            "summary": "她重新检查完入口状态，把这条稳定路径继续留在当前连续性里。",
+            "kind": "promoted",
+            "trace_family": "access_state_refresh_followthrough",
+            "carryover_mode": "continue_work_surface",
+            "created_at": 1710000108,
+            "embodied_context": {
+                "kind": "access_state_refreshed",
+                "summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                "access_mode": "tool_enabled",
+                "api_key_state": "present",
+                "filesystem_state": "writable",
+                "network_access": "enabled",
+                "session_continuity": "stable",
+                "session_recovery_mode": "refresh_session",
+                "access_acquire_proposals": [
+                    {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "summary": "如果要新的可写工作区，可以让你补一个。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    }
+                ],
+                "selected_access_proposal": {
+                    "target": "filesystem",
+                    "mode": "operator_create_workspace",
+                    "summary": "如果要新的可写工作区，可以让你补一个。",
+                    "grants": ["filesystem", "workspace_write"],
+                    "requires_operator": True,
+                },
+                "primary_status": "completed",
+            },
+        }
+        store._snapshot["counterpart_assessment_history"] = [access_resolved_counterpart]
+        store._snapshot["proactive_continuity_history"] = [access_refreshed_proactive]
+        store._counterpart_history = [access_resolved_counterpart]
+        store._proactive_history = [access_refreshed_proactive]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        bond = session.bond_view()
+
+        for preview in (
+            worldline["counterpart_assessment_preview"][0],
+            bond["counterpart_assessment_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "workspace_access_resolved")
+            self.assertEqual(embodied.get("filesystem_state"), "writable")
+            self.assertEqual(embodied.get("session_continuity"), "stable")
+            self.assertEqual(embodied.get("session_recovery_mode"), "refresh_session")
+            self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+            self.assertEqual(embodied.get("selected_access_proposal", {}).get("mode"), "operator_create_workspace")
+            self.assertEqual(embodied.get("access_acquire_proposals", [])[0]["target"], "filesystem")
+
+        for preview in (
+            worldline["proactive_continuity_preview"][0],
+            bond["proactive_continuity_preview"][0],
+        ):
+            embodied = preview.get("embodied_context") if isinstance(preview.get("embodied_context"), dict) else {}
+            self.assertEqual(embodied.get("kind"), "access_state_refreshed")
+            self.assertEqual(embodied.get("api_key_state"), "present")
+            self.assertEqual(embodied.get("filesystem_state"), "writable")
+            self.assertEqual(embodied.get("network_access"), "enabled")
+            self.assertEqual(embodied.get("session_continuity"), "stable")
+            self.assertEqual(embodied.get("session_recovery_mode"), "refresh_session")
+            self.assertEqual(embodied.get("selected_access_proposal", {}).get("mode"), "operator_create_workspace")
+            self.assertEqual(embodied.get("access_acquire_proposals", [])[0]["target"], "filesystem")
+
+    def test_session_history_views_normalize_content_only_embodied_context(self):
+        store = FakeMemoryStore()
+        content_only_counterpart = {
+            "id": 18,
+            "content": {
+                "summary": "她确认这次工作面已经真的接回来了。",
+                "stance": "open",
+                "scene": "co_work",
+                "created_at": 1710000109,
+                "embodied_context": {
+                    "kind": "workspace_access_resolved",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "filesystem_state": "writable",
+                    "session_continuity": "stable",
+                    "session_recovery_mode": "refresh_session",
+                },
+            },
+        }
+        content_only_proactive = {
+            "id": 19,
+            "content": {
+                "summary": "她把这条稳定入口继续带进后续连续性里。",
+                "kind": "promoted",
+                "trace_family": "access_state_refresh_followthrough",
+                "carryover_mode": "continue_work_surface",
+                "created_at": 1710000110,
+                "embodied_context": {
+                    "kind": "access_state_refreshed",
+                    "api_key_state": "present",
+                    "filesystem_state": "writable",
+                    "network_access": "enabled",
+                    "session_continuity": "stable",
+                },
+            },
+        }
+        store._snapshot["counterpart_assessment_history"] = [content_only_counterpart]
+        store._snapshot["proactive_continuity_history"] = [content_only_proactive]
+        store._counterpart_history = [content_only_counterpart]
+        store._proactive_history = [content_only_proactive]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        bond = session.bond_view()
+
+        self.assertEqual(worldline["counterpart_assessment_history"][0]["scene"], "co_work")
+        self.assertEqual(
+            worldline["counterpart_assessment_history"][0]["embodied_context"]["kind"],
+            "workspace_access_resolved",
+        )
+        self.assertEqual(
+            worldline["counterpart_assessment_history"][0]["embodied_context"]["workspace_root"],
+            "E:/runtime/workspaces/lab-notes",
+        )
+        self.assertIn(
+            "bodyfx=workspace_access_resolved",
+            worldline["counterpart_assessment_history"][0].get("preview_line") or "",
+        )
+        self.assertEqual(bond["counterpart_assessment_history"][0]["scene"], "co_work")
+        self.assertEqual(
+            bond["counterpart_assessment_history"][0]["embodied_context"]["session_recovery_mode"],
+            "refresh_session",
+        )
+        self.assertIn(
+            "root=E:/runtime/workspaces/lab-notes",
+            bond["counterpart_assessment_history"][0].get("preview_line") or "",
+        )
+        self.assertEqual(worldline["proactive_continuity_history"][0]["trace_family"], "access_state_refresh_followthrough")
+        self.assertEqual(
+            worldline["proactive_continuity_history"][0]["embodied_context"]["kind"],
+            "access_state_refreshed",
+        )
+        self.assertEqual(
+            worldline["proactive_continuity_history"][0]["embodied_context"]["api_key_state"],
+            "present",
+        )
+        self.assertEqual(bond["proactive_continuity_history"][0]["carryover_mode"], "continue_work_surface")
+        self.assertEqual(
+            bond["proactive_continuity_history"][0]["embodied_context"]["network_access"],
+            "enabled",
+        )
+        self.assertIn(
+            "bodyfx=access_state_refreshed",
+            worldline["proactive_continuity_history"][0].get("preview_line") or "",
+        )
+        self.assertIn(
+            "carry=continue_work_surface:0.00",
+            bond["proactive_continuity_history"][0].get("preview_line") or "",
+        )
+
+    def test_worldline_and_bond_views_normalize_content_only_memory_rows(self):
+        store = FakeMemoryStore()
+        store._snapshot["worldline_events"] = [
+            {
+                "id": 20,
+                "content": {
+                    "summary": "她把这次入口接通记成了一次真实发生过的共事。",
+                    "category": "shared_event",
+                    "importance": 0.73,
+                },
+            }
+        ]
+        store._snapshot["commitments"] = [
+            {
+                "id": 21,
+                "content": {
+                    "text": "晚点继续看 lab-notes。",
+                    "status": "open",
+                },
+            }
+        ]
+        store._snapshot["unresolved_tensions"] = [
+            {
+                "id": 22,
+                "content": {
+                    "summary": "还有一点收口前的不确定感。",
+                    "severity": 0.31,
+                    "status": "open",
+                },
+            }
+        ]
+        store._snapshot["semantic_self_narratives"] = [
+            {
+                "id": 23,
+                "content": {
+                    "text": "她会把真实接通的工作面沉淀回长期连续性。",
+                    "category": "agency_style",
+                },
+            }
+        ]
+        store._timeline = [
+            {
+                "id": 24,
+                "content": {
+                    "summary": "关系因为真实共事而往前推了一点。",
+                    "affinity_delta": 0.08,
+                    "trust_delta": 0.11,
+                },
+            }
+        ]
+        store._repairs = [
+            {
+                "id": 25,
+                "content": {
+                    "summary": "误会已经解释清楚了一部分。",
+                },
+            }
+        ]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        bond = session.bond_view()
+
+        self.assertEqual(worldline["worldline_events"][0]["summary"], "她把这次入口接通记成了一次真实发生过的共事。")
+        self.assertEqual(worldline["worldline_events"][0]["category"], "shared_event")
+        self.assertEqual(worldline["commitments"][0]["text"], "晚点继续看 lab-notes。")
+        self.assertEqual(worldline["commitments"][0]["status"], "open")
+        self.assertEqual(worldline["unresolved_tensions"][0]["summary"], "还有一点收口前的不确定感。")
+        self.assertEqual(worldline["semantic_self_narratives"][0]["text"], "她会把真实接通的工作面沉淀回长期连续性。")
+        self.assertEqual(worldline["semantic_self_narratives"][0]["category"], "agency_style")
+        self.assertEqual(bond["relationship_timeline"][0]["summary"], "关系因为真实共事而往前推了一点。")
+        self.assertEqual(bond["relationship_timeline"][0]["affinity_delta"], 0.08)
+        self.assertEqual(bond["relationship_timeline"][0]["trust_delta"], 0.11)
+        self.assertEqual(bond["conflict_repair"][0]["summary"], "误会已经解释清楚了一部分。")
+
+    def test_worldline_view_normalizes_revision_trace_embodied_context(self):
+        store = FakeMemoryStore()
+        store._snapshot["revision_traces"] = [
+            {
+                "id": 18,
+                "source": "auto:passive_evolution_final",
+                "behavior_consequence": {
+                    "embodied_context": {
+                        "kind": "access_state_refreshed",
+                        "api_key_state": "present",
+                        "filesystem_state": "writable",
+                        "network_access": "enabled",
+                        "session_continuity": "stable",
+                        "session_recovery_mode": "refresh_session",
+                        "access_acquire_proposals": [
+                            {
+                                "target": "filesystem",
+                                "mode": "operator_create_workspace",
+                                "summary": "需要时可以补一个新工作区。",
+                                "grants": ["filesystem", "workspace_write"],
+                                "requires_operator": True,
+                            }
+                        ],
+                        "selected_access_proposal": {
+                            "target": "filesystem",
+                            "mode": "operator_create_workspace",
+                            "summary": "需要时可以补一个新工作区。",
+                            "grants": ["filesystem", "workspace_write"],
+                            "requires_operator": True,
+                        },
+                    }
+                },
+            }
+        ]
+
+        session = BackendSession(
+            graph=FakeStreamGraph(stream_rows=[], state_values={}),
+            memory_store=store,
+            thread_id="thread-a",
+        )
+
+        worldline = session.worldline_view()
+        trace = worldline["revision_traces"][0]
+        embodied = trace.get("embodied_context") if isinstance(trace.get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_state_refreshed")
+        self.assertEqual(embodied.get("api_key_state"), "present")
+        self.assertEqual(embodied.get("filesystem_state"), "writable")
+        self.assertEqual(embodied.get("network_access"), "enabled")
+        self.assertEqual(embodied.get("session_continuity"), "stable")
+        self.assertEqual(embodied.get("session_recovery_mode"), "refresh_session")
+        self.assertEqual(embodied.get("selected_access_proposal", {}).get("mode"), "operator_create_workspace")
+        self.assertEqual(embodied.get("access_acquire_proposals", [])[0]["target"], "filesystem")
+        self.assertIn("bodyfx=access_state_refreshed", trace.get("preview_line") or "")
+        self.assertIn("proposal=operator_create_workspace@filesystem", trace.get("preview_line") or "")
 
     def test_build_evolution_summary_derives_worldline_focus_from_memory_when_state_is_missing_field(self):
         values = {
@@ -1905,6 +2823,32 @@ class BackendSessionTests(unittest.TestCase):
                 "active_tools": ["search_web"],
                 "access_state": {
                     "mode": "tool_enabled",
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "api_key_state": "present",
+                    "quota_state": "sufficient",
+                    "session_state": {
+                        "continuity": "stable",
+                        "browser_session": "present",
+                    },
+                    "account_state_detail": {
+                        "login_state": "logged_in",
+                        "cookie_state": "present",
+                        "api_key_state": "present",
+                    },
+                    "quota_state_detail": {
+                        "provider_state": "sufficient",
+                        "available": True,
+                    },
+                    "permission_state": {
+                        "approval_state": "open",
+                        "pending_approval_count": 0,
+                    },
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "execution_policy": "approval_required",
+                    },
                 },
                 "resource_state": {
                     "action_packet_count": 1,
@@ -1915,6 +2859,8 @@ class BackendSessionTests(unittest.TestCase):
                     "artifact_reacquisition_mode": "reuse_saved_source",
                     "artifact_carrier": "source_ref",
                     "artifact_source_ref_ids": [17],
+                    "preferred_source_ref_id": 17,
+                    "preferred_anchor_reason": "primary_more_current",
                     "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                     "artifact_source_query": "langgraph persistence checkpointer thread",
                     "artifact_source_title": "Persistence",
@@ -1937,6 +2883,8 @@ class BackendSessionTests(unittest.TestCase):
                     "summary": "这轮留下的是一个待审批入口。",
                     "artifact_carrier": "source_ref",
                     "artifact_source_ref_ids": [17],
+                    "preferred_source_ref_id": 17,
+                    "preferred_anchor_reason": "primary_more_current",
                     "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                     "artifact_source_query": "langgraph persistence checkpointer thread",
                     "artifact_source_title": "Persistence",
@@ -1954,9 +2902,16 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(digital_body.get("available_toolsets"), ["browser"])
         self.assertEqual(digital_body.get("active_tools"), ["search_web"])
         self.assertEqual(digital_body.get("access", {}).get("mode"), "tool_enabled")
+        self.assertEqual(digital_body.get("access", {}).get("session_state", {}).get("continuity"), "stable")
+        self.assertEqual(digital_body.get("access", {}).get("account_state_detail", {}).get("login_state"), "logged_in")
+        self.assertEqual(digital_body.get("access", {}).get("quota_state_detail", {}).get("provider_state"), "sufficient")
+        self.assertEqual(digital_body.get("access", {}).get("permission_state", {}).get("approval_state"), "open")
+        self.assertEqual(digital_body.get("access", {}).get("sandbox_state", {}).get("execution_policy"), "approval_required")
         self.assertEqual(digital_body.get("resources", {}).get("action_packet_count"), 1)
         self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_source_ref_id"), 17)
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_anchor_reason"), "primary_more_current")
         self.assertEqual(
             digital_body.get("resources", {}).get("artifact_source_title"),
             "Persistence",
@@ -1969,6 +2924,8 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(summary_consequence.get("kind"), "access_request_pending")
         self.assertEqual(summary_consequence.get("artifact_carrier"), "source_ref")
         self.assertEqual(summary_consequence.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(summary_consequence.get("preferred_source_ref_id"), 17)
+        self.assertEqual(summary_consequence.get("preferred_anchor_reason"), "primary_more_current")
         self.assertEqual(summary_consequence.get("artifact_source_title"), "Persistence")
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_surface"), "tooling")
@@ -1984,8 +2941,12 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(event_bodyfx.get("kind"), "access_request_pending")
         self.assertEqual(event_bodyfx.get("artifact_carrier"), "source_ref")
         self.assertEqual(event_bodyfx.get("artifact_source_ref_ids"), [17])
+        self.assertEqual(event_bodyfx.get("preferred_source_ref_id"), 17)
+        self.assertEqual(event_bodyfx.get("preferred_anchor_reason"), "primary_more_current")
         self.assertEqual(event_bodyfx.get("artifact_source_title"), "Persistence")
         self.assertTrue(bool(event_bodyfx.get("requested_help")))
+        self.assertIn("source=Persistence", event_residue.get("preview_line") or "")
+        self.assertIn("bodyfx=access_request_pending", event_residue.get("preview_line") or "")
 
         persona = session.persona_view()
         digital_body_consequence = (
@@ -2013,6 +2974,8 @@ class BackendSessionTests(unittest.TestCase):
                     "missing_access": ["workspace_write"],
                     "artifact_carrier": "source_ref",
                     "artifact_source_ref_ids": [17],
+                    "preferred_source_ref_id": 17,
+                    "preferred_anchor_reason": "primary_more_current",
                     "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                     "artifact_source_query": "langgraph persistence checkpointer thread",
                     "artifact_source_title": "Persistence",
@@ -2033,6 +2996,8 @@ class BackendSessionTests(unittest.TestCase):
         self.assertIn("human_approval", digital_body.get("access", {}).get("requestable_access") or [])
         self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_source_ref_id"), 17)
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_anchor_reason"), "primary_more_current")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_source_title"), "Persistence")
 
     def test_build_evolution_summary_surfaces_digital_body_cooldown(self):
@@ -2091,6 +3056,432 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(current_turn.get("digital_body_session_continuity"), "expiring")
         self.assertEqual(current_turn.get("digital_body_session_expires_in_s"), 600)
         self.assertEqual(current_turn.get("digital_body_session_recovery_mode"), "refresh_session")
+
+    def test_backend_session_surfaces_filesystem_digital_body_consequence_kinds(self):
+        base_event = {
+            "kind": "user_utterance",
+            "perception": {"channel": "dialogue", "modality": "text"},
+        }
+        cases = [
+            {
+                "name": "workspace_access_resolved",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "filesystem"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["filesystem"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "filesystem_state": "writable",
+                        },
+                        "resource_state": {
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "workspace",
+                            "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                            "active_artifact_label": "lab-notes",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        },
+                    },
+                    "reconsolidation_snapshot": {
+                        "digital_body_consequence": {
+                            "kind": "workspace_access_resolved",
+                            "summary": "可写工作区 lab-notes 已经真的创建好并接入当前上下文，后面的落盘动作现在可以继续。",
+                            "active_surface": "tooling",
+                            "access_mode": "tool_enabled",
+                            "world_surfaces": ["filesystem"],
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "workspace",
+                            "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                            "active_artifact_label": "lab-notes",
+                            "primary_status": "completed",
+                            "primary_intent": "access:request_help",
+                            "primary_tool_name": "create_workspace_access",
+                        }
+                    },
+                },
+                "expect": {
+                    "kind": "workspace_access_resolved",
+                    "primary_tool_name": "create_workspace_access",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_label": "lab-notes",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+            {
+                "name": "workspace_file_updated",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "filesystem"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["filesystem"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "filesystem_state": "writable",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                            "external_tool_count": 1,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "file",
+                            "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                            "active_artifact_label": "today.md",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-file-append-1",
+                            "origin": "counterpart_request",
+                            "intent": "artifact:append_file",
+                            "status": "completed",
+                            "risk": "external_mutation",
+                            "requires_approval": True,
+                            "tool_name": "append_workspace_file",
+                            "result_summary": "已把内容续写进 today.md，这条文件工作面现在接上了。",
+                            "writeback_ready": True,
+                            "artifact_context": {
+                                "carrier": "filesystem",
+                                "artifact_kind": "file",
+                                "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                                "artifact_label": "today.md",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "reacquisition_mode": "reopen_file",
+                                "exists": True,
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "workspace_file_updated",
+                    "primary_tool_name": "append_workspace_file",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_mutation_mode": "append",
+                    "procedural_growth": True,
+                },
+            },
+            {
+                "name": "workspace_path_inspected",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "filesystem"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["filesystem"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "filesystem_state": "writable",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "file",
+                            "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                            "active_artifact_label": "today.md",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-inspect-file-1",
+                            "origin": "counterpart_request",
+                            "intent": "artifact:inspect_path",
+                            "status": "completed",
+                            "risk": "read",
+                            "requires_approval": False,
+                            "tool_name": "inspect_workspace_path",
+                            "result_summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                            "writeback_ready": True,
+                            "artifact_context": {
+                                "carrier": "filesystem",
+                                "artifact_kind": "file",
+                                "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                                "artifact_label": "today.md",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "reacquisition_mode": "reopen_file",
+                                "exists": True,
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "workspace_path_inspected",
+                    "primary_tool_name": "inspect_workspace_path",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "procedural_growth": False,
+                },
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self._assert_backend_session_consequence_surface(
+                    values=case["values"],
+                    expect=case["expect"],
+                )
+
+    def test_backend_session_surfaces_source_material_and_access_consequence_kinds(self):
+        base_event = {
+            "kind": "user_utterance",
+            "perception": {"channel": "dialogue", "modality": "text"},
+        }
+        cases = [
+            {
+                "name": "artifact_reacquired",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "browser"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["browser", "source_ref"],
+                        "access_state": {
+                            "mode": "native_only",
+                            "network_access": "enabled",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "search_result",
+                            "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "active_artifact_label": "Persistence",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": [17],
+                            "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_source_query": "langgraph persistence checkpointer thread",
+                            "artifact_source_title": "Persistence",
+                            "artifact_source_tool_name": "search_web",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-source-reattach-1",
+                            "origin": "counterpart_request",
+                            "intent": "artifact:rerun_search",
+                            "status": "completed",
+                            "risk": "read",
+                            "requires_approval": False,
+                            "tool_name": "reacquire_artifact",
+                            "result_summary": "已重新接回检索结果 Persistence。",
+                            "writeback_ready": True,
+                            "artifact_context": {
+                                "carrier": "source_ref",
+                                "artifact_kind": "search_result",
+                                "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "artifact_label": "Persistence",
+                                "reacquisition_mode": "rerun_search",
+                                "source_ref_ids": [17],
+                                "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "source_query": "langgraph persistence checkpointer thread",
+                                "source_title": "Persistence",
+                                "source_tool_name": "search_web",
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "artifact_reacquired",
+                    "primary_tool_name": "reacquire_artifact",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_tool_name": "search_web",
+                    "procedural_growth": False,
+                },
+            },
+            {
+                "name": "source_material_inspected",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "browser"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["browser", "source_ref"],
+                        "access_state": {
+                            "mode": "native_only",
+                            "network_access": "enabled",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "search_result",
+                            "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "active_artifact_label": "Persistence",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": [17],
+                            "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_source_query": "langgraph persistence checkpointer thread",
+                            "artifact_source_title": "Persistence",
+                            "artifact_source_tool_name": "search_web",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-inspect-source-1",
+                            "origin": "counterpart_request",
+                            "intent": "artifact:inspect_source_ref",
+                            "status": "completed",
+                            "risk": "read",
+                            "requires_approval": False,
+                            "tool_name": "inspect_source_ref",
+                            "result_summary": "已查看外部材料 Persistence，当前内容已经接回视野。",
+                            "writeback_ready": True,
+                            "artifact_context": {
+                                "carrier": "source_ref",
+                                "artifact_kind": "search_result",
+                                "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "artifact_label": "Persistence",
+                                "reacquisition_mode": "inspect_source_ref",
+                                "source_ref_ids": [17],
+                                "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "source_query": "langgraph persistence checkpointer thread",
+                                "source_title": "Persistence",
+                                "source_tool_name": "search_web",
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "source_material_inspected",
+                    "primary_tool_name": "inspect_source_ref",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [17],
+                    "artifact_source_tool_name": "search_web",
+                    "procedural_growth": False,
+                },
+            },
+            {
+                "name": "source_material_compared",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "browser"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["browser", "source_ref"],
+                        "access_state": {
+                            "mode": "native_only",
+                            "network_access": "enabled",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "search_result",
+                            "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "active_artifact_label": "Persistence v2",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": [21, 17],
+                            "preferred_source_ref_id": 21,
+                            "preferred_anchor_reason": "primary_more_current",
+                            "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                            "artifact_source_title": "Persistence v2",
+                            "artifact_source_tool_name": "search_web",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-compare-source-1",
+                            "origin": "counterpart_request",
+                            "intent": "artifact:compare_source_refs",
+                            "status": "completed",
+                            "risk": "read",
+                            "requires_approval": False,
+                            "tool_name": "compare_source_refs",
+                            "result_summary": "已把 Persistence v2 和 Persistence 对照过一遍，两条材料是紧邻的延续，当前判断会优先沿着这条相连线索继续。",
+                            "writeback_ready": True,
+                            "artifact_context": {
+                                "carrier": "source_ref",
+                                "artifact_kind": "search_result",
+                                "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "artifact_label": "Persistence v2",
+                                "reacquisition_mode": "compare_source_refs",
+                                "source_ref_ids": [21, 17],
+                                "preferred_source_ref_id": 21,
+                                "preferred_anchor_reason": "primary_more_current",
+                                "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                                "source_query": "langgraph persistence checkpointer thread recovery",
+                                "source_title": "Persistence v2",
+                                "source_tool_name": "search_web",
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "source_material_compared",
+                    "primary_tool_name": "compare_source_refs",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "artifact_source_tool_name": "search_web",
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "procedural_growth": False,
+                },
+            },
+            {
+                "name": "access_state_refreshed",
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "runtime"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["network", "filesystem"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "api_key_state": "present",
+                            "filesystem_state": "writable",
+                            "network_access": "enabled",
+                            "session_continuity": "stable",
+                            "session_recovery_mode": "refresh_session",
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1,
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": "ap-refresh-access-1",
+                            "origin": "motive_goal",
+                            "intent": "access:refresh_state",
+                            "status": "completed",
+                            "risk": "read",
+                            "requires_approval": False,
+                            "tool_name": "refresh_access_state",
+                            "result_summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                            "writeback_ready": True,
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": "access_state_refreshed",
+                    "primary_tool_name": "refresh_access_state",
+                    "session_continuity": "stable",
+                    "procedural_growth": False,
+                },
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self._assert_backend_session_consequence_surface(
+                    values=case["values"],
+                    expect=case["expect"],
+                )
 
     def test_checkpoint_and_behavior_queue_views_use_backend_session_surface(self):
         values = {

@@ -204,6 +204,30 @@ class AppraisalCalibrationTests(unittest.TestCase):
         )
         self.assertTrue(should_use)
 
+    def test_should_use_llm_appraisal_when_digital_body_consequence_trace_exists(self):
+        should_use = _should_use_llm_appraisal(
+            user_text="",
+            response_style_hint="structured",
+            prev_emotion_state={"label": "neutral", "linger": 0},
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "after_summary": "当前判断会顺着这条相连线索继续。",
+                        "metadata": {
+                            "namespace": "digital_body_consequence",
+                            "body_consequence_kind": "source_material_compared",
+                            "embodied_context": {
+                                "kind": "source_material_compared",
+                                "artifact_source_title": "Persistence v2",
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "time_idle"},
+        )
+        self.assertTrue(should_use)
+
     def test_extract_json_block_can_salvage_truncated_appraisal_payload(self):
         raw = """{
   "emotion_label": "logic",
@@ -351,6 +375,59 @@ class AppraisalCalibrationTests(unittest.TestCase):
 
         transport_mock.assert_called_once()
         model_mock.assert_not_called()
+        self.assertTrue(bool(out.get("used")))
+        self.assertEqual(str(out.get("source") or ""), "llm")
+
+    def test_invoke_turn_appraisal_surfaces_digital_body_anchor_in_continuity_lines(self):
+        payload = _raw_appraisal(
+            confidence=0.72,
+            emotion_label="logic",
+            interaction_frame="structured",
+            salience={"task": 0.44, "memory": 0.36},
+            valence=0.02,
+            arousal=0.18,
+        )
+        fake_llm = object()
+        with (
+            patch("amadeus_thread0.graph_parts.appraisal._appraisal_prefers_direct_transport", return_value=False),
+            patch("amadeus_thread0.graph_parts.appraisal._model", return_value=fake_llm),
+            patch(
+                "amadeus_thread0.graph_parts.appraisal._invoke_model_with_retries",
+                return_value=SimpleNamespace(content=json.dumps(payload, ensure_ascii=False)),
+            ) as invoke_mock,
+        ):
+            out = _invoke_turn_appraisal(
+                msgs=[HumanMessage(content="继续")],
+                user_text="",
+                response_style_hint="structured",
+                science_mode=False,
+                prev_emotion_state={"label": "neutral", "linger": 0},
+                prev_bond_state={},
+                prev_allostasis_state={},
+                relationship={"stage": "friend"},
+                worldline_focus=[],
+                retrieved={
+                    "digital_body_consequence_traces": [
+                        {
+                            "after_summary": "当前判断会顺着这条相连线索继续。",
+                            "metadata": {
+                                "namespace": "digital_body_consequence",
+                                "body_consequence_kind": "source_material_compared",
+                                "embodied_context": {
+                                    "kind": "source_material_compared",
+                                    "artifact_source_title": "Persistence v2",
+                                },
+                            },
+                        }
+                    ]
+                },
+                current_event={"kind": "time_idle"},
+                semantic_narrative_profile={},
+                interaction_carryover={},
+            )
+
+        prompt = invoke_mock.call_args.args[1][0].content
+        self.assertIn("digital_body:source_material_compared[anchor=Persistence v2]", prompt)
         self.assertTrue(bool(out.get("used")))
         self.assertEqual(str(out.get("source") or ""), "llm")
 

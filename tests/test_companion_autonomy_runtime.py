@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from amadeus_thread0.graph_parts.autonomy_runtime import derive_autonomy_runtime, refresh_autonomy_intent_from_packets
+from amadeus_thread0.graph_parts.autonomy_runtime import (
+    _embodied_carryover_autonomy_signal,
+    derive_autonomy_runtime,
+    refresh_autonomy_intent_from_packets,
+)
 from amadeus_thread0.graph_parts.graph_builder import _route_after_prepare
 from amadeus_thread0.graph_parts.tool_nodes import _node_autonomy_execute, _node_tool_execute, _node_tool_gate
 
@@ -162,6 +166,33 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_embodied_carryover")
         self.assertIn("plan.md", str(runtime["autonomy_intent"]["reason"]))
 
+    def test_derive_autonomy_runtime_binds_workspace_root_for_relative_workspace_artifact(self):
+        runtime = derive_autonomy_runtime(
+            current_event={"kind": "user_utterance"},
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.29,
+                "embodied_context": {
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/plan.md",
+                    "active_artifact_label": "plan.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_reacquisition_mode": "reopen_file",
+                    "primary_origin": "counterpart_request",
+                },
+            },
+        )
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "reacquire_artifact")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "artifact:reopen_file")
+        self.assertEqual(runtime["action_packets"][0]["tool_args"]["artifact_ref"], "notes/plan.md")
+        self.assertEqual(
+            runtime["action_packets"][0]["tool_args"]["workspace_root"],
+            "E:/runtime/workspaces/lab-notes",
+        )
+
     def test_derive_autonomy_runtime_turns_stale_saved_source_ref_into_inspection_packet(self):
         runtime = derive_autonomy_runtime(
             current_event={"kind": "user_utterance"},
@@ -284,6 +315,30 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_packets"][0]["tool_name"], "inspect_source_ref")
         self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
+
+    def test_embodied_carryover_signal_prefers_inspection_after_source_ref_pair_is_reanchored(self):
+        signal = _embodied_carryover_autonomy_signal(
+            {
+                "embodied_context": {
+                    "kind": "source_material_compared",
+                    "artifact_continuity": "stale",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "primary_origin": "counterpart_request",
+                }
+            }
+        )
+
+        self.assertEqual(signal["mode"], "inspect_source_ref")
+        self.assertEqual(signal["origin"], "counterpart_request")
+        self.assertFalse(signal["requires_approval"])
+        self.assertEqual(signal["artifact_continuity"], "stale")
+        self.assertIn("Persistence v2", str(signal["reason"]))
 
     def test_derive_autonomy_runtime_turns_stale_session_source_ref_into_inspection_packet(self):
         runtime = derive_autonomy_runtime(
@@ -833,6 +888,133 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
         self.assertEqual(artifact_context.get("artifact_ref"), str(path))
 
+    def test_autonomy_execute_can_reacquire_relative_workspace_file_from_live_carryover(self):
+        with TemporaryDirectory() as td:
+            workspace = Path(td) / "lab-notes"
+            path = workspace / "notes" / "plan.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("# plan\nrelative workspace continuity\n", encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "继续前面的文件。"},
+                "interaction_carryover": {
+                    "embodied_context": {
+                        "artifact_continuity": "detached",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "notes/plan.md",
+                        "active_artifact_label": "plan.md",
+                        "workspace_root": str(workspace),
+                        "artifact_reacquisition_mode": "reopen_file",
+                    }
+                },
+                "session_context": {"digital_body_hints": {"artifact_continuity": "detached"}},
+                "autonomy_intent": {"mode": "reacquire_artifact", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-artifact-relative-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:reopen_file",
+                        "status": "proposed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "capability_steps": [
+                            {
+                                "kind": "artifact",
+                                "name": "reopen_file",
+                                "target": "notes/plan.md",
+                                "status": "pending",
+                                "requires_approval": False,
+                            }
+                        ],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
+        self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
+        artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("artifact_ref"), str(path))
+        self.assertIn("relative workspace continuity", str(artifact_context.get("preview") or ""))
+
+    def test_autonomy_execute_can_reacquire_relative_workspace_file_from_packet_binding(self):
+        with TemporaryDirectory() as td:
+            workspace = Path(td) / "lab-notes"
+            path = workspace / "notes" / "plan.md"
+            path.parent.mkdir(parents=True)
+            path.write_text("# plan\nrelative packet binding\n", encoding="utf-8")
+            state = {
+                "current_event": {"kind": "user_utterance", "text": "继续前面的文件。"},
+                "interaction_carryover": {},
+                "session_context": {"digital_body_hints": {}},
+                "autonomy_intent": {"mode": "reacquire_artifact", "origin": "counterpart_request"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-artifact-relative-bound-1",
+                        "origin": "counterpart_request",
+                        "intent": "artifact:reopen_file",
+                        "status": "approved",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "reacquire_artifact",
+                        "tool_args": {
+                            "mode": "reopen_file",
+                            "artifact_kind": "file",
+                            "artifact_ref": "notes/plan.md",
+                            "artifact_label": "plan.md",
+                            "workspace_root": str(workspace),
+                        },
+                        "capability_steps": [
+                            {
+                                "kind": "artifact",
+                                "name": "reopen_file",
+                                "target": "notes/plan.md",
+                                "status": "approved",
+                                "requires_approval": False,
+                            }
+                        ],
+                    }
+                ],
+                "action_trace": [],
+                "behavior_queue": [],
+                "toolset_unlocks": {},
+                "last_external_tools": [],
+                "evidence_pack": [],
+                "world_model_state": {},
+                "semantic_narrative_profile": {},
+                "turn_appraisal": {},
+                "evolution_state": {},
+                "emotion_state": {},
+                "bond_state": {},
+                "counterpart_assessment": {},
+                "behavior_action": {},
+                "behavior_plan": {},
+                "agenda_lifecycle_residue": {},
+            }
+            out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
+        self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
+        artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("artifact_ref"), str(path))
+        self.assertIn("relative packet binding", str(artifact_context.get("preview") or ""))
+
     def test_autonomy_execute_blocks_missing_local_file_reacquisition(self):
         state = {
             "current_event": {"kind": "user_utterance", "text": "继续前面的计划。"},
@@ -974,6 +1156,171 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(artifact_context.get("source_ref_ids"), [17])
         self.assertIn("checkpointers", str(artifact_context.get("preview") or ""))
         self.assertIn("docs.langchain.com", str(artifact_context.get("source_url") or ""))
+
+    def test_autonomy_execute_can_reacquire_saved_search_surface_from_content_only_source_refs(self):
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": "17",
+                    "content": {
+                        "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                        "title": " Persistence ",
+                        "query": " langgraph persistence checkpointer thread ",
+                        "tool_name": " search_langchain_docs ",
+                        "snippet": " Persistence in LangGraph uses checkpointers and thread-scoped state. ",
+                    },
+                }
+            ]
+        )
+        state = {
+            "current_event": {"kind": "user_utterance", "text": "把刚才那条检索结果接回来。"},
+            "interaction_carryover": {
+                "embodied_context": {
+                    "artifact_continuity": "missing",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "langgraph persistence checkpointer thread",
+                    "active_artifact_label": "Persistence",
+                    "artifact_reacquisition_mode": "rerun_search",
+                }
+            },
+            "session_context": {"digital_body_hints": {"artifact_continuity": "missing"}},
+            "autonomy_intent": {"mode": "reacquire_artifact", "origin": "counterpart_request"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-artifact-3b",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:rerun_search",
+                    "status": "proposed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "capability_steps": [
+                        {
+                            "kind": "artifact",
+                            "name": "rerun_search",
+                            "target": "langgraph persistence checkpointer thread",
+                            "status": "pending",
+                            "requires_approval": False,
+                        }
+                    ],
+                    "expected_effect": "先把前面的检索结果重新拿回来，再继续往下做。",
+                }
+            ],
+            "action_trace": [],
+            "behavior_queue": [],
+            "toolset_unlocks": {},
+            "last_external_tools": [],
+            "evidence_pack": [],
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "turn_appraisal": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_title"], "Persistence")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "search_langchain_docs")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_title"], "Persistence")
+        self.assertEqual(out["evidence_pack"][0]["source_id"], 17)
+        self.assertEqual(out["evidence_pack"][0]["title"], "Persistence")
+        self.assertIn("docs.langchain.com", str(out["evidence_pack"][0]["url"]))
+        self.assertIn("已重新接回检索结果", str(out["evidence_pack"][0]["query"]))
+
+    def test_autonomy_execute_reacquire_saved_search_surface_preserves_preferred_anchor_hints(self):
+        state = {
+            "current_event": {"kind": "user_utterance", "text": "把刚才更合适的那条材料接回来。"},
+            "interaction_carryover": {},
+            "session_context": {"digital_body_hints": {}},
+            "autonomy_intent": {"mode": "reacquire_artifact", "origin": "counterpart_request"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-artifact-preferred-anchor-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:rerun_search",
+                    "status": "approved",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "reacquire_artifact",
+                    "tool_args": {
+                        "mode": "rerun_search",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "langgraph persistence checkpointer thread recovery",
+                        "artifact_label": "Persistence v2",
+                    },
+                    "capability_steps": [
+                        {
+                            "kind": "artifact",
+                            "name": "rerun_search",
+                            "target": "langgraph persistence checkpointer thread recovery",
+                            "status": "approved",
+                            "requires_approval": False,
+                        }
+                    ],
+                    "expected_effect": "先把之前更合适的材料重新接回来。",
+                }
+            ],
+            "action_trace": [],
+            "behavior_queue": [],
+            "toolset_unlocks": {},
+            "last_external_tools": [],
+            "evidence_pack": [],
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "turn_appraisal": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        with patch("amadeus_thread0.graph_parts.tool_nodes._tool_lookup", return_value=object()):
+            with patch(
+                "amadeus_thread0.graph_parts.tool_nodes._invoke_tool",
+                return_value={
+                    "artifact_continuity": "attached",
+                    "artifact_kind": "search_result",
+                    "artifact_ref": "langgraph persistence checkpointer thread recovery",
+                    "artifact_label": "Persistence v2",
+                    "artifact_reacquisition_mode": "rerun_search",
+                    "artifact_preview": "Recovery keeps the same persistence thread coherent.",
+                    "artifact_exists": True,
+                    "source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "source_query": "langgraph persistence checkpointer thread recovery",
+                    "tool_name": "search_web",
+                },
+            ):
+                out = _node_autonomy_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(int(out["session_context"]["digital_body_hints"]["preferred_source_ref_id"]), 21)
+        self.assertEqual(
+            out["session_context"]["digital_body_hints"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
+        self.assertEqual(out["digital_body_state"]["resource_state"]["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(int(out["digital_body_state"]["resource_state"]["preferred_source_ref_id"]), 21)
+        self.assertEqual(
+            out["digital_body_state"]["resource_state"]["preferred_anchor_reason"],
+            "primary_more_current",
+        )
+        artifact_context = out["action_packets"][0].get("artifact_context") if isinstance(out["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("preferred_source_ref_id"), 21)
+        self.assertEqual(artifact_context.get("preferred_anchor_reason"), "primary_more_current")
 
     def test_autonomy_execute_can_refresh_access_state_and_write_back_hints(self):
         with TemporaryDirectory() as td:
@@ -1362,8 +1709,11 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["action_packets"][0]["status"], "completed")
             self.assertEqual(out["action_packets"][0]["tool_name"], "write_workspace_file")
             self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["workspace_root"], str(workspace))
+            self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
             self.assertIsInstance(out["messages"][0], AIMessage)
             self.assertIsInstance(out["messages"][1], ToolMessage)
 
@@ -1439,8 +1789,11 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["action_packets"][0]["status"], "completed")
             self.assertEqual(out["action_packets"][0]["tool_name"], "replace_workspace_text")
             self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "replace_workspace_text")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["workspace_root"], str(workspace))
+            self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
             self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "replace_workspace_text")
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
 
     def test_autonomy_execute_can_replace_workspace_lines_from_approved_packet(self):
         with TemporaryDirectory() as td:
@@ -1515,8 +1868,11 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["action_packets"][0]["status"], "completed")
             self.assertEqual(out["action_packets"][0]["tool_name"], "replace_workspace_lines")
             self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "replace_workspace_lines")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["workspace_root"], str(workspace))
+            self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
             self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "replace_workspace_lines")
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
 
     def test_autonomy_execute_can_inspect_workspace_path_from_packet_binding(self):
         with TemporaryDirectory() as td:
@@ -1594,10 +1950,13 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["action_packets"][0]["tool_name"], "inspect_workspace_path")
             self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "file")
             self.assertEqual(out["action_packets"][0]["artifact_context"]["source_tool_name"], "inspect_workspace_path")
+            self.assertEqual(out["action_packets"][0]["artifact_context"]["workspace_root"], str(workspace))
             self.assertIn("hello from inspect", out["action_packets"][0]["artifact_context"]["preview"])
             self.assertEqual(out["autonomy_intent"]["mode"], "inspect_workspace_path")
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
+            self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
 
     def test_tool_execute_create_workspace_updates_session_context(self):
         with TemporaryDirectory() as td:
@@ -1651,9 +2010,12 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
 
         self.assertEqual(out["action_packets"][0]["status"], "completed")
         self.assertEqual(out["action_packets"][0]["artifact_context"]["artifact_kind"], "workspace")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["workspace_root"], str(runtime_dir / "workspaces" / "lab"))
         self.assertEqual(out["session_context"]["digital_body_hints"]["filesystem_state"], "writable")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(runtime_dir / "workspaces" / "lab"))
         self.assertEqual(out["digital_body_state"]["access_state"]["filesystem_state"], "writable")
         self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_kind"], "workspace")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(runtime_dir / "workspaces" / "lab"))
 
     def test_tool_execute_inspect_workspace_path_updates_session_context(self):
         with TemporaryDirectory() as td:
@@ -1744,7 +2106,9 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
             self.assertEqual(out["autonomy_intent"]["mode"], "inspect_workspace_path")
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "file")
             self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_ref"], str(target))
+            self.assertEqual(out["session_context"]["digital_body_hints"]["workspace_root"], str(workspace))
             self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "todo.md")
+            self.assertEqual(out["digital_body_state"]["resource_state"]["workspace_root"], str(workspace))
 
     def test_tool_execute_inspect_source_ref_updates_session_context(self):
         state = {
@@ -1830,6 +2194,92 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(out["autonomy_intent"]["mode"], "inspect_source_ref")
         self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
         self.assertEqual(out["session_context"]["digital_body_hints"]["active_artifact_kind"], "search_result")
+        self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence")
+
+    def test_tool_execute_inspect_source_ref_updates_session_context_from_content_only_source_ref(self):
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-1",
+                            "name": "inspect_source_ref",
+                            "args": {
+                                "source_ref_id": 17,
+                                "access_hints": {
+                                    "world_surfaces": ["source_ref"],
+                                },
+                            },
+                        }
+                    ],
+                )
+            ],
+            "approval_actions": [
+                {
+                    "id": "tc-1",
+                    "name": "inspect_source_ref",
+                    "args": {
+                        "source_ref_id": 17,
+                        "access_hints": {
+                            "world_surfaces": ["source_ref"],
+                        },
+                    },
+                    "proposal_id": "ap-inspect-source-1b",
+                    "action": "approve",
+                }
+            ],
+            "session_context": {
+                "digital_body_hints": {
+                    "world_surfaces": ["source_ref"],
+                }
+            },
+            "toolset_unlocks": {},
+            "evidence_pack": [],
+            "last_external_tools": [],
+            "memory_guard_checked": 0,
+            "memory_guard_blocked": 0,
+            "current_event": {"kind": "user_utterance"},
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "interaction_carryover": {},
+            "agenda_lifecycle_residue": {},
+            "autonomy_intent": {"mode": "language_response", "origin": "counterpart_request"},
+            "action_packets": [],
+            "action_trace": [],
+        }
+        store = self._SourceRefStore(
+            [
+                {
+                    "id": "17",
+                    "content": {
+                        "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                        "title": " Persistence ",
+                        "query": " langgraph persistence checkpointer thread ",
+                        "tool_name": " search_web ",
+                        "snippet": " checkpointers keep thread state stable ",
+                    },
+                    "retrieved_at": "1712345678",
+                }
+            ]
+        )
+        with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+            with patch("amadeus_thread0.graph_parts.tool_nodes._get_store", return_value=object()):
+                out = _node_tool_execute(state)
+
+        self.assertEqual(out["action_packets"][0]["status"], "completed")
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_ref_ids"], [17])
+        self.assertEqual(out["action_packets"][0]["artifact_context"]["source_title"], "Persistence")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_ref_ids"], [17])
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_title"], "Persistence")
+        self.assertEqual(out["session_context"]["digital_body_hints"]["artifact_source_tool_name"], "search_web")
         self.assertEqual(out["digital_body_state"]["resource_state"]["active_artifact_label"], "Persistence")
 
     def test_autonomy_execute_can_inspect_source_ref_from_packet_binding(self):

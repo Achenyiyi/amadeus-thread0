@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import difflib
+import json
 import operator as op
 import os
 import re
@@ -38,9 +39,21 @@ from ..graph_parts.digital_body_runtime import (
     selected_access_proposal_resolved,
 )
 from ..memory_store import MemoryStore
+from ..runtime.sandbox_runner import (
+    LocalRestrictedSandboxRunner,
+    SandboxValidationError,
+    build_execution_preview,
+    build_sandbox_command_spec,
+)
 from ..runtime.modeling import _normalize_provider, _resolve_api_key
 from ..runtime.settings import BASE_DIR, get_settings
+from .memory_history_export import normalize_memory_record_exports
+from .relational_history_export import (
+    normalize_counterpart_assessment_exports,
+    normalize_proactive_continuity_exports,
+)
 from .revision_trace_export import normalize_revision_trace_exports
+from .source_material_export import normalize_source_ref_exports
 
 
 def _meta(tool_name: str) -> dict[str, Any]:
@@ -145,6 +158,56 @@ def _resolve_artifact_path(raw: Any) -> Path | None:
     return None
 
 
+def _resolve_workspace_scoped_artifact_path(raw: Any, *, workspace_root: Any) -> Path | None:
+    text = str(raw or "").strip()
+    root_text = str(workspace_root or "").strip()
+    if not text or not root_text:
+        return None
+
+    root = _resolve_artifact_path(root_text)
+    if root is None:
+        return None
+    try:
+        root_resolved = root.resolve(strict=False)
+    except Exception:
+        return None
+    if not root_resolved.exists() or not root_resolved.is_dir():
+        return None
+
+    candidate = Path(text).expanduser()
+    path = candidate.resolve(strict=False) if candidate.is_absolute() else (root_resolved / candidate).resolve(strict=False)
+    if not _path_within_root(path, root_resolved):
+        return None
+    try:
+        if path.exists():
+            return path
+    except Exception:
+        return None
+    return None
+
+
+def _infer_workspace_root_for_artifact(path: Path, *, workspace_root: Any = "") -> Path | None:
+    explicit = _resolve_artifact_path(workspace_root)
+    if explicit is not None:
+        try:
+            explicit_resolved = explicit.resolve(strict=False)
+        except Exception:
+            explicit_resolved = None
+        if explicit_resolved is not None and explicit_resolved.exists() and explicit_resolved.is_dir():
+            try:
+                path_resolved = path.resolve(strict=False)
+            except Exception:
+                path_resolved = path
+            if _path_within_root(path_resolved, explicit_resolved):
+                return explicit_resolved
+
+    try:
+        runtime_root = _workspace_root_dir().resolve(strict=False)
+    except Exception:
+        return None
+    return _workspace_root_from_candidate_path(path, runtime_root)
+
+
 def _parse_source_ref_id(raw: Any) -> int:
     text = str(raw or "").strip().lower()
     if not text:
@@ -160,7 +223,7 @@ def _parse_source_ref_id(raw: Any) -> int:
 
 def _resolve_source_ref_surface(*, artifact_ref: Any, artifact_label: Any) -> dict[str, Any]:
     store = _get_store()
-    refs = store.list_source_refs(limit=120)
+    refs = normalize_source_ref_exports(store.list_source_refs(limit=120))
     if not isinstance(refs, list) or not refs:
         return {}
 
@@ -339,7 +402,12 @@ def _text_preview(text: str, *, limit: int = 1200) -> tuple[str, bool]:
     return preview, len(normalized) > len(preview)
 
 
-def _workspace_artifact_context(path: Path, *, source_tool_name: str = "create_workspace_access") -> dict[str, Any]:
+def _workspace_artifact_context(
+    path: Path,
+    *,
+    workspace_root: Path | None = None,
+    source_tool_name: str = "create_workspace_access",
+) -> dict[str, Any]:
     preview, preview_truncated = _workspace_preview(path)
     try:
         updated_at = int(path.stat().st_mtime)
@@ -350,6 +418,7 @@ def _workspace_artifact_context(path: Path, *, source_tool_name: str = "create_w
         "artifact_kind": "workspace",
         "artifact_ref": str(path),
         "artifact_label": path.name,
+        "workspace_root": str(workspace_root or path),
         "reacquisition_mode": "reattach_workspace",
         "preview": preview,
         "preview_truncated": preview_truncated,
@@ -364,7 +433,13 @@ def _workspace_artifact_context(path: Path, *, source_tool_name: str = "create_w
     }
 
 
-def _file_artifact_context(path: Path, *, content: str, source_tool_name: str) -> dict[str, Any]:
+def _file_artifact_context(
+    path: Path,
+    *,
+    content: str,
+    workspace_root: Path | None = None,
+    source_tool_name: str,
+) -> dict[str, Any]:
     preview, preview_truncated = _text_preview(content, limit=1200)
     try:
         stat = path.stat()
@@ -378,6 +453,7 @@ def _file_artifact_context(path: Path, *, content: str, source_tool_name: str) -
         "artifact_kind": "file",
         "artifact_ref": str(path),
         "artifact_label": path.name,
+        "workspace_root": str(workspace_root or path.parent),
         "reacquisition_mode": "reopen_file",
         "preview": preview,
         "preview_truncated": preview_truncated,
@@ -395,25 +471,29 @@ def _file_artifact_context(path: Path, *, content: str, source_tool_name: str) -
 def _workspace_access_hints(
     *,
     hints: dict[str, Any],
-    workspace_path: Path,
+    workspace_root: Path,
+    active_path: Path | None = None,
     source_tool_name: str = "create_workspace_access",
 ) -> dict[str, Any]:
     refreshed = dict(hints or {})
+    focus_path = active_path or workspace_root
     refreshed.update(
         {
             "filesystem_state": "writable",
             "artifact_continuity": "attached",
             "active_artifact_kind": "workspace",
-            "active_artifact_ref": str(workspace_path),
-            "active_artifact_label": workspace_path.name,
+            "active_artifact_ref": str(focus_path),
+            "active_artifact_label": focus_path.name,
             "artifact_age_s": 0,
             "artifact_reacquisition_mode": "reattach_workspace",
             "artifact_carrier": "filesystem",
             "artifact_source_ref_ids": [],
             "artifact_source_url": "",
             "artifact_source_query": "",
-            "artifact_source_title": workspace_path.name,
+            "artifact_source_title": focus_path.name,
             "artifact_source_tool_name": str(source_tool_name or "").strip() or "create_workspace_access",
+            "workspace_path": str(focus_path),
+            "workspace_root": str(workspace_root),
         }
     )
     refreshed.setdefault("world_surfaces", [])
@@ -438,8 +518,15 @@ def _workspace_access_hints(
     return refreshed
 
 
-def _workspace_file_hints(*, hints: dict[str, Any], file_path: Path, source_tool_name: str) -> dict[str, Any]:
+def _workspace_file_hints(
+    *,
+    hints: dict[str, Any],
+    file_path: Path,
+    workspace_root: Path | None = None,
+    source_tool_name: str,
+) -> dict[str, Any]:
     refreshed = dict(hints or {})
+    resolved_workspace_root = workspace_root or file_path.parent
     refreshed.update(
         {
             "filesystem_state": "writable",
@@ -456,6 +543,7 @@ def _workspace_file_hints(*, hints: dict[str, Any], file_path: Path, source_tool
             "artifact_source_title": file_path.name,
             "artifact_source_tool_name": str(source_tool_name or "").strip() or "write_workspace_file",
             "workspace_path": str(file_path.parent),
+            "workspace_root": str(resolved_workspace_root),
         }
     )
     refreshed.setdefault("world_surfaces", [])
@@ -764,6 +852,20 @@ def _workspace_root_dir() -> Path:
     return root
 
 
+def _workspace_root_from_candidate_path(candidate: Path, root_resolved: Path) -> Path | None:
+    try:
+        relative = candidate.resolve(strict=False).relative_to(root_resolved)
+    except Exception:
+        return None
+    parts = tuple(str(part or "").strip() for part in relative.parts if str(part or "").strip())
+    if not parts:
+        return None
+    workspace_root = (root_resolved / parts[0]).resolve(strict=False)
+    if workspace_root.exists() and workspace_root.is_dir() and _path_within_root(workspace_root, root_resolved):
+        return workspace_root
+    return None
+
+
 def _resolve_runtime_workspace(
     *,
     hints: dict[str, Any],
@@ -779,20 +881,8 @@ def _resolve_runtime_workspace(
 
     artifact_kind = _clean_lower_text(hints.get("active_artifact_kind"))
 
-    def _workspace_root_from_path(candidate: Path) -> Path | None:
-        try:
-            relative = candidate.resolve(strict=False).relative_to(root_resolved)
-        except Exception:
-            return None
-        parts = tuple(str(part or "").strip() for part in relative.parts if str(part or "").strip())
-        if not parts:
-            return None
-        workspace_root = (root_resolved / parts[0]).resolve(strict=False)
-        if workspace_root.exists() and workspace_root.is_dir() and _path_within_root(workspace_root, root_resolved):
-            return workspace_root
-        return None
-
     for raw in (
+        hints.get("workspace_root"),
         hints.get("workspace_path"),
         hints.get("active_artifact_ref"),
     ):
@@ -803,7 +893,7 @@ def _resolve_runtime_workspace(
         if not candidate.is_absolute():
             candidate = root / candidate
         resolved = candidate.resolve(strict=False)
-        workspace_root = _workspace_root_from_path(resolved)
+        workspace_root = _workspace_root_from_candidate_path(resolved, root_resolved)
         if workspace_root is not None:
             return workspace_root
 
@@ -952,6 +1042,32 @@ def get_memory_snapshot(include_core: bool = False) -> dict[str, Any]:
         store = _get_store()
         snap = store.snapshot()
         if include_core:
+            if isinstance(snap, dict):
+                snap = dict(snap)
+                if isinstance(snap.get("revision_traces"), list):
+                    snap["revision_traces"] = normalize_revision_trace_exports(snap.get("revision_traces"))
+                for key in (
+                    "worldline_events",
+                    "identity_facts",
+                    "shared_events",
+                    "conflict_repair",
+                    "relationship_timeline",
+                    "counterpart_assessment_history",
+                    "proactive_continuity_history",
+                    "commitments",
+                    "unresolved_tensions",
+                    "semantic_self_narratives",
+                    "source_refs",
+                ):
+                    if isinstance(snap.get(key), list):
+                        if key == "source_refs":
+                            snap[key] = normalize_source_ref_exports(snap.get(key))
+                        elif key == "counterpart_assessment_history":
+                            snap[key] = normalize_counterpart_assessment_exports(snap.get(key))
+                        elif key == "proactive_continuity_history":
+                            snap[key] = normalize_proactive_continuity_exports(snap.get(key))
+                        else:
+                            snap[key] = normalize_memory_record_exports(snap.get(key))
             return _ok(tool_name, snap)
         return _ok(tool_name, {"moments": snap.get("moments", [])})
     except Exception as e:
@@ -1806,14 +1922,16 @@ def get_worldline_snapshot(limit: int = 20) -> dict[str, Any]:
         return _ok(
             tool_name,
             {
-                "worldline_events": store.list_worldline_events(limit=lim),
-                "identity_facts": store.list_identity_facts(limit=lim),
-                "shared_events": store.list_shared_events(limit=lim),
-                "conflict_repair": store.list_conflict_repairs(limit=lim),
-                "relationship_timeline": store.list_relationship_timeline(limit=lim),
-                "commitments": store.list_commitments(limit=lim),
-                "unresolved_tensions": store.list_unresolved_tensions(limit=lim),
-                "semantic_self_narratives": store.list_semantic_self_narratives(limit=lim),
+                "worldline_events": normalize_memory_record_exports(store.list_worldline_events(limit=lim)),
+                "identity_facts": normalize_memory_record_exports(store.list_identity_facts(limit=lim)),
+                "shared_events": normalize_memory_record_exports(store.list_shared_events(limit=lim)),
+                "conflict_repair": normalize_memory_record_exports(store.list_conflict_repairs(limit=lim)),
+                "relationship_timeline": normalize_memory_record_exports(store.list_relationship_timeline(limit=lim)),
+                "commitments": normalize_memory_record_exports(store.list_commitments(limit=lim)),
+                "unresolved_tensions": normalize_memory_record_exports(store.list_unresolved_tensions(limit=lim)),
+                "semantic_self_narratives": normalize_memory_record_exports(
+                    store.list_semantic_self_narratives(limit=lim)
+                ),
                 "revision_traces": normalize_revision_trace_exports(
                     store.list_revision_traces(limit=min(lim, 50))
                 ),
@@ -2130,7 +2248,7 @@ def list_source_refs(limit: int = 20) -> dict[str, Any]:
     try:
         store = _get_store()
         lim = max(1, min(100, int(limit)))
-        return _ok(tool_name, store.list_source_refs(limit=lim))
+        return _ok(tool_name, normalize_source_ref_exports(store.list_source_refs(limit=lim)))
     except Exception as e:
         return _err(tool_name, "INTERNAL", str(e))
 
@@ -2677,6 +2795,7 @@ def reacquire_artifact(
     artifact_kind: str = "",
     artifact_ref: str = "",
     artifact_label: str = "",
+    workspace_root: str = "",
     preview_chars: int = 900,
 ) -> dict[str, Any]:
     """在受限只读范围内重新接回当前工作面。
@@ -2701,12 +2820,17 @@ def reacquire_artifact(
         return _err(tool_name, "BAD_INPUT", "mode is required")
 
     path = _resolve_artifact_path(ref)
+    if path is None:
+        path = _resolve_workspace_scoped_artifact_path(ref, workspace_root=workspace_root)
     if path is None and reacquire_mode == "reattach_workspace":
         path = _resolve_artifact_path(label)
+    if path is None and reacquire_mode == "reattach_workspace":
+        path = _resolve_workspace_scoped_artifact_path(label, workspace_root=workspace_root)
 
     if path is not None:
         try:
             stat = path.stat()
+            resolved_workspace_root = _infer_workspace_root_for_artifact(path, workspace_root=workspace_root)
             resolved_label = label
             try:
                 normalized_label_path = Path(label).expanduser() if label else None
@@ -2735,6 +2859,7 @@ def reacquire_artifact(
                         "artifact_preview_truncated": False,
                         "artifact_size_bytes": int(stat.st_size),
                         "artifact_updated_at": int(stat.st_mtime),
+                        "workspace_root": str(resolved_workspace_root) if resolved_workspace_root is not None else "",
                     },
                 )
             content = path.read_text(encoding="utf-8", errors="ignore")
@@ -2754,6 +2879,7 @@ def reacquire_artifact(
                     "artifact_preview_truncated": len(content) > len(preview),
                     "artifact_size_bytes": int(stat.st_size),
                     "artifact_updated_at": int(stat.st_mtime),
+                    "workspace_root": str(resolved_workspace_root) if resolved_workspace_root is not None else "",
                 },
             )
         except Exception as e:
@@ -2959,7 +3085,8 @@ def create_workspace_access(
 
         refreshed_hints = _workspace_access_hints(
             hints=hints,
-            workspace_path=workspace_path,
+            workspace_root=workspace_path,
+            active_path=workspace_path,
             source_tool_name=tool_name,
         )
         body = derive_digital_body_state(
@@ -2973,7 +3100,11 @@ def create_workspace_access(
         )
         access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
         resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
-        artifact_context = _workspace_artifact_context(workspace_path, source_tool_name=tool_name)
+        artifact_context = _workspace_artifact_context(
+            workspace_path,
+            workspace_root=workspace_path,
+            source_tool_name=tool_name,
+        )
         summary = (
             f"已新建可写工作区 {workspace_path.name}，这条落盘路径现在接上了。"
             if created_new
@@ -3049,10 +3180,15 @@ def inspect_workspace_path(
         if target_path.is_dir():
             refreshed_hints = _workspace_access_hints(
                 hints=hints,
-                workspace_path=target_path,
+                workspace_root=workspace_path,
+                active_path=target_path,
                 source_tool_name=tool_name,
             )
-            artifact_context = _workspace_artifact_context(target_path, source_tool_name=tool_name)
+            artifact_context = _workspace_artifact_context(
+                target_path,
+                workspace_root=workspace_path,
+                source_tool_name=tool_name,
+            )
             artifact_kind = "workspace"
             preview = str(artifact_context.get("preview") or "")
             preview_truncated = bool(artifact_context.get("preview_truncated", False))
@@ -3064,11 +3200,13 @@ def inspect_workspace_path(
             refreshed_hints = _workspace_file_hints(
                 hints=hints,
                 file_path=target_path,
+                workspace_root=workspace_path,
                 source_tool_name=tool_name,
             )
             artifact_context = _file_artifact_context(
                 target_path,
                 content=content,
+                workspace_root=workspace_path,
                 source_tool_name=tool_name,
             )
             artifact_context["preview"] = preview
@@ -3226,7 +3364,12 @@ def _mutate_workspace_file(
             final_content = normalized_content
             bytes_written = len(normalized_content.encode("utf-8"))
 
-        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        refreshed_hints = _workspace_file_hints(
+            hints=hints,
+            file_path=target_path,
+            workspace_root=workspace_path,
+            source_tool_name=tool_name,
+        )
         body = derive_digital_body_state(
             current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
             behavior_queue=[],
@@ -3241,6 +3384,7 @@ def _mutate_workspace_file(
         artifact_context = _file_artifact_context(
             target_path,
             content=final_content,
+            workspace_root=workspace_path,
             source_tool_name=tool_name,
         )
         if op == "append":
@@ -3364,7 +3508,12 @@ def replace_workspace_text(
         updated_content = original_content.replace(needle, replacement, replace_count)
         target_path.write_text(updated_content, encoding="utf-8")
 
-        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        refreshed_hints = _workspace_file_hints(
+            hints=hints,
+            file_path=target_path,
+            workspace_root=workspace_path,
+            source_tool_name=tool_name,
+        )
         body = derive_digital_body_state(
             current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
             behavior_queue=[],
@@ -3379,6 +3528,7 @@ def replace_workspace_text(
         artifact_context = _file_artifact_context(
             target_path,
             content=updated_content,
+            workspace_root=workspace_path,
             source_tool_name=tool_name,
         )
         summary = f"已在 {target_path.name} 里精确替换 {replace_count} 处文本，这条文件工作面现在接上了。"
@@ -3632,6 +3782,249 @@ def preview_workspace_mutation(tool_name: str, args: dict[str, Any] | None) -> d
         return _error("INTERNAL", str(e))
 
 
+def preview_workspace_command_execution(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    name = str(tool_name or "").strip()
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    if name != "execute_workspace_command":
+        return {}
+
+    hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    workspace_name = str(data.get("workspace_name") or "").strip()
+    raw_argv = [str(item).strip() for item in (data.get("argv") if isinstance(data.get("argv"), list) else []) if str(item or "").strip()]
+    raw_cwd = str(data.get("cwd") or ".").strip() or "."
+    preview = {
+        "runner_kind": "local_restricted_runner",
+        "isolation_level": "host_local_restricted",
+        "argv": raw_argv[:64],
+        "cwd": raw_cwd.replace("\\", "/"),
+        "allowed_roots": [],
+        "timeout_s": max(1, min(int(data.get("timeout_s") or 25), 300)),
+        "writes_expected": bool(data.get("writes_expected", False)),
+        "expected_artifacts": [
+            str(item).strip().replace("\\", "/")
+            for item in (data.get("expected_artifacts") if isinstance(data.get("expected_artifacts"), list) else [])
+            if str(item or "").strip()
+        ][:16],
+    }
+    try:
+        workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+        if workspace_path is None:
+            preview["validation_code"] = "WORKSPACE_REQUIRED"
+            preview["validation_error"] = "当前没有可用的 runtime workspace，这次执行还没有真实落点。"
+            return preview
+        spec = build_sandbox_command_spec(
+            argv=data.get("argv"),
+            cwd=data.get("cwd"),
+            allowed_roots=[str(workspace_path)],
+            timeout_s=data.get("timeout_s"),
+            writes_expected=data.get("writes_expected"),
+            expected_artifacts=data.get("expected_artifacts"),
+        )
+        return {
+            **build_execution_preview(spec),
+            "validation_code": "",
+            "validation_error": "",
+        }
+    except SandboxValidationError as exc:
+        preview["validation_code"] = str(exc.code or "INVALID_SPEC").strip().upper()
+        preview["validation_error"] = str(exc)[:220]
+        return preview
+    except Exception as exc:
+        preview["validation_code"] = "INTERNAL"
+        preview["validation_error"] = str(exc)[:220]
+        return preview
+
+
+def build_workspace_command_execution_spec(args: dict[str, Any] | None) -> dict[str, Any]:
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    workspace_name = str(data.get("workspace_name") or "").strip()
+    workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+    if workspace_path is None:
+        return {}
+    try:
+        spec = build_sandbox_command_spec(
+            argv=data.get("argv"),
+            cwd=data.get("cwd"),
+            allowed_roots=[str(workspace_path)],
+            timeout_s=data.get("timeout_s"),
+            writes_expected=data.get("writes_expected"),
+            expected_artifacts=data.get("expected_artifacts"),
+        )
+    except Exception:
+        return {}
+    return {
+        "executor": spec.executor,
+        "profile": spec.profile,
+        "argv": list(spec.argv),
+        "cwd": spec.cwd,
+        "allowed_roots": list(spec.allowed_roots),
+        "timeout_s": spec.timeout_s,
+        "writes_expected": spec.writes_expected,
+        "expected_artifacts": list(spec.expected_artifacts),
+    }
+
+
+def _workspace_relative_from_absolute(path: Path, *, workspace_root: Path) -> str:
+    try:
+        return str(path.resolve(strict=False).relative_to(workspace_root.resolve(strict=False))).replace("\\", "/")
+    except Exception:
+        return str(path.name or "").strip()
+
+
+@tool
+def execute_workspace_command(
+    argv: list[str],
+    cwd: str = ".",
+    workspace_name: str = "",
+    access_hints: dict[str, Any] | None = None,
+    timeout_s: int = 25,
+    writes_expected: bool = False,
+    expected_artifacts: list[str] | None = None,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """在当前 runtime 已挂接的工作区里执行一次受限命令。"""
+
+    tool_name = "execute_workspace_command"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
+    if workspace_path is None:
+        return _err(
+            tool_name,
+            "WORKSPACE_REQUIRED",
+            "no attached runtime workspace is available for sandbox execution",
+            {
+                "workspace_name": workspace_name,
+                "active_artifact_kind": hints.get("active_artifact_kind"),
+                "active_artifact_ref": hints.get("active_artifact_ref"),
+            },
+        )
+
+    try:
+        spec = build_sandbox_command_spec(
+            argv=argv,
+            cwd=cwd,
+            allowed_roots=[str(workspace_path)],
+            timeout_s=timeout_s,
+            writes_expected=writes_expected,
+            expected_artifacts=expected_artifacts,
+        )
+    except SandboxValidationError as exc:
+        return _err(tool_name, str(exc.code or "INVALID_SPEC").strip().upper(), str(exc))
+
+    execution_preview = build_execution_preview(spec)
+    run_id = str(proposal_id or "").strip() or f"run-{uuid.uuid4().hex[:12]}"
+    run_root = workspace_path / ".amadeus" / "sandbox-runs" / run_id
+    runner = LocalRestrictedSandboxRunner()
+    execution_result = runner.execute(
+        proposal_id=run_id,
+        spec=spec,
+        run_root=run_root,
+    )
+
+    primary_path = None
+    if execution_result.produced_artifacts:
+        primary_path = Path(execution_result.produced_artifacts[0]).resolve(strict=False)
+    else:
+        primary_path = Path(execution_result.stdout_log_ref).resolve(strict=False)
+    try:
+        primary_content = primary_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        primary_content = ""
+
+    artifact_context = _file_artifact_context(
+        primary_path,
+        content=primary_content,
+        workspace_root=workspace_path,
+        source_tool_name=tool_name,
+    )
+    artifact_context["carrier"] = "filesystem"
+    artifact_context["artifact_kind"] = "file"
+
+    refreshed_hints = _workspace_file_hints(
+        hints=hints,
+        file_path=primary_path,
+        workspace_root=workspace_path,
+        source_tool_name=tool_name,
+    )
+    sandbox_state = {
+        "availability": "restricted",
+        "allowed_roots": [str(workspace_path)],
+        "execution_policy": "approval_required",
+        "last_status": execution_result.status,
+        "runner_kind": runner.runner_kind,
+        "isolation_level": runner.isolation_level,
+        "last_command_profile": spec.profile,
+        "last_exit_code": execution_result.exit_code,
+        "last_run_id": execution_result.run_id,
+        "arbitrary_execution": False,
+    }
+    refreshed_hints["sandbox_mode"] = "restricted"
+    refreshed_hints["sandbox_state"] = sandbox_state
+    refreshed_hints["workspace_root"] = str(workspace_path)
+    refreshed_hints["filesystem_state"] = _probe_filesystem_state(workspace_path)
+
+    body = derive_digital_body_state(
+        current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+        behavior_queue=[],
+        action_packets=[],
+        toolset_unlocks={},
+        autonomy_block_reason="",
+        session_context={"digital_body_hints": refreshed_hints},
+        last_external_tools=[tool_name],
+    )
+    access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+    resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+
+    produced_relative = [
+        _workspace_relative_from_absolute(Path(path), workspace_root=workspace_path)
+        for path in execution_result.produced_artifacts
+    ]
+    summary = (
+        "已在当前 workspace 内完成一次受限执行，结果已经落成可续接的工作面。"
+        if execution_result.status == "completed"
+        else (execution_result.error_summary or "这次受限执行没有成功完成。")
+    )
+    return _ok(
+        tool_name,
+        {
+            "summary": summary,
+            "workspace_path": str(workspace_path),
+            "workspace_name": workspace_path.name,
+            "cwd": str(spec.cwd),
+            "argv": list(spec.argv),
+            "execution_spec": {
+                "executor": spec.executor,
+                "profile": spec.profile,
+                "argv": list(spec.argv),
+                "cwd": spec.cwd,
+                "allowed_roots": list(spec.allowed_roots),
+                "timeout_s": spec.timeout_s,
+                "writes_expected": spec.writes_expected,
+                "expected_artifacts": list(spec.expected_artifacts),
+            },
+            "execution_preview": execution_preview,
+            "execution_result": {
+                "run_id": execution_result.run_id,
+                "status": execution_result.status,
+                "exit_code": execution_result.exit_code,
+                "duration_ms": execution_result.duration_ms,
+                "stdout_log_ref": execution_result.stdout_log_ref,
+                "stderr_log_ref": execution_result.stderr_log_ref,
+                "produced_artifacts": list(execution_result.produced_artifacts),
+                "error_summary": execution_result.error_summary,
+            },
+            "produced_artifact_relpaths": produced_relative,
+            "access_hints": refreshed_hints,
+            "access_state": access_state,
+            "resource_state": resource_state,
+            "artifact_context": artifact_context,
+            "sandbox_state": sandbox_state,
+            "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+        },
+    )
+
+
 @tool
 def replace_workspace_lines(
     relative_path: str,
@@ -3687,7 +4080,12 @@ def replace_workspace_lines(
         )
         target_path.write_text(updated_content, encoding="utf-8")
 
-        refreshed_hints = _workspace_file_hints(hints=hints, file_path=target_path, source_tool_name=tool_name)
+        refreshed_hints = _workspace_file_hints(
+            hints=hints,
+            file_path=target_path,
+            workspace_root=workspace_path,
+            source_tool_name=tool_name,
+        )
         body = derive_digital_body_state(
             current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
             behavior_queue=[],
@@ -3702,6 +4100,7 @@ def replace_workspace_lines(
         artifact_context = _file_artifact_context(
             target_path,
             content=updated_content,
+            workspace_root=workspace_path,
             source_tool_name=tool_name,
         )
         line_span = f"{start}" if start == end else f"{start}-{end}"

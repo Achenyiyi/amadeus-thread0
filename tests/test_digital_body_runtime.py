@@ -69,6 +69,8 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertTrue(body["access_state"]["external_mutation_pending"])
         self.assertIn("human_approval_required", body["access_state"]["conditions"])
         self.assertIn("external_mutation_gated", body["access_state"]["conditions"])
+        self.assertEqual(body["access_state"]["permission_state"]["pending_approval_count"], 1)
+        self.assertTrue(body["access_state"]["permission_state"]["external_mutation_pending"])
         self.assertEqual(body["available_toolsets"], ["search_web"])
         self.assertEqual(body["active_tools"], ["write_diary"])
         self.assertEqual(body["resource_state"]["behavior_queue_depth"], 1)
@@ -117,6 +119,13 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(body["access_state"]["filesystem_state"], "read_only")
         self.assertEqual(body["access_state"]["sandbox_mode"], "restricted")
         self.assertEqual(body["access_state"]["network_access"], "restricted")
+        self.assertEqual(body["access_state"]["account_state_detail"]["login_state"], "missing")
+        self.assertEqual(body["access_state"]["account_state_detail"]["cookie_state"], "missing")
+        self.assertEqual(body["access_state"]["quota_state_detail"]["provider_state"], "exhausted")
+        self.assertEqual(body["access_state"]["quota_state_detail"]["cooldown_scope"], "")
+        self.assertEqual(body["access_state"]["permission_state"]["approval_state"], "open")
+        self.assertEqual(body["access_state"]["sandbox_state"]["availability"], "restricted")
+        self.assertEqual(body["access_state"]["sandbox_state"]["execution_policy"], "approval_required")
         self.assertIn("browser_login", body["access_state"]["missing_access"])
         self.assertIn("browser_session", body["access_state"]["missing_access"])
         self.assertIn("account_login", body["access_state"]["missing_access"])
@@ -156,10 +165,46 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(body["access_state"]["session_continuity"], "expiring")
         self.assertEqual(body["access_state"]["session_expires_in_s"], 600)
         self.assertEqual(body["access_state"]["session_recovery_mode"], "refresh_session")
+        self.assertEqual(body["access_state"]["session_state"]["continuity"], "expiring")
+        self.assertEqual(body["access_state"]["session_state"]["recovery_mode"], "refresh_session")
         self.assertIn("session_expiring_soon", body["access_state"]["conditions"])
         self.assertIn("session_refresh_available", body["access_state"]["conditions"])
         self.assertIn("session_refresh", body["access_state"]["requestable_access"])
         self.assertEqual(body["access_state"]["mode"], "native_only")
+
+    def test_derive_digital_body_state_preserves_workspace_root_from_carried_embodied_context(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            interaction_carryover={
+                "source": "retrieved_digital_body_consequence",
+                "carryover_mode": "task_window",
+                "strength": 0.36,
+                "embodied_context": {
+                    "kind": "workspace_file_updated",
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_mutation_mode": "append",
+                    "procedural_growth": True,
+                    "primary_status": "completed",
+                },
+            },
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"thread_id": "thread-workspace-carryover"},
+        )
+
+        self.assertEqual(body["resource_state"]["active_artifact_kind"], "file")
+        self.assertEqual(body["resource_state"]["active_artifact_label"], "today.md")
+        self.assertEqual(body["resource_state"]["workspace_root"], "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(body["resource_state"]["artifact_continuity"], "attached")
 
     def test_derive_digital_body_state_surfaces_access_request_help_packet(self):
         body = derive_digital_body_state(
@@ -206,6 +251,7 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(body["access_state"]["mode"], "approval_pending")
         self.assertEqual(body["access_state"]["pending_approval_count"], 1)
         self.assertTrue(body["access_state"]["external_mutation_pending"])
+        self.assertEqual(body["access_state"]["permission_state"]["approval_state"], "approval_pending")
         self.assertIn("browser_session", body["access_state"]["missing_access"])
         self.assertIn("account_login", body["access_state"]["requestable_access"])
         self.assertIn("human_approval", body["access_state"]["requestable_access"])
@@ -251,6 +297,67 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(selected.get("target"), "api_key")
         self.assertEqual(selected.get("mode"), "operator_provide_api_key")
         self.assertIn("access_acquire_planned", body["access_state"]["conditions"])
+
+    def test_derive_digital_body_state_honors_hint_pending_approval_for_selected_access_proposal(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-hint-pending",
+                "digital_body_hints": {
+                    "mode": "approval_pending",
+                    "pending_approval_count": 1,
+                    "api_key_state": "missing",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                },
+            },
+        )
+
+        selected = body["access_state"].get("selected_access_proposal") if isinstance(body["access_state"].get("selected_access_proposal"), dict) else {}
+        self.assertEqual(body["access_state"]["mode"], "approval_pending")
+        self.assertEqual(body["access_state"]["pending_approval_count"], 1)
+        self.assertEqual(selected.get("target"), "api_key")
+        self.assertEqual(selected.get("mode"), "operator_provide_api_key")
+
+    def test_derive_digital_body_state_honors_hint_block_reason_when_mode_blocked(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-access-hint-blocked",
+                "digital_body_hints": {
+                    "mode": "blocked",
+                    "block_reason": "browser session missing",
+                    "missing_access": ["browser_session"],
+                    "requestable_access": ["browser_session"],
+                },
+            },
+        )
+
+        self.assertEqual(body["access_state"]["mode"], "blocked")
+        self.assertEqual(body["access_state"]["block_reason"], "browser session missing")
+        self.assertIn("blocked_action_present", body["access_state"]["conditions"])
 
     def test_derive_digital_body_state_recovers_selected_access_proposal_from_carried_embodied_context(self):
         body = derive_digital_body_state(
@@ -506,11 +613,39 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(body["access_state"]["quota_state"], "exhausted")
         self.assertEqual(body["access_state"]["retry_after_s"], 300)
         self.assertEqual(body["access_state"]["cooldown_scope"], "provider")
+        self.assertEqual(body["access_state"]["quota_state_detail"]["provider_state"], "exhausted")
+        self.assertTrue(body["access_state"]["quota_state_detail"]["cooldown_active"])
+        self.assertEqual(body["access_state"]["session_state"]["retry_after_s"], 300)
         self.assertIn("cooldown_active", body["access_state"]["conditions"])
         self.assertIn("provider_cooldown_active", body["access_state"]["conditions"])
         self.assertIn("api_quota", body["access_state"]["missing_access"])
         self.assertIn("api_quota", body["access_state"]["requestable_access"])
         self.assertIn("network", body["world_surfaces"])
+
+    def test_derive_digital_body_state_surfaces_sandbox_allowed_roots_from_workspace_root(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "user_utterance",
+                "perception": {"channel": "chat", "modality": "text"},
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-sandbox-contract",
+                "digital_body_hints": {
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+        )
+
+        sandbox_state = body["access_state"]["sandbox_state"]
+        self.assertEqual(sandbox_state["availability"], "restricted")
+        self.assertEqual(sandbox_state["allowed_roots"], ["E:/runtime/workspaces/lab-notes"])
+        self.assertEqual(sandbox_state["execution_policy"], "approval_required")
+        self.assertFalse(sandbox_state["arbitrary_execution"])
 
 
 if __name__ == "__main__":

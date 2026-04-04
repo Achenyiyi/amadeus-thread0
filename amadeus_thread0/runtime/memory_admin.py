@@ -8,7 +8,29 @@ from typing import Any, Callable
 from langchain_core.messages import SystemMessage
 
 from ..memory_store import MemoryStore
+from ..utils.memory_history_export import normalize_memory_record_exports
+from ..utils.relational_history_export import (
+    normalize_counterpart_assessment_exports,
+    normalize_proactive_continuity_exports,
+)
+from ..utils.revision_trace_export import normalize_revision_trace_exports
+from ..utils.source_material_export import normalize_source_ref_exports
 from .modeling import build_chat_model
+
+
+_SNAPSHOT_RECORD_EXPORT_KEYS = (
+    "worldline_events",
+    "identity_facts",
+    "shared_events",
+    "conflict_repair",
+    "relationship_timeline",
+    "counterpart_assessment_history",
+    "proactive_continuity_history",
+    "commitments",
+    "unresolved_tensions",
+    "semantic_self_narratives",
+    "source_refs",
+)
 
 
 class MemoryAdminError(RuntimeError):
@@ -103,7 +125,21 @@ class MemoryAdminService:
     llm_factory: Callable[..., Any] = build_chat_model
 
     def snapshot_view(self) -> dict[str, Any]:
-        return self.memory_store.snapshot()
+        snapshot = self.memory_store.snapshot()
+        view = dict(snapshot) if isinstance(snapshot, dict) else {}
+        if "revision_traces" in view:
+            view["revision_traces"] = normalize_revision_trace_exports(view.get("revision_traces"))
+        for key in _SNAPSHOT_RECORD_EXPORT_KEYS:
+            if key in view:
+                if key == "source_refs":
+                    view[key] = normalize_source_ref_exports(view.get(key))
+                elif key == "counterpart_assessment_history":
+                    view[key] = normalize_counterpart_assessment_exports(view.get(key))
+                elif key == "proactive_continuity_history":
+                    view[key] = normalize_proactive_continuity_exports(view.get(key))
+                else:
+                    view[key] = normalize_memory_record_exports(view.get(key))
+        return view
 
     def prepare_profile_correction(self, key: str, new_value: Any, *, reason: str = "") -> ProfileCorrectionPreview:
         normalized_key = str(key or "").strip()

@@ -16,6 +16,7 @@ from ..config import (
 )
 from ..memory_store import MemoryStore
 from .common import _clamp01, _norm_text, _now_ts
+from .digital_body_runtime import normalize_embodied_trace_context
 
 
 def _text_units(text: str) -> set[str]:
@@ -61,6 +62,17 @@ def _record_value(item: dict[str, Any], key: str, default: Any = None) -> Any:
         if value is not None and value != "":
             return value
     return default
+
+
+def _digital_body_trace_identity(item: dict[str, Any]) -> dict[str, Any]:
+    embodied = normalize_embodied_trace_context(item)
+    return {
+        "kind": str(_record_value(item, "body_consequence_kind", _record_value(item, "kind", "")) or "").strip().lower(),
+        "artifact_carrier": str(embodied.get("artifact_carrier") or _record_value(item, "artifact_carrier", "") or "").strip().lower(),
+        "artifact_source_ref_ids": list(embodied.get("artifact_source_ref_ids") or []),
+        "artifact_source_title": str(embodied.get("artifact_source_title") or _record_value(item, "artifact_source_title", "") or "").strip(),
+        "artifact_source_query": str(embodied.get("artifact_source_query") or _record_value(item, "artifact_source_query", "") or "").strip(),
+    }
 
 def _commitment_priority(item: dict[str, Any]) -> float:
     status = str(_record_value(item, "status", "open") or "open").strip().lower()
@@ -242,11 +254,12 @@ def _behavior_reactivation_priority(item: dict[str, Any]) -> float:
 
 
 def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
-    kind = str(_record_value(item, "body_consequence_kind", _record_value(item, "kind", "")) or "").strip().lower()
-    carrier = str(_record_value(item, "artifact_carrier", "") or "").strip().lower()
-    source_title = str(_record_value(item, "artifact_source_title", "") or "").strip()
+    identity = _digital_body_trace_identity(item)
+    kind = str(identity.get("kind") or "").strip().lower()
+    carrier = str(identity.get("artifact_carrier") or "").strip().lower()
+    source_title = str(identity.get("artifact_source_title") or "").strip()
     try:
-        source_ref_count = len(_record_value(item, "artifact_source_ref_ids", []) or [])
+        source_ref_count = len(identity.get("artifact_source_ref_ids") or [])
     except Exception:
         source_ref_count = 0
     if kind == "source_material_compared":
@@ -266,9 +279,18 @@ def _digital_body_consequence_trace_line(item: dict[str, Any]) -> str:
     summary = str(_record_value(item, "after_summary", "") or "").strip()
     if not summary:
         return ""
-    kind = str(_record_value(item, "body_consequence_kind", _record_value(item, "kind", "")) or "").strip().lower()
+    identity = _digital_body_trace_identity(item)
+    kind = str(identity.get("kind") or "").strip().lower()
+    source_title = str(identity.get("artifact_source_title") or "").strip()
+    source_query = str(identity.get("artifact_source_query") or "").strip()
     if not kind:
         return summary
+    label = source_title or source_query
+    if label:
+        norm_summary = _norm_text(summary)
+        norm_label = _norm_text(label)
+        if norm_label and norm_label not in norm_summary:
+            return f"D:{kind}({label[:80]}): {summary}"
     return f"D:{kind}: {summary}"
 
 
@@ -674,8 +696,9 @@ def _retrieve_context(user_text: str, store: MemoryStore) -> dict[str, Any]:
         summary = str(_record_value(item, "after_summary", "") or "").strip()
         if not summary:
             continue
-        source_title = str(_record_value(item, "artifact_source_title", "") or "").strip()
-        source_query = str(_record_value(item, "artifact_source_query", "") or "").strip()
+        identity = _digital_body_trace_identity(item)
+        source_title = str(identity.get("artifact_source_title") or "").strip()
+        source_query = str(identity.get("artifact_source_query") or "").strip()
         relevance = max(
             _query_overlap_score(query, summary),
             _query_overlap_score(query, source_title),

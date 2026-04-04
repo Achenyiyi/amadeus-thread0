@@ -28,6 +28,13 @@ from ..utils.cli_views import (
     build_evolution_cli_summary,
     build_proactive_continuity_cli_summary,
 )
+from ..utils.memory_history_export import normalize_memory_record_exports
+from ..utils.relational_history_export import (
+    normalize_counterpart_assessment_exports,
+    normalize_proactive_continuity_exports,
+)
+from ..utils.revision_trace_export import normalize_revision_trace_exports
+from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_ref_exports
 from .event_identity import resolve_readback_current_event
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -134,6 +141,18 @@ def _payload_value(interrupt_payload: Any) -> dict[str, Any]:
 
 def _list_or_empty(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def _normalized_memory_records(items: Any) -> list[dict[str, Any]]:
+    return normalize_memory_record_exports(items)
+
+
+def _normalized_counterpart_history(items: Any) -> list[dict[str, Any]]:
+    return normalize_counterpart_assessment_exports(items)
+
+
+def _normalized_proactive_history(items: Any) -> list[dict[str, Any]]:
+    return normalize_proactive_continuity_exports(items)
 
 
 def _snapshot_has_pending_graph_interrupt(snapshot: Any) -> bool:
@@ -289,9 +308,13 @@ def _approval_trace_entry(
     risk: str,
 ) -> dict[str, Any]:
     name = str(tool_name or "").strip()
+    if name == "execute_workspace_command":
+        intent = "sandbox:execute_workspace_command"
+    else:
+        intent = "toolset_upgrade_proposal" if name == "request_toolset_upgrade" else f"tool:{name.lower()}"
     return {
         "proposal_id": str(proposal_id or "").strip(),
-        "intent": "toolset_upgrade_proposal" if name == "request_toolset_upgrade" else f"tool:{name.lower()}",
+        "intent": intent,
         "origin": "capability_upgrade" if name == "request_toolset_upgrade" else "motive_goal",
         "status": "awaiting_approval",
         "event": "approval_requested",
@@ -335,6 +358,8 @@ def _merge_pending_approval_state(
             args=args,
             status="awaiting_approval",
             mutation_preview=tool_call.get("mutation_preview") if isinstance(tool_call.get("mutation_preview"), dict) else None,
+            execution_spec=tool_call.get("execution_spec") if isinstance(tool_call.get("execution_spec"), dict) else None,
+            execution_preview=tool_call.get("execution_preview") if isinstance(tool_call.get("execution_preview"), dict) else None,
         )
         if not packet:
             continue
@@ -1019,47 +1044,64 @@ class BackendSession:
     def worldline_view(self) -> dict[str, Any]:
         snap = self.memory_store.snapshot()
         vals = self.get_state_values()
-        counterpart_history = snap.get("counterpart_assessment_history", [])
-        proactive_history = snap.get("proactive_continuity_history", [])
+        worldline_events = _normalized_memory_records(snap.get("worldline_events", []))
+        commitments = _normalized_memory_records(snap.get("commitments", []))
+        conflict_repair = _normalized_memory_records(snap.get("conflict_repair", []))
+        unresolved_tensions = _normalized_memory_records(snap.get("unresolved_tensions", []))
+        semantic_self_narratives = _normalized_memory_records(snap.get("semantic_self_narratives", []))
+        counterpart_history = _normalized_counterpart_history(snap.get("counterpart_assessment_history", []))
+        proactive_history = _normalized_proactive_history(snap.get("proactive_continuity_history", []))
+        revision_traces = normalize_revision_trace_exports(snap.get("revision_traces", []))
         autonomy = _resolved_autonomy(vals)
         return {
             "worldline_summary": self.build_evolution_summary(state_values=vals),
-            "worldline_events": snap.get("worldline_events", []),
-            "commitments": snap.get("commitments", []),
-            "conflict_repair": snap.get("conflict_repair", []),
-            "unresolved_tensions": snap.get("unresolved_tensions", []),
+            "worldline_events": worldline_events,
+            "commitments": commitments,
+            "conflict_repair": conflict_repair,
+            "unresolved_tensions": unresolved_tensions,
             "autonomy": autonomy,
             "counterpart_assessment_history": counterpart_history,
             "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
             "proactive_continuity_history": proactive_history,
             "proactive_continuity_preview": build_proactive_continuity_cli_summary(proactive_history, limit=5),
-            "semantic_self_narratives": snap.get("semantic_self_narratives", []),
-            "revision_traces": snap.get("revision_traces", []),
+            "semantic_self_narratives": semantic_self_narratives,
+            "revision_traces": revision_traces,
         }
 
     def bond_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
         relationship_state = _resolved_relationship_state(self.memory_store, vals)
-        counterpart_history = list(reversed(self.memory_store.list_counterpart_assessment_history(limit=30)))
-        proactive_history = list(reversed(self.memory_store.list_proactive_continuity_history(limit=30)))
+        counterpart_history = _normalized_counterpart_history(
+            list(reversed(self.memory_store.list_counterpart_assessment_history(limit=30)))
+        )
+        proactive_history = _normalized_proactive_history(
+            list(reversed(self.memory_store.list_proactive_continuity_history(limit=30)))
+        )
+        relationship_timeline = _normalized_memory_records(
+            list(reversed(self.memory_store.list_relationship_timeline(limit=30)))
+        )
+        conflict_repair = _normalized_memory_records(
+            list(reversed(self.memory_store.list_conflict_repairs(limit=30)))
+        )
         autonomy = _resolved_autonomy(vals)
         return {
             "relationship_state": relationship_state,
             "bond_state": vals.get("bond_state") if isinstance(vals.get("bond_state"), dict) else {},
             "autonomy": autonomy,
-            "relationship_timeline": list(reversed(self.memory_store.list_relationship_timeline(limit=30))),
+            "relationship_timeline": relationship_timeline,
             "counterpart_assessment_history": counterpart_history,
             "counterpart_assessment_preview": build_counterpart_assessment_cli_summary(counterpart_history, limit=5),
             "proactive_continuity_history": proactive_history,
             "proactive_continuity_preview": build_proactive_continuity_cli_summary(proactive_history, limit=5),
-            "conflict_repair": list(reversed(self.memory_store.list_conflict_repairs(limit=30))),
+            "conflict_repair": conflict_repair,
         }
 
     def sources_view(self) -> dict[str, Any]:
         vals = self.get_state_values()
+        sources = normalize_source_ref_exports(list(reversed(self.memory_store.list_source_refs(limit=30))))
         return {
-            "sources": list(reversed(self.memory_store.list_source_refs(limit=30))),
-            "claim_links": vals.get("claim_links") if isinstance(vals.get("claim_links"), list) else [],
+            "sources": sources,
+            "claim_links": normalize_claim_link_exports(vals.get("claim_links"), source_rows=sources),
         }
 
     def persona_view(self) -> dict[str, Any]:
