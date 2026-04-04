@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from amadeus_thread0.utils.tools import compare_source_refs
+from amadeus_thread0.utils.tools import compare_source_refs, get_memory_snapshot, list_source_refs
 
 
 class _SourceRefStore:
@@ -129,3 +129,66 @@ def test_compare_source_refs_can_choose_best_candidate_from_saved_candidate_set(
     assert result["artifact_context"]["source_ref_ids"] == [32, 31, 33]
     assert result["access_hints"]["artifact_source_ref_ids"] == [32, 31, 33]
     assert result["artifact_context"]["preferred_source_ref_id"] == 32
+
+
+def test_list_source_refs_normalizes_legacy_content_only_rows():
+    store = _SourceRefStore(
+        [
+            {
+                "id": "21",
+                "content": {
+                    "title": " Persistence v2 ",
+                    "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "query": " langgraph persistence checkpointer thread recovery ",
+                    "tool_name": " search_web ",
+                    "snippet": " Recovery keeps the same persistence thread coherent. ",
+                },
+            }
+        ]
+    )
+    with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+        result = list_source_refs.invoke({"limit": 5})
+
+    assert result[0]["id"] == 21
+    assert result[0]["source_id"] == 21
+    assert result[0]["title"] == "Persistence v2"
+    assert result[0]["tool_name"] == "search_web"
+
+
+def test_get_memory_snapshot_normalizes_legacy_content_only_source_refs():
+    store = _SourceRefStore(
+        [
+            {
+                "id": "21",
+                "content": {
+                    "title": " Persistence v2 ",
+                    "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "query": " langgraph persistence checkpointer thread recovery ",
+                    "tool_name": " search_web ",
+                    "snippet": " Recovery keeps the same persistence thread coherent. ",
+                    "embodied_context": {
+                        "kind": "source_material_compared",
+                        "artifact_source_ref_ids": ["21", "17"],
+                        "preferred_source_ref_id": "21",
+                        "preferred_anchor_reason": " current_source ",
+                        "artifact_source_title": "Persistence v2",
+                        "artifact_source_tool_name": "search_web",
+                    },
+                },
+            }
+        ]
+    )
+    store.snapshot = lambda: {"source_refs": store.list_source_refs(limit=20)}
+
+    with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+        result = get_memory_snapshot.invoke({"include_core": True})
+
+    assert result["source_refs"][0]["id"] == 21
+    assert result["source_refs"][0]["source_id"] == 21
+    assert result["source_refs"][0]["title"] == "Persistence v2"
+    assert result["source_refs"][0]["tool_name"] == "search_web"
+    assert result["source_refs"][0]["embodied_context"]["preferred_source_ref_id"] == 21
+    assert result["source_refs"][0]["embodied_context"]["artifact_source_ref_ids"] == [21, 17]
+    assert result["source_refs"][0]["embodied_context"]["preferred_anchor_reason"] == "current_source"
+    assert "bodyfx=source_material_compared" in (result["source_refs"][0].get("preview_line") or "")
+    assert "source=Persistence v2" in (result["source_refs"][0].get("preview_line") or "")

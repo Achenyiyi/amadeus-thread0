@@ -16,7 +16,7 @@ The target is not arbitrary cleanliness. The target is:
 ```text
 amadeus-thread0/
 ├── amadeus_thread0/        # primary Python package
-├── frontend/               # React/Vite frontend shell consuming frozen backend envelopes
+├── frontend/               # frozen frontend workspace; not the active implementation phase
 ├── docs/                   # architecture, evaluation, defense, maintenance docs
 ├── evals/                  # evaluation entrypoints and reports
 ├── tests/                  # regression suite
@@ -127,7 +127,9 @@ Rule:
 - `backend_session.py`
 - `event_identity.py`
 - `memory_admin.py`
+- `final_state.py`
 - `runtime_bundle.py`
+- `sandbox_runner.py`
 - `thread_runtime.py`
 - `tool_approval.py`
 - `modeling.py`
@@ -165,6 +167,14 @@ Rule:
 - approval preview normalization and clipping
 - second-confirmation detection for high-risk memory writes
 
+`sandbox_runner.py` holds the bounded execution surface for `Sandbox Embodied Execution Phase 1`:
+
+- `LocalRestrictedSandboxRunner`
+- structured `argv` validation and executor allowlist enforcement
+- `allowed_roots` / `cwd` boundary checks
+- scrubbed environment assembly
+- per-run trace artifact emission (`run.json`, `stdout.txt`, `stderr.txt`)
+
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
 - profile correction / undo workflows
@@ -194,6 +204,9 @@ They are thin facades implemented through `amadeus_thread0/_compat.py`.
 
 - `tool_registry.py`
 - `runtime_audit.py`
+- `embodied_preview.py`
+- `relational_history_export.py`
+- `turn_summary_export.py`
 - `revision_trace_export.py`
 - `cli_views.py`
 - `counterpart_profile.py`
@@ -207,11 +220,60 @@ Rule:
 - if a module is generic support or compatibility-facing, it belongs here
 - if a module directly shapes graph execution semantics, it belongs in `graph_parts/`
 
+`embodied_preview.py` is the shared compact read-model surface for embodied continuity exports:
+
+- provides one public home for compact `preview_line` formatting over source-bearing `embodied_context`
+- keeps backend/session/export read models off direct imports of CLI-private helpers
+- CLI preview renderers should also consume this module rather than owning a separate embodied compact-format implementation
+- must stay additive and contract-oriented; it formats already-normalized embodied facts, it does not reinterpret persona state
+
+`relational_history_export.py` is the shared typed export-normalization surface for persisted relationship-history rows:
+
+- owns type-specific export/readback normalization for `counterpart_assessment_history` and `proactive_continuity_history`
+- keeps runtime/admin/tool/backend consumers off ad hoc local flattening of `content` when these rows carry typed scalar fields or nested `assessment_profile`
+- normalizes nested compatibility `content` back toward the same typed top-level contract instead of leaving summary consumers to repair types later
+- may add compact `preview_line` companions, but must not reinterpret embodied continuity into new persona judgments
+
+`turn_summary_export.py` is the shared typed summary-normalization surface for current-turn residue summaries:
+
+- owns normalized read-model construction for `event_residue`, `agenda_lifecycle`, `interaction_carryover`, `behavior_consequence`, `opening_window`, and `digital_body` current-turn summary surfaces
+- keeps these turn-summary surfaces out of CLI-local field flattening so backend summary consumers can share one contract
+- also provides the shared compact `embodied_context` / `digital_body_consequence` summary used by turn-residue summaries
+- should stay presentation-adjacent but contract-stable: normalize typed summary fields without reinterpreting persona logic
+
 `revision_trace_export.py` is the shared export-normalization surface for persisted revision traces:
 
 - promotes provenance-bound `embodied_context` from nested final semantics (`behavior_action`, `behavior_plan`, `behavior_consequence`, `interaction_carryover`)
+- adds compact `preview_line` companions for embodied revision traces through the shared embodied preview surface
 - keeps read-only export surfaces aligned across backend API envelopes and tool-facing memory inspectors
 - must not reinterpret body/access continuity into relationship stance or other persona judgments
+
+## Evaluation And Audit Layer
+
+`evals/` holds the repository's closeout and regression entrypoints, not only ad hoc experiments.
+
+- gate audits:
+  - `run_backend_freeze_gate_audit.py`
+  - `run_companion_autonomy_audit.py`
+  - `run_digital_embodiment_audit.py`
+  - `run_sandbox_embodied_execution_audit.py`
+- manual smoke packs:
+  - `run_freeze_gate_smokes.py`
+  - `run_companion_autonomy_smokes.py`
+  - `run_digital_embodiment_smokes.py`
+  - `run_sandbox_embodied_execution_smokes.py`
+- artifacts:
+  - `evals/reports/` stores authoritative json/md reports
+  - `evals/_tmp/` stores temporary runtime fixtures for bounded smoke scenarios such as sandbox execution
+
+`tests/` mirrors those gates with owning-layer coverage.
+Current sandbox closure coverage lives in:
+
+- `tests/test_sandbox_runner.py`
+- `tests/test_sandbox_execution_runtime.py`
+- `tests/test_sandbox_backend_contract.py`
+- `tests/test_sandbox_embodied_execution_smokes.py`
+- `tests/test_sandbox_embodied_execution_audit.py`
 
 ## Frontend Workspace
 
@@ -220,6 +282,7 @@ Rule:
 - It should render frozen `backend.v1` envelopes rather than inventing an alternative state schema.
 - Contract copies and mock fixtures should stay close to the frontend shell so UI work can proceed without touching backend internals.
 - Any future transport adapter should remain thin and delegate semantics to `amadeus_thread0/runtime/backend_api.py` and `backend_session.py`.
+- It remains frozen during the current backend phase unless a handoff artifact requires direct UI consumption proof.
 
 ## Entry Points
 
@@ -227,6 +290,10 @@ Rule:
   `amadeus_thread0/agent.py`
 - CLI:
   `python -m amadeus_thread0.cli`
+- sandbox phase audit:
+  `python evals/run_sandbox_embodied_execution_audit.py`
+- sandbox manual smokes:
+  `python evals/run_sandbox_embodied_execution_smokes.py`
 - frontend dev shell:
   `cd frontend && npm run dev`
 - deployment config:

@@ -63,6 +63,70 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertEqual(len(artifact_context["preview"]), 1200)
         self.assertTrue(artifact_context["preview_truncated"])
 
+    def test_normalize_action_packet_dedupes_source_ref_identity_fields(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-artifact-2",
+                "origin": "counterpart_request",
+                "intent": "artifact:rerun_search",
+                "status": "completed",
+                "risk": "read",
+                "result_summary": "已重新接回检索结果 Persistence v2。",
+                "writeback_ready": True,
+                "artifact_context": {
+                    "carrier": " source_ref ",
+                    "artifact_kind": "search_result",
+                    "artifact_label": "Persistence v2",
+                    "source_ref_ids": ["21", "21", "17", "0", -1],
+                    "preferred_source_ref_id": "21",
+                    "preferred_anchor_reason": " Primary_More_Current ",
+                    "source_url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "source_query": " langgraph persistence checkpointer thread recovery ",
+                    "source_title": " Persistence v2 ",
+                    "source_tool_name": " search_web ",
+                },
+            }
+        )
+        artifact_context = packet.get("artifact_context") if isinstance(packet.get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context["carrier"], "source_ref")
+        self.assertEqual(artifact_context["source_ref_ids"], [21, 17])
+        self.assertEqual(artifact_context["preferred_source_ref_id"], 21)
+        self.assertEqual(artifact_context["preferred_anchor_reason"], "primary_more_current")
+        self.assertEqual(
+            artifact_context["source_url"],
+            "https://docs.langchain.com/oss/python/langgraph/persistence",
+        )
+        self.assertEqual(
+            artifact_context["source_query"],
+            "langgraph persistence checkpointer thread recovery",
+        )
+        self.assertEqual(artifact_context["source_title"], "Persistence v2")
+        self.assertEqual(artifact_context["source_tool_name"], "search_web")
+
+    def test_normalize_action_packet_promotes_preferred_source_ref_to_front(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-artifact-3",
+                "origin": "counterpart_request",
+                "intent": "artifact:compare_source_refs",
+                "status": "completed",
+                "risk": "read",
+                "writeback_ready": True,
+                "artifact_context": {
+                    "carrier": "source_ref",
+                    "artifact_kind": "search_result",
+                    "artifact_label": "Persistence v2",
+                    "source_ref_ids": ["17", "21", "15"],
+                    "preferred_source_ref_id": "21",
+                    "preferred_anchor_reason": "primary_more_current",
+                    "source_title": "Persistence v2",
+                },
+            }
+        )
+        artifact_context = packet.get("artifact_context") if isinstance(packet.get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context["source_ref_ids"], [21, 17, 15])
+        self.assertEqual(artifact_context["preferred_source_ref_id"], 21)
+
     def test_normalize_action_packet_preserves_tool_args_for_backend_execution(self):
         packet = normalize_action_packet(
             {
@@ -205,6 +269,32 @@ class ActionPacketContractTests(unittest.TestCase):
         )
         self.assertEqual(external["risk"], "external_mutation")
         self.assertTrue(external["requires_approval"])
+
+    def test_build_tool_action_packet_uses_sandbox_intent_for_workspace_execution(self):
+        packet = build_tool_action_packet(
+            tool_name="execute_workspace_command",
+            proposal_id="ap-sandbox-1",
+            args={
+                "argv": ["python", "scripts/emit.py"],
+                "cwd": ".",
+            },
+            action="approve",
+            status="awaiting_approval",
+            execution_spec={
+                "executor": "python",
+                "profile": "python_script",
+                "argv": ["python", "scripts/emit.py"],
+                "cwd": "E:/runtime/workspaces/lab-notes",
+                "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                "timeout_s": 25,
+                "writes_expected": True,
+                "expected_artifacts": ["notes/out.txt"],
+            },
+        )
+        self.assertEqual(packet["intent"], "sandbox:execute_workspace_command")
+        self.assertEqual(packet["risk"], "external_mutation")
+        self.assertTrue(packet["requires_approval"])
+        self.assertEqual(packet["execution_spec"]["profile"], "python_script")
 
     def test_normalize_action_packets_deduplicates_by_proposal_id(self):
         packets = normalize_action_packets(

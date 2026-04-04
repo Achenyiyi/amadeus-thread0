@@ -1,3 +1,4 @@
+import json
 import unittest
 import time
 from pathlib import Path
@@ -40,7 +41,7 @@ from amadeus_thread0.graph_parts.relational_carryover import (
     _apply_retrieved_behavior_trace_bridge,
     _hydrate_retrieved_agenda_lifecycle_residue,
 )
-from amadeus_thread0.graph_parts.runtime_prompting import _prompt_state_runtime_brief
+from amadeus_thread0.graph_parts.runtime_prompting import _prompt_state_runtime_brief, _prompt_state_snapshot
 from amadeus_thread0.graph_parts.semantic_narrative import (
     _compact_semantic_narrative_hint,
     _semantic_narrative_appraisal_hint,
@@ -2774,13 +2775,17 @@ class WorldModelResidueTests(unittest.TestCase):
                             "requested_help": True,
                             "primary_origin": "counterpart_request",
                             "primary_status": "awaiting_approval",
-                            "environmental_friction": True,
-                            "artifact_continuity": "detached",
-                            "active_artifact_kind": "file",
-                            "active_artifact_label": "plan.md",
-                            "artifact_reacquisition_mode": "reopen_file",
-                        },
+                        "environmental_friction": True,
+                        "artifact_continuity": "detached",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "active_artifact_kind": "file",
+                        "active_artifact_label": "plan.md",
+                        "artifact_reacquisition_mode": "reopen_file",
                     },
+                },
                     source="passive_evolution",
                     confidence=0.84,
                 )
@@ -2793,6 +2798,10 @@ class WorldModelResidueTests(unittest.TestCase):
                 self.assertEqual(embodied.get("primary_status"), "awaiting_approval")
                 self.assertIn("workspace_write", embodied.get("requested_access") or [])
                 self.assertEqual(embodied.get("artifact_continuity"), "detached")
+                self.assertEqual(embodied.get("artifact_carrier"), "source_ref")
+                self.assertEqual(embodied.get("artifact_source_ref_ids"), [21, 17])
+                self.assertEqual(embodied.get("preferred_source_ref_id"), 21)
+                self.assertEqual(embodied.get("preferred_anchor_reason"), "primary_more_current")
                 self.assertEqual(embodied.get("active_artifact_kind"), "file")
                 self.assertEqual(embodied.get("active_artifact_label"), "plan.md")
                 self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
@@ -2886,6 +2895,10 @@ class WorldModelResidueTests(unittest.TestCase):
                         "primary_origin": "motive_goal",
                         "environmental_friction": True,
                         "artifact_continuity": "missing",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
                         "active_artifact_kind": "file",
                         "active_artifact_label": "plan.md",
                         "artifact_reacquisition_mode": "reopen_file",
@@ -2901,9 +2914,242 @@ class WorldModelResidueTests(unittest.TestCase):
                 self.assertIn("workspace_write", embodied.get("requested_access") or [])
                 self.assertTrue(bool(embodied.get("requested_help")))
                 self.assertEqual(embodied.get("artifact_continuity"), "missing")
+                self.assertEqual(embodied.get("artifact_carrier"), "source_ref")
+                self.assertEqual(embodied.get("artifact_source_ref_ids"), [21, 17])
+                self.assertEqual(embodied.get("preferred_source_ref_id"), 21)
+                self.assertEqual(embodied.get("preferred_anchor_reason"), "primary_more_current")
                 self.assertEqual(embodied.get("active_artifact_kind"), "file")
                 self.assertEqual(embodied.get("active_artifact_label"), "plan.md")
                 self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
+            finally:
+                store.close()
+
+    def test_proactive_continuity_writeback_carries_resolved_workspace_access_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_long_horizon_memory(
+                    store,
+                    consequence={
+                        "summary": "前面那条准备继续推进的线没有断，但现在终于有了可写工作区，可以顺着这条路继续做下去。",
+                        "kind": "promoted",
+                        "source_event_kind": "scheduled_life_due",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "small_opening",
+                        "relationship_weather": "warm_residue",
+                        "hold_count": 1,
+                        "carryover_strength": 0.54,
+                        "recontact_cooldown": 0.16,
+                        "presence_residue": 0.20,
+                        "ambient_resonance": 0.08,
+                        "self_activity_momentum": 0.26,
+                        "continuity_anchor": 0.48,
+                        "own_rhythm_anchor": 0.24,
+                        "recontact_anchor": 0.44,
+                        "boundary_anchor": 0.10,
+                        "memory_anchor": 0.18,
+                        "semantic_continuity_depth": 0.56,
+                        "semantic_identity_gravity": 0.52,
+                        "lineage_gravity": 0.58,
+                        "contact_lineage": 0.46,
+                        "repair_lineage": 0.24,
+                        "boundary_lineage": 0.18,
+                        "selfhood_lineage": 0.22,
+                        "agency_lineage": 0.42,
+                        "long_term_axis_count": 3,
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "continuity_vs_execution",
+                        "goal_frame": "既然入口已经齐了，就沿着前面的线索继续把事做下去。",
+                    },
+                    digital_body_consequence={
+                        "kind": "workspace_access_resolved",
+                        "summary": "这次已经拿到了可写工作区，后面的文件动作可以在同一个边界里继续。",
+                        "access_mode": "tool_enabled",
+                        "active_surface": "tooling",
+                        "world_surfaces": ["filesystem"],
+                        "granted_toolsets": ["filesystem", "workspace_write"],
+                        "active_tools": ["inspect_workspace_path", "write_workspace_file"],
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                        "active_artifact_label": "lab-notes",
+                        "primary_status": "completed",
+                        "primary_origin": "counterpart_request",
+                        "primary_tool_name": "create_workspace_access",
+                        "access_acquire_proposals": [
+                            {
+                                "target": "filesystem",
+                                "mode": "operator_create_workspace",
+                                "path_kind": "create_new",
+                                "summary": "先新建一个可写工作区。",
+                                "operator_action": "新建一个可写工作区。",
+                                "grants": ["filesystem", "workspace_write"],
+                                "requires_operator": True,
+                            }
+                        ],
+                        "selected_access_proposal": {
+                            "target": "filesystem",
+                            "mode": "operator_create_workspace",
+                            "path_kind": "create_new",
+                            "summary": "先新建一个可写工作区。",
+                            "operator_action": "新建一个可写工作区。",
+                            "grants": ["filesystem", "workspace_write"],
+                            "requires_operator": True,
+                        },
+                    },
+                    confidence=0.84,
+                )
+                self.assertTrue(wrote)
+                record = store.list_proactive_continuity_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("kind"), "workspace_access_resolved")
+                self.assertEqual(embodied.get("access_mode"), "tool_enabled")
+                self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+                self.assertIn("filesystem", embodied.get("granted_toolsets") or [])
+                self.assertIn("write_workspace_file", embodied.get("active_tools") or [])
+                self.assertEqual(embodied.get("selected_access_proposal", {}).get("target"), "filesystem")
+                self.assertEqual(
+                    embodied.get("access_acquire_proposals", [{}])[0].get("mode"),
+                    "operator_create_workspace",
+                )
+            finally:
+                store.close()
+
+    def test_proactive_continuity_writeback_carries_workspace_file_surface_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_long_horizon_memory(
+                    store,
+                    consequence={
+                        "summary": "前面那条正在推进的文件线没有断，这轮已经真的落到文件表面上了。",
+                        "kind": "promoted",
+                        "source_event_kind": "scheduled_life_due",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "small_opening",
+                        "relationship_weather": "warm_residue",
+                        "hold_count": 1,
+                        "carryover_strength": 0.50,
+                        "recontact_cooldown": 0.10,
+                        "presence_residue": 0.18,
+                        "ambient_resonance": 0.08,
+                        "self_activity_momentum": 0.22,
+                        "continuity_anchor": 0.44,
+                        "recontact_anchor": 0.40,
+                        "memory_anchor": 0.16,
+                        "semantic_continuity_depth": 0.52,
+                        "semantic_identity_gravity": 0.48,
+                        "lineage_gravity": 0.54,
+                        "contact_lineage": 0.40,
+                        "repair_lineage": 0.22,
+                        "boundary_lineage": 0.16,
+                        "selfhood_lineage": 0.20,
+                        "agency_lineage": 0.38,
+                        "long_term_axis_count": 3,
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "continuity_vs_execution",
+                        "goal_frame": "既然已经真正写进文件里了，就顺着这条工作面继续往下做。",
+                    },
+                    digital_body_consequence={
+                        "kind": "workspace_file_updated",
+                        "summary": "已把内容续写进 today.md，这条文件工作面现在接上了。",
+                        "access_mode": "tool_enabled",
+                        "active_surface": "tooling",
+                        "world_surfaces": ["filesystem"],
+                        "granted_toolsets": ["filesystem", "workspace_write"],
+                        "active_tools": ["append_workspace_file"],
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "active_artifact_label": "today.md",
+                        "artifact_mutation_mode": "append",
+                        "artifact_continuity": "attached",
+                        "primary_status": "completed",
+                        "primary_origin": "counterpart_request",
+                        "primary_tool_name": "append_workspace_file",
+                        "procedural_growth": True,
+                    },
+                    confidence=0.84,
+                )
+                self.assertTrue(wrote)
+                record = store.list_proactive_continuity_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("kind"), "workspace_file_updated")
+                self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+                self.assertEqual(embodied.get("active_artifact_kind"), "file")
+                self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+                self.assertEqual(embodied.get("artifact_mutation_mode"), "append")
+                self.assertIn("append_workspace_file", embodied.get("active_tools") or [])
+            finally:
+                store.close()
+
+    def test_proactive_continuity_writeback_carries_workspace_path_inspection_surface_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memories.sqlite")
+            try:
+                wrote = _record_agenda_lifecycle_long_horizon_memory(
+                    store,
+                    consequence={
+                        "summary": "前面那条文件工作面已经重新看过一遍，后面的推进可以顺着这块表面继续。",
+                        "kind": "promoted",
+                        "source_event_kind": "scheduled_life_due",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "continue_work_surface",
+                        "relationship_weather": "warm_residue",
+                        "hold_count": 1,
+                        "carryover_strength": 0.34,
+                        "recontact_cooldown": 0.10,
+                        "presence_residue": 0.08,
+                        "ambient_resonance": 0.08,
+                        "self_activity_momentum": 0.18,
+                        "continuity_anchor": 0.30,
+                        "recontact_anchor": 0.26,
+                        "memory_anchor": 0.14,
+                        "semantic_continuity_depth": 0.44,
+                        "semantic_identity_gravity": 0.40,
+                        "lineage_gravity": 0.46,
+                        "contact_lineage": 0.30,
+                        "repair_lineage": 0.18,
+                        "boundary_lineage": 0.12,
+                        "selfhood_lineage": 0.18,
+                        "agency_lineage": 0.28,
+                        "long_term_axis_count": 2,
+                        "primary_motive": "preserve_work_surface_continuity",
+                        "motive_tension": "continuity_vs_pause",
+                        "goal_frame": "既然前面的文件表面已经重新看过，就顺着它继续推进。",
+                    },
+                    digital_body_consequence={
+                        "kind": "workspace_path_inspected",
+                        "summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                        "access_mode": "tool_enabled",
+                        "active_surface": "tooling",
+                        "world_surfaces": ["filesystem"],
+                        "granted_toolsets": ["filesystem", "workspace_write"],
+                        "active_tools": ["inspect_workspace_path"],
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "active_artifact_kind": "file",
+                        "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "active_artifact_label": "today.md",
+                        "artifact_continuity": "attached",
+                        "primary_status": "completed",
+                        "primary_origin": "counterpart_request",
+                        "primary_tool_name": "inspect_workspace_path",
+                    },
+                    confidence=0.82,
+                )
+                self.assertTrue(wrote)
+                record = store.list_proactive_continuity_history(limit=1)[0]
+                content = record.get("content") if isinstance(record.get("content"), dict) else {}
+                embodied = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(embodied.get("kind"), "workspace_path_inspected")
+                self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+                self.assertEqual(embodied.get("active_artifact_kind"), "file")
+                self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+                self.assertEqual(embodied.get("artifact_continuity"), "attached")
+                self.assertFalse(bool(embodied.get("artifact_mutation_mode")))
+                self.assertIn("inspect_workspace_path", embodied.get("active_tools") or [])
             finally:
                 store.close()
 
@@ -4049,6 +4295,89 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("cookies", brief)
         self.assertIn("workspace_write", brief)
 
+    def test_runtime_brief_surfaces_source_anchor_from_carryover_embodied_context(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={
+                "embodied_context": {
+                    "kind": "source_material_compared",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "artifact_source_title": "Persistence v2",
+                }
+            },
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertIn("Persistence v2", brief)
+        self.assertIn("材料线还挂着", brief)
+
+    def test_runtime_brief_can_fall_back_to_behavior_action_source_anchor_without_carryover(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={
+                "interaction_mode": "steady_reply",
+                "embodied_context": {
+                    "kind": "source_material_compared",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "artifact_source_title": "Persistence v2",
+                },
+            },
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+        )
+        self.assertIn("Persistence v2", brief)
+        self.assertIn("材料线还挂着", brief)
+
+    def test_runtime_brief_can_surface_current_source_anchor_from_digital_body_state(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={
+                "active_surface": "dialogue",
+                "access_state": {
+                    "mode": "tool_enabled",
+                },
+                "resource_state": {
+                    "active_artifact_kind": "source_ref",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "artifact_source_title": "Persistence v2",
+                },
+            },
+            session_context={},
+        )
+        self.assertIn("当前数字环境", brief)
+        self.assertIn("Persistence v2", brief)
+        self.assertIn("资料线", brief)
+
     def test_runtime_brief_can_surface_session_context_digital_body_hints_without_body_snapshot(self):
         brief = _prompt_state_runtime_brief(
             response_style_hint="natural",
@@ -4215,6 +4544,103 @@ class WorldModelResidueTests(unittest.TestCase):
         )
         self.assertIn("plan.md", brief)
         self.assertIn("重新打开", brief)
+
+    def test_runtime_brief_can_surface_workspace_root_from_session_hints(self):
+        workspace_root = "E:/runtime/workspaces/lab-notes"
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_label": "todo.md",
+                    "workspace_root": workspace_root,
+                }
+            },
+        )
+        self.assertIn("工作区", brief)
+        self.assertIn(workspace_root, brief)
+
+    def test_runtime_brief_can_surface_block_reason_from_session_hints(self):
+        brief = _prompt_state_runtime_brief(
+            response_style_hint="natural",
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            semantic_narrative_profile={},
+            behavior_policy={"warmth": 0.56, "approach_vs_withdraw": 0.54, "sharpness": 0.44},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "mode": "blocked",
+                    "block_reason": "browser session missing",
+                    "missing_access": ["browser_session"],
+                    "requestable_access": ["browser_session"],
+                }
+            },
+        )
+        self.assertIn("卡着", brief)
+        self.assertIn("browser session missing", brief)
+
+    def test_state_snapshot_can_surface_access_proposal_from_session_hints(self):
+        snapshot = _prompt_state_snapshot(
+            response_style_hint="structured",
+            science_mode=False,
+            continuation_mode=False,
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.62, "closeness": 0.58, "hurt": 0.02},
+            allostasis_state={"safety_need": 0.18, "autonomy_need": 0.24},
+            counterpart_assessment={"stance": "open", "boundary_pressure": 0.08},
+            world_model_state={"presence_residue": 0.12},
+            evolution_state={},
+            behavior_action={},
+            interaction_carryover={},
+            current_event={"kind": "user_utterance"},
+            digital_body_state={},
+            session_context={
+                "digital_body_hints": {
+                    "mode": "approval_pending",
+                    "pending_approval_count": 1,
+                    "api_key_state": "missing",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "requires_operator": True,
+                    },
+                }
+            },
+        )
+        payload = json.loads(snapshot)
+        access = payload["digital_body_state"]["access_state"]
+        self.assertEqual(access["mode"], "approval_pending")
+        self.assertEqual(access["pending_approval_count"], 1)
+        self.assertEqual(access["selected_access_proposal"]["target"], "api_key")
+        self.assertEqual(access["selected_access_proposal"]["mode"], "operator_provide_api_key")
+        self.assertTrue(bool(access["access_acquire_proposals"]))
 
     def test_runtime_behavior_surfaces_self_rhythm_bias_without_explicit_carryover(self):
         world_model_state = {
@@ -6278,6 +6704,161 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("自己的节奏", str(carryover.get("note") or ""))
         self.assertGreater(float(carryover.get("strength") or 0.0), 0.45)
 
+    def test_recent_interaction_carryover_preserves_refreshed_access_state_from_persisted_proactive_history(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才是在确认入口状态吗？",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            proactive_continuity_history=[
+                {
+                    "content": {
+                        "summary": "她把前面那条待继续的线留着，但这轮已经重新确认入口状态是稳定的。",
+                        "kind": "promoted",
+                        "trace_family": "continuity_recontact",
+                        "source_event_kind": "agenda_lifecycle:promoted",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "small_opening",
+                        "hold_count": 1,
+                        "carryover_strength": 0.40,
+                        "recontact_cooldown": 0.12,
+                        "presence_residue": 0.20,
+                        "ambient_resonance": 0.08,
+                        "self_activity_momentum": 0.18,
+                        "continuity_anchor": 0.46,
+                        "recontact_anchor": 0.42,
+                        "memory_anchor": 0.18,
+                        "primary_motive": "honor_continuity",
+                        "motive_tension": "continuity_vs_execution",
+                        "goal_frame": "既然入口已经稳定，就顺着前面的线索继续。",
+                        "embodied_context": {
+                            "kind": "access_state_refreshed",
+                            "summary": "这轮已经重新检查过入口状态，当前这条路是稳定的。",
+                            "access_mode": "tool_enabled",
+                            "session_continuity": "stable",
+                            "session_recovery_mode": "refresh_session",
+                            "browser_session": "present",
+                            "network_access": "enabled",
+                            "filesystem_state": "writable",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                            "selected_access_proposal": {
+                                "target": "filesystem",
+                                "mode": "operator_create_workspace",
+                                "summary": "先新建一个可写工作区。",
+                                "grants": ["filesystem", "workspace_write"],
+                                "requires_operator": True,
+                            },
+                        },
+                    }
+                }
+            ],
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才是在确认入口状态吗？",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我这边也准备继续做下去了。",
+                    "created_at": 118,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "那现在我们就顺着前面的东西继续吧。",
+            },
+            response_style_hint="natural",
+            world_model_state={},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
+        self.assertIn("persisted_proactive_history", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:access_state_refreshed", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_state_refreshed")
+        self.assertEqual(str(embodied_context.get("session_continuity") or ""), "stable")
+        self.assertEqual(str(embodied_context.get("session_recovery_mode") or ""), "refresh_session")
+        self.assertEqual(str(embodied_context.get("browser_session") or ""), "present")
+        self.assertEqual(str(embodied_context.get("filesystem_state") or ""), "writable")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str((embodied_context.get("selected_access_proposal") or {}).get("target") or ""), "filesystem")
+
+    def test_recent_interaction_carryover_preserves_source_ref_identity_from_legacy_proactive_history(self):
+        carryover = _recent_interaction_carryover(
+            prior_current_event={
+                "kind": "user_utterance",
+                "text": "你刚才把那几份资料重新对过了吗？",
+            },
+            prior_behavior_action={
+                "interaction_mode": "steady_reply",
+                "action_target": "respond_now",
+            },
+            proactive_continuity_history=[
+                {
+                    "content": {
+                        "summary": "她已经把前面那几份资料重新对过一遍，后面的推进会顺着这条线继续。",
+                        "kind": "promoted",
+                        "trace_family": "continuity_recontact",
+                        "source_event_kind": "agenda_lifecycle:promoted",
+                        "trigger_family": "life_window",
+                        "carryover_mode": "small_opening",
+                        "carryover_strength": 0.42,
+                        "recontact_cooldown": 0.10,
+                        "presence_residue": 0.18,
+                        "ambient_resonance": 0.08,
+                        "self_activity_momentum": 0.16,
+                        "continuity_anchor": 0.44,
+                        "recontact_anchor": 0.40,
+                        "memory_anchor": 0.20,
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": ["21", "21", "17", "bad"],
+                        "preferred_source_ref_id": "21",
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_title": "Persistence v2",
+                        "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                        "embodied_context": {
+                            "kind": "source_material_compared",
+                            "artifact_carrier": "source_ref",
+                        },
+                    }
+                }
+            ],
+            recent_events=[
+                {
+                    "kind": "user_utterance",
+                    "text": "你刚才把那几份资料重新对过了吗？",
+                    "created_at": 100,
+                },
+                {
+                    "kind": "user_utterance",
+                    "text": "我这边也准备顺着那条线继续了。",
+                    "created_at": 118,
+                },
+            ],
+            current_event={
+                "kind": "user_utterance",
+                "text": "那现在我们就接着往下看吧。",
+            },
+            response_style_hint="natural",
+            world_model_state={},
+            semantic_narrative_profile={},
+        )
+        self.assertEqual(str(carryover.get("carryover_mode") or ""), "small_opening")
+        self.assertIn("persisted_proactive_history", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:source_material_compared", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "source_material_compared")
+        self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "source_ref")
+        self.assertEqual(embodied_context.get("artifact_source_ref_ids"), [21, 17])
+        self.assertEqual(int(embodied_context.get("preferred_source_ref_id") or 0), 21)
+        self.assertEqual(str(embodied_context.get("preferred_anchor_reason") or ""), "primary_more_current")
+        self.assertEqual(str(embodied_context.get("artifact_source_title") or ""), "Persistence v2")
+
     def test_recent_interaction_carryover_backfills_from_anchor_rich_proactive_history(self):
         carryover = _recent_interaction_carryover(
             prior_current_event={
@@ -7890,6 +8471,277 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("workspace_write", str(carryover.get("note") or ""))
         self.assertIn("入口还没放开", str(carryover.get("note") or ""))
 
+    def test_retrieved_digital_body_trace_bridge_merges_legacy_source_ref_identity_into_embodied_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "metadata": {
+                            "after_summary": "已经把 Persistence v2 和 Persistence 对照过一遍，当前判断会优先沿着这条相连线索继续。",
+                            "body_consequence_kind": "source_material_compared",
+                            "artifact_carrier": "source_ref",
+                            "artifact_source_ref_ids": ["21", "21", "17", "bad"],
+                            "preferred_source_ref_id": "21",
+                            "preferred_anchor_reason": "primary_more_current",
+                            "artifact_source_title": "Persistence v2",
+                            "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                            "embodied_context": {
+                                "kind": "source_material_compared",
+                                "artifact_carrier": "source_ref",
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "那我们就顺着前面的资料继续。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("bodyfx:source_material_compared", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "source_material_compared")
+        self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "source_ref")
+        self.assertEqual(embodied_context.get("artifact_source_ref_ids"), [21, 17])
+        self.assertEqual(int(embodied_context.get("preferred_source_ref_id") or 0), 21)
+        self.assertEqual(str(embodied_context.get("preferred_anchor_reason") or ""), "primary_more_current")
+        self.assertEqual(str(embodied_context.get("artifact_source_title") or ""), "Persistence v2")
+
+    def test_retrieved_digital_body_trace_bridge_preserves_workspace_file_continuity(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "已把内容续写进 today.md，这条文件工作面现在接上了。",
+                            "body_consequence_kind": "workspace_file_updated",
+                            "embodied_context": {
+                                "kind": "workspace_file_updated",
+                                "access_mode": "tool_enabled",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "active_artifact_kind": "file",
+                                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                                "active_artifact_label": "today.md",
+                                "artifact_mutation_mode": "append",
+                                "artifact_continuity": "attached",
+                                "active_tools": ["append_workspace_file"],
+                                "granted_toolsets": ["filesystem", "workspace_write"],
+                                "procedural_growth": True,
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "那就顺着刚才那个文件继续吧。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:workspace_file_updated", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:workspace_file_updated", carryover.get("source_tags") or [])
+        self.assertGreater(float(carryover.get("strength") or 0.0), 0.20)
+        self.assertIn("today.md", str(carryover.get("note") or ""))
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "workspace_file_updated")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str(embodied_context.get("active_artifact_kind") or ""), "file")
+        self.assertEqual(str(embodied_context.get("active_artifact_label") or ""), "today.md")
+        self.assertEqual(str(embodied_context.get("artifact_mutation_mode") or ""), "append")
+
+    def test_retrieved_digital_body_trace_bridge_preserves_filesystem_artifact_reacquisition(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "已把 plan.md 重新接回当前上下文，后面的动作可以顺着这条工作面继续。",
+                            "body_consequence_kind": "artifact_reacquired",
+                            "artifact_carrier": "filesystem",
+                            "embodied_context": {
+                                "kind": "artifact_reacquired",
+                                "access_mode": "tool_enabled",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "artifact_carrier": "filesystem",
+                                "active_artifact_kind": "file",
+                                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/plan.md",
+                                "active_artifact_label": "plan.md",
+                                "artifact_continuity": "attached",
+                                "artifact_reacquisition_mode": "reopen_file",
+                                "active_tools": ["inspect_workspace_path"],
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "把刚才那份计划接着看下去吧。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:artifact_reacquired", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:artifact_reacquired", carryover.get("source_tags") or [])
+        self.assertIn("plan.md", str(carryover.get("note") or ""))
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "artifact_reacquired")
+        self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "filesystem")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str(embodied_context.get("artifact_reacquisition_mode") or ""), "reopen_file")
+
+    def test_retrieved_digital_body_trace_bridge_preserves_workspace_path_inspection_surface_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                            "body_consequence_kind": "workspace_path_inspected",
+                            "embodied_context": {
+                                "kind": "workspace_path_inspected",
+                                "access_mode": "tool_enabled",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "active_artifact_kind": "file",
+                                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                                "active_artifact_label": "today.md",
+                                "artifact_continuity": "attached",
+                                "active_tools": ["inspect_workspace_path"],
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "把刚才看的那个文件顺着往下接吧。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:workspace_path_inspected", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:workspace_path_inspected", carryover.get("source_tags") or [])
+        self.assertIn("today.md", str(carryover.get("note") or ""))
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "workspace_path_inspected")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str(embodied_context.get("active_artifact_kind") or ""), "file")
+        self.assertEqual(str(embodied_context.get("active_artifact_label") or ""), "today.md")
+        self.assertEqual(str(embodied_context.get("artifact_continuity") or ""), "attached")
+
+    def test_retrieved_digital_body_trace_bridge_preserves_workspace_access_resolved_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "这次已经拿到了可写工作区，后面的文件动作可以在同一个边界里继续。",
+                            "body_consequence_kind": "workspace_access_resolved",
+                            "embodied_context": {
+                                "kind": "workspace_access_resolved",
+                                "access_mode": "tool_enabled",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "active_artifact_kind": "workspace",
+                                "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                                "active_artifact_label": "lab-notes",
+                                "granted_toolsets": ["filesystem", "workspace_write"],
+                                "active_tools": ["create_workspace_access"],
+                                "primary_status": "completed",
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "那现在就顺着这个工作区继续做吧。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:workspace_access_resolved", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:workspace_access_resolved", carryover.get("source_tags") or [])
+        self.assertIn("工作区", str(carryover.get("note") or ""))
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "workspace_access_resolved")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str(embodied_context.get("active_artifact_kind") or ""), "workspace")
+        self.assertEqual(str(embodied_context.get("active_artifact_label") or ""), "lab-notes")
+        self.assertIn("workspace_write", embodied_context.get("granted_toolsets") or [])
+
+    def test_retrieved_digital_body_trace_bridge_preserves_access_state_refreshed_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "这轮已经重新检查过入口状态，当前这条路是稳定的。",
+                            "body_consequence_kind": "access_state_refreshed",
+                            "embodied_context": {
+                                "kind": "access_state_refreshed",
+                                "access_mode": "tool_enabled",
+                                "session_continuity": "stable",
+                                "session_recovery_mode": "refresh_session",
+                                "browser_session": "present",
+                                "network_access": "enabled",
+                                "filesystem_state": "writable",
+                                "workspace_root": "E:/runtime/workspaces/lab-notes",
+                                "session_state": {
+                                    "continuity": "stable",
+                                    "recovery_mode": "refresh_session",
+                                    "browser_session": "present",
+                                    "needs_recovery": False,
+                                },
+                                "account_state_detail": {
+                                    "browser_session": "present",
+                                    "login_state": "logged_in",
+                                    "cookie_state": "present",
+                                    "api_key_state": "missing",
+                                    "account_available": True,
+                                    "cookie_available": True,
+                                    "api_key_available": False,
+                                },
+                                "permission_state": {
+                                    "pending_approval_count": 1,
+                                    "missing_access": ["api_key"],
+                                    "requestable_access": ["api_key", "human_approval"],
+                                    "pending_grants": ["filesystem"],
+                                    "completion_ratio": 0.5,
+                                    "approval_state": "approval_pending",
+                                },
+                                "selected_access_proposal": {
+                                    "target": "filesystem",
+                                    "mode": "operator_create_workspace",
+                                    "summary": "先新建一个可写工作区。",
+                                    "grants": ["filesystem", "workspace_write"],
+                                    "requires_operator": True,
+                                },
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "那现在我们就顺着前面的东西继续吧。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:access_state_refreshed", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:access_state_refreshed", carryover.get("source_tags") or [])
+        self.assertIn("入口", str(carryover.get("note") or ""))
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "access_state_refreshed")
+        self.assertEqual(str(embodied_context.get("session_continuity") or ""), "stable")
+        self.assertEqual(str(embodied_context.get("session_recovery_mode") or ""), "refresh_session")
+        self.assertEqual(str(embodied_context.get("filesystem_state") or ""), "writable")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(str(embodied_context.get("session_state", {}).get("continuity") or ""), "stable")
+        self.assertEqual(
+            str(embodied_context.get("account_state_detail", {}).get("login_state") or ""),
+            "logged_in",
+        )
+        self.assertEqual(
+            embodied_context.get("permission_state", {}).get("pending_grants"),
+            ["filesystem"],
+        )
+        self.assertEqual(
+            str(embodied_context.get("permission_state", {}).get("approval_state") or ""),
+            "approval_pending",
+        )
+
     def test_apply_agenda_lifecycle_residue_to_runtime_state_biases_world_and_counterpart(self):
         world, assessment = _apply_agenda_lifecycle_residue_to_runtime_state(
             agenda_lifecycle_residue={
@@ -7981,6 +8833,64 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertGreaterEqual(float(world.get("selfhood_lineage") or 0.0), 0.60)
         self.assertEqual(str(assessment.get("stance") or ""), "watchful")
         self.assertGreater(float(assessment.get("boundary_pressure") or 0.0), 0.20)
+
+    def test_revision_trace_store_preserves_sandbox_run_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_revision_trace(
+                    namespace="digital_body_consequence",
+                    target_id="sandbox_execution_completed",
+                    before_summary="",
+                    after_summary="刚才那次受限执行已经跑完，日志和产物都还挂在当前工作面上。",
+                    reason="sandbox_execution_completed",
+                    operator="test",
+                    source="test:sandbox",
+                    metadata={
+                        "body_consequence_kind": "sandbox_execution_completed",
+                        "embodied_context": {
+                            "kind": "sandbox_execution_completed",
+                            "access_mode": "tool_enabled",
+                            "workspace_root": "E:/runtime/workspaces/lab-notes",
+                            "artifact_carrier": "filesystem",
+                            "active_artifact_kind": "file",
+                            "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/generated.txt",
+                            "active_artifact_label": "generated.txt",
+                            "sandbox_run_id": "ap-sandbox-run-1",
+                            "sandbox_command_profile": "python_script",
+                            "sandbox_stdout_log_ref": "E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/ap-sandbox-run-1/stdout.txt",
+                            "sandbox_stderr_log_ref": "E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/ap-sandbox-run-1/stderr.txt",
+                            "sandbox_exit_code": 0,
+                            "sandbox_duration_ms": 84,
+                            "sandbox_produced_artifacts": [
+                                "E:/runtime/workspaces/lab-notes/notes/generated.txt"
+                            ],
+                        },
+                    },
+                )
+                traces = store.list_revision_traces(limit=8)
+                self.assertTrue(traces)
+                content = traces[0].get("content") if isinstance(traces[0].get("content"), dict) else {}
+                embodied_context = (
+                    content.get("embodied_context")
+                    if isinstance(content.get("embodied_context"), dict)
+                    else {}
+                )
+                self.assertEqual(str(content.get("body_consequence_kind") or ""), "sandbox_execution_completed")
+                self.assertEqual(str(embodied_context.get("kind") or ""), "sandbox_execution_completed")
+                self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/runtime/workspaces/lab-notes")
+                self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "filesystem")
+                self.assertEqual(str(embodied_context.get("active_artifact_kind") or ""), "file")
+                self.assertEqual(str(embodied_context.get("active_artifact_label") or ""), "generated.txt")
+                self.assertEqual(str(embodied_context.get("sandbox_run_id") or ""), "ap-sandbox-run-1")
+                self.assertEqual(str(embodied_context.get("sandbox_command_profile") or ""), "python_script")
+                self.assertEqual(int(embodied_context.get("sandbox_exit_code", -1)), 0)
+                self.assertEqual(
+                    embodied_context.get("sandbox_produced_artifacts"),
+                    ["E:/runtime/workspaces/lab-notes/notes/generated.txt"],
+                )
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

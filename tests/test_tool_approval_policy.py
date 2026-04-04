@@ -209,6 +209,40 @@ class ToolApprovalPolicyTests(unittest.TestCase):
         self.assertIn("-beta", preview.mutation_preview["diff_preview"])
         self.assertIn("当前 runtime workspace", preview.note)
 
+    def test_summarize_tool_approval_request_surfaces_sandbox_execution_preview(self):
+        batch = summarize_tool_approval_request(
+            source="dialog",
+            tool_calls=[
+                {
+                    "name": "execute_workspace_command",
+                    "args": {
+                        "argv": ["python", "emit_artifact.py"],
+                        "cwd": ".",
+                    },
+                    "execution_preview": {
+                        "runner_kind": "local_restricted_runner",
+                        "isolation_level": "host_local_restricted",
+                        "argv": ["python", "emit_artifact.py"],
+                        "cwd": "E:/runtime/workspaces/lab-notes",
+                        "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                        "timeout_s": 25,
+                        "writes_expected": True,
+                        "expected_artifacts": ["notes/generated.txt"],
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "execute_workspace_command")
+        self.assertEqual(preview.execution_preview["runner_kind"], "local_restricted_runner")
+        self.assertEqual(preview.execution_preview["allowed_roots"], ["E:/runtime/workspaces/lab-notes"])
+        self.assertEqual(preview.reason, "python emit_artifact.py")
+        self.assertIn("受限命令规格执行", preview.note)
+
 
 if __name__ == "__main__":
     unittest.main()

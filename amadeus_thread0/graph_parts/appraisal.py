@@ -24,7 +24,11 @@ from .common import _clamp01, _clamp_signed
 from .dialogue_guidance import _narrative_actor_profile
 from .persona_runtime import _canon_persona_labels
 from .postprocess import APOLOGY_KEYWORDS, TENSION_KEYWORDS, _has_any_marker, _selfhood_preference_scene_from_text
-from .prompt_helpers import _compact_focus_lines, _compact_interaction_carryover_hint
+from .prompt_helpers import (
+    _compact_digital_body_trace_lines,
+    _compact_focus_lines,
+    _compact_interaction_carryover_hint,
+)
 from .relational_runtime import _compact_relationship_summary, _focus_payload
 from .rewrite import _invoke_model_with_retries, _model
 from .runtime_services import _audit_jsonl
@@ -112,6 +116,13 @@ def _compact_behavior_consequence_trace_line(item: dict[str, Any]) -> str:
 
 def _compact_continuity_trace_line(item: dict[str, Any]) -> str:
     namespace = str(_appraisal_record_value(item, "namespace", "") or "").strip().lower()
+    if namespace == "digital_body_consequence" or str(
+        _appraisal_record_value(item, "body_consequence_kind", "")
+        or ""
+    ).strip():
+        line = _compact_digital_body_trace_lines([item], limit=1, style="structured")
+        if line:
+            return f"- {line[0]}"
     if namespace == "behavior_consequence" or str(_appraisal_record_value(item, "consequence_kind", "") or "").strip():
         return _compact_behavior_consequence_trace_line(item)
     return _compact_behavior_plan_trace_line(item)
@@ -120,7 +131,12 @@ def _compact_continuity_trace_line(item: dict[str, Any]) -> str:
 def _continuity_trace_items(retrieved: dict[str, Any] | None, *, limit: int = 3) -> list[dict[str, Any]]:
     payload = dict(retrieved or {})
     merged: list[dict[str, Any]] = []
-    for key in ("behavior_consequence_traces", "behavior_reactivation_traces", "behavior_plan_traces"):
+    for key in (
+        "behavior_consequence_traces",
+        "behavior_reactivation_traces",
+        "behavior_plan_traces",
+        "digital_body_consequence_traces",
+    ):
         traces = payload.get(key)
         if not isinstance(traces, list):
             continue
@@ -1221,6 +1237,7 @@ def _should_use_llm_appraisal(
         or retrieved.get("behavior_consequence_traces")
         or retrieved.get("behavior_reactivation_traces")
         or retrieved.get("behavior_plan_traces")
+        or retrieved.get("digital_body_consequence_traces")
     ):
         return True
     return False

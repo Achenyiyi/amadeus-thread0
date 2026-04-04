@@ -123,6 +123,36 @@ def _build_mutation_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _build_execution_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
+    preview = tool_call.get("execution_preview")
+    if not isinstance(preview, dict):
+        return {}
+    normalized: dict[str, Any] = {}
+    for key in (
+        "runner_kind",
+        "isolation_level",
+        "cwd",
+        "timeout_s",
+        "writes_expected",
+        "validation_code",
+        "validation_error",
+    ):
+        value = preview.get(key)
+        if value in (None, "", [], {}):
+            continue
+        normalized[key] = value
+    argv = preview.get("argv")
+    if isinstance(argv, list):
+        normalized["argv"] = [str(item).strip() for item in argv if str(item or "").strip()][:24]
+    allowed_roots = preview.get("allowed_roots")
+    if isinstance(allowed_roots, list):
+        normalized["allowed_roots"] = [str(item).strip() for item in allowed_roots if str(item or "").strip()][:8]
+    expected_artifacts = preview.get("expected_artifacts")
+    if isinstance(expected_artifacts, list):
+        normalized["expected_artifacts"] = [str(item).strip() for item in expected_artifacts if str(item or "").strip()][:8]
+    return normalized
+
+
 @dataclass(frozen=True)
 class ToolApprovalPreview:
     name: str
@@ -132,6 +162,7 @@ class ToolApprovalPreview:
     access_acquire_proposals: list[dict[str, Any]]
     selected_access_proposal: dict[str, Any]
     mutation_preview: dict[str, Any]
+    execution_preview: dict[str, Any]
     reason: str
     note: str
     needs_second_confirmation: bool
@@ -197,6 +228,7 @@ def build_tool_approval_preview(
     access_acquire_proposals: list[dict[str, Any]] = []
     selected_access_proposal: dict[str, Any] = {}
     mutation_preview = _build_mutation_preview(tool_call)
+    execution_preview = _build_execution_preview(tool_call)
     reason = ""
     note = ""
     if name == "request_toolset_upgrade":
@@ -221,6 +253,13 @@ def build_tool_approval_preview(
             note = "approve 后会按这个预览在当前 runtime workspace 内落地，不会越过当前工作区边界。"
         else:
             note = "当前预览显示这组改动还不能真实落地；如果继续 approve，执行阶段仍会按真实错误拦下。"
+    elif execution_preview:
+        argv_preview = " ".join(str(item) for item in (execution_preview.get("argv") or [])[:6]).strip()
+        reason = argv_preview[:220]
+        if str(execution_preview.get("validation_error") or "").strip():
+            note = str(execution_preview.get("validation_error") or "").strip()[:220]
+        else:
+            note = "approve 后会在当前 runtime workspace 内按这份受限命令规格执行，并保留日志与产物痕迹。"
     return ToolApprovalPreview(
         name=name,
         args=args,
@@ -229,6 +268,7 @@ def build_tool_approval_preview(
         access_acquire_proposals=access_acquire_proposals,
         selected_access_proposal=selected_access_proposal,
         mutation_preview=mutation_preview,
+        execution_preview=execution_preview,
         reason=reason,
         note=note,
         needs_second_confirmation=needs_second_confirmation(source, name, args),

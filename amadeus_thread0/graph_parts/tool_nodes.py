@@ -30,6 +30,7 @@ from .autonomy_runtime import refresh_autonomy_intent_from_packets
 from .digital_body_runtime import (
     derive_digital_body_state,
     merge_digital_body_hints,
+    normalize_embodied_context,
     selected_access_proposal_resolved,
 )
 from .common import _now_ts, _safe_json
@@ -45,7 +46,11 @@ from .tool_runtime import (
     _invoke_tool,
     _memory_guard_check,
 )
-from ..utils.tools import preview_workspace_mutation
+from ..utils.tools import (
+    build_workspace_command_execution_spec,
+    preview_workspace_command_execution,
+    preview_workspace_mutation,
+)
 
 _AUTO_EXECUTABLE_ARTIFACT_INTENTS = {
     "artifact:reopen_file",
@@ -168,6 +173,12 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         mutation_preview = preview_workspace_mutation(name, args)
         if mutation_preview:
             row["mutation_preview"] = mutation_preview
+        execution_preview = preview_workspace_command_execution(name, args)
+        if execution_preview:
+            row["execution_preview"] = execution_preview
+        execution_spec = build_workspace_command_execution_spec(args)
+        if execution_spec:
+            row["execution_spec"] = execution_spec
         if name in auto_set and risk != "external_mutation":
             queued.append({**row, "action": "approve"})
         else:
@@ -228,6 +239,8 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
             result_summary=str(row.get("reason") or ""),
             block_reason=str(row.get("reason") or "") if action == "reject" else "",
             mutation_preview=row.get("mutation_preview") if isinstance(row.get("mutation_preview"), dict) else None,
+            execution_spec=row.get("execution_spec") if isinstance(row.get("execution_spec"), dict) else None,
+            execution_preview=row.get("execution_preview") if isinstance(row.get("execution_preview"), dict) else None,
         )
         action_packets = upsert_action_packet(action_packets, packet)
         action_trace.append(
@@ -830,6 +843,7 @@ def _artifact_context_from_reacquisition_result(
             "artifact_kind": str(row.get("artifact_kind") or artifact_kind or "").strip().lower(),
             "artifact_ref": str(row.get("artifact_ref") or artifact_target or "").strip(),
             "artifact_label": str(row.get("artifact_label") or artifact_label or artifact_target or "").strip(),
+            "workspace_root": str(row.get("workspace_root") or "").strip(),
             "reacquisition_mode": str(row.get("artifact_reacquisition_mode") or mode or "").strip().lower(),
             "preview": str(row.get("artifact_preview") or "").strip(),
             "preview_truncated": bool(row.get("artifact_preview_truncated", False)),
@@ -897,6 +911,24 @@ def _artifact_context_from_tool_result(result: Any) -> dict[str, Any]:
     return normalize_artifact_context(row.get("artifact_context"))
 
 
+def _execution_preview_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    preview = row.get("execution_preview")
+    return dict(preview) if isinstance(preview, dict) else {}
+
+
+def _execution_spec_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    spec = row.get("execution_spec")
+    return dict(spec) if isinstance(spec, dict) else {}
+
+
+def _execution_result_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    execution_result = row.get("execution_result")
+    return dict(execution_result) if isinstance(execution_result, dict) else {}
+
+
 def _artifact_hints_from_tool_result(result: Any) -> dict[str, Any]:
     row = dict(result) if isinstance(result, dict) else {}
     hints = dict(row.get("access_hints") or {}) if isinstance(row.get("access_hints"), dict) else {}
@@ -923,6 +955,9 @@ def _artifact_hints_from_tool_result(result: Any) -> dict[str, Any]:
             "artifact_reacquisition_mode": str(artifact_context.get("reacquisition_mode") or "").strip().lower(),
         }
     )
+    workspace_root = str(artifact_context.get("workspace_root") or "").strip()
+    if workspace_root:
+        hints["workspace_root"] = workspace_root
     if artifact_identity:
         hints.update(artifact_identity)
 
@@ -1073,6 +1108,17 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
 
     if candidate_kind == "artifact":
         candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
+        carryover = dict(state.get("interaction_carryover") or {}) if isinstance(state.get("interaction_carryover"), dict) else {}
+        carried_embodied = normalize_embodied_context(carryover.get("embodied_context"))
+        merged_hints = merge_digital_body_hints(
+            session_context=session_context,
+            current_event=state.get("current_event") if isinstance(state.get("current_event"), dict) else {},
+        )
+        workspace_root = (
+            str(candidate_tool_args.get("workspace_root") or "").strip()
+            or str(merged_hints.get("workspace_root") or "").strip()
+            or str(carried_embodied.get("workspace_root") or "").strip()
+        )
         if candidate_tool_args:
             tool_args = candidate_tool_args
         else:
@@ -1082,6 +1128,8 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
                 "artifact_ref": target,
                 "artifact_label": label,
             }
+        if workspace_root and not str(tool_args.get("workspace_root") or "").strip():
+            tool_args["workspace_root"] = workspace_root
     elif candidate_kind == "workspace_access_mutation":
         candidate_tool_args = dict(candidate.get("tool_args") or {}) if isinstance(candidate.get("tool_args"), dict) else {}
         if candidate_tool_args:
@@ -1182,12 +1230,17 @@ def _node_autonomy_execute(state: ThreadState) -> dict[str, Any]:
                     "artifact_reacquisition_mode": mode,
                     "artifact_carrier": str(artifact_identity.get("artifact_carrier") or ""),
                     "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or []),
+                    "preferred_source_ref_id": artifact_identity.get("preferred_source_ref_id"),
+                    "preferred_anchor_reason": str(artifact_identity.get("preferred_anchor_reason") or ""),
                     "artifact_source_url": str(artifact_identity.get("artifact_source_url") or ""),
                     "artifact_source_query": str(artifact_identity.get("artifact_source_query") or ""),
                     "artifact_source_title": str(artifact_identity.get("artifact_source_title") or ""),
                     "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or ""),
                 }
             )
+            workspace_root = str((result or {}).get("workspace_root") or tool_args.get("workspace_root") or "").strip()
+            if workspace_root:
+                hints["workspace_root"] = workspace_root
             preview = str((result or {}).get("artifact_preview") or "").strip()
             if preview:
                 evidence_pack.append(
@@ -1348,6 +1401,16 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             if isinstance(existing_packet.get("mutation_preview"), dict)
             else {}
         )
+        execution_spec = (
+            dict(existing_packet.get("execution_spec") or {})
+            if isinstance(existing_packet.get("execution_spec"), dict)
+            else {}
+        )
+        execution_preview = (
+            dict(existing_packet.get("execution_preview") or {})
+            if isinstance(existing_packet.get("execution_preview"), dict)
+            else {}
+        )
 
         record: dict[str, Any] = {
             "tool": name,
@@ -1374,6 +1437,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     result_summary=reason,
                     block_reason=reason,
                     mutation_preview=mutation_preview,
+                    execution_spec=execution_spec,
+                    execution_preview=execution_preview,
                 ),
             )
             action_trace.append(
@@ -1412,6 +1477,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     result_summary=reason,
                     block_reason=reason,
                     mutation_preview=mutation_preview,
+                    execution_spec=execution_spec,
+                    execution_preview=execution_preview,
                 ),
             )
             action_trace.append(
@@ -1447,6 +1514,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     result_summary=name,
                     block_reason=name,
                     mutation_preview=mutation_preview,
+                    execution_spec=execution_spec,
+                    execution_preview=execution_preview,
                 ),
             )
             action_trace.append(
@@ -1475,6 +1544,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     action=action,
                     status="executing",
                     mutation_preview=mutation_preview,
+                    execution_spec=execution_spec,
+                    execution_preview=execution_preview,
                 ),
             )
             action_trace.append(
@@ -1488,11 +1559,14 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     requires_approval=risk != "read",
                 )
             )
-            result = _invoke_tool(tool, args)
+            invoke_args = dict(args)
+            if name == "execute_workspace_command" and proposal_id and not str(invoke_args.get("proposal_id") or "").strip():
+                invoke_args["proposal_id"] = proposal_id
+            result = _invoke_tool(tool, invoke_args)
             _auto_reconsolidate_after_tool(
                 store,
                 tool_name=name,
-                args=args,
+                args=invoke_args,
                 result=result,
             )
             payload = {"ok": True, "data": result}
@@ -1521,6 +1595,9 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             artifact_hints = _artifact_hints_from_tool_result(result)
             access_acquire_proposals, selected_access_proposal = _access_packet_fields_from_tool_result(result)
             artifact_context = _artifact_context_from_tool_result(result)
+            execution_spec_from_result = _execution_spec_from_tool_result(result)
+            execution_preview_from_result = _execution_preview_from_tool_result(result)
+            execution_result = _execution_result_from_tool_result(result)
             if tool_hints or artifact_hints:
                 hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
                 hints.update(tool_hints)
@@ -1531,14 +1608,24 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                 else:
                     hints.pop("selected_access_proposal", None)
                 session_context["digital_body_hints"] = hints
+            packet_status = "completed"
+            packet_event = "completed"
+            block_reason = ""
+            if str(execution_result.get("status") or "").strip().lower() == "blocked":
+                packet_status = "blocked"
+                packet_event = "tool_blocked"
+                block_reason = str(execution_result.get("error_summary") or result_summary or "").strip()
             completed_packet = build_tool_action_packet(
                 tool_name=name,
                 proposal_id=proposal_id,
                 args=args,
                 action=action,
-                status="completed",
+                status=packet_status,
                 result_summary=result_summary,
                 mutation_preview=mutation_preview,
+                execution_spec=execution_spec_from_result or execution_spec,
+                execution_preview=execution_preview_from_result or execution_preview,
+                execution_result=execution_result,
             )
             if access_acquire_proposals:
                 completed_packet["access_acquire_proposals"] = access_acquire_proposals
@@ -1554,14 +1641,17 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                 _action_trace_entry(
                     proposal_id=proposal_id,
                     name=name,
-                    status="completed",
-                    event="completed",
+                    status=packet_status,
+                    event=packet_event,
                     risk=risk,
                     source="tool_execute",
                     result_summary=result_summary,
+                    block_reason=block_reason,
                     requires_approval=risk != "read",
                 )
             )
+            if block_reason:
+                autonomy_block_reason = block_reason
         except Exception as e:
             payload = {"ok": False, "error": {"code": "TOOL_EXEC_ERROR", "message": str(e)}}
             tool_msgs.append(ToolMessage(content=_safe_json(payload), tool_call_id=tc_id))
@@ -1579,6 +1669,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     result_summary=error_text,
                     block_reason=error_text,
                     mutation_preview=mutation_preview,
+                    execution_spec=execution_spec,
+                    execution_preview=execution_preview,
                 ),
             )
             action_trace.append(

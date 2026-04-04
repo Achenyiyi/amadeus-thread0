@@ -11,21 +11,27 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Amadeus-K` remains a `digital persona system`, not a personal ops shell.
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
-- The next target is not "more tools". It is `digital embodiment`: one fixed persona interacting with the digital world through one unified memory substrate and one bounded runtime body.
+- The latest closed execution target is `Sandbox Embodied Execution Phase 1`: one fixed persona interacting with the digital world through one unified memory substrate and one bounded runtime body, now extended to truthful workspace-local execution.
 
 ## Backend Status
 
-Status as of `2026-03-27`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-open`
+Status as of `2026-04-04`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
 - baseline gate: `python evals/run_backend_freeze_gate_audit.py`
 - autonomy gate: `python evals/run_companion_autonomy_audit.py`
+- digital embodiment gate: `python evals/run_digital_embodiment_audit.py`
+- sandbox embodiment gate: `python evals/run_sandbox_embodied_execution_audit.py`
 - current handoff posture:
   - frontend remains frozen
   - backend contract is stable enough to consume
   - autonomy contract is baseline-complete
-  - digital embodiment buildout is now the active structural work
+  - digital embodiment phase 1 remains the preserved workspace/access/resource baseline
+  - digital embodiment phase 2 is formally closed on the same body contract
+  - sandbox embodied execution phase 1 is formally closed on the same body contract
+  - current execution posture remains `host-local restricted execution`, not a provider-grade sandbox
+  - no wider execution surface is opened in this run
 
 Closure evidence by decision family:
 
@@ -56,6 +62,65 @@ This status does not change the intentional guardrails below:
 - cross-surface continuity beyond the current backend contract still comes later
 - subagents remain peripheral to persona-core judgment
 - arbitrary host-side code generation remains deferred until sandbox and approval boundaries are explicit
+
+Phase 2 preserved contract:
+
+- keep one body contract:
+  - `digital_body.access_state`
+  - `digital_body.resource_state`
+- do not open a second work-only container for session/account/search/sandbox state
+- external material remains truthful through saved `source_ref` continuity until a real browser runtime exists
+- `selected_access_proposal` remains the stable active path while partial/completed access truth evolves
+- new world facts such as session/account/quota/permission/sandbox state must resurface through:
+  - `digital_body_consequence`
+  - `interaction_carryover.embodied_context`
+  - retrieval resurfacing
+  - later motive / behavior selection
+- current local status for phase 2:
+  - targeted phase 2 runtime/API/writeback/residue suites are green
+  - `digital_embodiment_manual_smokes` is now a formal blocking check inside `run_digital_embodiment_audit.py`
+  - fresh authoritative closeout reports are green:
+    - `evals/reports/digital-embodiment-audit-20260404-192406-phase2-closeout-a.{json,md}`
+    - `evals/reports/digital-embodiment-audit-20260404-194010-phase2-closeout-b.{json,md}`
+    - `evals/reports/digital-embodiment-audit-20260404-195802-phase2-closeout-c.{json,md}`
+  - phase 2 is formally closed and should now be treated as a preserved backend baseline
+
+Sandbox Embodied Execution Phase 1 preserved contract:
+
+- keep the same single body contract:
+  - `digital_body.access_state`
+  - `digital_body.resource_state`
+- do not introduce a second execution-only state container
+- the current execution surface is intentionally narrow:
+  - `host-local restricted execution`
+  - `workspace-local commands only`
+  - no browser runtime, no network download, no package install, no arbitrary host-side codegen
+- execution remains approval-gated and packet-owned:
+  - intent: `sandbox:execute_workspace_command`
+  - stable packet fields:
+    - `execution_spec`
+    - `execution_preview`
+    - `execution_result`
+  - approval must resume the same `proposal_id` and the same `execution_spec`
+- embodied truth must stay singular across packet/state/writeback/retrieval:
+  - `digital_body.access_state.sandbox_state`
+  - `digital_body_consequence`
+  - `interaction_carryover.embodied_context`
+  - retrieved embodied traces
+- run identity must remain available for follow-up turns:
+  - `run_id`
+  - `cwd`
+  - `profile`
+  - `exit_code`
+  - filesystem artifact refs
+- closeout evidence for this phase is:
+  - `evals/run_sandbox_embodied_execution_smokes.py`
+  - `evals/run_sandbox_embodied_execution_audit.py`
+  - targeted sandbox/runtime/backend/residue tests in `tests/test_sandbox_*`, `tests/test_backend_*`, `tests/test_autonomy_writeback.py`, and `tests/test_world_model_residue.py`
+  - fresh closeout reports now include:
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-225854-phase1-closeout-b.{json,md}`
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
 
 ## P0 Decisions
 
@@ -348,6 +413,11 @@ This status does not change the intentional guardrails below:
         - allowed visible carriers: current session hints, event `digital_body_hints`, or perception `digital_body_hints`
         - this refresh may widen `artifact_source_ref_ids`, preserve `preferred_source_ref_id`, preserve `preferred_anchor_reason`, and backfill missing saved-material metadata
         - it must not seed a brand-new `source_ref` line from retrieval alone when the live turn has no visible saved-material context
+      - preferred-anchor semantics are not allowed to disappear at summary/export boundaries once present in runtime state:
+        - `digital_body_state.resource_state`
+        - `digital_body_consequence`
+        - backend turn/event envelopes
+        - CLI/evolution summary views that surface saved-material continuity
   - completed read-side reacquisition and access refresh should also survive as concrete digital-body facts instead of flattening back into generic state:
     - `tool_name=reacquire_artifact` -> `digital_body_consequence.kind=artifact_reacquired`
     - `tool_name=refresh_access_state` -> `digital_body_consequence.kind=access_state_refreshed`
@@ -364,9 +434,14 @@ This status does not change the intentional guardrails below:
   - `artifact_continuity`
   - `active_artifact_kind`
   - `active_artifact_ref`
+  - `workspace_root` when the active surface is inside a runtime workspace
   - `active_artifact_label`
   - `artifact_age_s`
   - `artifact_reacquisition_mode`
+- `workspace_root` is the explicit filesystem trust boundary:
+  - it must survive live hints, derived `digital_body_state.resource_state`, and summarized backend/CLI views
+  - it must not be inferred only from a narrower current artifact such as a subdirectory or file path
+  - later workspace-relative writes and edits still resolve against that root even when the current attached artifact is deeper inside it
 - Losing a page/file/work-surface attachment is not the same as a persona change; it is embodied world friction that must survive into writeback, summaries, and later reacquisition behavior.
 
 ### 7g. Unified Experience Memory
@@ -507,6 +582,7 @@ This status does not change the intentional guardrails below:
 4. `Capability Bus` - `backend-closed as baseline`
 5. `Presence Layer` - `backend-closed as baseline`
 6. `Companion Autonomy Closure` - `baseline-closed`
-7. `Digital Body / Unified Experience / Embodied Capability` - `current convergence target`
-8. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
-9. later frontend / multimodal integration - `intentionally deferred`
+7. `Digital Body / Unified Experience / Embodied Capability` - `baseline-closed through digital embodiment phase 2`
+8. `Sandbox Embodied Execution Phase 1` - `baseline-closed`
+9. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
+10. later frontend / multimodal integration - `intentionally deferred`

@@ -49,6 +49,7 @@ def test_write_workspace_file_writes_inside_bounded_runtime_workspace():
         assert payload["resource_state"]["active_artifact_kind"] == "file"
         assert payload["artifact_context"]["artifact_kind"] == "file"
         assert payload["artifact_context"]["artifact_ref"] == str(target_path)
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
 
 
 def test_write_workspace_file_rejects_workspace_escape():
@@ -106,6 +107,7 @@ def test_append_workspace_file_appends_inside_bounded_runtime_workspace():
         assert payload["created_new"] is False
         assert payload["bytes_written"] == len(" world".encode("utf-8"))
         assert payload["artifact_context"]["artifact_kind"] == "file"
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
         assert "续写" in payload["summary"]
 
 
@@ -141,6 +143,7 @@ def test_replace_workspace_text_replaces_inside_bounded_runtime_workspace():
         assert payload["replace_count"] == 1
         assert payload["artifact_context"]["artifact_kind"] == "file"
         assert payload["artifact_context"]["source_tool_name"] == "replace_workspace_text"
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
         assert payload["access_hints"]["artifact_source_tool_name"] == "replace_workspace_text"
 
 
@@ -239,6 +242,7 @@ def test_replace_workspace_lines_replaces_requested_line_span_inside_workspace()
         assert payload["replaced_line_count"] == 1
         assert payload["inserted_line_count"] == 1
         assert payload["artifact_context"]["source_tool_name"] == "replace_workspace_lines"
+        assert payload["artifact_context"]["workspace_root"] == str(workspace)
         assert payload["access_hints"]["artifact_source_tool_name"] == "replace_workspace_lines"
 
 

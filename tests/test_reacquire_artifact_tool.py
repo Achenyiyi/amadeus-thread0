@@ -108,3 +108,36 @@ def test_reacquire_artifact_blocks_browser_surface_without_saved_source_ref():
                     "artifact_label": "missing page",
                 }
             )
+
+
+def test_reacquire_artifact_reuses_legacy_content_only_saved_source_ref_surface():
+    store = FakeSourceRefStore(
+        [
+            {
+                "id": "17",
+                "content": {
+                    "tool_name": " search_langchain_docs ",
+                    "title": " Persistence ",
+                    "url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "query": " langgraph persistence checkpointer thread ",
+                    "snippet": " Persistence docs cover checkpointers and thread-scoped state. ",
+                },
+            }
+        ]
+    )
+
+    with patch("amadeus_thread0.utils.tools._get_store", return_value=store):
+        payload = reacquire_artifact.invoke(
+            {
+                "mode": "rerun_search",
+                "artifact_kind": "search_result",
+                "artifact_ref": "source_ref:17",
+                "artifact_label": "Persistence",
+            }
+        )
+
+    assert payload["source_ref_ids"] == [17]
+    assert payload["source_url"] == "https://docs.langchain.com/oss/python/langgraph/persistence"
+    assert payload["source_query"] == "langgraph persistence checkpointer thread"
+    assert payload["tool_name"] == "search_langchain_docs"
+    assert payload["artifact_label"] == "Persistence"

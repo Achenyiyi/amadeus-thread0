@@ -14,7 +14,7 @@ from ..memory_store import MemoryStore
 from .autonomy_runtime import derive_autonomy_runtime
 from .behavior_agenda import _merge_behavior_agenda
 from .behavior_runtime import _behavior_action_from_state, _behavior_plan_from_action
-from .digital_body_runtime import derive_digital_body_state, normalize_embodied_context
+from .digital_body_runtime import derive_artifact_identity, derive_digital_body_state, normalize_embodied_context
 from .memory_evolution import (
     _passive_evolution_memory_update,
     _record_behavior_trace_writeback,
@@ -254,16 +254,22 @@ def _refresh_session_context_from_retrieved_source_lineage(
         return context
 
     embodied = normalize_embodied_context(carryover.get("embodied_context"))
+    artifact_identity = derive_artifact_identity(
+        artifact_carrier=embodied.get("artifact_carrier"),
+        artifact_source_ref_ids=embodied.get("artifact_source_ref_ids"),
+        preferred_source_ref_id=embodied.get("preferred_source_ref_id"),
+        preferred_anchor_reason=embodied.get("preferred_anchor_reason"),
+        artifact_source_url=embodied.get("artifact_source_url"),
+        artifact_source_query=embodied.get("artifact_source_query"),
+        artifact_source_title=embodied.get("artifact_source_title"),
+        artifact_source_tool_name=embodied.get("artifact_source_tool_name"),
+    )
     if str(embodied.get("kind") or "").strip().lower() != "source_material_compared":
         return context
-    if str(embodied.get("artifact_carrier") or "").strip().lower() != "source_ref":
+    if str(artifact_identity.get("artifact_carrier") or "").strip().lower() != "source_ref":
         return context
 
-    candidate_source_ref_ids = [
-        int(item)
-        for item in (embodied.get("artifact_source_ref_ids") if isinstance(embodied.get("artifact_source_ref_ids"), list) else [])
-        if int(item or 0) > 0
-    ][:4]
+    candidate_source_ref_ids = list(artifact_identity.get("artifact_source_ref_ids") or [])[:4]
     if len(candidate_source_ref_ids) < 2:
         return context
 
@@ -276,11 +282,19 @@ def _refresh_session_context_from_retrieved_source_lineage(
     hints = dict(context.get("digital_body_hints") or {}) if isinstance(context.get("digital_body_hints"), dict) else {}
 
     def _hint_source_ref_ids(source: dict[str, Any]) -> list[int]:
-        return [
-            int(item)
-            for item in (source.get("artifact_source_ref_ids") if isinstance(source.get("artifact_source_ref_ids"), list) else [])
-            if int(item or 0) > 0
-        ][:4]
+        return list(
+            derive_artifact_identity(
+                artifact_carrier=source.get("artifact_carrier"),
+                artifact_source_ref_ids=source.get("artifact_source_ref_ids"),
+                preferred_source_ref_id=source.get("preferred_source_ref_id"),
+                preferred_anchor_reason=source.get("preferred_anchor_reason"),
+                artifact_source_url=source.get("artifact_source_url"),
+                artifact_source_query=source.get("artifact_source_query"),
+                artifact_source_title=source.get("artifact_source_title"),
+                artifact_source_tool_name=source.get("artifact_source_tool_name"),
+            ).get("artifact_source_ref_ids")
+            or []
+        )[:4]
 
     visible_source_ref = any(
         any(
@@ -301,11 +315,11 @@ def _refresh_session_context_from_retrieved_source_lineage(
     if not visible_source_ref:
         return context
 
-    hints["artifact_carrier"] = "source_ref"
+    hints["artifact_carrier"] = str(artifact_identity.get("artifact_carrier") or "").strip().lower()
     hints["artifact_source_ref_ids"] = candidate_source_ref_ids
 
-    preferred_source_ref_id = int(embodied.get("preferred_source_ref_id") or 0)
-    preferred_anchor_reason = str(embodied.get("preferred_anchor_reason") or "").strip().lower()
+    preferred_source_ref_id = int(artifact_identity.get("preferred_source_ref_id") or 0)
+    preferred_anchor_reason = str(artifact_identity.get("preferred_anchor_reason") or "").strip().lower()
     if preferred_source_ref_id > 0 and preferred_source_ref_id in candidate_source_ref_ids:
         hints["preferred_source_ref_id"] = preferred_source_ref_id
         if preferred_anchor_reason:
@@ -321,7 +335,7 @@ def _refresh_session_context_from_retrieved_source_lineage(
         "active_artifact_label",
     ):
         if hints.get(key) in (None, "", []):
-            value = embodied.get(key)
+            value = artifact_identity.get(key) or embodied.get(key)
             if value not in (None, "", []):
                 hints[key] = value
 

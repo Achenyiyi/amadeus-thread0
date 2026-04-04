@@ -58,6 +58,38 @@ def _clean_nonnegative_int(value: Any, *, limit: int = 604800) -> int:
         return 0
 
 
+def _coerce_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+def _clean_ratio(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except Exception:
+        return 0.0
+
+
+def _clean_text_list(value: Any, *, limit: int = 8, item_limit: int = 320) -> list[str]:
+    values = value if isinstance(value, list) else [value] if value not in (None, "") else []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = _clean_text(item, limit=item_limit)
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+        if len(cleaned) >= max(1, int(limit)):
+            break
+    return cleaned
+
+
 def derive_session_lifecycle(
     *,
     browser_session: Any,
@@ -434,6 +466,267 @@ def selected_access_proposal_resolved(
     return bool(progress.get("resolved", False))
 
 
+def derive_session_surface_state(
+    *,
+    session_state: Any = None,
+    browser_session: Any = None,
+    account_state: Any = None,
+    cookie_state: Any = None,
+    session_continuity: Any = None,
+    session_expires_in_s: Any = None,
+    session_recovery_mode: Any = None,
+    retry_after_s: Any = None,
+    cooldown_scope: Any = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(session_state)
+    browser = _clean_state_label(existing.get("browser_session") or browser_session)
+    login_state = _clean_state_label(existing.get("account_login_state") or account_state)
+    cookies = _clean_state_label(existing.get("cookie_state") or cookie_state)
+    lifecycle = derive_session_lifecycle(
+        browser_session=browser,
+        account_state=login_state,
+        cookie_state=cookies,
+        session_continuity=existing.get("continuity") or session_continuity,
+        session_expires_in_s=existing.get("expires_in_s") or session_expires_in_s,
+        session_recovery_mode=existing.get("recovery_mode") or session_recovery_mode,
+    )
+    continuity = _clean_state_label(lifecycle.get("session_continuity"))
+    expires_in_s = _clean_nonnegative_int(lifecycle.get("session_expires_in_s"))
+    recovery_mode = _clean_state_label(lifecycle.get("session_recovery_mode"))
+    retry = _clean_nonnegative_int(existing.get("retry_after_s") or retry_after_s)
+    scope = _clean_state_label(existing.get("cooldown_scope") or cooldown_scope)
+    return {
+        "continuity": continuity,
+        "expires_in_s": expires_in_s,
+        "recovery_mode": recovery_mode,
+        "retry_after_s": retry,
+        "cooldown_scope": scope,
+        "browser_session": browser,
+        "needs_recovery": continuity in {"missing", "expired", "expiring"},
+    }
+
+
+def derive_account_surface_state(
+    *,
+    account_state_detail: Any = None,
+    browser_session: Any = None,
+    account_state: Any = None,
+    cookie_state: Any = None,
+    api_key_state: Any = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(account_state_detail)
+    browser = _clean_state_label(existing.get("browser_session") or browser_session)
+    login_state = _clean_state_label(existing.get("login_state") or account_state)
+    cookies = _clean_state_label(existing.get("cookie_state") or cookie_state)
+    api_key = _clean_state_label(existing.get("api_key_state") or api_key_state)
+    return {
+        "browser_session": browser,
+        "login_state": login_state,
+        "cookie_state": cookies,
+        "api_key_state": api_key,
+        "account_available": login_state in _ACCOUNT_PRESENT_STATES,
+        "cookie_available": cookies in _COOKIE_PRESENT_STATES,
+        "api_key_available": api_key in _API_KEY_PRESENT_STATES,
+    }
+
+
+def derive_quota_surface_state(
+    *,
+    quota_state_detail: Any = None,
+    quota_state: Any = None,
+    retry_after_s: Any = None,
+    cooldown_scope: Any = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(quota_state_detail)
+    provider_state = _clean_state_label(existing.get("provider_state") or quota_state)
+    retry = _clean_nonnegative_int(existing.get("retry_after_s") or retry_after_s)
+    scope = _clean_state_label(existing.get("cooldown_scope") or cooldown_scope)
+    return {
+        "provider_state": provider_state,
+        "retry_after_s": retry,
+        "cooldown_scope": scope,
+        "available": provider_state in _QUOTA_PRESENT_STATES and retry <= 0,
+        "cooldown_active": retry > 0,
+    }
+
+
+def derive_permission_surface_state(
+    *,
+    permission_state: Any = None,
+    pending_approval_count: Any = None,
+    external_mutation_pending: Any = None,
+    missing_access: Any = None,
+    requestable_access: Any = None,
+    access_acquire_proposals: Any = None,
+    selected_access_proposal: Any = None,
+    progress_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(permission_state)
+    missing = _merge_unique_lists(existing.get("missing_access"), missing_access, limit=12)
+    requestable = _merge_unique_lists(existing.get("requestable_access"), requestable_access, limit=12)
+    proposals = _merge_access_acquire_proposals(
+        existing.get("access_acquire_proposals"),
+        access_acquire_proposals,
+        limit=8,
+    )
+    selected = normalize_access_acquire_proposal(existing.get("selected_access_proposal"))
+    if not selected:
+        selected = normalize_access_acquire_proposal(selected_access_proposal)
+    if not selected and proposals:
+        selected = select_access_acquire_proposal(proposals=proposals)
+    enriched_selected = enrich_access_acquire_proposal(hints=progress_hints, proposal=selected) if selected else {}
+    progress = access_proposal_progress(hints=progress_hints, proposal=enriched_selected or selected)
+    approval_count = _clean_nonnegative_int(existing.get("pending_approval_count") or pending_approval_count, limit=999)
+    mutation_pending = bool(existing.get("external_mutation_pending", external_mutation_pending))
+    approval_state = (
+        "approval_pending"
+        if approval_count > 0
+        else "partial_access"
+        if bool(progress.get("partial"))
+        else "access_resolved"
+        if bool(progress.get("resolved"))
+        else "open"
+    )
+    return {
+        "pending_approval_count": approval_count,
+        "external_mutation_pending": mutation_pending,
+        "missing_access": missing,
+        "requestable_access": requestable,
+        "access_acquire_proposals": proposals,
+        "selected_access_proposal": enriched_selected or selected,
+        "resolved_grants": _merge_unique_lists(existing.get("resolved_grants"), progress.get("resolved_grants"), limit=8),
+        "pending_grants": _merge_unique_lists(existing.get("pending_grants"), progress.get("pending_grants"), limit=8),
+        "completion_ratio": round(
+            _clean_ratio(existing.get("completion_ratio") if "completion_ratio" in existing else progress.get("completion_ratio")),
+            3,
+        ),
+        "approval_state": approval_state,
+    }
+
+
+def derive_sandbox_surface_state(
+    *,
+    sandbox_state: Any = None,
+    sandbox_mode: Any = None,
+    workspace_root: Any = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(sandbox_state)
+    availability = _clean_state_label(existing.get("availability") or sandbox_mode)
+    allowed_roots = _clean_text_list(existing.get("allowed_roots"), limit=6, item_limit=320)
+    if not allowed_roots and _clean_text(workspace_root, limit=320):
+        allowed_roots = [_clean_text(workspace_root, limit=320)]
+    execution_policy = _clean_state_label(existing.get("execution_policy")) or "approval_required"
+    last_status = _clean_state_label(existing.get("last_status") or existing.get("last_known_status"))
+    if not last_status and availability in {"restricted", "blocked"}:
+        last_status = "gated"
+    runner_kind = _clean_state_label(existing.get("runner_kind"))
+    isolation_level = _clean_state_label(existing.get("isolation_level"))
+    last_command_profile = _clean_state_label(existing.get("last_command_profile"))
+    last_exit_code = _clean_nonnegative_int(existing.get("last_exit_code"), limit=999999)
+    last_run_id = _clean_text(existing.get("last_run_id"), limit=128)
+    return {
+        "availability": availability,
+        "allowed_roots": allowed_roots,
+        "execution_policy": execution_policy,
+        "last_status": last_status,
+        "runner_kind": runner_kind,
+        "isolation_level": isolation_level,
+        "last_command_profile": last_command_profile,
+        "last_exit_code": last_exit_code,
+        "last_run_id": last_run_id,
+        "arbitrary_execution": False,
+    }
+
+
+def _session_surface_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("continuity")),
+            _clean_nonnegative_int(row.get("expires_in_s")) > 0,
+            _clean_state_label(row.get("recovery_mode")),
+            _clean_nonnegative_int(row.get("retry_after_s")) > 0,
+            _clean_state_label(row.get("cooldown_scope")),
+            _clean_state_label(row.get("browser_session")),
+            bool(row.get("needs_recovery", False)),
+        )
+    )
+
+
+def _account_surface_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("browser_session")),
+            _clean_state_label(row.get("login_state")),
+            _clean_state_label(row.get("cookie_state")),
+            _clean_state_label(row.get("api_key_state")),
+            bool(row.get("account_available", False)),
+            bool(row.get("cookie_available", False)),
+            bool(row.get("api_key_available", False)),
+        )
+    )
+
+
+def _quota_surface_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("provider_state")),
+            _clean_nonnegative_int(row.get("retry_after_s")) > 0,
+            _clean_state_label(row.get("cooldown_scope")),
+            bool(row.get("available", False)),
+            bool(row.get("cooldown_active", False)),
+        )
+    )
+
+
+def _permission_surface_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_nonnegative_int(row.get("pending_approval_count"), limit=999) > 0,
+            bool(row.get("external_mutation_pending", False)),
+            bool(_merge_unique_lists(row.get("missing_access"), limit=12)),
+            bool(_merge_unique_lists(row.get("requestable_access"), limit=12)),
+            bool(_merge_access_acquire_proposals(row.get("access_acquire_proposals"), limit=8)),
+            bool(normalize_access_acquire_proposal(row.get("selected_access_proposal"))),
+            bool(_merge_unique_lists(row.get("resolved_grants"), limit=8)),
+            bool(_merge_unique_lists(row.get("pending_grants"), limit=8)),
+            _clean_ratio(row.get("completion_ratio")) > 0.0,
+            _clean_state_label(row.get("approval_state")) not in {"", "open"},
+        )
+    )
+
+
+def _sandbox_surface_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("availability")),
+            bool(_clean_text_list(row.get("allowed_roots"), limit=6, item_limit=320)),
+            _clean_state_label(row.get("last_status") or row.get("last_known_status")),
+            _clean_state_label(row.get("runner_kind")),
+            _clean_state_label(row.get("isolation_level")),
+            _clean_state_label(row.get("last_command_profile")),
+            _clean_text(row.get("last_run_id"), limit=128),
+            _clean_nonnegative_int(row.get("last_exit_code"), limit=999999) > 0,
+            _clean_state_label(row.get("execution_policy")) not in {"", "approval_required"},
+            bool(row.get("arbitrary_execution", False)),
+        )
+    )
+
+
 def prune_resolved_access_hints(hints: dict[str, Any] | None) -> dict[str, Any]:
     data = dict(hints or {})
     missing = [str(item).strip().lower() for item in _list_or_empty(data.get("missing_access")) if str(item or "").strip()]
@@ -688,6 +981,11 @@ def digital_body_state_has_signal(state: Any) -> bool:
         if isinstance(state.get(key), list) and bool(state.get(key)):
             return True
     access_state = _dict_or_empty(state.get("access_state"))
+    session_state = _dict_or_empty(access_state.get("session_state"))
+    account_state_detail = _dict_or_empty(access_state.get("account_state_detail"))
+    quota_state_detail = _dict_or_empty(access_state.get("quota_state_detail"))
+    permission_state = _dict_or_empty(access_state.get("permission_state"))
+    sandbox_state = _dict_or_empty(access_state.get("sandbox_state"))
     if any(
         (
             _clean_text(access_state.get("mode")),
@@ -712,6 +1010,11 @@ def digital_body_state_has_signal(state: Any) -> bool:
             _clean_text(access_state.get("network_access")),
             isinstance(access_state.get("access_acquire_proposals"), list) and bool(access_state.get("access_acquire_proposals")),
             isinstance(access_state.get("selected_access_proposal"), dict) and bool(access_state.get("selected_access_proposal")),
+            _session_surface_state_has_signal(session_state),
+            _account_surface_state_has_signal(account_state_detail),
+            _quota_surface_state_has_signal(quota_state_detail),
+            _permission_surface_state_has_signal(permission_state),
+            _sandbox_surface_state_has_signal(sandbox_state),
         )
     ):
         return True
@@ -738,6 +1041,7 @@ def digital_body_state_has_signal(state: Any) -> bool:
             _clean_text(resource_state.get("artifact_source_query")),
             _clean_text(resource_state.get("artifact_source_title")),
             _clean_text(resource_state.get("artifact_source_tool_name")),
+            _clean_text(resource_state.get("workspace_root")),
         )
     ):
         return True
@@ -747,12 +1051,66 @@ def digital_body_state_has_signal(state: Any) -> bool:
 
 def normalize_embodied_context(context: Any) -> dict[str, Any]:
     row = _dict_or_empty(context)
-    requested_access = _merge_unique_lists(row.get("requested_access"), limit=12)
-    missing_access = _merge_unique_lists(row.get("missing_access"), limit=12)
+    requested_access = _merge_unique_lists(
+        row.get("requested_access"),
+        _dict_or_empty(row.get("permission_state")).get("requestable_access"),
+        limit=12,
+    )
+    missing_access = _merge_unique_lists(
+        row.get("missing_access"),
+        _dict_or_empty(row.get("permission_state")).get("missing_access"),
+        limit=12,
+    )
     granted_toolsets = _merge_unique_lists(row.get("granted_toolsets"), limit=12)
     active_tools = _merge_unique_lists(row.get("active_tools"), limit=8)
-    access_acquire_proposals = _merge_access_acquire_proposals(row.get("access_acquire_proposals"), limit=8)
-    selected_access_proposal = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
+    access_acquire_proposals = _merge_access_acquire_proposals(
+        row.get("access_acquire_proposals"),
+        _dict_or_empty(row.get("permission_state")).get("access_acquire_proposals"),
+        limit=8,
+    )
+    selected_access_proposal = normalize_access_acquire_proposal(
+        row.get("selected_access_proposal")
+        or _dict_or_empty(row.get("permission_state")).get("selected_access_proposal")
+    )
+    account_state_detail = derive_account_surface_state(
+        account_state_detail=row.get("account_state_detail"),
+        browser_session=row.get("browser_session"),
+        account_state=row.get("account_state"),
+        cookie_state=row.get("cookie_state"),
+        api_key_state=row.get("api_key_state"),
+    )
+    browser_session = _clean_state_label(
+        row.get("browser_session") or account_state_detail.get("browser_session")
+    )
+    account_state = _clean_state_label(
+        row.get("account_state") or account_state_detail.get("login_state")
+    )
+    cookie_state = _clean_state_label(
+        row.get("cookie_state") or account_state_detail.get("cookie_state")
+    )
+    api_key_state = _clean_state_label(
+        row.get("api_key_state") or account_state_detail.get("api_key_state")
+    )
+    quota_state_detail = derive_quota_surface_state(
+        quota_state_detail=row.get("quota_state_detail"),
+        quota_state=row.get("quota_state"),
+        retry_after_s=row.get("retry_after_s"),
+        cooldown_scope=row.get("cooldown_scope"),
+    )
+    quota_state = _clean_state_label(
+        row.get("quota_state") or quota_state_detail.get("provider_state")
+    )
+    filesystem_state = _clean_state_label(row.get("filesystem_state"))
+    workspace_root = _clean_text(row.get("workspace_root"), limit=320)
+    sandbox_state = derive_sandbox_surface_state(
+        sandbox_state=row.get("sandbox_state"),
+        sandbox_mode=row.get("sandbox_mode"),
+        workspace_root=workspace_root,
+    )
+    sandbox_mode = _clean_state_label(
+        row.get("sandbox_mode") or sandbox_state.get("availability")
+    )
+    network_access = _clean_state_label(row.get("network_access"))
     world_surfaces = _merge_unique_lists(
         row.get("world_surfaces"),
         [row.get("active_surface")] if _clean_text(row.get("active_surface")) else [],
@@ -763,12 +1121,49 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     primary_origin = _clean_state_label(row.get("primary_origin"))
     primary_intent = _clean_text(row.get("primary_intent"), limit=120).lower()
     primary_tool_name = _clean_text(row.get("primary_tool_name"), limit=120).lower()
+    sandbox_run_id = _clean_text(row.get("sandbox_run_id"), limit=128)
+    sandbox_command_profile = _clean_state_label(row.get("sandbox_command_profile"))
+    sandbox_stdout_log_ref = _clean_text(row.get("sandbox_stdout_log_ref"), limit=320)
+    sandbox_stderr_log_ref = _clean_text(row.get("sandbox_stderr_log_ref"), limit=320)
+    sandbox_error_summary = _clean_text(row.get("sandbox_error_summary"), limit=220)
+    sandbox_exit_code = _coerce_int(row.get("sandbox_exit_code"), 0)
+    sandbox_duration_ms = max(0, _coerce_int(row.get("sandbox_duration_ms"), 0))
+    sandbox_produced_artifacts = _clean_text_list(row.get("sandbox_produced_artifacts"), limit=8, item_limit=320)
     requested_help = bool(row.get("requested_help", False))
     environmental_friction = bool(row.get("environmental_friction", False))
     procedural_growth = bool(row.get("procedural_growth", False))
-    session_continuity = _clean_state_label(row.get("session_continuity"))
-    session_expires_in_s = _clean_nonnegative_int(row.get("session_expires_in_s"))
-    session_recovery_mode = _clean_state_label(row.get("session_recovery_mode"))
+    retry_after_s = _clean_nonnegative_int(
+        row.get("retry_after_s")
+        or quota_state_detail.get("retry_after_s")
+        or _dict_or_empty(row.get("session_state")).get("retry_after_s")
+    )
+    cooldown_scope = _clean_state_label(
+        row.get("cooldown_scope")
+        or quota_state_detail.get("cooldown_scope")
+        or _dict_or_empty(row.get("session_state")).get("cooldown_scope")
+    )
+    session_state = derive_session_surface_state(
+        session_state=row.get("session_state"),
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=row.get("session_continuity"),
+        session_expires_in_s=row.get("session_expires_in_s"),
+        session_recovery_mode=row.get("session_recovery_mode"),
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
+    )
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=session_state.get("continuity"),
+        session_expires_in_s=session_state.get("expires_in_s"),
+        session_recovery_mode=session_state.get("recovery_mode"),
+    )
+    session_continuity = str(session_lifecycle.get("session_continuity") or "").strip()
+    session_expires_in_s = _clean_nonnegative_int(session_lifecycle.get("session_expires_in_s"))
+    session_recovery_mode = str(session_lifecycle.get("session_recovery_mode") or "").strip()
     artifact = derive_artifact_continuity(
         artifact_continuity=row.get("artifact_continuity"),
         active_artifact_kind=row.get("active_artifact_kind"),
@@ -787,6 +1182,43 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         artifact_source_title=row.get("artifact_source_title"),
         artifact_source_tool_name=row.get("artifact_source_tool_name"),
     )
+    permission_progress_hints = {
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+        "selected_access_proposal": selected_access_proposal,
+    }
+    permission_state = derive_permission_surface_state(
+        permission_state=row.get("permission_state"),
+        pending_approval_count=row.get("pending_approval_count"),
+        external_mutation_pending=row.get("external_mutation_pending"),
+        missing_access=missing_access,
+        requestable_access=requested_access,
+        access_acquire_proposals=access_acquire_proposals,
+        selected_access_proposal=selected_access_proposal,
+        progress_hints=permission_progress_hints,
+    )
+    requested_access = _merge_unique_lists(permission_state.get("requestable_access"), limit=12)
+    missing_access = _merge_unique_lists(permission_state.get("missing_access"), limit=12)
+    access_acquire_proposals = _merge_access_acquire_proposals(permission_state.get("access_acquire_proposals"), limit=8)
+    selected_access_proposal = normalize_access_acquire_proposal(permission_state.get("selected_access_proposal"))
+    session_state = session_state if _session_surface_state_has_signal(session_state) else {}
+    account_state_detail = account_state_detail if _account_surface_state_has_signal(account_state_detail) else {}
+    quota_state_detail = quota_state_detail if _quota_surface_state_has_signal(quota_state_detail) else {}
+    permission_state = (
+        permission_state
+        if _permission_surface_state_has_signal(permission_state) or isinstance(row.get("permission_state"), dict)
+        else {}
+    )
+    sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
 
     kind = _clean_state_label(row.get("kind"))
     if not kind:
@@ -808,6 +1240,16 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "granted_toolsets": granted_toolsets,
         "active_tools": active_tools,
         "block_reason": block_reason,
+        "retry_after_s": retry_after_s,
+        "cooldown_scope": cooldown_scope,
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "filesystem_state": filesystem_state,
+        "sandbox_mode": sandbox_mode,
+        "network_access": network_access,
         "session_continuity": session_continuity,
         "session_expires_in_s": session_expires_in_s,
         "session_recovery_mode": session_recovery_mode,
@@ -817,6 +1259,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "active_artifact_label": str(artifact.get("active_artifact_label") or "").strip(),
         "artifact_age_s": _clean_nonnegative_int(artifact.get("artifact_age_s")),
         "artifact_reacquisition_mode": str(artifact.get("artifact_reacquisition_mode") or "").strip(),
+        "artifact_mutation_mode": _clean_state_label(row.get("artifact_mutation_mode")),
         "artifact_carrier": str(artifact_identity.get("artifact_carrier") or "").strip(),
         "artifact_source_ref_ids": list(artifact_identity.get("artifact_source_ref_ids") or [])[:8],
         "preferred_source_ref_id": _clean_nonnegative_int(artifact_identity.get("preferred_source_ref_id")),
@@ -825,16 +1268,40 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "artifact_source_query": str(artifact_identity.get("artifact_source_query") or "").strip(),
         "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
         "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or "").strip(),
+        "workspace_root": workspace_root,
+        "pending_approval_count": _clean_nonnegative_int(
+            row.get("pending_approval_count") or permission_state.get("pending_approval_count"),
+            limit=999,
+        ),
+        "blocked_packet_count": _clean_nonnegative_int(row.get("blocked_packet_count"), limit=999),
+        "completed_packet_count": _clean_nonnegative_int(row.get("completed_packet_count"), limit=999),
+        "external_tool_count": _clean_nonnegative_int(row.get("external_tool_count"), limit=999),
         "primary_proposal_id": _clean_text(row.get("primary_proposal_id"), limit=128),
         "primary_status": primary_status,
         "primary_origin": primary_origin,
         "primary_intent": primary_intent,
         "primary_tool_name": primary_tool_name,
+        "sandbox_run_id": sandbox_run_id,
+        "sandbox_command_profile": sandbox_command_profile,
+        "sandbox_stdout_log_ref": sandbox_stdout_log_ref,
+        "sandbox_stderr_log_ref": sandbox_stderr_log_ref,
+        "sandbox_error_summary": sandbox_error_summary,
+        "sandbox_exit_code": sandbox_exit_code,
+        "sandbox_duration_ms": sandbox_duration_ms,
+        "sandbox_produced_artifacts": sandbox_produced_artifacts,
         "procedural_growth": procedural_growth,
         "environmental_friction": environmental_friction,
         "requested_help": requested_help,
+        "external_mutation_pending": bool(
+            row.get("external_mutation_pending", permission_state.get("external_mutation_pending", False))
+        ),
         "access_acquire_proposals": access_acquire_proposals,
         "selected_access_proposal": selected_access_proposal,
+        "session_state": session_state,
+        "account_state_detail": account_state_detail,
+        "quota_state_detail": quota_state_detail,
+        "permission_state": permission_state,
+        "sandbox_state": sandbox_state,
     }
     if not any(
         (
@@ -843,6 +1310,16 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["access_mode"],
             normalized["active_surface"],
             normalized["block_reason"],
+            normalized["retry_after_s"] > 0,
+            normalized["cooldown_scope"],
+            normalized["browser_session"],
+            normalized["account_state"],
+            normalized["cookie_state"],
+            normalized["api_key_state"],
+            normalized["quota_state"],
+            normalized["filesystem_state"],
+            normalized["sandbox_mode"],
+            normalized["network_access"],
             normalized["session_continuity"],
             normalized["session_expires_in_s"] > 0,
             normalized["session_recovery_mode"],
@@ -852,6 +1329,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["active_artifact_label"],
             normalized["artifact_age_s"] > 0,
             normalized["artifact_reacquisition_mode"],
+            normalized["artifact_mutation_mode"],
             normalized["artifact_carrier"],
             bool(normalized["artifact_source_ref_ids"]),
             normalized["preferred_source_ref_id"] > 0,
@@ -860,11 +1338,24 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["artifact_source_query"],
             normalized["artifact_source_title"],
             normalized["artifact_source_tool_name"],
+            normalized["workspace_root"],
+            normalized["pending_approval_count"] > 0,
+            normalized["blocked_packet_count"] > 0,
+            normalized["completed_packet_count"] > 0,
+            normalized["external_tool_count"] > 0,
             normalized["primary_proposal_id"],
             normalized["primary_status"],
             normalized["primary_origin"],
             normalized["primary_intent"],
             normalized["primary_tool_name"],
+            normalized["sandbox_run_id"],
+            normalized["sandbox_command_profile"],
+            normalized["sandbox_stdout_log_ref"],
+            normalized["sandbox_stderr_log_ref"],
+            normalized["sandbox_error_summary"],
+            normalized["sandbox_exit_code"] != 0,
+            normalized["sandbox_duration_ms"] > 0,
+            normalized["sandbox_produced_artifacts"],
             normalized["world_surfaces"],
             normalized["missing_access"],
             normalized["requested_access"],
@@ -873,12 +1364,68 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["procedural_growth"],
             normalized["environmental_friction"],
             normalized["requested_help"],
+            normalized["external_mutation_pending"],
             normalized["access_acquire_proposals"],
             normalized["selected_access_proposal"],
+            normalized["session_state"],
+            normalized["account_state_detail"],
+            normalized["quota_state_detail"],
+            normalized["permission_state"],
+            normalized["sandbox_state"],
         )
     ):
         return {}
     return normalized
+
+
+def _embodied_field_has_signal(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, set, tuple)):
+        return bool(value)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value > 0
+    return value is not None
+
+
+def normalize_embodied_trace_context(item: Any) -> dict[str, Any]:
+    row = _dict_or_empty(item)
+    if not row:
+        return {}
+
+    merged: dict[str, Any] = {}
+    sources = (
+        row.get("content"),
+        row.get("metadata"),
+        row.get("behavior_action"),
+        row.get("behavior_plan"),
+        row.get("behavior_consequence"),
+        row.get("interaction_carryover"),
+        row.get("digital_body_consequence"),
+        row,
+    )
+    for source in sources:
+        source_row = _dict_or_empty(source)
+        if not source_row:
+            continue
+        candidate = dict(source_row)
+        digital_body_consequence = _dict_or_empty(source_row.get("digital_body_consequence"))
+        embodied_context = _dict_or_empty(source_row.get("embodied_context"))
+        if digital_body_consequence:
+            candidate.update(digital_body_consequence)
+        if embodied_context:
+            candidate.update(embodied_context)
+        normalized = normalize_embodied_context(candidate)
+        if not normalized:
+            continue
+        for key, value in normalized.items():
+            if _embodied_field_has_signal(merged.get(key)):
+                continue
+            if _embodied_field_has_signal(value):
+                merged[key] = value
+    return normalize_embodied_context(merged)
 
 
 def embodied_context_has_signal(context: Any) -> bool:
@@ -892,27 +1439,133 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
 
     access_state = _dict_or_empty(row.get("access_state"))
     resource_state = _dict_or_empty(row.get("resource_state"))
+    workspace_root = _clean_text(resource_state.get("workspace_root"), limit=320)
     granted_toolsets = [
         _clean_text(item).lower()
         for item in _list_or_empty(access_state.get("granted_toolsets"))
         if _clean_text(item)
     ]
     granted_toolsets = list(dict.fromkeys(granted_toolsets))[:12]
-    missing_access = _merge_unique_lists(access_state.get("missing_access"), limit=12)
-    requestable_access = _merge_unique_lists(access_state.get("requestable_access"), limit=12)
-    access_acquire_proposals = _merge_access_acquire_proposals(access_state.get("access_acquire_proposals"), limit=8)
-    selected_access_proposal = normalize_access_acquire_proposal(access_state.get("selected_access_proposal"))
-    browser_session = _clean_state_label(access_state.get("browser_session"))
-    account_state = _clean_state_label(access_state.get("account_state"))
-    cookie_state = _clean_state_label(access_state.get("cookie_state"))
-    session_lifecycle = derive_session_lifecycle(
+    account_state_detail = derive_account_surface_state(
+        account_state_detail=access_state.get("account_state_detail"),
+        browser_session=access_state.get("browser_session"),
+        account_state=access_state.get("account_state"),
+        cookie_state=access_state.get("cookie_state"),
+        api_key_state=access_state.get("api_key_state"),
+    )
+    browser_session = _clean_state_label(
+        access_state.get("browser_session") or account_state_detail.get("browser_session")
+    )
+    account_state = _clean_state_label(
+        access_state.get("account_state") or account_state_detail.get("login_state")
+    )
+    cookie_state = _clean_state_label(
+        access_state.get("cookie_state") or account_state_detail.get("cookie_state")
+    )
+    api_key_state = _clean_state_label(
+        access_state.get("api_key_state") or account_state_detail.get("api_key_state")
+    )
+    quota_state_detail = derive_quota_surface_state(
+        quota_state_detail=access_state.get("quota_state_detail"),
+        quota_state=access_state.get("quota_state"),
+        retry_after_s=access_state.get("retry_after_s"),
+        cooldown_scope=access_state.get("cooldown_scope"),
+    )
+    quota_state = _clean_state_label(
+        access_state.get("quota_state") or quota_state_detail.get("provider_state")
+    )
+    retry_after_s = _clean_nonnegative_int(
+        access_state.get("retry_after_s") or quota_state_detail.get("retry_after_s")
+    )
+    cooldown_scope = _clean_state_label(
+        access_state.get("cooldown_scope") or quota_state_detail.get("cooldown_scope")
+    )
+    session_state = derive_session_surface_state(
+        session_state=access_state.get("session_state"),
         browser_session=browser_session,
         account_state=account_state,
         cookie_state=cookie_state,
         session_continuity=access_state.get("session_continuity"),
         session_expires_in_s=access_state.get("session_expires_in_s"),
         session_recovery_mode=access_state.get("session_recovery_mode"),
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
     )
+    missing_access = _merge_unique_lists(
+        access_state.get("missing_access"),
+        _dict_or_empty(access_state.get("permission_state")).get("missing_access"),
+        limit=12,
+    )
+    requestable_access = _merge_unique_lists(
+        access_state.get("requestable_access"),
+        _dict_or_empty(access_state.get("permission_state")).get("requestable_access"),
+        limit=12,
+    )
+    access_acquire_proposals = _merge_access_acquire_proposals(
+        access_state.get("access_acquire_proposals"),
+        _dict_or_empty(access_state.get("permission_state")).get("access_acquire_proposals"),
+        limit=8,
+    )
+    selected_access_proposal = normalize_access_acquire_proposal(
+        access_state.get("selected_access_proposal")
+        or _dict_or_empty(access_state.get("permission_state")).get("selected_access_proposal")
+    )
+    session_lifecycle = derive_session_lifecycle(
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=session_state.get("continuity"),
+        session_expires_in_s=session_state.get("expires_in_s"),
+        session_recovery_mode=session_state.get("recovery_mode"),
+    )
+    session_continuity = str(session_lifecycle.get("session_continuity") or "").strip()
+    session_expires_in_s = _clean_nonnegative_int(session_lifecycle.get("session_expires_in_s"))
+    session_recovery_mode = str(session_lifecycle.get("session_recovery_mode") or "").strip()
+    sandbox_state = derive_sandbox_surface_state(
+        sandbox_state=access_state.get("sandbox_state"),
+        sandbox_mode=access_state.get("sandbox_mode"),
+        workspace_root=workspace_root,
+    )
+    sandbox_mode = _clean_state_label(
+        access_state.get("sandbox_mode") or sandbox_state.get("availability")
+    )
+    permission_progress_hints = {
+        "browser_session": browser_session,
+        "account_state": account_state,
+        "cookie_state": cookie_state,
+        "api_key_state": api_key_state,
+        "quota_state": quota_state,
+        "filesystem_state": access_state.get("filesystem_state"),
+        "sandbox_mode": sandbox_mode,
+        "network_access": access_state.get("network_access"),
+        "session_continuity": session_continuity,
+        "session_expires_in_s": session_expires_in_s,
+        "session_recovery_mode": session_recovery_mode,
+        "selected_access_proposal": selected_access_proposal,
+    }
+    permission_state = derive_permission_surface_state(
+        permission_state=access_state.get("permission_state"),
+        pending_approval_count=access_state.get("pending_approval_count"),
+        external_mutation_pending=access_state.get("external_mutation_pending"),
+        missing_access=missing_access,
+        requestable_access=requestable_access,
+        access_acquire_proposals=access_acquire_proposals,
+        selected_access_proposal=selected_access_proposal,
+        progress_hints=permission_progress_hints,
+    )
+    missing_access = _merge_unique_lists(permission_state.get("missing_access"), limit=12)
+    requestable_access = _merge_unique_lists(permission_state.get("requestable_access"), limit=12)
+    access_acquire_proposals = _merge_access_acquire_proposals(permission_state.get("access_acquire_proposals"), limit=8)
+    selected_access_proposal = normalize_access_acquire_proposal(permission_state.get("selected_access_proposal"))
+    session_state = session_state if _session_surface_state_has_signal(session_state) else {}
+    account_state_detail = account_state_detail if _account_surface_state_has_signal(account_state_detail) else {}
+    quota_state_detail = quota_state_detail if _quota_surface_state_has_signal(quota_state_detail) else {}
+    permission_state = (
+        permission_state
+        if _permission_surface_state_has_signal(permission_state) or isinstance(access_state.get("permission_state"), dict)
+        else {}
+    )
+    sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
     artifact = derive_artifact_continuity(
         artifact_continuity=resource_state.get("artifact_continuity"),
         active_artifact_kind=resource_state.get("active_artifact_kind"),
@@ -943,13 +1596,18 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "mode": _clean_text(access_state.get("mode")).lower() or "native_only",
             "conditions": list(dict.fromkeys(_unique_clean_list(*_list_or_empty(access_state.get("conditions")))))[:8],
             "block_reason": _clean_text(access_state.get("block_reason"), limit=220),
-            "retry_after_s": _clean_nonnegative_int(access_state.get("retry_after_s")),
-            "cooldown_scope": _clean_state_label(access_state.get("cooldown_scope")),
-            "session_continuity": str(session_lifecycle.get("session_continuity") or "").strip(),
-            "session_expires_in_s": _clean_nonnegative_int(session_lifecycle.get("session_expires_in_s")),
-            "session_recovery_mode": str(session_lifecycle.get("session_recovery_mode") or "").strip(),
-            "pending_approval_count": max(0, int(access_state.get("pending_approval_count") or 0)),
-            "external_mutation_pending": bool(access_state.get("external_mutation_pending", False)),
+            "retry_after_s": retry_after_s,
+            "cooldown_scope": cooldown_scope,
+            "session_continuity": session_continuity,
+            "session_expires_in_s": session_expires_in_s,
+            "session_recovery_mode": session_recovery_mode,
+            "pending_approval_count": max(
+                0,
+                int(access_state.get("pending_approval_count") or permission_state.get("pending_approval_count") or 0),
+            ),
+            "external_mutation_pending": bool(
+                access_state.get("external_mutation_pending", permission_state.get("external_mutation_pending", False))
+            ),
             "granted_toolsets": granted_toolsets,
             "missing_access": missing_access,
             "requestable_access": requestable_access,
@@ -958,11 +1616,16 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "browser_session": browser_session,
             "account_state": account_state,
             "cookie_state": cookie_state,
-            "api_key_state": _clean_state_label(access_state.get("api_key_state")),
-            "quota_state": _clean_state_label(access_state.get("quota_state")),
+            "api_key_state": api_key_state,
+            "quota_state": quota_state,
             "filesystem_state": _clean_state_label(access_state.get("filesystem_state")),
-            "sandbox_mode": _clean_state_label(access_state.get("sandbox_mode")),
+            "sandbox_mode": sandbox_mode,
             "network_access": _clean_state_label(access_state.get("network_access")),
+            "session_state": session_state,
+            "account_state_detail": account_state_detail,
+            "quota_state_detail": quota_state_detail,
+            "permission_state": permission_state,
+            "sandbox_state": sandbox_state,
         },
         "resource_state": {
             "behavior_queue_depth": max(0, int(resource_state.get("behavior_queue_depth") or 0)),
@@ -987,6 +1650,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "artifact_source_query": str(artifact_identity.get("artifact_source_query") or "").strip(),
             "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
             "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or "").strip(),
+            "workspace_root": workspace_root,
         },
         "body_constraints": list(dict.fromkeys(_unique_clean_list(*_list_or_empty(row.get("body_constraints")))))[:12],
     }
@@ -1128,13 +1792,48 @@ def derive_digital_body_state(
     if carried_primary_status == "awaiting_approval":
         pending_approval_count = max(pending_approval_count, 1)
 
-    browser_session = _clean_state_label(hints.get("browser_session"))
-    account_state = _clean_state_label(hints.get("account_state"))
-    cookie_state = _clean_state_label(hints.get("cookie_state"))
-    api_key_state = _clean_state_label(hints.get("api_key_state"))
-    quota_state = _clean_state_label(hints.get("quota_state"))
-    retry_after_s = _clean_nonnegative_int(hints.get("retry_after_s"))
-    cooldown_scope = _clean_state_label(hints.get("cooldown_scope"))
+    hint_mode = _clean_state_label(hints.get("mode"))
+    hint_pending_approval_count = _clean_nonnegative_int(hints.get("pending_approval_count"))
+    hint_external_mutation_pending = bool(hints.get("external_mutation_pending", False))
+    if hint_mode == "approval_pending":
+        hint_pending_approval_count = max(hint_pending_approval_count, 1)
+    pending_approval_count = max(pending_approval_count, hint_pending_approval_count)
+    external_mutation_pending = external_mutation_pending or hint_external_mutation_pending
+
+    hinted_account_state_detail = derive_account_surface_state(
+        account_state_detail=hints.get("account_state_detail"),
+        browser_session=hints.get("browser_session"),
+        account_state=hints.get("account_state"),
+        cookie_state=hints.get("cookie_state"),
+        api_key_state=hints.get("api_key_state"),
+    )
+    browser_session = _clean_state_label(
+        hints.get("browser_session") or hinted_account_state_detail.get("browser_session")
+    )
+    account_state = _clean_state_label(
+        hints.get("account_state") or hinted_account_state_detail.get("login_state")
+    )
+    cookie_state = _clean_state_label(
+        hints.get("cookie_state") or hinted_account_state_detail.get("cookie_state")
+    )
+    api_key_state = _clean_state_label(
+        hints.get("api_key_state") or hinted_account_state_detail.get("api_key_state")
+    )
+    hinted_quota_state_detail = derive_quota_surface_state(
+        quota_state_detail=hints.get("quota_state_detail"),
+        quota_state=hints.get("quota_state"),
+        retry_after_s=hints.get("retry_after_s"),
+        cooldown_scope=hints.get("cooldown_scope"),
+    )
+    quota_state = _clean_state_label(
+        hints.get("quota_state") or hinted_quota_state_detail.get("provider_state")
+    )
+    retry_after_s = _clean_nonnegative_int(
+        hints.get("retry_after_s") or hinted_quota_state_detail.get("retry_after_s")
+    )
+    cooldown_scope = _clean_state_label(
+        hints.get("cooldown_scope") or hinted_quota_state_detail.get("cooldown_scope")
+    )
     session_lifecycle = derive_session_lifecycle(
         browser_session=browser_session,
         account_state=account_state,
@@ -1147,7 +1846,14 @@ def derive_digital_body_state(
     session_expires_in_s = _clean_nonnegative_int(session_lifecycle.get("session_expires_in_s"))
     session_recovery_mode = _clean_state_label(session_lifecycle.get("session_recovery_mode"))
     filesystem_state = _clean_state_label(hints.get("filesystem_state"))
-    sandbox_mode = _clean_state_label(hints.get("sandbox_mode"))
+    hinted_sandbox_state = derive_sandbox_surface_state(
+        sandbox_state=hints.get("sandbox_state"),
+        sandbox_mode=hints.get("sandbox_mode"),
+        workspace_root=hints.get("workspace_root") or carried_embodied.get("workspace_root"),
+    )
+    sandbox_mode = _clean_state_label(
+        hints.get("sandbox_mode") or hinted_sandbox_state.get("availability")
+    )
     network_access = _clean_state_label(hints.get("network_access"))
     artifact = derive_artifact_continuity(
         artifact_continuity=hints.get("artifact_continuity") or carried_artifact.get("artifact_continuity"),
@@ -1186,13 +1892,21 @@ def derive_digital_body_state(
     artifact_source_query = _clean_text(artifact_identity.get("artifact_source_query"), limit=220)
     artifact_source_title = _clean_text(artifact_identity.get("artifact_source_title"), limit=160)
     artifact_source_tool_name = _clean_state_label(artifact_identity.get("artifact_source_tool_name"))
+    workspace_root = _clean_text(
+        hints.get("workspace_root") or carried_embodied.get("workspace_root"),
+        limit=320,
+    )
     cooldown_active = retry_after_s > 0
     conditions: list[str] = []
     if pending_approval_count > 0:
         conditions.append("human_approval_required")
     if external_mutation_pending:
         conditions.append("external_mutation_gated")
-    block_reason = _clean_text(autonomy_block_reason, limit=220) or carried_block_reason
+    block_reason = (
+        _clean_text(autonomy_block_reason, limit=220)
+        or _clean_text(hints.get("block_reason"), limit=220)
+        or carried_block_reason
+    )
     if cooldown_active:
         conditions.append("cooldown_active")
         if cooldown_scope:
@@ -1341,7 +2055,7 @@ def derive_digital_body_state(
     if selected_access_proposal and not has_completed_selected_access:
         conditions = _merge_unique_lists(conditions, ["access_acquire_planned"], limit=12)
 
-    if blocked_packet_count > 0 and not cooldown_active and block_reason:
+    if (blocked_packet_count > 0 or hint_mode == "blocked") and not cooldown_active and block_reason:
         access_mode = "blocked"
     elif pending_approval_count > 0:
         access_mode = "approval_pending"
@@ -1353,6 +2067,50 @@ def derive_digital_body_state(
         access_mode = "limited"
     else:
         access_mode = "native_only"
+
+    session_state = derive_session_surface_state(
+        session_state=hints.get("session_state"),
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        session_continuity=session_continuity,
+        session_expires_in_s=session_expires_in_s,
+        session_recovery_mode=session_recovery_mode,
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
+    )
+    account_state_detail = derive_account_surface_state(
+        account_state_detail=hints.get("account_state_detail"),
+        browser_session=browser_session,
+        account_state=account_state,
+        cookie_state=cookie_state,
+        api_key_state=api_key_state,
+    )
+    quota_state_detail = derive_quota_surface_state(
+        quota_state_detail=hints.get("quota_state_detail"),
+        quota_state=quota_state,
+        retry_after_s=retry_after_s,
+        cooldown_scope=cooldown_scope,
+    )
+    permission_state = derive_permission_surface_state(
+        permission_state=hints.get("permission_state"),
+        pending_approval_count=pending_approval_count,
+        external_mutation_pending=external_mutation_pending,
+        missing_access=missing_access,
+        requestable_access=requestable_access,
+        access_acquire_proposals=access_acquire_proposals,
+        selected_access_proposal=selected_access_proposal,
+        progress_hints=proposal_progress_hints,
+    )
+    missing_access = _merge_unique_lists(permission_state.get("missing_access"), limit=12)
+    requestable_access = _merge_unique_lists(permission_state.get("requestable_access"), limit=12)
+    access_acquire_proposals = _merge_access_acquire_proposals(permission_state.get("access_acquire_proposals"), limit=8)
+    selected_access_proposal = normalize_access_acquire_proposal(permission_state.get("selected_access_proposal"))
+    sandbox_state = derive_sandbox_surface_state(
+        sandbox_state=hints.get("sandbox_state"),
+        sandbox_mode=sandbox_mode,
+        workspace_root=workspace_root,
+    )
 
     action_channels = ["language"]
     if queue_depth > 0:
@@ -1411,6 +2169,11 @@ def derive_digital_body_state(
                 "filesystem_state": filesystem_state,
                 "sandbox_mode": sandbox_mode,
                 "network_access": network_access,
+                "session_state": session_state,
+                "account_state_detail": account_state_detail,
+                "quota_state_detail": quota_state_detail,
+                "permission_state": permission_state,
+                "sandbox_state": sandbox_state,
             },
             "resource_state": {
                 "behavior_queue_depth": queue_depth,
@@ -1435,6 +2198,7 @@ def derive_digital_body_state(
                 "artifact_source_query": artifact_source_query,
                 "artifact_source_title": artifact_source_title,
                 "artifact_source_tool_name": artifact_source_tool_name,
+                "workspace_root": workspace_root,
             },
             "body_constraints": conditions,
         }
@@ -1458,6 +2222,7 @@ __all__ = [
     "normalize_access_acquire_proposal",
     "normalize_access_acquire_proposals",
     "normalize_embodied_context",
+    "normalize_embodied_trace_context",
     "normalize_digital_body_state",
     "select_access_acquire_proposal",
     "selected_access_proposal_resolved",

@@ -95,6 +95,7 @@ def _iter_builtin_tools() -> Iterable[BaseTool]:
         builtin_tools.refresh_access_state,
         builtin_tools.create_workspace_access,
         builtin_tools.inspect_workspace_path,
+        builtin_tools.execute_workspace_command,
         builtin_tools.write_workspace_file,
         builtin_tools.append_workspace_file,
         builtin_tools.replace_workspace_text,

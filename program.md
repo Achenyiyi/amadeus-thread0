@@ -11,26 +11,62 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-03-29`
+- Date: `2026-04-04`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: `digital embodiment convergence on top of freeze_gate_ready + companion_autonomy_ready`
+- Mainline phase: `Sandbox Embodied Execution Phase 1 formally closed`
 - Immediate research focus:
   - frontend remains paused
-  - active work is backend-side `digital body / access / unified experience` convergence
+  - active work is now `post-closeout baseline preservation`, not more open-ended sandbox widening
+  - no next execution phase is selected yet
   - the Chinese lexical-rule replacement discussion has been recorded as a future deferred track, not the current slice
 - Active backend focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
-  - continue formalizing `digital body / access / resource` runtime surfaces
-  - continue writing embodied interaction results back through the same reconsolidation and self-narrative path
+  - preserve `digital_embodiment_phase1_ready`
+  - preserve `digital_embodiment_phase2_ready`
+  - preserve `sandbox_embodied_execution_phase1_ready`
+  - keep the closed `digital_body.access_state` / `digital_body.resource_state` contract stable
+  - keep the new `host-local restricted execution` contract stable without widening into browser/network/package-install/arbitrary host codegen
+  - keep saved-material continuity on `source_ref` until a real browser runtime exists
+  - do not open a wider execution or embodiment surface until the repo explicitly selects the next phase
   - do not reopen broad Chinese lexical rewrites before the embodiment phase reaches a stable replacement contract
   - do not spend current mainline time on reply naturalness / tone micro-polish unless it blocks runtime correctness or contract closure
 - Current frontend-handoff focus:
-  - `frontend/` remains mock-driven for now by deliberate choice; live transport stays deferred until the UI quality bar is higher
-  - the active task is visual and interaction maturation: stronger layout hierarchy, more distinctive Amadeus identity, and smoother mock-first scene navigation
-  - the frontend runtime still keeps a backend-client seam so later live integration can remain thin when the design pass is complete
-  - disposable scaffold residue and build artifacts should continue to stay out of the workspace between runs
+  - frontend remains frozen
+  - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
 - Latest completed technical milestone:
+  - formally closed `Sandbox Embodied Execution Phase 1`:
+    - kept the top-level architecture on `LangGraph + LangChain` with approval still flowing through `interrupt -> Command(resume=...)`
+    - formalized the bounded runner as `host-local restricted execution`, not a provider-grade sandbox
+    - added the authoritative smoke/audit closure layer:
+      - `evals/run_sandbox_embodied_execution_smokes.py`
+      - `evals/run_sandbox_embodied_execution_audit.py`
+      - `tests/test_sandbox_embodied_execution_smokes.py`
+      - `tests/test_sandbox_embodied_execution_audit.py`
+    - synced repository contracts to the new execution surface:
+      - `AGENTS.md`
+      - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+      - `docs/engineering/BACKEND_HANDOFF.md`
+      - `docs/engineering/PROJECT_STRUCTURE.md`
+    - authoritative closeout reports now include 3 fresh `ready` artifacts:
+      - `evals/reports/sandbox-embodied-execution-audit-20260404-225854-phase1-closeout-b.{json,md}`
+      - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
+      - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
+    - all 3 reports show:
+      - `overall_status=passed`
+      - `readiness=sandbox_embodied_execution_phase1_ready`
+  - formally closed `Digital Embodiment Convergence Phase 2`:
+    - fixed the audit readiness/history bookkeeping bug so top-level readiness and `recent_audits[-1]` now stay aligned
+    - added `evals/run_digital_embodiment_smokes.py` and wired its 4 required scenarios into the blocking phase-2 audit check
+    - added direct coverage in `tests/test_digital_embodiment_audit.py` and `tests/test_digital_embodiment_smokes.py`
+    - accumulated 3 fresh authoritative closeout reports after the fix:
+      - `evals/reports/digital-embodiment-audit-20260404-192406-phase2-closeout-a.{json,md}`
+      - `evals/reports/digital-embodiment-audit-20260404-194010-phase2-closeout-b.{json,md}`
+      - `evals/reports/digital-embodiment-audit-20260404-195802-phase2-closeout-c.{json,md}`
+    - all 3 reports now show:
+      - `overall_status=passed`
+      - `readiness=digital_embodiment_phase2_ready`
+      - `recent_audits[-1].readiness_status=digital_embodiment_phase2_ready`
   - built the first contract-driven frontend shell and tightened it after review:
     - added a clean `frontend/` workspace with React + Vite + TypeScript
     - rendered transcript, final-turn packet, and inspector views directly from copied `backend.v1` mocks
@@ -6919,3 +6955,2447 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - continue the bounded `source_ref` mainline only if the next slice stays root-cause-oriented
   - the next highest-value audit lane is whether retrieved/reconsolidated saved-material freshness is still thinned out anywhere in `final_state / backend envelope / CLI summary` after the preferred-anchor fix
+
+## 2026-03-29 Run 171
+
+- Focus:
+  - close the next export-layer gap after Run 170: preferred saved-material anchor fields survived runtime/final-state, but CLI and summarized backend surfaces still thinned them out
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_api.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - extended CLI/evolution summary export so preferred saved-material anchor state now survives summary compaction:
+    - `digital_body.resources.preferred_source_ref_id`
+    - `digital_body.resources.preferred_anchor_reason`
+    - `digital_body_consequence.preferred_source_ref_id`
+    - `digital_body_consequence.preferred_anchor_reason`
+    - embedded `embodied_context` summaries now preserve the same preferred-anchor pair
+  - extended `current_turn` summary so the active saved-material line stays inspectable without reopening the nested `digital_body` objects:
+    - `digital_body_preferred_source_ref_id`
+    - `digital_body_preferred_anchor_reason`
+    - `digital_body_consequence_preferred_source_ref_id`
+    - `digital_body_consequence_preferred_anchor_reason`
+  - updated summary/export regressions so the same preferred-anchor contract is asserted across:
+    - raw CLI summary surfaces
+    - backend turn/event payloads
+    - backend turn summaries built on top of those payloads
+  - updated architecture/handoff docs so preferred-anchor semantics are now explicitly required to survive both direct payloads and summary layers once present in runtime state
+- Validation:
+  - `python -m pytest tests/test_cli_views.py -q`
+  - `python -m pytest tests/test_backend_api.py -q`
+  - `python -m py_compile amadeus_thread0\utils\cli_views.py tests\test_cli_views.py tests\test_backend_api.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0\agent.py amadeus_thread0\graph.py amadeus_thread0\utils\cli_views.py amadeus_thread0\runtime\backend_api.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - preferred saved-material anchor semantics now survive all the way through:
+    - runtime state
+    - final-state resolution
+    - backend turn/event envelopes
+    - CLI/evolution summary compaction
+  - this removes the remaining “artifact_source_ref_ids survived but preferred anchor disappeared in summaries” split on the saved `source_ref` path
+  - regression baseline stayed green:
+    - `33 passed`
+    - `27 passed`
+    - `764 passed, 35 subtests passed`
+    - `122 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the bounded saved-`source_ref` audit only if the next slice stays root-cause-oriented
+  - the next highest-value lane is checking whether `counterpart_profile / event_residue / proactive continuity` still flatten any retrieved saved-material freshness after the preferred-anchor export fix
+
+## 2026-03-29 Run 172
+
+- Focus:
+  - close the next persistence-layer root cause after Run 171: preferred saved-material anchor fields survived runtime and summary/export layers, but were still being dropped before long-horizon history writeback
+- Files changed:
+  - `amadeus_thread0/memory_store.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - fixed the actual upstream truncation point in `graph_parts/memory_evolution.py`:
+    - `_normalized_embodied_context()` now preserves `preferred_source_ref_id`
+    - `_normalized_embodied_context()` now preserves `preferred_anchor_reason`
+    - embodied-context shift scoring now also treats preferred-anchor changes as meaningful history change, so later dedupe logic does not flatten them away as if nothing changed
+  - closed the downstream storage hole in `memory_store._embodied_context_content()`:
+    - stored long-horizon history items now persist the same preferred-anchor pair alongside `artifact_source_ref_ids`
+    - this keeps persisted `counterpart_assessment_history` and `proactive_continuity_history` aligned with the already-fixed runtime / summary / CLI contract
+  - extended persistence regressions so preferred saved-material anchor state is now locked through actual long-horizon writeback:
+    - `counterpart_assessment_history.embodied_context.preferred_source_ref_id`
+    - `counterpart_assessment_history.embodied_context.preferred_anchor_reason`
+    - `proactive_continuity_history.embodied_context.preferred_source_ref_id`
+    - `proactive_continuity_history.embodied_context.preferred_anchor_reason`
+  - extended backend writeback-trace regression so current-turn history export now explicitly proves the same preferred-anchor pair survives in:
+    - `writeback_trace.counterpart_assessment_history[*].embodied_context`
+    - `writeback_trace.proactive_continuity_history[*].embodied_context`
+- Validation:
+  - `python -m pytest tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_backend_api.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0\\memory_store.py amadeus_thread0\\graph_parts\\memory_evolution.py amadeus_thread0\\runtime\\backend_api.py tests\\test_world_model_residue.py tests\\test_backend_api.py`
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+- Result:
+  - preferred saved-material anchor semantics now survive the full persisted path:
+    - reconsolidation snapshot
+    - memory-evolution embodied-context normalization
+    - long-horizon history storage
+    - current-turn writeback trace export
+  - this removes the remaining split where `artifact_source_ref_ids` could survive while the chosen saved-material anchor silently collapsed to `0 / ""` inside persisted history
+  - regression baseline stayed green:
+    - `142 passed`
+    - `27 passed`
+    - `764 passed, 35 subtests passed`
+    - `122 passed, 9 subtests passed`
+    - graph build check: `CompiledStateGraph`
+- Next:
+  - continue the bounded saved-`source_ref` audit only if the next slice stays root-cause-oriented
+  - the next highest-value lane is checking whether `counterpart_profile` or other history/residue carriers still thin out preferred-anchor freshness anywhere after persistence and writeback are now aligned
+
+## 2026-03-29 Run 173
+
+- Focus:
+  - close the next runtime writeback root cause after Run 172: preferred saved-material anchor fields survived runtime, summary/export, and persistence, but autonomous artifact reacquisition could still drop them when writing fresh `digital_body_hints`
+- Files changed:
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - fixed the missing field carryover in `_node_autonomy_execute()` for artifact reacquisition:
+    - the `digital_body_hints` writeback branch now preserves `preferred_source_ref_id`
+    - the same branch now preserves `preferred_anchor_reason`
+  - added a focused autonomy regression that mocks a `reacquire_artifact` result carrying:
+    - `source_ref_ids=[21, 17]`
+    - `preferred_source_ref_id=21`
+    - `preferred_anchor_reason=primary_more_current`
+  - locked the contract so that preferred-anchor semantics now remain aligned across:
+    - `action_packets[*].artifact_context`
+    - `session_context.digital_body_hints`
+    - `digital_body_state.resource_state`
+- Validation:
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - autonomous saved-`source_ref` reacquisition no longer degrades a truthful preferred anchor into only `artifact_source_ref_ids`
+  - the preferred anchor now survives the full live runtime path as well:
+    - autonomy packet completion
+    - session hint refresh
+    - derived digital-body resource state
+  - regression baseline stayed green:
+    - `50 passed`
+    - `765 passed, 35 subtests passed`
+    - `122 passed, 9 subtests passed`
+- Next:
+  - continue the bounded saved-`source_ref` audit only if another real root-cause drop point appears
+  - the next highest-value lane remains checking whether `counterpart_profile / event_residue / proactive continuity` still flatten saved-material freshness or preferred-anchor choice anywhere outside the now-closed runtime/persistence/summary path
+
+## 2026-03-29 Run 174
+
+- Focus:
+  - convert the post-Run-173 audit on `backend_session` preview/residue surfaces into proof, so we stop guessing about whether preferred saved-material anchor fields still disappear in summary consumers
+- Files changed:
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - extended the `FakeMemoryStore` embodied-context fixtures used by `backend_session` tests so the source-ref payload now carries:
+    - `preferred_source_ref_id`
+    - `preferred_anchor_reason`
+  - extended the existing `backend_session` regression coverage to assert preferred-anchor survival across the already-suspected summary carriers:
+    - `worldline["counterpart_assessment_preview"][*].embodied_context`
+    - `worldline["proactive_continuity_preview"][*].embodied_context`
+    - `bond["counterpart_assessment_preview"][*].embodied_context`
+    - `bond["proactive_continuity_preview"][*].embodied_context`
+    - `summary["digital_body"]["resources"]`
+    - `summary["digital_body_consequence"]`
+    - `summary["event_residue"]["digital_body_consequence"]`
+  - this run intentionally changed only tests:
+    - no production code path was patched
+    - the goal was to reproduce a real truncation if it still existed
+- Validation:
+  - `python -m pytest tests/test_backend_session.py -q`
+- Result:
+  - the strengthened regression passed cleanly: `40 passed`
+  - this proves the audited `backend_session` consumers currently preserve preferred-anchor semantics once they exist upstream
+  - there is no newly confirmed root-cause drop in:
+    - worldline preview
+    - bond preview
+    - digital-body summary
+    - event-residue digital-body consequence summary
+- Next:
+  - continue the bounded saved-`source_ref` audit only if another concrete carrier can be shown to drop preferred-anchor semantics
+  - the next profitable lane is to inspect other remaining read-model/export carriers such as `counterpart_profile` or adjacent residue summaries only when a reproducible truncation hypothesis exists
+
+## 2026-03-29 Run 175
+
+- Focus:
+  - prove the remaining `revision_trace` export/writeback carriers instead of assuming `normalize_embodied_context()` is enough
+- Files changed:
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - extended `revision_trace_export` regressions so preferred-anchor semantics are now asserted through all three revision-trace normalization surfaces:
+    - direct `normalize_revision_trace_export()`
+    - `list_revision_traces`
+    - `get_worldline_snapshot`
+  - extended the backend writeback-trace regression so current-turn `revision_traces[*].embodied_context` is no longer only checked for:
+    - `artifact_source_ref_ids`
+    - `artifact_source_title`
+    - `artifact_source_tool_name`
+  - the same writeback-trace regression now also proves:
+    - `preferred_source_ref_id`
+    - `preferred_anchor_reason`
+  - this run again intentionally changed only tests:
+    - no production code change was needed
+    - the goal was to turn another suspected carrier into a proven-safe carrier
+- Validation:
+  - `python -m pytest tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_backend_api.py -q`
+- Result:
+  - both strengthened suites passed cleanly:
+    - `3 passed`
+    - `27 passed`
+  - this proves preferred-anchor semantics now remain intact across:
+    - revision-trace normalization helpers
+    - revision-trace read tools
+    - backend current-turn writeback trace export
+  - there is still no newly reproduced production truncation after the preferred-anchor fixes landed upstream
+- Next:
+  - continue the bounded saved-`source_ref` audit only when another concrete export/read-model carrier can be shown to omit preferred-anchor fields
+  - otherwise return to higher-value backend closure work instead of widening the audit without evidence
+
+## 2026-03-29 Run 176
+
+- Focus:
+  - close the remaining `backend_session` blind spot for concrete digital-body consequence kinds, so session read-model coverage matches the already-proven backend API and CLI consequence contract
+- Files changed:
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added a shared `backend_session` consequence-surface assertion helper that checks the same consequence contract across:
+    - `build_evolution_summary()`
+    - `worldline_view()["worldline_summary"]`
+    - `persona_view()["evolution_summary"]`
+    - `persona_view()["digital_body_consequence"]`
+  - extended `backend_session` regressions to cover the previously unproven runtime consequence kinds:
+    - `workspace_access_resolved`
+    - `workspace_file_updated`
+    - `workspace_path_inspected`
+    - `artifact_reacquired`
+    - `source_material_inspected`
+    - `source_material_compared`
+    - `access_state_refreshed`
+  - locked the consequence surface only to the real `backend_session` contract:
+    - summary/current-turn/event-residue consequence agreement
+    - persona-side raw `digital_body_state.resource_state` / `access_state` alignment
+    - preferred-anchor flattening on compared source materials
+  - this run intentionally changed only tests:
+    - no production code change was needed
+    - one initial assertion shape mismatch was corrected after confirming `persona_view()["digital_body"]` exposes raw runtime state rather than CLI-summary aliases
+- Validation:
+  - `python -m pytest tests/test_backend_session.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py -q`
+- Result:
+  - strengthened `backend_session` coverage passed cleanly:
+    - `42 passed, 7 subtests passed`
+    - `69 passed, 7 subtests passed`
+  - this proves the session read-model layer now preserves the same concrete digital-body consequence semantics already proven in API/CLI surfaces
+  - there is still no newly reproduced production truncation in this lane; the gap was test coverage, not runtime behavior
+- Next:
+  - stop expanding the saved-`source_ref` / consequence proof chain without a fresh truncation hypothesis
+  - return to higher-value `Digital Embodiment Convergence` work instead of further audit-only growth
+
+## 2026-03-29 Run 177
+
+- Focus:
+  - close the concrete runtime gap where workspace-boundary truth existed only implicitly and could be recovered from artifact context, but was not preserved as an explicit runtime/summarized fact
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_inspect_workspace_path_tool.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_cli_views.py`
+  - `program.md`
+- Key changes:
+  - promoted `workspace_root` from an inferable boundary to an explicit runtime fact:
+    - workspace hints now preserve `workspace_root`
+    - runtime resource-state normalization now preserves `workspace_root`
+    - summary/CLI views now surface `workspace_root` instead of forcing consumers to infer the trust boundary from `active_artifact_ref`
+  - kept the contract intentionally narrow:
+    - did not expand into a generic path dump
+    - did not change persona/runtime semantics
+    - only exposed the single boundary fact needed to keep later workspace-relative actions honest
+  - documented the new contract as a digital-body boundary rule:
+    - `workspace_root` is the stable runtime workspace boundary
+    - subdirectory/file attachments must not silently shrink that boundary in summary consumers
+- Validation:
+  - `python -m pytest tests/test_inspect_workspace_path_tool.py tests/test_write_workspace_file_tool.py -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_cli_views.py -q`
+  - `python -m pytest tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_cli_views.py -q`
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/graph_parts/digital_body_runtime.py tests/test_inspect_workspace_path_tool.py tests/test_companion_autonomy_runtime.py`
+  - `python -m py_compile amadeus_thread0/utils/cli_views.py tests/test_cli_views.py`
+- Result:
+  - explicit workspace-boundary truth now survives the full practical path:
+    - tool result -> `session_context.digital_body_hints`
+    - derived `digital_body_state.resource_state`
+    - summarized `digital_body.resources`
+    - current-turn CLI-facing summary fields
+  - downstream read-model regressions stayed green:
+    - `13 passed`
+    - `50 passed`
+    - `102 passed, 7 subtests passed`
+    - `142 passed`
+    - `33 passed`
+  - no new backend/API/session regression appeared after surfacing the field
+- Next:
+  - stop widening filesystem proof work unless a fresh truncation shows up
+  - return to the next real `digital body / access / resource` closure gap rather than expanding summary metadata speculatively
+
+## 2026-03-29 Run 178
+
+- Focus:
+  - close the prompt-facing digital-body contract gap where `workspace_root` and source-anchor identity could drop when the prompt path was rebuilt from `digital_body_hints` rather than a full persisted `digital_body_state`
+- Files changed:
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_daily_surface_gating.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - normalized prompt-facing `resource_state` now preserves the same bounded digital-body facts from hint-only paths that full runtime state already kept:
+    - `workspace_root`
+    - source-ref anchor identity (`artifact_carrier`, `artifact_source_ref_ids`, `preferred_source_ref_id`, `preferred_anchor_reason`, source metadata)
+  - natural runtime prompt hints now surface the active workspace boundary when a file/workspace surface is attached, instead of only saying tools are available
+  - extended regression coverage so workspace-boundary truth is now asserted across:
+    - structured prompt state snapshots
+    - natural runtime brief text
+    - backend session summaries
+    - backend API turn/event envelopes
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/runtime_prompting.py tests/test_world_model_residue.py tests/test_daily_surface_gating.py tests/test_backend_session.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_world_model_residue.py -k "workspace_root or digital_body_state_without_carryover or detached_artifact_reacquisition_path" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "workspace_root or state_snapshot_fallback or current_digital_body_state_even_without_carryover" -q`
+  - `python -m pytest tests/test_backend_api.py -k "workspace_access_resolved or digital_body_artifact_fields" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_generation_profile.py -q`
+  - `python -m pytest tests/test_dialogue_mode_counterpart.py -q`
+  - `python -m pytest tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_subjective_review_pack.py -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_backend_session.py -q`
+  - `python -m pytest tests/test_backend_api.py -q`
+- Result:
+  - prompt/runtime/API/session surfaces now agree on the explicit workspace boundary even when the prompt side is reconstructed from ephemeral hints
+  - the fix stayed narrow to contract preservation; no persona/rewrite/tone logic changed
+  - touched regressions are green:
+    - `478 passed, 33 subtests passed`
+    - `18 passed, 2 subtests passed`
+    - `62 passed`
+    - `143 passed`
+    - `13 passed`
+    - `50 passed`
+    - `3 passed`
+    - `42 passed, 7 subtests passed`
+    - `27 passed`
+- Next:
+  - stop here on `workspace_root`; this contract lane is now explicitly covered
+  - return to the next higher-value `digital body / access / resource` closure gap instead of widening prompt-surface audits speculatively
+
+## 2026-03-29 Run 179
+
+- Focus:
+  - close the next `hint-only digital_body_hints -> prompt/runtime surface` gap by making prompt-side access-state reconstruction reuse the same bounded runtime semantics as `derive_digital_body_state()`
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `tests/test_digital_body_runtime.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_daily_surface_gating.py`
+  - `program.md`
+- Key changes:
+  - `runtime_prompting._visible_digital_body_state()` no longer hand-reconstructs the `hint-only` path from a partial local rule set:
+    - when there is no persisted `digital_body_state` but there are merged hints, it now delegates to `derive_digital_body_state()`
+    - this keeps prompt-facing access/resource semantics aligned with the actual digital-body runtime contract
+  - `digital_body_runtime.derive_digital_body_state()` now honors hint-carried access-state facts that previously disappeared before prompt/runtime rendering:
+    - `pending_approval_count`
+    - `external_mutation_pending`
+    - `block_reason`
+    - `mode=blocked` / `mode=approval_pending` as bounded runtime hints rather than fake capabilities
+  - this specifically fixes the class of issues where `session_context.digital_body_hints` already knew the environment was blocked or approval-pending, but prompt/runtime surfaces silently degraded that state into generic `limited` access
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/runtime_prompting.py tests/test_digital_body_runtime.py tests/test_world_model_residue.py tests/test_daily_surface_gating.py`
+  - `python -m pytest tests/test_digital_body_runtime.py -k "hint_pending_approval or hint_block_reason or preserves_selected_access_acquire_proposal" -q`
+  - `python -m pytest tests/test_world_model_residue.py -k "block_reason_from_session_hints or state_snapshot_can_surface_access_proposal_from_session_hints or workspace_root_from_session_hints" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "workspace_root_from_session_context_hints or access_proposal_from_session_context_hints" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py -q`
+  - `python -m pytest tests/test_generation_profile.py -q`
+  - `python -m pytest tests/test_dialogue_mode_counterpart.py -q`
+  - `python -m pytest tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_subjective_review_pack.py -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_digital_body_runtime.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - `hint-only` digital-body prompt surfaces now preserve real access-state semantics instead of collapsing them:
+    - blocked state can stay blocked when a real `block_reason` is present
+    - approval-pending state can stay approval-pending when the hint payload already carries a pending approval fact
+    - selected access-acquire proposals now survive the prompt/runtime path without depending on a fully persisted body snapshot
+  - touched regressions are green:
+    - `479 passed, 33 subtests passed`
+    - `18 passed, 2 subtests passed`
+    - `62 passed`
+    - `145 passed`
+    - `13 passed`
+    - `50 passed`
+    - `3 passed`
+    - `15 passed`
+    - `110 passed, 7 subtests passed`
+- Next:
+  - keep moving on the same `digital body / access / resource` line
+  - the next profitable closure slice is no longer prompt-state field loss; it is whether resolved access conditions are written back and resurfaced with the same fidelity across later turns, rather than only in the current turn
+
+## 2026-03-29 Run 180
+
+- Focus:
+  - close the next `digital body / access / resource` continuity gap after Run 179 by proving and fixing `resolved access` facts that were still disappearing once they crossed into long-horizon writeback / proactive carryover
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `amadeus_thread0/memory_store.py`
+  - `tests/test_world_model_residue.py`
+  - `program.md`
+- Key changes:
+  - turned the suspected `resolved access continuity` gap into two concrete regressions:
+    - proactive long-horizon writeback for `workspace_access_resolved`
+    - persisted proactive carryover resurfacing for `access_state_refreshed`
+  - removed another contract split by reusing one embodied-context normalizer across runtime/persistence/carryover instead of maintaining multiple drifting compact serializers:
+    - `memory_evolution._normalized_embodied_context()` now delegates to `digital_body_runtime.normalize_embodied_context()`
+    - `relational_carryover` proactive-history hydration now uses the same normalizer
+    - `memory_store._embodied_context_content()` now stores the same normalized embodied-context payload rather than a smaller hand-maintained subset
+  - expanded the canonical embodied-context contract so long-horizon writeback can keep durable resolved-access facts instead of only pending/friction/growth shells:
+    - `workspace_root`
+    - `browser_session / account_state / cookie_state`
+    - `filesystem_state / sandbox_mode / network_access`
+    - `retry_after_s / cooldown_scope`
+    - `artifact_mutation_mode`
+    - `pending_approval_count / blocked_packet_count / completed_packet_count / external_tool_count`
+    - `access_acquire_proposals / selected_access_proposal`
+  - widened proactive embodied-context admission only where the state is actually durable:
+    - `access_request_resolved`
+    - `workspace_access_resolved`
+    - `access_state_refreshed`
+  - result:
+    - resolved workspace-boundary facts now survive proactive history writeback
+    - refreshed access/session facts now survive proactive carryover resurfacing
+    - the fix stayed in contract/persistence layers; no persona/tone logic changed
+- Validation:
+  - `python -m pytest tests/test_world_model_residue.py -k "resolved_workspace_access_context or refreshed_access_state_from_persisted_proactive_history" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/memory_evolution.py amadeus_thread0/graph_parts/relational_carryover.py amadeus_thread0/memory_store.py tests/test_world_model_residue.py`
+- Result:
+  - targeted resolved-access regressions: `2 passed`
+  - AGENTS graph subset: `772 passed, 35 subtests passed`
+  - AGENTS memory/tool/backend subset: `124 passed, 16 subtests passed`
+  - compile checks passed
+  - one exploratory non-gating suite (`tests/test_memory_evolution_semantic_writeback.py`) exposed an older passive `embodied_growth` inference gap unrelated to this resolved-access patch; it remains outside this run's change boundary
+- Next:
+  - continue the `digital body / access / resource` line, but stop auditing prompt/session/export carriers for this lane unless a fresh truncation is reproduced
+  - move to the next real closure gap where long-horizon memory still flattens durable digital-body state, most likely around unified work-surface continuity rather than access-resolution truth
+
+## 2026-03-29 Run 181
+
+- Focus:
+  - close the next real `digital body / access / resource` read-model gap by proving whether the newly admitted filesystem/work-surface continuity was still being flattened in preview/CLI summary consumers
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `program.md`
+- Key changes:
+  - reproduced and fixed a real summary-layer truncation instead of widening speculative audits:
+    - persisted `workspace_file_updated` / `artifact_reacquired` embodied context was already present upstream
+    - but preview/CLI compactors were still dropping `workspace_root` and `artifact_mutation_mode`
+  - extended the compact embodied-context contract in `cli_views` so summarized consumers now retain the same bounded work-surface facts already preserved in persistence/runtime layers:
+    - `workspace_root`
+    - `artifact_mutation_mode`
+  - kept the fix in one root place:
+    - `_digital_body_consequence_summary()` now preserves `workspace_root`
+    - `_embodied_context_summary()` now preserves `workspace_root` and `artifact_mutation_mode`
+    - `render_counterpart_assessment_cli_text()` / `render_proactive_continuity_cli_text()` now surface those fields through the shared embodied-context renderer instead of custom per-surface logic
+  - closed the adjacent CLI-overview flattening too:
+    - `build_evolution_summary_line()` now keeps artifact mutation semantics in the `artifact=...` segment
+    - `build_evolution_summary_line()` now also surfaces the active `workspace_root` boundary as `root=...`
+  - added bounded regressions proving the fix at actual consumer surfaces:
+    - `worldline_view()` / `bond_view()` preview items now keep work-surface embodied context
+    - counterpart/proactive CLI summaries now keep `workspace_root` and `artifact_mutation_mode`
+    - rendered CLI text and the one-line evolution summary now expose those fields rather than silently flattening them away
+- Validation:
+  - `python -m pytest tests/test_cli_views.py -k "workspace_surface_embodied_context" -q`
+  - `python -m pytest tests/test_backend_session.py -k "workspace_surface_embodied_context" -q`
+  - `python -m pytest tests/test_cli_views.py -k "workspace_surface_embodied_context or workspace_access_resolved_consequence or workspace_file_updated_consequence" -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0/utils/cli_views.py tests/test_cli_views.py tests/test_backend_session.py`
+- Result:
+  - the real gap was confirmed and closed in the summary layer, not in graph/runtime persistence
+  - filesystem/work-surface continuity now survives through:
+    - `counterpart_assessment_preview[*].embodied_context`
+    - `proactive_continuity_preview[*].embodied_context`
+    - rendered counterpart/proactive CLI text
+    - `build_evolution_summary_line()`
+  - touched regressions stayed green:
+    - targeted preview/CLI checks: `2 passed`
+    - targeted summary-line checks: `4 passed`
+    - required memory/tool/backend subset: `127 passed, 16 subtests passed`
+- Next:
+  - stop expanding read-model audit work unless another concrete truncation reproduces
+  - return to the next higher-value `digital body / access / resource` runtime closure gap, not further summary polishing
+
+## 2026-03-29 Run 182
+
+- Focus:
+  - close the next real `digital body / access / resource` runtime gap where retrieved workspace continuity still lost the trust boundary before `digital_body_state` derivation
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `program.md`
+- Key changes:
+  - fixed a root runtime carryover bug instead of widening summary/prompt work:
+    - retrieved `interaction_carryover.embodied_context.workspace_root` could already survive retrieval
+    - but `derive_digital_body_state()` only restored `workspace_root` from live/session hints
+    - this dropped the workspace trust boundary when artifact continuity came back from retrieved digital-body traces
+  - updated `derive_digital_body_state()` so `resource_state.workspace_root` now resolves from:
+    - explicit runtime/session hints first
+    - carried embodied context second
+  - this keeps workspace-bound artifact continuity coherent:
+    - `active_artifact_kind / label / ref` and `workspace_root` now rehydrate from the same retrieved continuity packet
+    - `prepare_turn_runtime` no longer loses the workspace boundary when resurfacing `artifact_reacquired` / `workspace_file_updated` style traces
+- Validation:
+  - `python -m pytest tests/test_digital_body_runtime.py -k "carried_embodied_context" -q`
+  - `python -m pytest tests/test_prepare_turn_runtime.py -k "retrieved_workspace_trace" -q`
+  - `python -m pytest tests/test_digital_body_runtime.py tests/test_prepare_turn_runtime.py tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py tests/test_digital_body_runtime.py tests/test_prepare_turn_runtime.py`
+- Result:
+  - newly added regressions turned green:
+    - `tests/test_digital_body_runtime.py::test_derive_digital_body_state_preserves_workspace_root_from_carried_embodied_context`
+    - `tests/test_prepare_turn_runtime.py::test_prepare_turn_runtime_preserves_workspace_root_from_retrieved_workspace_trace`
+  - broader touched-layer regressions stayed green:
+    - `189 passed`
+    - AGENTS graph subset: `775 passed, 35 subtests passed`
+    - AGENTS memory/tool/backend subset: `127 passed, 16 subtests passed`
+    - compile checks passed
+- Next:
+  - keep moving on concrete `digital body / access / resource` closure gaps only
+  - inspect whether any remaining runtime/autonomy surface still drops durable workspace-bound embodied fields before writeback or action formation
+
+## 2026-03-29 Run 183
+
+- Focus:
+  - close the next concrete `digital body / access / resource` autonomy-runtime gap where workspace-bound file continuity could survive retrieval but still fail at structured action execution when the artifact ref stayed relative
+- Files changed:
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - turned the next autonomy/runtime suspicion into three real regressions:
+    - relative workspace-bound artifact carryover now must bind `workspace_root` into the generated `reacquire_artifact` packet
+    - autonomy execution must be able to reopen a relative workspace file from live carryover even when the packet itself is older/minimal
+    - autonomy execution must also be able to reopen the same file from packet binding alone, without relying on live carryover
+  - fixed the contract at packet formation:
+    - `_artifact_reacquisition_packet()` now binds `workspace_root` into `tool_args` for filesystem/workspace artifacts
+  - fixed the contract at execution fallback:
+    - `_node_autonomy_execute()` now backfills `workspace_root` for artifact execution from:
+      - packet tool args
+      - merged session/current-event hints
+      - carried embodied context
+    - this keeps older/minimal packets executable when the file identity is relative but the workspace boundary is known
+  - fixed the contract at tool resolution/writeback:
+    - `reacquire_artifact()` now accepts `workspace_root`
+    - relative artifact paths are now resolved against the declared workspace boundary instead of only `cwd` / `BASE_DIR`
+    - the workspace boundary is enforced with `_path_within_root()` so relative reopen cannot silently escape the workspace root
+    - successful reacquisition now returns `workspace_root`
+    - `_node_autonomy_execute()` writes that `workspace_root` back into `session_context.digital_body_hints`
+  - result:
+    - relative workspace-bound artifact continuity now closes end-to-end across:
+      - `interaction_carryover.embodied_context`
+      - `action_packets[*].tool_args`
+      - `reacquire_artifact` execution
+      - `session_context.digital_body_hints`
+      - `digital_body_state.resource_state.workspace_root`
+- Validation:
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k "relative_workspace_artifact or relative_workspace_file or binds_workspace_root" -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_inspect_workspace_path_tool.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_inspect_workspace_path_tool.py -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/autonomy_runtime.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/utils/tools.py tests/test_companion_autonomy_runtime.py`
+- Result:
+  - targeted new regressions: `3 passed`
+  - autonomy/tool touched subset: `60 passed`
+  - AGENTS graph subset: `778 passed, 35 subtests passed`
+  - AGENTS memory/tool/backend subset: `131 passed, 16 subtests passed`
+  - compile checks passed
+- Next:
+  - keep following only concrete `digital body / access / resource` closure gaps
+  - the next profitable slice is to inspect whether completed artifact packets preserve enough workspace-bound context into reconsolidation/writeback surfaces, rather than only into live session/digital-body state
+
+## 2026-03-29 Run 184
+
+- Focus:
+  - close the next `digital body / access / resource` writeback gap by ensuring completed workspace-bound artifact packets keep their boundary context through `artifact_context -> reconsolidation_snapshot -> final_state`
+- Files changed:
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `tests/test_autonomy_writeback.py`
+  - `program.md`
+- Key changes:
+  - found and fixed a deeper schema split:
+    - `workspace_root` was already present in live tool/session state
+    - but `normalize_artifact_context()` did not accept it, so completed packet artifact contexts dropped the workspace boundary
+    - `derive_digital_body_consequence()` also did not export `workspace_root`, so even frozen reconsolidation facts could be thinned out before later reads
+    - `runtime/final_state` then normalized `digital_body_consequence` without a `workspace_root` slot, creating a second downstream drop point
+  - expanded the canonical artifact/writeback contract:
+    - `action_packets.normalize_artifact_context()` now preserves `workspace_root`
+    - `_artifact_context_from_reacquisition_result()` now writes `workspace_root` into completed packet artifact context
+    - `_artifact_hints_from_tool_result()` now also restores `workspace_root` from artifact context when present
+  - expanded frozen writeback semantics:
+    - `derive_digital_body_consequence()` now carries `workspace_root`, preferring `resource_state.workspace_root` and falling back to the primary packet artifact context
+    - `runtime/final_state._normalize_digital_body_consequence()` and `digital_body_consequence_has_signal()` now preserve and accept `workspace_root`
+  - added writeback regressions proving the boundary survives all the way through:
+    - completed workspace-bound artifact packet keeps `artifact_context.workspace_root` in reconsolidation snapshot
+    - frozen `digital_body_consequence.workspace_root` survives final-state resolution
+    - previously fixed relative workspace artifact autonomy tests still stay green after the schema expansion
+- Validation:
+  - `python -m pytest tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k "relative_workspace_artifact or relative_workspace_file or binds_workspace_root" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/graph_parts/tool_nodes.py amadeus_thread0/evolution_engine/reconsolidation.py amadeus_thread0/runtime/final_state.py tests/test_autonomy_writeback.py`
+- Result:
+  - targeted autonomy writeback regressions: `4 passed`
+  - AGENTS graph subset: `779 passed, 35 subtests passed`
+  - AGENTS memory/tool/backend subset: `127 passed, 16 subtests passed`
+  - compile checks passed
+- Next:
+  - keep pushing only concrete `digital body / access / resource` closure gaps
+  - the next best audit lane is whether workspace/file mutation traces preserve the same boundary fidelity across `artifact_context` and `digital_body_consequence`, not just file reacquisition
+
+## 2026-03-29 Run 185
+
+- Focus:
+  - close the next concrete `digital body / access / resource` contract gap by ensuring workspace/file mutation and inspection tools keep `workspace_root` inside tool-produced `artifact_context`, then prove that the same field survives execution and backend-envelope consumers
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_write_workspace_file_tool.py`
+  - `tests/test_inspect_workspace_path_tool.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - fixed the actual root contract instead of patching summaries:
+    - `_workspace_artifact_context()` now accepts/preserves `workspace_root`
+    - `_file_artifact_context()` now accepts/preserves `workspace_root`
+    - all workspace tool call sites now pass the real enclosing workspace boundary instead of letting artifact context fall back to the focused path
+  - closed the concrete loss point for live tool results:
+    - `create_workspace_access`
+    - `inspect_workspace_path`
+    - `write_workspace_file`
+    - `append_workspace_file`
+    - `replace_workspace_text`
+    - `replace_workspace_lines`
+    now all emit `artifact_context.workspace_root`
+  - hardened the next two downstream surfaces so this field is no longer only covered at raw tool-return level:
+    - `tests/test_companion_autonomy_runtime.py` now locks `workspace_root` on completed packets plus `session_context.digital_body_hints` / `digital_body_state.resource_state`
+    - `tests/test_backend_session.py` and `tests/test_backend_api.py` now lock `workspace_root` on filesystem consequence summaries for `workspace_file_updated` and `workspace_path_inspected`
+- Validation:
+  - `python -m pytest tests/test_write_workspace_file_tool.py tests/test_inspect_workspace_path_tool.py tests/test_autonomy_writeback.py -q`
+  - `python -m py_compile amadeus_thread0/utils/tools.py tests/test_write_workspace_file_tool.py tests/test_inspect_workspace_path_tool.py tests/test_autonomy_writeback.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_write_workspace_file_tool.py tests/test_inspect_workspace_path_tool.py -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k "write_workspace_file_from_approved_packet or replace_workspace_text_from_approved_packet or replace_workspace_lines_from_approved_packet or inspect_workspace_path_from_packet_binding or create_workspace_updates_session_context" -q`
+  - `python -m pytest tests/test_backend_session.py -k "filesystem_digital_body_consequence_kinds" -q`
+  - `python -m pytest tests/test_backend_api.py -k "workspace_append_consequence or workspace_path_inspected_consequence" -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py tests/test_backend_session.py tests/test_backend_api.py -q`
+  - `python -m py_compile amadeus_thread0/utils/tools.py tests/test_companion_autonomy_runtime.py tests/test_backend_session.py tests/test_backend_api.py tests/test_write_workspace_file_tool.py tests/test_inspect_workspace_path_tool.py tests/test_autonomy_writeback.py`
+- Result:
+  - root cause confirmed and closed at the canonical tool artifact-context layer, not in postprocess/export glue
+  - original failing regressions turned green: `18 passed`
+  - AGENTS graph subset stayed green: `780 passed, 35 subtests passed`
+  - AGENTS memory/tool/backend subset stayed green: `140 passed, 16 subtests passed`
+  - added execution/backend contract checks stayed green:
+    - targeted autonomy execute checks: `5 passed`
+    - targeted backend session consequence checks: `1 passed, 3 subtests passed`
+    - targeted backend api checks: `1 passed`
+    - touched-file suite: `123 passed, 7 subtests passed`
+  - compile checks passed
+- Next:
+  - keep following only concrete `digital body / access / resource` closure gaps
+  - the next profitable audit lane is whether live `workspace_file_updated` / `workspace_path_inspected` traces preserve the same boundary fidelity once they are written into longer-horizon preview/export consumers (`counterpart_assessment_preview`, `proactive_continuity_preview`, and related CLI/read-model surfaces), not only in immediate packets and backend envelopes
+
+## 2026-03-30 Run 186
+
+- Focus:
+  - audit the remaining `workspace_path_inspected` long-horizon read-model/export path so the inspection-only work surface is locked through writeback, retrieved carryover, preview consumers, and revision-trace export, not only immediate consequence views
+- Files changed:
+  - `tests/test_world_model_residue.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_revision_trace_export.py`
+  - `program.md`
+- Key changes:
+  - treated this slice as a contract audit first, not a speculative runtime rewrite:
+    - added long-horizon writeback coverage proving `workspace_path_inspected` survives into proactive continuity history with:
+      - `workspace_root`
+      - `artifact_continuity`
+      - active file identity
+      - active inspection tool surface
+    - added retrieved-trace bridge coverage proving `workspace_path_inspected` can re-enter `interaction_carryover` with the same bounded filesystem context and source tags
+  - extended preview/read-model coverage so inspection-only surfaces are locked the same way mutation/reacquisition surfaces already were:
+    - `build_counterpart_assessment_cli_summary()` / `render_counterpart_assessment_cli_text()`
+    - `build_proactive_continuity_cli_summary()` / `render_proactive_continuity_cli_text()`
+    - `BackendSession.worldline_view()` / `bond_view()` preview rows
+  - extended export coverage:
+    - `normalize_revision_trace_export()`
+    - `list_revision_traces`
+    now preserve `workspace_path_inspected` embodied context and `workspace_root`
+  - result:
+    - this audit did not expose a new runtime bug
+    - current implementation already preserves inspection-only workspace continuity correctly across the audited long-horizon consumers
+    - the gap was coverage, not behavior
+- Validation:
+  - `python -m pytest tests/test_world_model_residue.py -k "workspace_path_inspection_surface_context or workspace_path_inspected" -q`
+  - `python -m pytest tests/test_cli_views.py -k "workspace_path_inspection_embodied_context" -q`
+  - `python -m pytest tests/test_backend_session.py -k "workspace_path_inspection_embodied_context" -q`
+  - `python -m pytest tests/test_revision_trace_export.py -q`
+  - `python -m py_compile tests/test_world_model_residue.py tests/test_cli_views.py tests/test_backend_session.py tests/test_revision_trace_export.py`
+- Result:
+  - targeted world-model inspection continuity checks: `2 passed`
+  - targeted CLI preview inspection checks: `2 passed`
+  - targeted backend-session preview inspection checks: `1 passed`
+  - revision-trace export suite: `5 passed`
+  - compile checks passed
+  - one non-blocking environment signal surfaced during the revision-trace pytest run:
+    - LangSmith multipart ingest returned `429` usage-limit warnings
+    - pytest itself still passed; this did not affect local correctness validation
+- Next:
+  - move off the now-covered `workspace_path_inspected` lane
+  - continue the `digital body / access / resource` mainline only where a fresh concrete truncation still exists, with the next likely profitable slice being other export/read-model consumers that may still flatten bounded work-surface identity outside the already-covered preview/revision-trace paths
+
+## 2026-03-30 Run 187
+
+- Focus:
+  - close the next concrete `digital body / access / resource` runtime gap in retrieved-trace bridging: `workspace_access_resolved` and `access_state_refreshed` digital-body traces were not being converted back into live `interaction_carryover`, so retrieval could recover work-surface traces but still drop access-state continuity
+- Files changed:
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `tests/test_world_model_residue.py`
+  - `program.md`
+- Key changes:
+  - turned the next suspicion into two real failing regressions:
+    - retrieved `workspace_access_resolved` trace should restore a `task_window` carryover with `workspace_root`, active workspace identity, and granted toolsets
+    - retrieved `access_state_refreshed` trace should restore a `task_window` carryover with `session_continuity`, `session_recovery_mode`, `filesystem_state`, and `workspace_root`
+  - fixed the actual bridge filter instead of patching downstream summaries:
+    - `_apply_retrieved_behavior_trace_bridge()` now accepts `workspace_access_resolved` when the retrieved body trace carries real access/workspace state
+    - `_apply_retrieved_behavior_trace_bridge()` now accepts `access_state_refreshed` when the retrieved body trace carries real session/access-refresh state
+  - added bounded runtime defaults for these two retrieved body-consequence families:
+    - `trigger_family=access_state`
+    - calibrated fallback `carryover_strength`, `presence_residue`, and `ambient_resonance`
+    - explicit default summaries when the trace lacks its own `after_summary`
+  - result:
+    - retrieval no longer favors only file/material continuity while silently dropping access continuity
+    - a recovered workspace boundary or refreshed access state can now feed the same live `interaction_carryover` path as other bounded digital-body traces
+- Validation:
+  - `python -m pytest tests/test_world_model_residue.py -k "retrieved_digital_body_trace_bridge_preserves_workspace_access_resolved_context or retrieved_digital_body_trace_bridge_preserves_access_state_refreshed_context" -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/relational_carryover.py tests/test_world_model_residue.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py tests/test_revision_trace_export.py -q`
+- Result:
+  - newly added bridge regressions: `2 passed`
+  - AGENTS graph subset: `784 passed, 35 subtests passed`
+  - touched read-model/export subset: `86 passed, 7 subtests passed`
+  - compile checks passed
+  - LangSmith multipart ingest again emitted `429` usage-limit warnings during one pytest run, but local test outcomes were unaffected
+- Next:
+  - keep following only concrete `digital body / access / resource` closure gaps
+  - the next profitable slice is to audit whether the newly bridged `workspace_access_resolved` / `access_state_refreshed` continuity now also stays visible through the same preview/export consumers already locked for work-surface traces, rather than only inside live carryover
+
+## 2026-03-30 Run 188
+
+- Focus:
+  - close the matching preview/read-model truncation for the access-state continuity just restored in Run 187, so `workspace_access_resolved` and `access_state_refreshed` do not survive only in live carryover while getting flattened inside CLI/session preview consumers
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added real failing regressions first:
+    - `build_counterpart_assessment_cli_summary()` must preserve `workspace_access_resolved` access-state detail, including:
+      - `filesystem_state`
+      - `session_continuity`
+      - `session_recovery_mode`
+      - `access_acquire_proposals`
+      - `selected_access_proposal`
+    - `build_proactive_continuity_cli_summary()` must preserve `access_state_refreshed` access-state detail, including:
+      - `api_key_state`
+      - `filesystem_state`
+      - `network_access`
+      - `session_continuity`
+      - `session_recovery_mode`
+      - `access_acquire_proposals`
+      - `selected_access_proposal`
+    - `BackendSession.worldline_view()` / `bond_view()` preview rows now have direct regression coverage for the same fields
+  - fixed the root cause in the canonical read-model layer instead of patching preview endpoints individually:
+    - `_digital_body_consequence_summary()` now preserves bounded access-state fields on consequence packets, not just artifact fields
+    - `_embodied_context_summary()` now forwards those access-state fields through history/preview surfaces instead of flattening them down to `kind + summary + artifact shell`
+    - `_render_embodied_context_text()` now also exposes the access-state facts that matter in CLI text surfaces:
+      - `session=<continuity>[:expires][:recovery]`
+      - `fs=<filesystem_state>`
+      - `net=<network_access>`
+      - `proposal=<selected_mode>@<target>`
+  - result:
+    - access continuity recovered from writeback/retrieval now remains visible through the same preview consumers used by CLI/session inspection
+    - the fix stays centralized in `cli_views` rather than duplicating per-consumer special cases
+    - JSON preview surfaces and rendered CLI text now agree on the same bounded access-state continuity instead of showing a richer payload only in structured output
+- Validation:
+  - `python -m pytest tests/test_cli_views.py -k "workspace_access_resolved_embodied_context or access_state_refresh_embodied_context" -q`
+  - `python -m pytest tests/test_backend_session.py -k "preserve_access_state_embodied_context" -q`
+  - `python -m py_compile amadeus_thread0/utils/cli_views.py tests/test_cli_views.py tests/test_backend_session.py`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_revision_trace_export.py tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py -q`
+  - `python -m pytest tests/test_tool_approval_policy.py tests/test_revision_trace_export.py tests/test_world_model_residue.py -q`
+- Result:
+  - new targeted CLI regressions: `2 passed`
+  - new targeted backend-session regression: `1 passed`
+  - touched summary/session/api subset: `119 passed, 7 subtests passed`
+  - wider continuity/export subset: `173 passed, 9 subtests passed`
+  - post-render-followup summary/session/api subset: `111 passed, 7 subtests passed`
+  - post-render-followup approval/export/continuity subset: `167 passed`
+  - compile checks passed
+- Next:
+  - continue the `digital body / access / resource` convergence only where a concrete contract gap still exists
+  - the next profitable audit target is any remaining summary/export surface that may still flatten access/resource continuity outside:
+    - live carryover
+    - CLI/session preview
+    - revision-trace export
+
+## 2026-03-30 Run 189
+
+- Focus:
+  - continue the same `digital body / access / resource` contract audit on export/writeback surfaces, specifically `revision_trace_export`, `list_revision_traces`, `get_worldline_snapshot`, and `backend_api` current-turn writeback payloads
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - started as a coverage audit but exposed a real export bug:
+    - `normalize_embodied_context()` was preserving
+      - `browser_session`
+      - `account_state`
+      - `cookie_state`
+      - `filesystem_state`
+      - `network_access`
+    - but it silently dropped:
+      - `api_key_state`
+      - `quota_state`
+    - any export surface that routed through `normalize_revision_trace_export()` therefore flattened part of `access_state_refreshed`
+  - added failing/locking regressions for access-state export continuity:
+    - `normalize_revision_trace_export()` now has direct coverage for `workspace_access_resolved`
+    - `get_worldline_snapshot` revision traces now have direct coverage for `access_state_refreshed`
+    - `BackendAPI` current-turn `writeback_trace.revision_traces` now has direct coverage for both:
+      - `workspace_access_resolved`
+      - `access_state_refreshed`
+  - fixed the root cause in the canonical normalization layer:
+    - `normalize_embodied_context()` now carries `api_key_state`
+    - `normalize_embodied_context()` now carries `quota_state`
+    - both fields now also participate in the “has signal” gate so normalized export rows do not drop them as empty metadata
+  - result:
+    - revision-trace export, worldline snapshot export, and backend-api writeback export no longer lose `api_key_state` on access refresh traces
+    - the fix is centralized at embodied-context normalization, not duplicated across export callers
+- Validation:
+  - `python -m pytest tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_backend_api.py -k "preserve_access_state_writeback_trace_context" -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py tests/test_revision_trace_export.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_backend_api.py tests/test_revision_trace_export.py tests/test_cli_views.py tests/test_backend_session.py -q`
+- Result:
+  - revision-trace export suite: `7 passed`
+  - targeted backend-api export regression: `1 passed`
+  - compile checks passed
+  - AGENTS graph subset: `784 passed, 35 subtests passed`
+  - touched export/session/api subset: `119 passed, 7 subtests passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during some pytest runs
+    - local pytest outcomes still passed and were not invalidated
+- Next:
+  - continue only on fresh concrete contract gaps in `digital body / access / resource`
+  - the next profitable audit target is any remaining downstream export/read-model path that still drops bounded access-state facts beyond:
+    - preview/history
+    - revision-trace export
+    - backend-api writeback trace
+
+## 2026-03-30 Run 190
+
+- Focus:
+  - finish the matching backend-api history export audit for `counterpart_assessment_history` and `proactive_continuity_history`, so access-state continuity is locked not only in revision traces but also in the current-turn history slices returned inside `writeback_trace`
+- Files changed:
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - treated this slice as a contract audit, not a rewrite:
+    - added direct backend-api coverage proving `writeback_trace.counterpart_assessment_history` preserves `workspace_access_resolved` access-state detail, including:
+      - `filesystem_state`
+      - `session_recovery_mode`
+      - `selected_access_proposal`
+    - added direct backend-api coverage proving `writeback_trace.proactive_continuity_history` preserves `access_state_refreshed` access-state detail, including:
+      - `api_key_state`
+      - `network_access`
+      - `selected_access_proposal`
+  - result:
+    - no new runtime/export bug was found in this history slice
+    - current implementation already preserves access-state continuity correctly here
+    - the gap was coverage, not behavior
+- Validation:
+  - `python -m pytest tests/test_backend_api.py -k "preserve_access_state_history_context or preserve_access_state_writeback_trace_context" -q`
+  - `python -m py_compile tests/test_backend_api.py`
+  - `python -m pytest tests/test_backend_api.py tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_cli_views.py tests/test_backend_session.py -q`
+- Result:
+  - targeted backend-api access-state export checks: `2 passed`
+  - compile checks passed
+  - backend-api + revision-trace export subset: `36 passed`
+  - cli/session preview subset: `84 passed, 7 subtests passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable place to inspect is any remaining non-preview consumer that still reads `embodied_context` through an older normalization path, especially around snapshot/export utilities outside:
+    - `backend_api.writeback_trace`
+    - `revision_trace_export`
+    - `cli/session` preview
+
+## 2026-03-30 Run 191
+
+- Focus:
+  - close the next snapshot/export contract inconsistency: `get_worldline_snapshot` and `list_revision_traces` already normalized revision traces, but `get_memory_snapshot(include_core=True)` still returned raw `store.snapshot()` revision traces without the same normalization layer
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_revision_trace_export.py`
+  - `program.md`
+- Key changes:
+  - added direct tool-level coverage proving `get_memory_snapshot(include_core=True)` preserves normalized access-state revision traces, including:
+    - `api_key_state`
+    - `filesystem_state`
+    - `network_access`
+    - `session_continuity`
+    - `session_recovery_mode`
+    - `selected_access_proposal`
+  - fixed the export contract at the tool boundary:
+    - `get_memory_snapshot(include_core=True)` now normalizes `revision_traces` through `normalize_revision_trace_exports()`
+    - this keeps the memory snapshot tool aligned with:
+      - `list_revision_traces`
+      - `get_worldline_snapshot`
+  - result:
+    - revision-trace debug/export consumers now share one normalization path instead of exposing slightly different embodied-context contracts depending on which tool the caller used
+- Validation:
+  - `python -m pytest tests/test_revision_trace_export.py -q`
+  - `python -m py_compile amadeus_thread0/utils/tools.py tests/test_revision_trace_export.py`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_cli_views.py -q`
+- Result:
+  - revision-trace export suite: `8 passed`
+  - compile checks passed
+  - tool-path regression subset: `104 passed, 16 subtests passed`
+  - cli summary subset: `39 passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining export/snapshot utility that still bypasses the unified embodied-context normalization path
+
+## 2026-03-30 Run 192
+
+- Focus:
+  - continue the same snapshot/export contract audit on `BackendSession` surfaces; specifically check whether `worldline_view()` still bypasses unified revision-trace normalization while other export/debug surfaces already normalize embodied access-state context
+- Files changed:
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added a real failing regression proving `worldline_view()["revision_traces"]` was returning raw traces instead of normalized traces:
+    - nested `behavior_consequence.embodied_context` for `access_state_refreshed` was not promoted to top-level `embodied_context`
+    - access-state fields such as `api_key_state`, `filesystem_state`, `network_access`, and selected access proposal data were therefore missing from the session-facing export
+  - fixed the root cause at the session export boundary:
+    - `BackendSession.worldline_view()` now normalizes `snapshot()["revision_traces"]` through `normalize_revision_trace_exports()`
+  - result:
+    - `worldline_view` is now aligned with:
+      - `list_revision_traces`
+      - `get_worldline_snapshot`
+      - `get_memory_snapshot(include_core=True)`
+      - `backend_api.writeback_trace`
+    - revision-trace consumers no longer depend on which export/debug surface they happen to read
+- Validation:
+  - `python -m pytest tests/test_backend_session.py -k "worldline_view_normalizes_revision_trace_embodied_context" -q`
+  - `python -m py_compile amadeus_thread0/runtime/backend_session.py tests/test_backend_session.py`
+  - `python -m pytest tests/test_backend_session.py tests/test_cli_views.py tests/test_backend_api.py tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - targeted backend-session regression: `1 passed`
+  - compile checks passed
+  - session/api/export/read-model subset: `122 passed, 7 subtests passed`
+  - memory/tool-path subset: `22 passed, 9 subtests passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining raw snapshot consumer outside:
+    - `BackendSession.worldline_view`
+    - `backend_api.writeback_trace`
+    - `get_worldline_snapshot`
+    - `get_memory_snapshot(include_core=True)`
+    - `list_revision_traces`
+
+## 2026-03-30 Run 193
+
+- Focus:
+  - close the next remaining raw snapshot/export gap on the `MemoryAdminService.snapshot_view() -> BackendAPI.memory_snapshot()` path, where `revision_traces` still bypassed the unified embodied-context normalization contract
+- Files changed:
+  - `amadeus_thread0/runtime/memory_admin.py`
+  - `tests/test_memory_admin_service.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - fixed the export contract at the admin snapshot boundary:
+    - `MemoryAdminService.snapshot_view()` now normalizes `revision_traces` through `normalize_revision_trace_exports()`
+    - `MemoryStore.snapshot()` remains raw storage/debug output; stable API-facing shape is now owned by the admin export layer
+  - added focused regressions at both layers:
+    - service-level coverage proving nested `interaction_carryover.embodied_context` is promoted into export-ready `embodied_context`
+    - API-level coverage proving `BackendAPI.memory_snapshot()` preserves normalized access-state fields such as:
+      - `api_key_state`
+      - `quota_state`
+      - `filesystem_state`
+      - `network_access`
+      - `session_continuity`
+  - result:
+    - `memory_snapshot` is now aligned with:
+      - `list_revision_traces`
+      - `get_worldline_snapshot`
+      - `get_memory_snapshot(include_core=True)`
+      - `BackendSession.worldline_view()`
+      - `backend_api.writeback_trace`
+- Validation:
+  - `python -m py_compile amadeus_thread0/runtime/memory_admin.py tests/test_memory_admin_service.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_memory_admin_service.py tests/test_backend_api.py tests/test_revision_trace_export.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_cli_views.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_memory_admin_service.py -q`
+- Result:
+  - focused admin/api/export subset: `45 passed`
+  - session/api/tool subset: `123 passed, 7 subtests passed`
+  - memory/runtime subset: `21 passed, 9 subtests passed`
+  - compile checks passed
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining consumer that still exposes raw `snapshot()` payloads without the normalized digital-body/read-model contract
+
+## 2026-03-30 Run 194
+
+- Focus:
+  - close the next digital-body export gap beyond `revision_traces`: `counterpart_assessment_history` and `proactive_continuity_history` were still relying on preview builders for normalization, while raw history payloads in session/api/tool snapshot surfaces could still expose content-only legacy shapes
+- Files changed:
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `amadeus_thread0/runtime/memory_admin.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_memory_admin_service.py`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - added a centralized export helper:
+    - `normalize_memory_history_export(s)` in `amadeus_thread0/utils/memory_history_export.py`
+    - merges `content` back into export rows for legacy/content-only records
+    - promotes normalized `embodied_context` from either top-level or nested content
+  - wired that helper into the active read-model surfaces:
+    - `MemoryAdminService.snapshot_view()`
+    - `BackendSession.worldline_view()`
+    - `BackendSession.bond_view()`
+    - `BackendAPI` current-turn writeback history slices
+    - `get_memory_snapshot(include_core=True)`
+  - added regressions proving content-only history records now export stable top-level fields plus normalized `embodied_context` across:
+    - admin snapshot view
+    - tool snapshot view
+    - session worldline/bond views
+    - backend turn/event writeback trace
+  - result:
+    - digital-body continuity histories no longer depend on whether the caller reads:
+      - raw history payloads
+      - preview summaries
+      - admin snapshots
+      - tool snapshots
+      - turn/event writeback traces
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/memory_history_export.py amadeus_thread0/runtime/memory_admin.py amadeus_thread0/runtime/backend_session.py amadeus_thread0/runtime/backend_api.py amadeus_thread0/utils/tools.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py tests/test_backend_session.py tests/test_backend_api.py`
+  - `python -m pytest tests/test_memory_admin_service.py tests/test_revision_trace_export.py tests/test_backend_session.py -k "snapshot_view_normalizes_revision_trace_exports or get_memory_snapshot_tool_normalizes_history_embodied_context_when_include_core or session_history_views_normalize_content_only_embodied_context or worldline_view_normalizes_revision_trace_embodied_context" -q`
+  - `python -m pytest tests/test_backend_api.py -k "memory_snapshot_normalizes_revision_trace_exports or preserve_access_state_history_context or normalize_content_only_history_context" -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py -q`
+- Result:
+  - focused content-only/export regressions: `4 passed`
+  - focused backend-api history regressions: `3 passed`
+  - broader memory/tool/session/api subset: `155 passed, 16 subtests passed`
+  - compile checks passed
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during targeted pytest
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining digital-body read-model surface where source/material/access continuity is only stabilized in previews or summaries, but not in the raw payload itself
+
+## 2026-03-31 Run 195
+
+- Focus:
+  - extend the same contract-closure logic from history rows to the broader `content-only memory row` family, so worldline/snapshot/tool exports no longer depend on whether a record was stored in already-flattened form or only under `content`
+- Files changed:
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `amadeus_thread0/runtime/memory_admin.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_memory_admin_service.py`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - promoted the previous history-only helper into a reusable record export contract:
+    - `normalize_memory_record_export(s)` now aliases the same content-flattening path
+    - top-level string fields are stripped at export time so snapshot/view payloads stop leaking incidental leading/trailing whitespace from legacy rows
+  - expanded snapshot/tool/session normalization coverage to the remaining record-style namespaces most likely to appear in raw read models:
+    - `worldline_events`
+    - `identity_facts`
+    - `shared_events`
+    - `conflict_repair`
+    - `relationship_timeline`
+    - `commitments`
+    - `unresolved_tensions`
+    - `semantic_self_narratives`
+    - `source_refs`
+    - plus the already-normalized counterpart/proactive histories
+  - wired these normalized record exports into:
+    - `MemoryAdminService.snapshot_view()`
+    - `BackendSession.worldline_view()`
+    - `BackendSession.bond_view()`
+    - `get_memory_snapshot(include_core=True)`
+    - `get_worldline_snapshot()`
+  - added focused regressions proving content-only legacy rows now export stable top-level fields across:
+    - admin snapshots
+    - tool snapshots
+    - session worldline/bond views
+    - representative row families such as `worldline_events`, `commitments`, `relationship_timeline`, and `semantic_self_narratives`
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/memory_history_export.py amadeus_thread0/runtime/memory_admin.py amadeus_thread0/runtime/backend_session.py amadeus_thread0/utils/tools.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py tests/test_backend_session.py`
+  - `python -m pytest tests/test_memory_admin_service.py tests/test_revision_trace_export.py tests/test_backend_session.py -k "snapshot_view_normalizes_revision_trace_exports or get_worldline_snapshot_tool_normalizes_content_only_memory_rows or get_memory_snapshot_tool_normalizes_content_only_memory_rows_when_include_core or worldline_and_bond_views_normalize_content_only_memory_rows or session_history_views_normalize_content_only_embodied_context" -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py -q`
+- Result:
+  - focused content-only memory-row regressions: `5 passed`
+  - broader memory/tool/session/api subset: `158 passed, 16 subtests passed`
+  - compile checks passed
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during targeted pytest
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is `sources_view` / source-material surfaces, especially any place where `source_refs` and `claim_links` still pass through without a dedicated export contract
+
+## 2026-03-31 Run 196
+
+- Focus:
+  - close the next source-material export gap so `sources_view`, `assistant_turn.claim_links / sources`, and the `list_source_refs` tool no longer expose raw `source_refs` / `claim_links` rows with inconsistent `id/source_id`, duplicate ids, or untrimmed legacy content-only fields
+- Files changed:
+  - `amadeus_thread0/utils/source_material_export.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `program.md`
+- Key changes:
+  - added a dedicated shared helper:
+    - `amadeus_thread0/utils/source_material_export.py`
+    - normalizes source rows from both saved `source_refs` and live `evidence_pack`
+    - canonicalizes `id/source_id`
+    - strips string noise from legacy/content-only rows
+    - normalizes `claim_links` by:
+      - coercing `source_ids` to positive ints
+      - deduping while preserving order
+      - trimming `claim_excerpt`
+      - backfilling nested `sources` from known source rows when only `source_ids` were present
+  - wired the helper into the active export/read-model boundaries:
+    - `BackendSession.sources_view()`
+    - `BackendAPI.build_turn_response()`
+    - `list_source_refs`
+  - result:
+    - the source-material read model now stays consistent across:
+      - session `/sources` payloads
+      - current-turn `assistant_turn` payloads
+      - tool-level `list_source_refs`
+    - these surfaces no longer depend on whether upstream rows arrived as:
+      - saved `source_refs`
+      - live `evidence_pack`
+      - legacy content-only rows
+      - noisy `claim_links` with string/duplicate `source_ids`
+- Validation:
+  - `python -m pytest tests/test_backend_session.py -k "sources_view_normalizes_source_material_exports or test_session_preview_views_include_relationship_and_autonomy_context" -q`
+  - `python -m pytest tests/test_backend_api.py -k "turn_response_normalizes_source_material_exports or test_turn_and_event_responses_expose_state_and_summary_surfaces" -q`
+  - `python -m pytest tests/test_compare_source_refs_tool.py -q`
+  - `python -m py_compile amadeus_thread0/utils/source_material_export.py amadeus_thread0/runtime/backend_session.py amadeus_thread0/runtime/backend_api.py amadeus_thread0/utils/tools.py tests/test_backend_session.py tests/test_backend_api.py tests/test_compare_source_refs_tool.py`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py tests/test_compare_source_refs_tool.py -q`
+- Result:
+  - focused backend-session source-material export check: `1 passed`
+  - focused backend-api source-material export check: `1 passed`
+  - source-ref tool subset: `4 passed`
+  - compile checks passed
+  - broader memory/tool/session/api subset: `164 passed, 16 subtests passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one focused pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining `source_ref`-anchored read/action surface that still emits ad hoc source payloads instead of the shared source-material contract, especially around `inspect_source_ref` / saved-source anchor reuse paths
+
+## 2026-03-31 Run 197
+
+- Focus:
+  - close the next `saved source_ref anchor reuse` root-cause gap so `inspect_source_ref`, `reacquire_artifact`, and claim-evidence construction no longer depend on raw `list_source_refs()` rows being already flattened
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/graph_parts/tool_runtime.py`
+  - `tests/test_inspect_source_ref_tool.py`
+  - `tests/test_reacquire_artifact_tool.py`
+  - `tests/test_tool_runtime.py`
+  - `program.md`
+- Key changes:
+  - fixed the source-ref resolver at the real ingress:
+    - `_resolve_source_ref_surface()` now normalizes `store.list_source_refs()` through the shared source-material contract before matching by `id / title / url / query / snippet`
+    - result:
+      - `inspect_source_ref`
+      - `reacquire_artifact`
+      - `compare_source_refs`
+      all inherit the same content-only / whitespace-clean / canonical `id/source_id` behavior instead of each relying on lucky raw row shape
+  - fixed the evidence-construction path upstream of backend export:
+    - `_build_evidence_from_tool_result()` now also normalizes saved `source_refs` before building `evidence_pack`
+    - result:
+      - when a search tool reuses legacy saved source rows, `evidence_pack` no longer loses `title / url / query / snippet` before it reaches later export layers
+  - added focused regressions for the actual legacy failure family:
+    - `inspect_source_ref` with content-only saved source rows
+    - `reacquire_artifact` with content-only saved source rows
+    - tool-runtime evidence building from content-only saved source rows
+- Validation:
+  - `python -m pytest tests/test_inspect_source_ref_tool.py tests/test_reacquire_artifact_tool.py tests/test_tool_runtime.py -q`
+  - `python -m py_compile amadeus_thread0/utils/tools.py amadeus_thread0/graph_parts/tool_runtime.py tests/test_inspect_source_ref_tool.py tests/test_reacquire_artifact_tool.py tests/test_tool_runtime.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_inspect_source_ref_tool.py tests/test_reacquire_artifact_tool.py tests/test_tool_runtime.py -q`
+- Result:
+  - focused source-ref tool/runtime subset: `10 passed`
+  - compile checks passed
+  - AGENTS graph subset: `784 passed, 35 subtests passed`
+  - memory/tool-path subset: `152 passed, 16 subtests passed`
+  - non-blocking environment note:
+    - LangSmith multipart ingest emitted `429` usage-limit warnings during one focused pytest run
+    - local pytest outcomes still passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining `source_ref`-anchored writeback/readback surface that still reassembles source identity ad hoc after packet/runtime stages, especially around packet `artifact_context` carryover and saved-anchor continuity fields
+
+## 2026-03-31 Run 198
+
+- Focus:
+  - lock the just-fixed source-ref normalization into real graph execution paths, so content-only saved `source_refs` are covered not only at public tool boundaries but also through `tool_execute / autonomy_execute -> session_context / digital_body / evidence_pack`
+- Files changed:
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - added two integration regressions:
+    - `content-only saved source_ref -> _node_autonomy_execute` on saved-search reacquisition
+    - `content-only saved source_ref -> _node_tool_execute` on source inspection
+  - these tests now explicitly lock that the normalized source identity survives through:
+    - `action_packets[].artifact_context`
+    - `session_context.digital_body_hints`
+    - `digital_body_state.resource_state`
+    - `evidence_pack`
+  - one expectation was corrected during the pass:
+    - for `reacquire_artifact`, `evidence_pack.query` is intentionally the reacquisition summary, not the original saved source query
+    - no runtime code change was needed there; the test was aligned to the actual contract
+- Validation:
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k "content_only_source_ref" -q`
+  - `python -m py_compile tests/test_companion_autonomy_runtime.py`
+- Result:
+  - targeted integration regressions: `2 passed`
+  - compile checks passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is still the remaining `source_ref`-anchored writeback/readback lane, but now with export/tool/integration coverage already in place for legacy content-only rows
+
+## 2026-03-31 Run 199
+
+- Focus:
+  - close the next `source_ref` writeback bug in the long-horizon packet/reconsolidation lane, where duplicate string source ids could still survive through action-packet normalization and reach `digital_body_consequence`
+- Files changed:
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_autonomy_writeback.py`
+  - `program.md`
+- Key changes:
+  - found and fixed a real root-cause bug:
+    - `action_packets._normalize_source_ref_ids()` was filtering invalid ids but not deduping repeated ids
+    - because `normalize_artifact_context -> compact_artifact_identity -> derive_artifact_identity` all rely on that helper, duplicate ids such as `["21", "21", "17"]` could survive into:
+      - packet artifact identity
+      - digital-body resource state
+      - reconsolidation consequence/writeback
+  - fixed the root cause at the canonical normalization layer:
+    - `_normalize_source_ref_ids()` now dedupes while preserving order
+  - tightened reconsolidation identity merging:
+    - `build_reconsolidation_snapshot()` now merges `resource_state` and packet identity through `derive_artifact_identity(...)` before re-emitting source-ref continuity fields
+    - this removes the old asymmetry where resource-state fields were trusted more directly than packet-derived normalized identity
+  - added focused regressions:
+    - action-packet artifact context dedupes and cleans source-ref identity fields
+    - reconsolidation consequence normalizes string/duplicate source-ref identity fields from `resource_state`
+- Validation:
+  - `python -m pytest tests/test_action_packet_contract.py tests/test_autonomy_writeback.py -k "source_ref_identity_fields or compacts_autonomy_payload or dedupes_source_ref_identity_fields" -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/action_packets.py amadeus_thread0/evolution_engine/reconsolidation.py tests/test_action_packet_contract.py tests/test_autonomy_writeback.py`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_action_packet_contract.py tests/test_autonomy_writeback.py -q`
+- Result:
+  - focused packet/writeback subset: `3 passed`
+  - compile checks passed
+  - AGENTS graph subset: `787 passed, 35 subtests passed`
+  - memory/tool-path subset: `158 passed, 16 subtests passed`
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is the remaining `source_ref` continuity readback lane around `memory_evolution / retrieved_digital_body_consequence` style carryover refresh, since export/tool/integration/writeback normalization is now locked down
+
+## 2026-03-31 Run 200
+
+- Focus:
+  - close the remaining `source_ref continuity readback` gap across retrieved revision traces and persisted proactive-history rows, where legacy records could keep `artifact_*` identity only at the top level while nested `embodied_context` stayed partial
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/utils/revision_trace_export.py`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `tests/test_world_model_residue.py`
+  - `program.md`
+- Key changes:
+  - added a canonical trace/history embodied-context hydrator:
+    - `normalize_embodied_trace_context(...)` in `amadeus_thread0/graph_parts/digital_body_runtime.py`
+    - it merges legacy top-level `artifact_*` / access fields with partial nested `embodied_context` or `digital_body_consequence`, then re-normalizes through the existing embodied contract
+  - rewired readback lanes to use that helper instead of only peeking at nested `embodied_context`:
+    - `revision_trace_export.normalize_revision_trace_export(...)`
+    - `relational_carryover._build_retrieved_behavior_trace_bridge(...)`
+    - `relational_carryover._hydrate_retrieved_agenda_lifecycle_residue(...)`
+    - `relational_carryover._normalized_proactive_continuity_history_item(...)`
+    - `memory_evolution._normalized_counterpart_assessment_record(...)`
+    - `memory_evolution._normalized_proactive_continuity_record(...)`
+  - tightened the session-hint refresh lane:
+    - `prepare_turn_runtime._refresh_session_context_from_retrieved_source_lineage(...)` now derives artifact identity through `derive_artifact_identity(...)` instead of hand-parsing source-ref ids and preference fields
+  - result:
+    - legacy/content-only traces that store source-ref continuity as top-level fields no longer lose anchor identity when re-entering:
+      - `interaction_carryover`
+      - `session_context.digital_body_hints`
+      - persisted proactive-history carryover
+      - exported `revision_traces[].embodied_context`
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/digital_body_runtime.py amadeus_thread0/graph_parts/relational_carryover.py amadeus_thread0/graph_parts/prepare_turn_runtime.py amadeus_thread0/graph_parts/memory_evolution.py amadeus_thread0/utils/revision_trace_export.py tests/test_revision_trace_export.py tests/test_world_model_residue.py tests/test_prepare_turn_runtime.py`
+  - `python -m pytest tests/test_revision_trace_export.py -k "legacy_top_level_source_ref_identity or promotes_nested_embodied_context" -q`
+  - `python -m pytest tests/test_world_model_residue.py -k "legacy_source_ref_identity_into_embodied_context or legacy_proactive_history or preserves_refreshed_access_state_from_persisted_proactive_history" -q`
+  - `python -m pytest tests/test_prepare_turn_runtime.py -k "legacy_trace_identity or refreshes_session_source_ref_lineup_from_retrieved_compare_trace" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_prepare_turn_runtime.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_memory_admin_service.py tests/test_revision_trace_export.py -q`
+- Result:
+  - focused revision-trace subset: `2 passed`
+  - focused world-model/proactive subset: `3 passed`
+  - focused prepare-turn subset: `2 passed`
+  - AGENTS graph subset: `813 passed, 35 subtests passed`
+  - memory/tool/session/api subset: `161 passed, 16 subtests passed`
+  - compile checks passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining `digital body / access / source` consumer that still reconstructs lineage from ad hoc top-level fields outside the new `normalize_embodied_trace_context(...)` boundary, especially non-revision memory rows or runtime prompt summaries that may still read partially normalized payloads
+
+## 2026-03-31 Run 201
+
+- Focus:
+  - close the next `digital body source-anchor retrieval` gap, where `_retrieve_context(...)` still scored and rendered `digital_body_consequence` traces from raw top-level fields and could miss nested `embodied_context` source identity in legacy rows
+- Files changed:
+  - `amadeus_thread0/graph_parts/retrieval.py`
+  - `tests/test_retrieval_continuity.py`
+  - `program.md`
+- Key changes:
+  - rewired digital-body trace retrieval scoring to use the canonical embodied trace contract:
+    - added `_digital_body_trace_identity(...)` in `amadeus_thread0/graph_parts/retrieval.py`
+    - it resolves `artifact_carrier`, `artifact_source_ref_ids`, `artifact_source_title`, and `artifact_source_query` through `normalize_embodied_trace_context(...)` instead of raw `_record_value(...)` only
+  - updated the digital-body retrieval ranking path:
+    - `source_material_compared` / `source_material_inspected` traces now receive relevance and priority credit even when source anchor fields live only under nested `embodied_context`
+  - updated working-context rendering:
+    - `_digital_body_consequence_trace_line(...)` now includes `source_title` or `source_query` when the summary itself does not already surface that anchor
+    - result:
+      - `working_items` can now carry the material anchor text, not just a generic “顺着这条线继续” summary
+  - quick audit outcome:
+    - `final_state.py` and `behavior_runtime.py` still only consume already-normalized final-turn payloads, so they were not the next raw-history gap
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/retrieval.py tests/test_retrieval_continuity.py`
+  - `python -m pytest tests/test_retrieval_continuity.py -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_retrieval_continuity.py -q`
+- Result:
+  - retrieval continuity subset: `5 passed`
+  - AGENTS graph subset plus retrieval continuity: `794 passed, 35 subtests passed`
+  - compile checks passed
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining retrieval or prompt-assembly surface that still relies on raw `_record_value(...)` lookups for digital-body lineage instead of the canonical embodied trace contract, especially if source anchors must influence prompt salience rather than just export/readback correctness
+
+## 2026-03-31 Run 202
+
+- Focus:
+  - close the next `prompt/appraisal source-anchor consumer` gap, where retrieval already surfaced digital-body source anchors but prompt assembly still leaked raw `source_material_compared(...)` tags and appraisal continuity prompts still ignored `digital_body_consequence_traces`
+- Files changed:
+  - `amadeus_thread0/graph_parts/prompt_helpers.py`
+  - `amadeus_thread0/graph_parts/prompting.py`
+  - `amadeus_thread0/graph_parts/appraisal.py`
+  - `tests/test_daily_surface_gating.py`
+  - `tests/test_appraisal_calibration.py`
+  - `program.md`
+- Key changes:
+  - added canonical prompt-side digital-body trace rendering in `prompt_helpers.py`:
+    - `_digital_body_trace_prompt_text(...)`
+    - `_compact_digital_body_trace_lines(...)`
+    - `_naturalize_digital_body_working_item(...)`
+  - result:
+    - prompt consumers no longer have to parse raw `source_material_compared(Persistence v2): ...` fragments ad hoc
+    - source-material / artifact-reacquire traces now have one shared prompt rendering boundary for both natural prompt blocks and structured appraisal continuity lines
+  - updated `prompting.py` so `digital_body_consequence_traces` are consumed directly instead of only leaking through `working_items` fallback:
+    - relationship/free-dialog prompt context now surfaces source-anchor-bearing digital-body traces as normal prompt context
+    - `working_item_fallback_texts` is now suppressed when those direct digital-body trace lines already exist, avoiding duplicate prompt residue
+  - updated `appraisal.py` so digital-body continuity can influence state judgment:
+    - `_should_use_llm_appraisal(...)` now treats `digital_body_consequence_traces` as a valid reason to invoke appraisal
+    - `_continuity_trace_items(...)` now includes `digital_body_consequence_traces`
+    - `_compact_continuity_trace_line(...)` now emits structured source-anchor continuity lines such as `digital_body:source_material_compared[anchor=...]`
+  - added regressions that lock the actual bug family:
+    - relationship prompt naturalizes raw source-material working-item fallback instead of leaking internal kind tags
+    - relationship prompt surfaces source anchors from `digital_body_consequence_traces`
+    - appraisal can be triggered by digital-body consequence traces alone
+    - appraisal continuity prompt now contains the source anchor for digital-body traces
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/prompt_helpers.py amadeus_thread0/graph_parts/prompting.py amadeus_thread0/graph_parts/appraisal.py tests/test_daily_surface_gating.py tests/test_appraisal_calibration.py`
+  - `python -m pytest tests/test_daily_surface_gating.py -k "source_material or working_item_fallback_only_when_structured_continuity_absent" -q`
+  - `python -m pytest tests/test_appraisal_calibration.py -k "digital_body_consequence or continuity_intents" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_appraisal_calibration.py -q`
+- Result:
+  - compile checks passed
+  - targeted prompt subset: `2 passed`
+  - targeted appraisal subset: `2 passed`
+  - AGENTS graph subset: `791 passed, 35 subtests passed`
+  - appraisal calibration suite: `33 passed`
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining `runtime_prompting` / carried-embodied-context consumer that still phrases source-bearing digital-body state too generically when no retrieved trace block is present, especially `_compact_digital_body_runtime_hint(...)` and adjacent runtime brief surfaces
+
+## 2026-03-31 Run 203
+
+- Focus:
+  - close the next `runtime brief source-anchor visibility` gap, where prompt assembly had started consuming source-bearing traces but `_prompt_state_runtime_brief(...)` still stayed generic when the same source anchor lived only in carried embodied context, behavior action embodied context, or current digital-body state
+- Files changed:
+  - `amadeus_thread0/graph_parts/prompt_helpers.py`
+  - `amadeus_thread0/graph_parts/behavior_runtime.py`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `tests/test_world_model_residue.py`
+  - `program.md`
+- Key changes:
+  - extended carried-embodied-context prompt rendering in `prompt_helpers.py`:
+    - `_compact_embodied_carryover_hint(...)` now recognizes `source_material_compared`, `source_material_inspected`, `artifact_reacquired`, and related source-bearing digital-body states
+    - result:
+      - if the anchor only lives in `interaction_carryover.embodied_context`, runtime prompt text can now still mention the concrete source line instead of going silent
+  - extended action-side embodied prompt rendering in `behavior_runtime.py`:
+    - `_compact_embodied_action_hint(...)` now surfaces source-bearing embodied states rather than only access/growth/friction classes
+    - result:
+      - behavior-action embodied context can now carry source anchor phrasing into runtime brief when there is no carryover trace block
+  - extended current digital-body runtime summary in `runtime_prompting.py`:
+    - `_compact_digital_body_runtime_hint(...)` now surfaces the active `source_ref` anchor label when `digital_body_state.resource_state` already holds a source-bearing artifact
+    - result:
+      - current runtime state can now say which source line is active, not only whether cookies/workspace/tooling are available
+  - added focused regressions for all three ingress paths:
+    - carryover embodied context -> runtime brief
+    - behavior action embodied context -> runtime brief
+    - current digital body state -> runtime brief
+- Validation:
+  - `python -m py_compile amadeus_thread0/graph_parts/prompt_helpers.py amadeus_thread0/graph_parts/behavior_runtime.py amadeus_thread0/graph_parts/runtime_prompting.py tests/test_world_model_residue.py`
+  - `python -m pytest tests/test_world_model_residue.py -k "source_anchor_from_carryover_embodied_context or behavior_action_source_anchor_without_carryover or current_source_anchor_from_digital_body_state" -q`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py tests/test_appraisal_calibration.py -q`
+- Result:
+  - compile checks passed
+  - targeted runtime-brief subset: `3 passed`
+  - combined graph + appraisal subset: `827 passed, 35 subtests passed`
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining summary/export consumer where `counterpart_profile`, `event_residue`, or `proactive continuity` still flattens source-bearing embodied context into generic prose instead of preserving the same concrete anchor semantics now available in retrieval, prompting, appraisal, and runtime brief
+
+## 2026-03-31 Run 204
+
+- Focus:
+  - close the next `summary / CLI source-anchor visibility` gap, where source-bearing embodied context was already preserved in history/export but `counterpart_assessment`, `proactive_continuity`, and compact evolution summaries still flattened it to generic `bodyfx=status` text
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `program.md`
+- Key changes:
+  - root-fixed CLI embodied-context rendering instead of patching individual summary call sites:
+    - added `_compact_source_anchor_parts(...)` in `amadeus_thread0/utils/cli_views.py`
+    - it converts existing `source_ref` provenance fields into compact read-model text such as:
+      - `source=...`
+      - `pref=<ref_id>@<anchor_reason>`
+      - `refs=<ref_ids>`
+  - updated `_render_embodied_context_text(...)` so source-bearing embodied traces now retain concrete anchor semantics in read models rather than collapsing to `bodyfx=source_material_compared status=completed`
+  - updated `build_evolution_summary_line(...)` so the compact evolution line also preserves the active source anchor selection when the current digital-body context is source-bearing
+  - added focused read-model regressions:
+    - counterpart-assessment CLI render for `source_material_compared`
+    - proactive-continuity CLI render for `source_material_compared`
+    - compact evolution summary line now asserts visible source-anchor shorthand for compared source material
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\cli_views.py tests\test_cli_views.py`
+  - `python -m pytest tests\test_cli_views.py -q`
+- Result:
+  - compile checks passed
+  - CLI views suite: `41 passed`
+  - source-bearing embodied traces now stay provenance-visible across:
+    - counterpart assessment CLI
+    - proactive continuity CLI
+    - compact evolution summary line
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining non-CLI summary/export consumer where source-bearing `embodied_context` still survives in structure but not in the final human-readable read model, especially `event_residue` or any compact backend-facing history previews
+
+## 2026-04-01 Run 205
+
+- Focus:
+  - close the next `backend-facing compact read-model` gap, where source-bearing embodied context was structurally preserved in `event_residue` and session preview payloads but still lacked a compact human-readable line for downstream/backend consumers
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added compact preview helpers in `amadeus_thread0/utils/cli_views.py`:
+    - `_compact_counterpart_assessment_preview_line(...)`
+    - `_compact_proactive_continuity_preview_line(...)`
+    - `_compact_event_residue_preview_line(...)`
+  - result:
+    - `counterpart_assessment_preview[*]` now carries a `preview_line`
+    - `proactive_continuity_preview[*]` now carries a `preview_line`
+    - `event_residue` now carries a `preview_line`
+  - each compact line reuses the already-root-fixed embodied-context renderer, so source-bearing traces now stay visible in backend-facing compact views too:
+    - `bodyfx=...`
+    - `source=...`
+    - `pref=...` when a preferred source is actually present
+    - `refs=...` when only raw source ids are present
+  - kept the change additive:
+    - no consumer contract was removed or renamed
+    - existing structured fields remain unchanged
+    - compact lines are extra read-model surfaces for logs, previews, and lightweight clients
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\cli_views.py tests\test_cli_views.py tests\test_backend_session.py`
+  - `python -m pytest tests\test_cli_views.py tests\test_backend_session.py -k "preview_line or source_material or event_residue or counterpart_assessment_preview or proactive_continuity_preview" -q`
+  - `python -m pytest tests\test_cli_views.py -q`
+  - `python -m pytest tests\test_backend_session.py -q`
+- Result:
+  - compile checks passed
+  - targeted preview/event subset: `7 passed, 83 deselected, 4 subtests passed`
+  - CLI views suite: `41 passed`
+  - backend session suite: `49 passed, 7 subtests passed`
+  - source-bearing embodied context is now compactly readable across:
+    - CLI multiline renderers
+    - compact evolution summary line
+    - backend session preview rows
+    - `event_residue` summary payload
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining export or handoff surface that still exposes source-bearing embodied context only as nested structure with no compact companion line, especially backend API / frontend handoff summaries or any non-CLI audit/report emitter that still relies on ad hoc reconstruction
+
+## 2026-04-01 Run 206
+
+- Focus:
+  - close the next `backend export / writeback history` gap, where normalized history rows in `backend_api.writeback_trace` still preserved embodied context only as nested structure with no compact companion line
+- Files changed:
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - root-fixed the contract at memory-history normalization instead of patching individual API call sites:
+    - `normalize_memory_history_export()` now derives `preview_line` for normalized history rows that carry embodied context
+    - it reuses the existing compact embodied read-model helpers already used by CLI/session preview surfaces, so formatting stays aligned across:
+      - counterpart assessment history
+      - proactive continuity history
+      - generic embodied history fallback rows
+  - result:
+    - `backend_api.writeback_trace.counterpart_assessment_history[*]` can now carry both:
+      - structured `embodied_context`
+      - compact `preview_line`
+    - `backend_api.writeback_trace.proactive_continuity_history[*]` now does the same
+    - session-facing history exports inherit the same additive field automatically because they already share the same normalization path
+  - updated the backend handoff doc so frontend/debug consumers know these history rows may now include a compact read-model companion line
+- Validation:
+  - `python -m py_compile amadeus_thread0/utils/memory_history_export.py tests/test_backend_api.py tests/test_backend_session.py`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py -q`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py tests/test_memory_admin_service.py -q`
+- Result:
+  - compile checks passed
+  - focused backend api/session subset: `81 passed, 7 subtests passed`
+  - AGENTS-related memory/session/cli subset: `151 passed, 16 subtests passed`
+  - writeback/history export no longer forces downstream consumers to reconstruct embodied provenance from nested structure alone
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining export surface outside normalized history rows that still carries source-bearing embodied context without a compact companion, most likely `revision_traces` or other audit/report emitters if they still require ad hoc reconstruction
+
+## 2026-04-01 Run 207
+
+- Focus:
+  - close the next `revision-trace compact read-model` gap, where normalized `revision_traces` still exported embodied continuity only as nested structure with no shared compact companion line
+- Files changed:
+  - `amadeus_thread0/utils/embodied_preview.py`
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `amadeus_thread0/utils/revision_trace_export.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `program.md`
+- Key changes:
+  - added a public compact embodied preview facade in `amadeus_thread0/utils/embodied_preview.py` so export/read-model surfaces stop importing CLI-private helpers directly
+  - kept the change additive:
+    - no existing structured `embodied_context` fields were removed or renamed
+    - preview helpers are now exposed through one public utility surface for export/session/backend consumers
+  - root-fixed `revision_trace_export.py`:
+    - normalized revision traces now derive `preview_line` whenever embodied continuity is present
+    - existing caller-provided `preview_line` is still preserved if already present
+  - aligned `memory_history_export.py` onto the same shared preview builder so history rows and revision traces now use one compact embodied-preview contract
+  - documented the new additive field on `writeback_trace.revision_traces[*]` and registered the new utility module in the project structure guide
+  - expanded regression coverage so revision traces are now checked for both:
+    - structured `embodied_context`
+    - compact `preview_line`
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\embodied_preview.py amadeus_thread0\utils\memory_history_export.py amadeus_thread0\utils\revision_trace_export.py tests\test_revision_trace_export.py tests\test_backend_api.py tests\test_backend_session.py`
+  - `python -m pytest tests\test_revision_trace_export.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_memory_admin_service.py -q`
+- Result:
+  - compile checks passed
+  - revision-trace export suite: `12 passed`
+  - AGENTS-related memory/session/backend subset: `151 passed, 16 subtests passed`
+  - revision-trace exports no longer force downstream/backend consumers to reconstruct embodied provenance from nested structure alone
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining non-history export or audit surface that still reconstructs source-bearing embodied context ad hoc instead of consuming the shared `embodied_preview` contract
+
+## 2026-04-01 Run 208
+
+- Focus:
+  - finish the `embodied preview ownership` cleanup so export/runtime read models no longer depend on preview implementations living inside `cli_views.py`
+- Files changed:
+  - `amadeus_thread0/utils/embodied_preview.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `tests/test_memory_admin_service.py`
+  - `program.md`
+- Key changes:
+  - turned `amadeus_thread0/utils/embodied_preview.py` from a thin facade into the actual shared implementation home for:
+    - `compact_source_anchor_parts(...)`
+    - `render_embodied_context_text(...)`
+    - counterpart / proactive / event / revision compact preview lines
+  - removed the reverse dependency from export/runtime preview paths onto CLI-private helper implementations:
+    - `cli_views.py` now wraps the shared embodied preview helpers instead of owning a second implementation
+    - export/read-model surfaces can keep using `embodied_preview.py` without indirectly depending on CLI internals
+  - kept runtime semantics unchanged:
+    - same additive `preview_line` contract
+    - same structured `embodied_context` contract
+    - this is a dependency-direction cleanup, not a behavior-policy rewrite
+  - strengthened `memory_admin.snapshot_view()` regression coverage so the admin snapshot surface now explicitly asserts `preview_line` continuity for:
+    - `revision_traces[*]`
+    - `counterpart_assessment_history[*]`
+    - `proactive_continuity_history[*]`
+  - updated the structure guide to state that CLI preview renderers should consume the shared embodied preview module rather than carrying a separate implementation
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\embodied_preview.py amadeus_thread0\utils\cli_views.py amadeus_thread0\utils\memory_history_export.py amadeus_thread0\utils\revision_trace_export.py tests\test_cli_views.py tests\test_memory_admin_service.py tests\test_revision_trace_export.py tests\test_backend_session.py tests\test_backend_api.py`
+  - `python -m pytest tests\test_cli_views.py tests\test_memory_admin_service.py tests\test_revision_trace_export.py tests\test_backend_session.py tests\test_backend_api.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_memory_admin_service.py -q`
+- Result:
+  - compile checks passed
+  - focused preview/session/backend subset: `141 passed, 7 subtests passed`
+  - AGENTS-related memory/session/backend subset: `151 passed, 16 subtests passed`
+  - embodied compact preview formatting now has a clean ownership boundary: shared util owns formatting, CLI/runtime/export all consume it
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining runtime/admin/source view that still exposes embodied continuity without either:
+    - a normalized `embodied_context`, or
+    - a shared-contract `preview_line`
+
+## 2026-04-02 Run 209
+
+- Focus:
+  - close the next `source-bearing nested export normalization` gap, where `claim_links[*].sources[*]` content-only rows could inherit a raw `embodied_context` dict and preview text without ever passing through the formal embodied-context normalization path
+- Files changed:
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `amadeus_thread0/utils/source_material_export.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_memory_history_export.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - root-fixed `normalize_memory_history_export()`:
+    - it no longer exits early just because merged `content.embodied_context` is already a raw dict
+    - content-only rows now truly pass through `normalize_embodied_context(...)` before export
+  - result of the root fix:
+    - normalized embodied rows now carry real typed/body-normalized fields instead of raw string ids surviving from nested content blobs
+    - `preview_line` and structured `embodied_context` now agree on the same normalized source-anchor semantics
+  - aligned `source_material_export.py` onto the same memory-record normalization path for nested source-material rows:
+    - `sources[*]`
+    - `claim_links[*].sources[*]`
+    - content-only nested source rows now inherit the same flattening + embodied normalization behavior as top-level source refs
+  - expanded source-facing regressions so both backend session and backend API now assert that source-bearing rows can surface:
+    - normalized `embodied_context`
+    - compact `preview_line`
+  - updated backend handoff doc so source-facing consumers know `sources[*]` and `claim_links[*].sources[*]` may now carry compact embodied read-model lines when available
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\memory_history_export.py amadeus_thread0\utils\source_material_export.py tests\test_memory_history_export.py tests\test_backend_session.py tests\test_backend_api.py`
+  - `python -m pytest tests\test_memory_history_export.py tests\test_backend_session.py tests\test_backend_api.py -k "memory_history_export or sources_view_normalizes_source_material_exports or claim_links" -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_memory_admin_service.py tests\test_memory_history_export.py -q`
+- Result:
+  - compile checks passed
+  - focused memory-history/source subset: `2 passed, 80 deselected`
+  - AGENTS-related memory/session/backend subset: `152 passed, 16 subtests passed`
+  - source-bearing nested exports no longer leak raw `embodied_context` payloads from content-only rows
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining state/readback surface where content-only nested rows still bypass the shared normalization path and therefore risk text/structure drift
+
+## 2026-04-02 Run 210
+
+- Focus:
+  - close the next `source_refs readback normalization parity` gap, where admin/tool snapshot surfaces still treated `source_refs` as generic memory rows instead of routing them through source-specific normalization
+- Files changed:
+  - `amadeus_thread0/runtime/memory_admin.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `tests/test_memory_admin_service.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_compare_source_refs_tool.py`
+  - `program.md`
+- Key changes:
+  - root-fixed `MemoryAdminService.snapshot_view()`:
+    - `source_refs` now use `normalize_source_ref_exports(...)` instead of `normalize_memory_record_exports(...)`
+    - result:
+      - memory snapshot surfaces now keep source-specific id/source_id coercion aligned with `sources_view`
+      - legacy content-only source rows now preserve normalized embodied source-anchor fields plus compact `preview_line` on the admin snapshot path
+  - root-fixed `get_memory_snapshot(include_core=True)` in `utils/tools.py` the same way:
+    - tool-facing memory snapshots now no longer drift from backend/admin readback on `source_refs`
+  - added focused regressions at all affected entrypoints:
+    - memory admin snapshot view
+    - backend API `memory_snapshot`
+    - tool-facing `get_memory_snapshot`
+- Validation:
+  - `python -m py_compile amadeus_thread0\\runtime\\memory_admin.py tests\\test_memory_admin_service.py tests\\test_backend_api.py`
+  - `python -m pytest tests\\test_memory_admin_service.py tests\\test_backend_api.py -k "memory_snapshot or snapshot_view" -q`
+  - `python -m py_compile amadeus_thread0\\utils\\tools.py tests\\test_compare_source_refs_tool.py`
+  - `python -m pytest tests\\test_compare_source_refs_tool.py -k "list_source_refs or get_memory_snapshot" -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py -q`
+- Result:
+  - focused admin/API snapshot subset: `2 passed, 37 deselected`
+  - focused tool/source subset: `2 passed, 3 deselected`
+  - AGENTS-related memory/session/backend/tool subset: `158 passed, 16 subtests passed`
+  - source-bearing `source_refs` now resolve through one shared source-specific normalization contract across:
+    - backend session `sources_view`
+    - admin `memory_snapshot`
+    - backend API `memory_snapshot`
+    - tool-facing `get_memory_snapshot`
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining readback surface where specialized record types still share a generic memory-row normalizer instead of a type-owned export contract
+
+## 2026-04-02 Run 211
+
+- Focus:
+  - close the next `claim_link base-row normalization` gap, where `claim_links[*]` still flattened `content` ad hoc instead of reusing the shared memory-record export path that already normalizes embodied source continuity
+- Files changed:
+  - `amadeus_thread0/utils/source_material_export.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - root-fixed `normalize_claim_link_export(...)`:
+    - claim-link rows now start from `normalize_memory_record_export(item)` instead of rebuilding `{**content, **row}` locally
+    - result:
+      - content-only claim-link rows now inherit the same shared embodied-context normalization path as other exported memory/source rows
+      - if a claim-link row itself carries embodied source continuity, it can now surface normalized `embodied_context` plus additive `preview_line`
+  - kept the existing nested-source contract unchanged:
+    - `claim_links[*].sources[*]` still normalize through `normalize_source_material_exports(...)`
+    - the change only removes the base-row normalization drift on `claim_links[*]` themselves
+  - extended backend/session regressions so the claim-link row itself is now checked for:
+    - normalized `embodied_context`
+    - normalized source-ref id list
+    - shared compact `preview_line`
+  - updated backend handoff docs so downstream consumers know `claim_links[*].preview_line` may now be present when the claim-link row itself carries embodied context
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\source_material_export.py tests\\test_backend_session.py tests\\test_backend_api.py`
+  - `python -m pytest tests\\test_backend_session.py tests\\test_backend_api.py -k "source_material_exports" -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py -q`
+- Result:
+  - focused source-material subset: `2 passed, 79 deselected`
+  - AGENTS-related memory/session/backend/tool subset: `158 passed, 16 subtests passed`
+  - source-bearing `claim_links` no longer bypass the shared export-normalization contract at their base row
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining specialized export row that still owns local `content` flattening instead of consuming its type-owned shared normalizer
+
+## 2026-04-03 Run 212
+
+- Focus:
+  - close the next `normalized row vs preserved content drift` gap, where shared export rows already exposed normalized top-level fields but could still carry a raw nested `content` blob whose embedded embodied fields did not match the normalized surface
+- Files changed:
+  - `amadeus_thread0/utils/memory_history_export.py`
+  - `tests/test_memory_history_export.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - strengthened the shared export normalizer in `memory_history_export.py`:
+    - when a row keeps a nested `content` dict for compatibility, that nested dict is now shallow-normalized too
+    - immediate string fields are trimmed
+    - nested `embodied_context` / `digital_body_consequence` now pass through `normalize_embodied_context(...)`
+  - kept the change additive:
+    - no fields were removed
+    - top-level normalized export behavior remains unchanged
+    - compatibility consumers can still read `content`, but it no longer drifts as easily from the normalized top-level embodied state
+  - added focused regressions for both:
+    - direct shared normalizer output
+    - backend API `memory_snapshot` propagation of normalized nested `content`
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\memory_history_export.py tests\\test_memory_history_export.py tests\\test_backend_api.py`
+  - `python -m pytest tests\\test_memory_history_export.py tests\\test_backend_api.py -k "memory_record_export or memory_snapshot" -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py -q`
+- Result:
+  - focused shared-normalizer/API subset: `2 passed, 31 deselected`
+  - AGENTS-related memory/session/backend/tool subset: `158 passed, 16 subtests passed`
+  - preserved `content` blobs on exported rows now stay closer to the same normalized embodied semantics as the top-level export contract
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining readback surface where compatibility payloads still preserve stale nested structure that can drift from the normalized top-level export view
+
+## 2026-04-03 Run 213
+
+- Focus:
+  - close the next `revision trace nested payload drift` gap, where `revision_traces[*]` already exposed normalized top-level `embodied_context` / `preview_line` but could still preserve stale nested payloads such as `content`, `metadata`, or `interaction_carryover`
+- Files changed:
+  - `amadeus_thread0/utils/revision_trace_export.py`
+  - `tests/test_revision_trace_export.py`
+  - `tests/test_backend_api.py`
+  - `program.md`
+- Key changes:
+  - strengthened `revision_trace_export.py` to normalize preserved nested payloads additively:
+    - `content`
+    - `metadata`
+    - `behavior_action`
+    - `behavior_plan`
+    - `behavior_consequence`
+    - `interaction_carryover`
+    - `digital_body_consequence`
+  - important root-cause detail:
+    - the first pass used full embodied normalization for nested payloads, but that wrongly injected empty/default fields into `metadata.embodied_context`
+    - because revision-trace merge logic later overlays nested `embodied_context` onto sibling legacy metadata fields, those empty defaults erased valid top-level source identity such as `artifact_source_ref_ids`
+    - the final fix uses sparse nested embodied normalization: only fields with real signal are written back into nested payloads
+  - result:
+    - preserved nested revision payloads now stay aligned with the same embodied semantics as the top-level export surface
+    - legacy metadata-based source identity remains intact
+  - expanded regressions so both shared export utility and backend API memory snapshot now assert normalized nested revision payloads
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\revision_trace_export.py tests\\test_revision_trace_export.py tests\\test_backend_api.py`
+  - `python -m pytest tests\\test_revision_trace_export.py tests\\test_backend_api.py -k "revision_trace_export or memory_snapshot_normalizes_revision_trace_exports" -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py tests\\test_revision_trace_export.py -q`
+- Result:
+  - focused revision/API subset: `13 passed, 31 deselected`
+  - AGENTS-related memory/session/backend/tool/revision subset: `170 passed, 16 subtests passed`
+  - `revision_traces` no longer preserve stale nested embodied payloads that can drift from the normalized top-level export contract
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining compatibility payload that still keeps nested body/access structures in a raw or over-expanded form relative to the top-level normalized readback contract
+
+## 2026-04-03 Run 214
+
+- Focus:
+  - close the next `relational history typed export drift` gap, where `counterpart_assessment_history` and `proactive_continuity_history` were still exported through the generic memory-row normalizer and only became fully typed later inside CLI summary builders
+- Files changed:
+  - `amadeus_thread0/utils/relational_history_export.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/memory_admin.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `tests/test_relational_history_export.py`
+  - `tests/test_memory_admin_service.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_revision_trace_export.py`
+  - `program.md`
+- Key changes:
+  - added a new shared export-normalization surface in `relational_history_export.py`:
+    - `normalize_counterpart_assessment_export(s)`
+    - `normalize_proactive_continuity_export(s)`
+  - root-fixed the relationship-history export boundary:
+    - counterpart rows now coerce typed scalars such as `id`, `created_at`, `respect_level`, `reciprocity`, `boundary_pressure`, and `reliability_read`
+    - counterpart rows now normalize `assessment_profile` through the shared counterpart-profile contract instead of leaving nested profile blobs raw for later consumers
+    - proactive rows now coerce typed scalars such as `carryover_strength`, continuity anchors, lineage metrics, `hold_count`, and `long_term_axis_count`
+    - both row families now push normalized values back into nested compatibility `content` when that nested payload exists, so top-level exports and preserved blobs stop drifting
+  - root-fixed the compact read-model line on these rows:
+    - specialized history normalizers now rebuild `preview_line` from the normalized row surface instead of preserving a generic pre-normalization preview with stale casing or stale scalar formatting
+  - wired the new normalizers into every readback surface that should own typed relationship-history exports:
+    - `BackendSession.worldline_view()`
+    - `BackendSession.bond_view()`
+    - `MemoryAdminService.snapshot_view()`
+    - `BackendAPI.writeback_trace`
+    - tool-facing `get_memory_snapshot(include_core=True)`
+  - documented the new ownership boundary:
+    - `PROJECT_STRUCTURE.md` now records `relational_history_export.py` as the typed export surface for relationship-history rows
+    - `BACKEND_HANDOFF.md` now states that writeback relationship-history rows should be treated as typed normalized rows rather than raw `content` blobs
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\relational_history_export.py amadeus_thread0\\runtime\\backend_session.py amadeus_thread0\\runtime\\memory_admin.py amadeus_thread0\\runtime\\backend_api.py amadeus_thread0\\utils\\tools.py tests\\test_relational_history_export.py tests\\test_memory_admin_service.py tests\\test_revision_trace_export.py tests\\test_backend_api.py`
+  - `python -m pytest tests\\test_relational_history_export.py tests\\test_memory_admin_service.py tests\\test_revision_trace_export.py tests\\test_backend_api.py -q`
+  - `python -m pytest tests\\test_backend_session.py -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py tests\\test_revision_trace_export.py tests\\test_relational_history_export.py -q`
+- Result:
+  - compile checks passed
+  - focused relational/admin/API/revision subset: `53 passed`
+  - backend session subset: `49 passed, 7 subtests passed`
+  - AGENTS-related memory/session/backend/tool/revision subset: `172 passed, 16 subtests passed`
+  - relationship-history rows no longer depend on downstream CLI summary code to repair scalar types or nested `assessment_profile` / `content` drift
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is any remaining summary/export surface that still owns local `content` flattening for typed relational or event-residue payloads instead of consuming a shared type-owned normalizer
+
+## 2026-04-03 Run 215
+
+- Focus:
+  - close the next `cli summary local flattening` gap, where `build_counterpart_assessment_cli_summary()` and `build_proactive_continuity_cli_summary()` still re-flattened `content` and re-derived typed fields locally instead of consuming the new shared relationship-history export contract
+- Files changed:
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_cli_views.py`
+  - `program.md`
+- Key changes:
+  - root-fixed both CLI summary builders to consume shared typed exporters first:
+    - `normalize_counterpart_assessment_exports(...)`
+    - `normalize_proactive_continuity_exports(...)`
+  - removed local typed-field reconstruction from raw `content` blobs at the CLI summary layer:
+    - counterpart summaries now read normalized row fields directly for `stance`, `scene`, `created_at`, `respect_level`, `reciprocity`, `boundary_pressure`, `reliability_read`, motive fields, and `assessment_profile`
+    - proactive summaries now read normalized row fields directly for `kind`, `trace_family`, `carryover_mode`, anchor metrics, lineage metrics, `carryover_strength`, `created_at`, and motive fields
+  - kept CLI responsibility narrow:
+    - summary builders now primarily shape presentation rows
+    - they no longer act as the fallback place where relationship-history rows become correctly typed
+  - preserved additive preview behavior:
+    - if the normalized row already carries `preview_line`, CLI summaries reuse it
+    - otherwise they still rebuild a compact line from the normalized row surface
+  - expanded CLI regressions with explicit content-only raw-row coverage so the shared exporter path is now locked from the consumer side too
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\cli_views.py tests\\test_cli_views.py`
+  - `python -m pytest tests\\test_cli_views.py -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py tests\\test_revision_trace_export.py tests\\test_relational_history_export.py -q`
+- Result:
+  - compile checks passed
+  - focused CLI suite: `43 passed`
+  - AGENTS-related memory/session/backend/tool/revision subset: `174 passed, 16 subtests passed`
+  - relationship-history rows now stay typed all the way through the CLI summary surface instead of being repaired late by consumer-local flattening
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is whether `event_residue` / `agenda_lifecycle` style summary surfaces should also be lifted into a shared type-owned summary/export helper instead of remaining CLI-local summary constructors
+
+## 2026-04-03 Run 216
+
+- Focus:
+  - close the next `turn residue summary ownership` gap, where `event_residue` and `agenda_lifecycle` were still normalized inside `cli_views.py` as local summary constructors instead of living behind a shared type-owned helper
+- Files changed:
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `tests/test_turn_summary_export.py`
+  - `program.md`
+- Key changes:
+  - added a new shared summary-normalization module in `turn_summary_export.py`:
+    - `summarize_embodied_context(...)`
+    - `summarize_event_residue(...)`
+    - `summarize_agenda_lifecycle(...)`
+  - moved current-turn residue summary ownership out of `cli_views.py`:
+    - `event_residue` no longer depends on CLI-local field shaping
+    - `agenda_lifecycle` no longer depends on CLI-local field shaping
+    - compact `embodied_context` summary for these surfaces is now also available from the same shared helper
+  - kept contract semantics stable:
+    - same normalized event/perception fields
+    - same agenda-lifecycle anchors / lineage / residue fields
+    - same compact event preview-line behavior
+    - no payload schema expansion at the backend summary boundary
+  - reduced `cli_views.py` back to a thinner consumer:
+    - local wrappers now delegate to the shared helper instead of owning residue normalization logic directly
+  - added direct helper regressions so this contract is now tested independently of CLI rendering
+- Validation:
+  - `python -m py_compile amadeus_thread0\\utils\\turn_summary_export.py amadeus_thread0\\utils\\cli_views.py tests\\test_turn_summary_export.py tests\\test_cli_views.py`
+  - `python -m pytest tests\\test_turn_summary_export.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py -q`
+  - `python -m pytest tests\\test_memory_guard.py tests\\test_session_orchestrator.py tests\\test_cli_views.py tests\\test_backend_session.py tests\\test_backend_api.py tests\\test_tool_approval_policy.py tests\\test_memory_admin_service.py tests\\test_memory_history_export.py tests\\test_compare_source_refs_tool.py tests\\test_tool_runtime.py tests\\test_revision_trace_export.py tests\\test_relational_history_export.py tests\\test_turn_summary_export.py -q`
+- Result:
+  - compile checks passed
+  - focused helper/CLI/session/API subset: `127 passed, 7 subtests passed`
+  - AGENTS-related memory/session/backend/tool/revision subset: `177 passed, 16 subtests passed`
+  - `event_residue` and `agenda_lifecycle` are no longer CLI-owned ad hoc summary constructors; they now have a shared typed helper boundary
+- Next:
+  - continue only on fresh concrete contract gaps
+  - the next profitable audit target is whether `interaction_carryover` / `behavior_consequence` / `digital_body_consequence` style current-turn summaries should also be lifted out of `cli_views.py` into the same shared summary-normalization boundary
+
+## 2026-04-04 Run 217
+
+- Focus:
+  - close the next `current-turn embodied summary ownership` gap, where `interaction_carryover`, `behavior_consequence`, `digital_body`, and `digital_body_consequence` were still normalized inside `cli_views.py` instead of sharing one typed helper boundary
+- Files changed:
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `tests/test_turn_summary_export.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - extended `turn_summary_export.py` into the shared current-turn summary boundary for:
+    - `summarize_interaction_carryover(...)`
+    - `summarize_behavior_consequence(...)`
+    - `summarize_digital_body(...)`
+    - `summarize_digital_body_consequence(...)`
+  - expanded `summarize_embodied_context(...)` additively so shared embodied summaries now preserve:
+    - packet-count style state (`pending_approval_count`, `blocked_packet_count`, `completed_packet_count`, `external_tool_count`)
+    - autonomy-origin metadata (`primary_origin`, `primary_intent`, `primary_tool_name`)
+  - root-fixed `cli_views.py` ownership:
+    - the local summary builders for `interaction_carryover`, `behavior_consequence`, `digital_body`, and `digital_body_consequence` now delegate to the shared helper boundary
+    - removed the now-dead CLI-local access-proposal normalization helpers that existed only to support the old local digital-body summary path
+  - documented the ownership expansion in `PROJECT_STRUCTURE.md` so `turn_summary_export.py` is now the canonical typed read-model surface for these current-turn embodied summaries too
+  - added direct helper regressions for:
+    - carryover embodied-context preservation
+    - behavior-consequence embodied-context preservation
+    - digital-body access/resource normalization
+    - digital-body-consequence primary tool/source-anchor preservation
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\turn_summary_export.py amadeus_thread0\utils\cli_views.py tests\test_turn_summary_export.py tests\test_cli_views.py`
+  - `python -m pytest tests\test_turn_summary_export.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_memory_admin_service.py tests\test_memory_history_export.py tests\test_compare_source_refs_tool.py tests\test_tool_runtime.py tests\test_revision_trace_export.py tests\test_relational_history_export.py tests\test_turn_summary_export.py -q`
+- Result:
+  - compile checks passed
+  - focused helper/CLI/session/API subset: `131 passed, 7 subtests passed`
+  - AGENTS-related memory/session/backend/tool/revision subset: `181 passed, 16 subtests passed`
+  - current-turn embodied summaries no longer depend on CLI-local normalization for:
+    - `interaction_carryover`
+    - `behavior_consequence`
+    - `digital_body`
+    - `digital_body_consequence`
+- Next:
+  - continue only on fresh concrete contract gaps
+  - audit whether any remaining `current_turn` / `opening_window` style projections still hide local contract drift; if not, shift the mainline back from summary-boundary cleanup to the larger `digital body / access / resource` runtime closure target
+
+## 2026-04-04 Run 218
+
+- Focus:
+  - finish the last obvious current-turn summary gap (`opening_window`) and immediately return to a concrete `digital body / access / resource` runtime closure slice
+- Files changed:
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `tests/test_turn_summary_export.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_prepare_turn_runtime.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - completed the summary-boundary cleanup:
+    - added `summarize_opening_window_profile(...)` to `turn_summary_export.py`
+    - moved `opening_window` shaping out of `cli_views.py` so the last obvious current-turn summary surface is no longer CLI-owned
+  - returned to the mainline runtime and closed a concrete preferred-anchor stability gap:
+    - `compact_artifact_identity(...)` / normalized artifact context now reorder `artifact_source_ref_ids` so `preferred_source_ref_id` is always first when present
+    - this keeps the saved-material lineup contract aligned with the architecture rule that the preferred anchor must be the primary continuity head, not just an auxiliary scalar
+    - the effect is not cosmetic; it stabilizes later `inspect_source_ref` / `compare_source_refs` / retrieved source-line continuity against raw input ordering drift
+  - added direct regressions for both:
+    - shared `opening_window` summary normalization
+    - preferred-anchor-first source-ref ordering at packet normalization and `prepare_turn_runtime` carryover refresh
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\turn_summary_export.py amadeus_thread0\utils\cli_views.py tests\test_turn_summary_export.py`
+  - `python -m pytest tests\test_turn_summary_export.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py -q`
+  - `python -m py_compile amadeus_thread0\graph_parts\action_packets.py tests\test_action_packet_contract.py tests\test_prepare_turn_runtime.py`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_prepare_turn_runtime.py -q`
+  - `python -m pytest tests\test_action_packet_contract.py tests\test_turn_summary_export.py tests\test_cli_views.py tests\test_prepare_turn_runtime.py tests\test_companion_autonomy_runtime.py tests\test_backend_session.py tests\test_backend_api.py -q`
+- Result:
+  - focused summary subset: `132 passed, 7 subtests passed`
+  - focused action-packet / prepare-turn subset: `36 passed`
+  - broader runtime/backend subset: `223 passed, 7 subtests passed`
+  - `opening_window` is now on the shared summary boundary
+  - preferred saved-source anchors now stay first-class and order-stable through:
+    - action packet artifact context
+    - prepare-turn source-line refresh
+    - derived digital-body resource state
+- Next:
+  - stop widening summary/export helpers unless a new concrete drift is reproduced
+  - keep the mainline on `digital body / access / resource` runtime closure, with the next profitable target being a real execution/continuity gap rather than another readback-only audit
+
+## 2026-04-04 Run 219
+
+- Focus:
+  - close a real `digital body / access / resource` continuity gap where the embodied-carryover autonomy signal still pushed stale multi-source artifacts into `compare_source_refs` even after a stable preferred anchor had already been established
+- Files changed:
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `program.md`
+- Key changes:
+  - root-fixed the autonomy-intent side to match the already-correct packet/runtime side:
+    - `_embodied_carryover_autonomy_signal(...)` now treats `stale + source_ref pair + stable preferred anchor` as `inspect_source_ref`
+    - it only keeps returning `compare_source_refs` when there are multiple candidate refs and no stable preferred anchor has been established
+  - added a direct regression on the signal layer itself so this contract cannot silently regress even if later packet-selection ordering changes
+  - this closes the remaining mismatch between:
+    - preferred-anchor-first source ordering in packet normalization / prepare-turn refresh
+    - source-ref packet derivation that already avoided redundant compare once anchored
+    - autonomy-intent derivation from carried embodied context
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\autonomy_runtime.py tests\test_companion_autonomy_runtime.py`
+  - `python -m pytest tests\test_companion_autonomy_runtime.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+- Result:
+  - focused autonomy runtime subset: `56 passed`
+  - AGENTS graph minimum regression set: `795 passed, 35 subtests passed`
+  - stale saved-source continuity no longer semantically oscillates between `compare` and `inspect` once the system already knows which saved source is the current continuity head
+- Next:
+  - keep pushing `digital body / access / resource` runtime closure
+  - the next profitable target is another execution-layer gap, not summary/readback cleanup
+
+## 2026-04-04 Run 220
+
+- Focus:
+  - define the next backend closure plan against the remaining `Digital Embodiment Closure Phase 1` gaps instead of continuing open-ended additive polish
+- Files changed:
+  - `program.md`
+- Key changes:
+  - re-read the repo execution contract and current ledger before replanning:
+    - `AGENTS.md`
+    - `program.md`
+    - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+    - `docs/engineering/BACKEND_HANDOFF.md`
+  - confirmed that the mainline baseline remains:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital embodiment` still open
+  - confirmed that the current profitable gap is no longer summary/export ownership; the next stage should be driven by execution-truth closure:
+    - no dedicated `evals/run_digital_embodiment_audit.py` gate exists yet
+    - `workspace / artifact / access` truth must be treated as the same fact across:
+      - `action_packets`
+      - `digital_body.access_state`
+      - `digital_body.resource_state`
+      - `digital_body_consequence`
+      - `reconsolidation_snapshot`
+      - retrieved `interaction_carryover.embodied_context`
+    - the first bounded body surface to finish remains `workspace/local filesystem`, with `create_workspace_access` as the only required full `create_new` closure path
+  - locked the next-stage execution order for implementation:
+    1. add the formal `digital embodiment audit` entrypoint
+    2. tighten workspace artifact continuity truth across live state, frozen final state, and later retrieval
+    3. tighten access lifecycle truth so `selected_access_proposal`, `resolved_grants`, `pending_grants`, and `completion_ratio` cannot drift across packet/state/writeback surfaces
+    4. rerun the AGENTS-required graph/memory/backend validation plus the new embodiment audit
+- Validation:
+  - `Get-Content program.md`
+  - `Get-Content docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `Get-Content docs/engineering/BACKEND_HANDOFF.md`
+  - `rg -n "run_digital_embodiment_audit|selected_access_proposal|completion_ratio|workspace_access_resolved|workspace_file_updated|workspace_path_inspected|artifact_reacquired|access_state_refreshed" evals tests amadeus_thread0`
+  - `git status --short`
+- Result:
+  - planning baseline refreshed without reopening frontend or reply-surface polish
+  - next implementation phase is now explicitly scoped to `Digital Embodiment Closure Phase 1`
+- Next:
+  - implement `evals/run_digital_embodiment_audit.py`
+  - then close the highest-value runtime truth gaps in:
+    - workspace artifact continuity
+    - access lifecycle truth
+    - final writeback / retrieval resurfacing consistency
+
+## 2026-04-04 Run 221
+
+- Focus:
+  - implement and close `Digital Embodiment Closure Phase 1` around a formal audit gate plus the remaining writeback-truth regressions that blocked baseline readiness
+- Files changed:
+  - `evals/run_digital_embodiment_audit.py`
+  - `tests/test_digital_embodiment_audit.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added the formal phase gate entrypoint:
+    - `evals/run_digital_embodiment_audit.py`
+    - it reuses the existing audit pattern instead of inventing a parallel closure mechanism
+    - it audits 5 bounded surfaces:
+      - baseline freeze + companion autonomy gate
+      - digital body runtime truth
+      - workspace surface closure
+      - saved-material anchor continuity
+      - embodied writeback + resurfacing
+  - added direct unit coverage for the new audit helper layer:
+    - `tests/test_digital_embodiment_audit.py`
+  - root-fixed two writeback dedupe regressions that were reopening the freeze/autonomy baseline:
+    - proactive continuity history normalization no longer fabricates `embodied_context` by treating the whole stored history row as if it were an embodied payload
+    - counterpart assessment history normalization now also reads only explicit nested embodied payloads instead of inferring body context from the entire assessment row
+  - restored the intended embodied-growth semantics for passive tool-success traces:
+    - when no primary packet is present but the turn still shows completed external-tool usage plus a real enabled capability surface, `derive_digital_body_consequence(...)` can still freeze that as `embodied_growth`
+    - this reopens the intended `presence_style` / embodied-growth narrative path without reintroducing packet/text drift
+  - aligned the new digital-embodiment audit semantics with the existing gate family:
+    - `overall_status` now reflects whether this audit run structurally passed
+    - `readiness_status` separately reflects whether freeze/autonomy baselines and digital-embodiment historical streak have fully reached the closeout bar
+  - updated execution docs so the new gate is part of the repository contract:
+    - `AGENTS.md` now contains a formal `Digital Embodiment Closure Gate`
+    - `AMADEUS_ARCHITECTURE_DECISIONS.md` now records `digital-embodiment-phase1-ready`
+- Validation:
+  - `python -m py_compile evals/run_digital_embodiment_audit.py tests/test_digital_embodiment_audit.py`
+  - `python -m pytest tests/test_digital_embodiment_audit.py -q`
+  - `python -m py_compile amadeus_thread0/graph_parts/memory_evolution.py amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `python -m pytest tests/test_memory_evolution_semantic_writeback.py -k "dedupes_semantic_category_traces or persists_counterpart_assessment_history_from_frozen_snapshot or absorbs_embodied_growth" -q`
+  - `python -m pytest tests/test_memory_evolution_semantic_writeback.py tests/test_prepare_turn_runtime.py tests/test_response_finalize.py tests/test_nodes.py -q`
+  - `python evals/run_digital_embodiment_audit.py --run-tag dev-check`
+  - `python evals/run_digital_embodiment_audit.py --run-tag dev-check-v2`
+  - `python evals/run_digital_embodiment_audit.py --run-tag dev-check-v3`
+  - `python evals/run_digital_embodiment_audit.py --run-tag dev-check-v4`
+  - `python evals/run_digital_embodiment_audit.py --run-tag dev-check-v5`
+- Result:
+  - `Digital Embodiment Closure Phase 1` is now formally closed at the backend gate level
+  - new audit artifacts:
+    - `evals/reports/digital-embodiment-audit-20260404-162505-dev-check-v3.{json,md}` -> `overall_status=passed`, `readiness=digital_embodiment_in_progress`
+    - `evals/reports/digital-embodiment-audit-20260404-163756-dev-check-v4.{json,md}` -> `overall_status=passed`, `readiness=digital_embodiment_in_progress`
+    - `evals/reports/digital-embodiment-audit-20260404-164851-dev-check-v5.{json,md}` -> `overall_status=passed`, `readiness=digital_embodiment_ready`
+  - baseline gates were also re-established during the same streak accumulation:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+  - the runtime now closes Phase 1 on the intended bounded surface:
+    - workspace/local filesystem
+    - access request/approval/resolution truth
+    - saved-material preferred-anchor continuity
+    - final embodied writeback and resurfacing consistency
+- Next:
+  - keep `Digital Embodiment Closure Phase 1` as a preserved baseline
+  - the next profitable backend move should be a new bounded embodiment surface or a higher-order autonomy/body phase, not more Phase 1 polish
+
+### 2026-04-04 - Run 50
+
+- Scope:
+  - implement `Digital Embodiment Convergence Phase 2` contract wiring on top of the preserved phase-1 baseline
+- Files changed:
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_digital_embodiment_audit.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - extended the embodied runtime contract from flat compatibility-only fields into explicit phase-2 nested access surfaces:
+    - `session_state`
+    - `account_state_detail`
+    - `quota_state_detail`
+    - `permission_state`
+    - `sandbox_state`
+  - kept the same single body envelope:
+    - `digital_body.access_state`
+    - `digital_body.resource_state`
+    - no second work-only or browser-only container was introduced
+  - fixed the real phase-2 root bug instead of patching exports:
+    - `normalize_embodied_context(...)` had started treating all-empty nested defaults as real signal
+    - that let empty live consequence shells override valid frozen consequence data
+    - the fix prunes no-signal nested state and teaches signal checks to distinguish explicit truth from default scaffolding
+  - tightened final-state consequence resolution for phase 2:
+    - frozen `digital_body_consequence` now keeps its own final facts
+    - missing access/resource detail can still be filled from the resolved `digital_body_state`
+    - this preserves truthful frozen semantics while keeping session/account/proposal/resource continuity aligned across backend surfaces
+  - extended tests so phase-2 contract drift now fails in the owning layers:
+    - backend API/session payloads
+    - autonomy writeback
+    - retrieval resurfacing
+    - digital embodiment audit semantics
+  - synced repository docs to the real current phase:
+    - `AGENTS.md` now locks the project to `Digital Embodiment Convergence Phase 2`
+    - architecture/handoff docs now describe the phase-2 body contract and keep frontend frozen
+- Validation:
+  - `python -m py_compile amadeus_thread0\graph_parts\digital_body_runtime.py amadeus_thread0\graph_parts\state.py amadeus_thread0\runtime\final_state.py amadeus_thread0\evolution_engine\reconsolidation.py amadeus_thread0\utils\turn_summary_export.py evals\run_digital_embodiment_audit.py`
+  - `python -m pytest tests\test_digital_body_runtime.py tests\test_backend_session.py tests\test_backend_api.py tests\test_autonomy_writeback.py tests\test_world_model_residue.py tests\test_digital_embodiment_audit.py -q`
+- Result:
+  - phase-2 runtime/API/writeback/resurfacing contract is locally green on the focused suite:
+    - `270 passed, 7 subtests passed`
+  - empty embodied shells no longer override frozen consequence truth
+  - session/account/quota/permission/sandbox detail now survives through the intended phase-2 surfaces when relevant
+  - full `python evals/run_digital_embodiment_audit.py` wrapper rerun is still pending:
+    - local runs exceeded the shell timeout at `124s` and `604s`
+    - do not mark `digital_embodiment_phase2_ready` from this run alone
+- Next:
+  - rerun `python evals/run_digital_embodiment_audit.py` in a longer-running environment and accumulate the actual phase-2 readiness streak
+  - continue the phase-2 backend lane on the same body contract rather than reopening frontend or reply-tone work
+
+## 2026-04-04 Run 222
+
+- Focus:
+  - formally close `Digital Embodiment Convergence Phase 2` instead of continuing open-ended runtime expansion
+- Files changed:
+  - `evals/run_digital_embodiment_audit.py`
+  - `evals/run_digital_embodiment_smokes.py`
+  - `tests/test_digital_embodiment_audit.py`
+  - `tests/test_digital_embodiment_smokes.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - fixed the audit bookkeeping root cause:
+    - `run_digital_embodiment_audit.py` now finalizes readiness before writing `recent_audits`
+    - top-level `readiness_status` and `recent_audits[-1].readiness_status` now stay identical
+  - added the formal Phase 2 manual smoke runner:
+    - `evals/run_digital_embodiment_smokes.py`
+    - fixed scenarios:
+      - `workspace_artifact_continuity`
+      - `workspace_access_request_resolve`
+      - `preferred_anchor_reinspect`
+      - `sandbox_overreach_pending`
+    - each scenario now emits final text, autonomy envelope, digital body, digital body consequence, key packet trace, and pass/fail checks into `json + md` artifacts
+  - integrated the smoke runner into the blocking phase-2 audit:
+    - new check id: `digital_embodiment_manual_smokes`
+  - added dedicated closeout coverage:
+    - `tests/test_digital_embodiment_audit.py`
+    - `tests/test_digital_embodiment_smokes.py`
+  - accumulated 3 fresh authoritative closeout reports after the fix:
+    - `evals/reports/digital-embodiment-audit-20260404-192406-phase2-closeout-a.{json,md}`
+    - `evals/reports/digital-embodiment-audit-20260404-194010-phase2-closeout-b.{json,md}`
+    - `evals/reports/digital-embodiment-audit-20260404-195802-phase2-closeout-c.{json,md}`
+  - synced execution docs to the real post-closeout state:
+    - `Digital Embodiment Convergence Phase 2` is now formally closed
+    - frontend remains frozen
+    - recommended next target is `Sandbox Embodied Execution Phase 1`, not yet implemented
+- Validation:
+  - `python -m py_compile evals\run_digital_embodiment_audit.py evals\run_digital_embodiment_smokes.py tests\test_digital_embodiment_audit.py tests\test_digital_embodiment_smokes.py`
+  - `python -m pytest tests\test_digital_embodiment_audit.py tests\test_digital_embodiment_smokes.py -q`
+  - `python evals\run_digital_embodiment_smokes.py --run-tag local-full`
+  - `python -m pytest tests\test_digital_body_runtime.py tests\test_backend_session.py tests\test_backend_api.py tests\test_autonomy_writeback.py tests\test_world_model_residue.py tests\test_digital_embodiment_audit.py tests\test_digital_embodiment_smokes.py -q`
+  - `python evals\run_digital_embodiment_audit.py --run-tag phase2-closeout-a`
+  - `python evals\run_digital_embodiment_audit.py --run-tag phase2-closeout-b`
+  - `python evals\run_digital_embodiment_audit.py --run-tag phase2-closeout-c`
+- Result:
+  - Phase 2 closeout tooling is now clean and repeatable
+  - the 4 required digital embodiment smokes are formalized and blocking
+  - all 3 fresh closeout audits report:
+    - `overall_status=passed`
+    - `readiness=digital_embodiment_phase2_ready`
+    - `recent_audits[-1].readiness_status=digital_embodiment_phase2_ready`
+  - `Digital Embodiment Convergence Phase 2` is now formally closed as a preserved backend baseline
+- Next:
+  - preserve:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital_embodiment_phase1_ready`
+    - `digital_embodiment_phase2_ready`
+  - do not start `Sandbox Embodied Execution Phase 1` until it is explicitly selected as the next implementation phase
+
+## 2026-04-04 Run 223
+
+- Focus:
+  - formally close `Sandbox Embodied Execution Phase 1` by syncing the repository contract to the implemented workspace-local runner and accumulating fresh authoritative audit evidence
+- Files changed:
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - switched the repo-level phase lock from "Phase 2 closed, sandbox not started" to the real post-closeout state:
+    - `Sandbox Embodied Execution Phase 1` is now treated as a preserved backend baseline
+    - current execution posture is explicitly documented as `host-local restricted execution`
+    - widened execution claims remain forbidden:
+      - no browser runtime
+      - no network download
+      - no package install
+      - no arbitrary host-side code generation
+  - documented the new stable contract surfaces for sandbox execution:
+    - `action_packets[*].execution_spec`
+    - `action_packets[*].execution_preview`
+    - `action_packets[*].execution_result`
+    - `autonomy.pending_approval.execution_preview`
+    - `digital_body.access_state.sandbox_state.runner_kind`
+    - `digital_body.access_state.sandbox_state.isolation_level`
+    - `digital_body.access_state.sandbox_state.last_command_profile`
+    - `digital_body.access_state.sandbox_state.last_exit_code`
+    - `digital_body.access_state.sandbox_state.last_run_id`
+    - `digital_body_consequence.kind=sandbox_execution_completed|sandbox_execution_blocked`
+  - updated the structure guide so ownership now explicitly includes:
+    - `amadeus_thread0/runtime/sandbox_runner.py`
+    - sandbox eval runners under `evals/`
+    - sandbox closeout tests under `tests/`
+  - accumulated fresh phase-closeout artifacts after the doc sync:
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-224558-phase1-closeout-a.{json,md}`
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-225854-phase1-closeout-b.{json,md}`
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
+    - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
+  - authoritative `ready` streak is now clean on fresh closeout reports:
+    - `phase1-closeout-b`
+    - `phase1-closeout-c`
+    - `phase1-closeout-d`
+- Validation:
+  - `python -m pytest tests/test_sandbox_embodied_execution_smokes.py tests/test_sandbox_embodied_execution_audit.py -q`
+  - `python -m pytest tests/test_sandbox_runner.py tests/test_sandbox_execution_runtime.py tests/test_sandbox_backend_contract.py -q`
+  - `python evals/run_sandbox_embodied_execution_audit.py --run-tag phase1-closeout-a`
+  - `python evals/run_sandbox_embodied_execution_audit.py --run-tag phase1-closeout-b`
+  - `python evals/run_sandbox_embodied_execution_audit.py --run-tag phase1-closeout-c`
+  - `python evals/run_sandbox_embodied_execution_audit.py --run-tag phase1-closeout-d`
+- Result:
+  - `Sandbox Embodied Execution Phase 1` is now formally closed as a preserved backend baseline
+  - the repo contract, handoff doc, structure guide, and run ledger are aligned with the implemented runner/audit reality
+  - fresh authoritative reports now show `sandbox_embodied_execution_phase1_ready`
+- Next:
+  - preserve:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital_embodiment_phase1_ready`
+    - `digital_embodiment_phase2_ready`
+    - `sandbox_embodied_execution_phase1_ready`
+  - do not widen the execution surface until the next bounded phase is explicitly selected

@@ -159,3 +159,58 @@ def test_retrieve_context_surfaces_behavior_consequence_traces_in_working_contex
     working_items = retrieved.get("working_items")
     assert isinstance(working_items, list)
     assert any("余温" in str(item) for item in working_items)
+
+
+def test_retrieve_context_uses_nested_source_identity_for_legacy_digital_body_traces() -> None:
+    with TemporaryDirectory() as td:
+        store = MemoryStore(Path(td) / "memories.sqlite")
+        try:
+            store.add_revision_trace(
+                namespace="digital_body_consequence",
+                target_id="source_material_compared",
+                before_summary="",
+                after_summary="当前判断会顺着这条相连线索继续。",
+                reason="digital_body_consequence:source_material_compared",
+                operator="system",
+                source="test",
+                metadata={
+                    "body_consequence_kind": "source_material_compared",
+                    "embodied_context": {
+                        "kind": "source_material_compared",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_title": "Persistence v2",
+                        "artifact_source_query": "langgraph persistence checkpointer thread recovery",
+                    },
+                },
+            )
+            store.add_revision_trace(
+                namespace="digital_body_consequence",
+                target_id="artifact_reacquired",
+                before_summary="",
+                after_summary="Persistence 那条旧链接只是被重新拿回来了一下。",
+                reason="digital_body_consequence:artifact_reacquired",
+                operator="system",
+                source="test",
+                metadata={
+                    "body_consequence_kind": "artifact_reacquired",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [9],
+                    "artifact_source_title": "Old persistence note",
+                },
+            )
+            retrieved = _retrieve_context("langgraph persistence checkpointer", store)
+        finally:
+            store.close()
+
+    traces = retrieved.get("digital_body_consequence_traces")
+    assert isinstance(traces, list)
+    assert traces
+    first_summary = str(traces[0].get("after_summary") or traces[0].get("content", {}).get("after_summary") or "")
+    assert "相连线索继续" in first_summary
+    working_items = retrieved.get("working_items")
+    assert isinstance(working_items, list)
+    assert any("Persistence v2" in str(item) for item in working_items)
+    assert any("source_material_compared" in str(item) and "Persistence v2" in str(item) for item in working_items)

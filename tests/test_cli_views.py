@@ -6,6 +6,7 @@ from amadeus_thread0.cli_views import (
     build_evolution_cli_summary,
     build_proactive_continuity_cli_summary,
     build_evolution_summary_line,
+    render_action_packet_cli_text,
     render_counterpart_assessment_cli_text,
     render_behavior_queue_cli_text,
     render_proactive_continuity_cli_text,
@@ -14,6 +15,27 @@ from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidati
 
 
 class CliViewsTests(unittest.TestCase):
+    def test_render_action_packet_cli_text_surfaces_sandbox_run_trace(self):
+        rendered = render_action_packet_cli_text(
+            [
+                {
+                    "proposal_id": "ap-sandbox-1",
+                    "origin": "motive_goal",
+                    "intent": "sandbox:execute_workspace_command",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "result_summary": "已跑完本次受限执行。",
+                    "execution_result": {
+                        "run_id": "ap-sandbox-1",
+                        "exit_code": 0,
+                    },
+                }
+            ]
+        )
+        self.assertIn("sandbox:execute_workspace_command", rendered)
+        self.assertIn("run=ap-sandbox-1", rendered)
+        self.assertIn("exit=0", rendered)
+
     def test_build_evolution_cli_summary_surfaces_continuity_vector(self):
         summary = build_evolution_cli_summary(
             relationship={
@@ -654,11 +676,14 @@ class CliViewsTests(unittest.TestCase):
                     "artifact_continuity": "detached",
                     "active_artifact_kind": "file",
                     "active_artifact_ref": "notes/plan.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
                     "active_artifact_label": "plan.md",
                     "artifact_age_s": 7200,
                     "artifact_reacquisition_mode": "reopen_file",
                     "artifact_carrier": "source_ref",
                     "artifact_source_ref_ids": [17],
+                    "preferred_source_ref_id": 17,
+                    "preferred_anchor_reason": "only_saved_source",
                     "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
                     "artifact_source_query": "langgraph persistence checkpointer thread",
                     "artifact_source_title": "Persistence",
@@ -687,10 +712,13 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(digital_body.get("resources", {}).get("external_tool_count"), 1)
         self.assertEqual(digital_body.get("resources", {}).get("artifact_continuity"), "detached")
         self.assertEqual(digital_body.get("resources", {}).get("active_artifact_kind"), "file")
+        self.assertEqual(digital_body.get("resources", {}).get("workspace_root"), "E:/runtime/workspaces/lab-notes")
         self.assertEqual(digital_body.get("resources", {}).get("active_artifact_label"), "plan.md")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_reacquisition_mode"), "reopen_file")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_carrier"), "source_ref")
         self.assertEqual(digital_body.get("resources", {}).get("artifact_source_ref_ids"), [17])
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_source_ref_id"), 17)
+        self.assertEqual(digital_body.get("resources", {}).get("preferred_anchor_reason"), "only_saved_source")
         self.assertEqual(
             digital_body.get("resources", {}).get("artifact_source_url"),
             "https://docs.langchain.com/oss/python/langgraph/persistence",
@@ -708,6 +736,9 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(current_turn.get("digital_body_artifact_continuity"), "detached")
         self.assertEqual(current_turn.get("digital_body_active_artifact_kind"), "file")
         self.assertEqual(current_turn.get("digital_body_active_artifact_label"), "plan.md")
+        self.assertEqual(current_turn.get("digital_body_workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(current_turn.get("digital_body_preferred_source_ref_id"), 17)
+        self.assertEqual(current_turn.get("digital_body_preferred_anchor_reason"), "only_saved_source")
         self.assertEqual(current_turn.get("digital_body_artifact_reacquisition_mode"), "reopen_file")
 
     def test_build_evolution_cli_summary_surfaces_digital_body_cooldown(self):
@@ -943,6 +974,7 @@ class CliViewsTests(unittest.TestCase):
                     "artifact_continuity": "attached",
                     "active_artifact_kind": "workspace",
                     "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
                     "active_artifact_label": "lab-notes",
                 },
             },
@@ -976,15 +1008,20 @@ class CliViewsTests(unittest.TestCase):
             if isinstance(summary.get("digital_body_consequence"), dict)
             else {}
         )
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
         self.assertEqual(digital_body_consequence.get("kind"), "workspace_access_resolved")
         self.assertEqual(digital_body_consequence.get("active_artifact_kind"), "workspace")
         self.assertEqual(digital_body_consequence.get("active_artifact_label"), "lab-notes")
+        self.assertEqual(digital_body.get("resources", {}).get("workspace_root"), "E:/runtime/workspaces/lab-notes")
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_consequence_kind"), "workspace_access_resolved")
         self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertEqual(current_turn.get("digital_body_workspace_root"), "E:/runtime/workspaces/lab-notes")
 
         line = build_evolution_summary_line(summary)
         self.assertIn("bodyfx=workspace_access_resolved", line)
+        self.assertIn("artifact=workspace:lab-notes:attached", line)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", line)
 
     def test_build_evolution_cli_summary_surfaces_workspace_file_updated_consequence(self):
         summary = build_evolution_cli_summary(
@@ -1001,6 +1038,7 @@ class CliViewsTests(unittest.TestCase):
                     "artifact_continuity": "attached",
                     "active_artifact_kind": "file",
                     "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
                     "active_artifact_label": "today.md",
                 },
             },
@@ -1035,9 +1073,12 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(current_turn.get("digital_body_consequence_kind"), "workspace_file_updated")
         self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
         self.assertTrue(bool(current_turn.get("digital_body_procedural_growth")))
+        self.assertEqual(current_turn.get("digital_body_workspace_root"), "E:/runtime/workspaces/lab-notes")
 
         line = build_evolution_summary_line(summary)
         self.assertIn("bodyfx=workspace_file_updated", line)
+        self.assertIn("artifact=file:today.md:attached:write", line)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", line)
 
     def test_build_evolution_cli_summary_surfaces_workspace_path_inspected_consequence(self):
         summary = build_evolution_cli_summary(
@@ -1091,6 +1132,7 @@ class CliViewsTests(unittest.TestCase):
 
     def test_build_evolution_cli_summary_surfaces_artifact_reacquired_consequence(self):
         summary = build_evolution_cli_summary(
+            current_event={"kind": "user_utterance"},
             digital_body_state={
                 "active_surface": "tooling",
                 "world_surfaces": ["browser", "source_ref"],
@@ -1207,6 +1249,7 @@ class CliViewsTests(unittest.TestCase):
 
     def test_build_evolution_cli_summary_surfaces_source_material_compared_consequence(self):
         summary = build_evolution_cli_summary(
+            current_event={"kind": "user_utterance"},
             digital_body_state={
                 "active_surface": "tooling",
                 "world_surfaces": ["browser", "source_ref"],
@@ -1222,6 +1265,8 @@ class CliViewsTests(unittest.TestCase):
                     "active_artifact_label": "Persistence v2",
                     "artifact_carrier": "source_ref",
                     "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
                     "artifact_source_title": "Persistence v2",
                     "artifact_source_tool_name": "search_web",
                 },
@@ -1238,6 +1283,8 @@ class CliViewsTests(unittest.TestCase):
                 "artifact_continuity": "attached",
                 "artifact_carrier": "source_ref",
                 "artifact_source_ref_ids": [21, 17],
+                "preferred_source_ref_id": 21,
+                "preferred_anchor_reason": "primary_more_current",
                 "artifact_source_title": "Persistence v2",
                 "artifact_source_tool_name": "search_web",
                 "primary_status": "completed",
@@ -1255,13 +1302,29 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(digital_body_consequence.get("kind"), "source_material_compared")
         self.assertEqual(digital_body_consequence.get("artifact_carrier"), "source_ref")
         self.assertEqual(digital_body_consequence.get("artifact_source_ref_ids"), [21, 17])
+        self.assertEqual(digital_body_consequence.get("preferred_source_ref_id"), 21)
+        self.assertEqual(digital_body_consequence.get("preferred_anchor_reason"), "primary_more_current")
         current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
         self.assertEqual(current_turn.get("digital_body_consequence_kind"), "source_material_compared")
         self.assertEqual(current_turn.get("digital_body_consequence_summary"), digital_body_consequence.get("summary"))
+        self.assertEqual(current_turn.get("digital_body_preferred_source_ref_id"), 21)
+        self.assertEqual(current_turn.get("digital_body_preferred_anchor_reason"), "primary_more_current")
+        self.assertEqual(current_turn.get("digital_body_consequence_preferred_source_ref_id"), 21)
+        self.assertEqual(current_turn.get("digital_body_consequence_preferred_anchor_reason"), "primary_more_current")
         self.assertFalse(bool(current_turn.get("digital_body_procedural_growth")))
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+        event_bodyfx = (
+            event_residue.get("digital_body_consequence")
+            if isinstance(event_residue.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(event_bodyfx.get("preferred_source_ref_id"), 21)
+        self.assertEqual(event_bodyfx.get("preferred_anchor_reason"), "primary_more_current")
 
         line = build_evolution_summary_line(summary)
         self.assertIn("bodyfx=source_material_compared", line)
+        self.assertIn("source=Persistence v2", line)
+        self.assertIn("pref=21@primary_more_current", line)
 
     def test_build_evolution_cli_summary_surfaces_access_state_refreshed_consequence(self):
         summary = build_evolution_cli_summary(
@@ -1422,11 +1485,208 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(embodied.get("artifact_source_title"), "Persistence")
         self.assertEqual(embodied.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(embodied.get("requested_help")))
+        self.assertIn("bodyfx=access_request_pending", summary[0].get("preview_line") or "")
+        self.assertIn("source=Persistence", summary[0].get("preview_line") or "")
+        self.assertIn("refs=17", summary[0].get("preview_line") or "")
 
         rendered = render_counterpart_assessment_cli_text(history, limit=5)
         self.assertIn("bodyfx=access_request_pending", rendered)
         self.assertIn("ask=workspace_write,human_approval", rendered)
         self.assertIn("help=yes", rendered)
+
+    def test_counterpart_assessment_cli_summary_normalizes_content_only_rows_via_shared_export_contract(self):
+        history = [
+            {
+                "id": "11",
+                "content": {
+                    "summary": " 她确认这次工作面已经真的接回来了。 ",
+                    "stance": " Open ",
+                    "scene": " Co_Work ",
+                    "created_at": "1710000109",
+                    "respect_level": "0.76",
+                    "assessment_profile": {
+                        "dominant_scene_signal": " Care ",
+                        "openness_drive": "0.74",
+                        "scene_strengths": {"care": "0.81"},
+                    },
+                    "embodied_context": {
+                        "kind": "workspace_access_resolved",
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "filesystem_state": "writable",
+                    },
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+
+        self.assertEqual(summary[0]["id"], 11)
+        self.assertEqual(summary[0]["stance"], "open")
+        self.assertEqual(summary[0]["scene"], "co_work")
+        self.assertEqual(summary[0]["created_at"], 1710000109)
+        self.assertEqual(summary[0]["respect_level"], 0.76)
+        profile = summary[0].get("assessment_profile") if isinstance(summary[0].get("assessment_profile"), dict) else {}
+        self.assertEqual(profile.get("dominant_scene_signal"), "care")
+        self.assertEqual(profile.get("openness_drive"), 0.74)
+        self.assertIn("bodyfx=workspace_access_resolved", summary[0].get("preview_line") or "")
+
+    def test_counterpart_assessment_cli_summary_preserves_workspace_surface_embodied_context(self):
+        history = [
+            {
+                "id": 18,
+                "summary": "她已经顺着那块文件工作面继续往前走了。",
+                "stance": "open",
+                "scene": "co_work",
+                "digital_body_consequence": {
+                    "kind": "workspace_file_updated",
+                    "summary": "她已经在 today.md 上继续写了一段。",
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_mutation_mode": "append",
+                    "procedural_growth": True,
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "workspace_file_updated")
+        self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(embodied.get("artifact_mutation_mode"), "append")
+        self.assertEqual(embodied.get("active_artifact_kind"), "file")
+        self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+        self.assertTrue(bool(embodied.get("procedural_growth")))
+
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("bodyfx=workspace_file_updated", rendered)
+        self.assertIn("file:today.md:attached:append", rendered)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", rendered)
+        self.assertIn("growth=yes", rendered)
+
+    def test_counterpart_assessment_cli_summary_preserves_workspace_path_inspection_embodied_context(self):
+        history = [
+            {
+                "id": 20,
+                "summary": "她已经把那块文件工作面重新看过一遍了。",
+                "stance": "open",
+                "scene": "co_work",
+                "digital_body_consequence": {
+                    "kind": "workspace_path_inspected",
+                    "summary": "她已经重新看过 today.md 的当前内容。",
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "workspace_path_inspected")
+        self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(embodied.get("active_artifact_kind"), "file")
+        self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+        self.assertFalse(bool(embodied.get("artifact_mutation_mode")))
+
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("bodyfx=workspace_path_inspected", rendered)
+        self.assertIn("file:today.md:attached", rendered)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", rendered)
+
+    def test_counterpart_assessment_cli_render_surfaces_source_material_anchor_details(self):
+        history = [
+            {
+                "id": 24,
+                "summary": "她已经把两条相关材料对照过一遍，并把当前最该沿用的来源线索压实了。",
+                "stance": "open",
+                "scene": "co_work",
+                "digital_body_consequence": {
+                    "kind": "source_material_compared",
+                    "summary": "已把 Persistence v2 和 Persistence 对照过一遍。",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "artifact_source_title": "Persistence v2",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("source=Persistence v2", summary[0].get("preview_line") or "")
+        self.assertIn("pref=21@primary_more_current", summary[0].get("preview_line") or "")
+        self.assertIn("bodyfx=source_material_compared", rendered)
+        self.assertIn("source=Persistence v2", rendered)
+        self.assertIn("pref=21@primary_more_current", rendered)
+        self.assertIn("refs=21,17", rendered)
+
+    def test_counterpart_assessment_cli_summary_preserves_workspace_access_resolved_embodied_context(self):
+        history = [
+            {
+                "id": 22,
+                "summary": "工作区权限已经真正接通了，后面的动作不再只是停在提案层。",
+                "stance": "open",
+                "scene": "co_work",
+                "digital_body_consequence": {
+                    "kind": "workspace_access_resolved",
+                    "summary": "可写工作区 lab-notes 已经真的创建好并接入当前上下文，后面的落盘动作现在可以继续。",
+                    "access_mode": "tool_enabled",
+                    "active_surface": "tooling",
+                    "filesystem_state": "writable",
+                    "session_continuity": "stable",
+                    "session_recovery_mode": "refresh_session",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes",
+                    "active_artifact_label": "lab-notes",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_continuity": "attached",
+                    "access_acquire_proposals": [
+                        {
+                            "target": "filesystem",
+                            "mode": "operator_create_workspace",
+                            "summary": "先新建一个可写工作区。",
+                            "grants": ["filesystem", "workspace_write"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "summary": "先新建一个可写工作区。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    },
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_counterpart_assessment_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "workspace_access_resolved")
+        self.assertEqual(embodied.get("filesystem_state"), "writable")
+        self.assertEqual(embodied.get("session_continuity"), "stable")
+        self.assertEqual(embodied.get("session_recovery_mode"), "refresh_session")
+        self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(embodied.get("selected_access_proposal", {}).get("mode"), "operator_create_workspace")
+        self.assertEqual(embodied.get("access_acquire_proposals", [])[0]["target"], "filesystem")
+
+        rendered = render_counterpart_assessment_cli_text(history, limit=5)
+        self.assertIn("bodyfx=workspace_access_resolved", rendered)
+        self.assertIn("session=stable:refresh_session", rendered)
+        self.assertIn("fs=writable", rendered)
+        self.assertIn("proposal=operator_create_workspace@filesystem", rendered)
 
     def test_build_proactive_continuity_cli_summary_and_render(self):
         history = [
@@ -1521,11 +1781,207 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(embodied.get("artifact_source_title"), "Persistence")
         self.assertEqual(embodied.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(embodied.get("requested_help")))
+        self.assertIn("bodyfx=access_request_pending", summary[0].get("preview_line") or "")
+        self.assertIn("source=Persistence", summary[0].get("preview_line") or "")
+        self.assertIn("refs=17", summary[0].get("preview_line") or "")
 
         rendered = render_proactive_continuity_cli_text(history, limit=5)
         self.assertIn("bodyfx=access_request_pending", rendered)
         self.assertIn("ask=workspace_write", rendered)
         self.assertIn("help=yes", rendered)
+
+    def test_proactive_continuity_cli_render_surfaces_source_material_anchor_details(self):
+        history = [
+            {
+                "id": 25,
+                "summary": "她把刚刚对照后的来源锚点也带进了后续连续性里。",
+                "kind": "promoted",
+                "trace_family": "artifact_source_followthrough",
+                "carryover_mode": "continue_source_line",
+                "digital_body_consequence": {
+                    "kind": "source_material_compared",
+                    "summary": "已把 Persistence v2 和 Persistence 对照过一遍。",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "artifact_source_title": "Persistence v2",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence v2",
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        self.assertIn("source=Persistence v2", summary[0].get("preview_line") or "")
+        self.assertIn("pref=21@primary_more_current", summary[0].get("preview_line") or "")
+        self.assertIn("bodyfx=source_material_compared", rendered)
+        self.assertIn("source=Persistence v2", rendered)
+        self.assertIn("pref=21@primary_more_current", rendered)
+        self.assertIn("refs=21,17", rendered)
+
+    def test_proactive_continuity_cli_summary_preserves_workspace_surface_embodied_context(self):
+        history = [
+            {
+                "id": 19,
+                "summary": "那块文件工作面已经重新接回当前连续性里。",
+                "kind": "promoted",
+                "trace_family": "artifact_reacquired_followthrough",
+                "carryover_mode": "continue_work_surface",
+                "digital_body_consequence": {
+                    "kind": "artifact_reacquired",
+                    "summary": "她已经重新把 notes/today.md 接回当前上下文。",
+                    "artifact_continuity": "detached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "artifact_reacquisition_mode": "reopen_file",
+                    "artifact_mutation_mode": "replace",
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "artifact_reacquired")
+        self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(embodied.get("artifact_reacquisition_mode"), "reopen_file")
+        self.assertEqual(embodied.get("artifact_mutation_mode"), "replace")
+        self.assertEqual(embodied.get("active_artifact_kind"), "file")
+        self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        self.assertIn("bodyfx=artifact_reacquired", rendered)
+        self.assertIn("file:today.md:detached:replace:reopen_file", rendered)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", rendered)
+
+    def test_proactive_continuity_cli_summary_preserves_workspace_path_inspection_embodied_context(self):
+        history = [
+            {
+                "id": 21,
+                "summary": "那块文件工作面已经重新看过，后面的推进可以顺着它继续。",
+                "kind": "promoted",
+                "trace_family": "workspace_path_inspected_followthrough",
+                "carryover_mode": "continue_work_surface",
+                "digital_body_consequence": {
+                    "kind": "workspace_path_inspected",
+                    "summary": "她已经重新看过 notes/today.md 的当前内容。",
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "workspace_path_inspected")
+        self.assertEqual(embodied.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(embodied.get("active_artifact_kind"), "file")
+        self.assertEqual(embodied.get("active_artifact_label"), "today.md")
+        self.assertFalse(bool(embodied.get("artifact_mutation_mode")))
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        self.assertIn("bodyfx=workspace_path_inspected", rendered)
+        self.assertIn("file:today.md:attached", rendered)
+        self.assertIn("root=E:/runtime/workspaces/lab-notes", rendered)
+
+    def test_proactive_continuity_cli_summary_preserves_access_state_refresh_embodied_context(self):
+        history = [
+            {
+                "id": 23,
+                "summary": "她重新核对了一遍入口状态，并把这条稳定可用的路径留进了后续连续性里。",
+                "kind": "promoted",
+                "trace_family": "access_state_refresh_followthrough",
+                "carryover_mode": "continue_work_surface",
+                "digital_body_consequence": {
+                    "kind": "access_state_refreshed",
+                    "summary": "已重新检查当前入口状态，眼下这条路径是稳定的。",
+                    "access_mode": "tool_enabled",
+                    "active_surface": "tooling",
+                    "api_key_state": "present",
+                    "filesystem_state": "writable",
+                    "network_access": "enabled",
+                    "session_continuity": "stable",
+                    "session_recovery_mode": "refresh_session",
+                    "access_acquire_proposals": [
+                        {
+                            "target": "filesystem",
+                            "mode": "operator_create_workspace",
+                            "summary": "如果需要新的可写工作区，可以让你补一个。",
+                            "grants": ["filesystem", "workspace_write"],
+                            "requires_operator": True,
+                        }
+                    ],
+                    "selected_access_proposal": {
+                        "target": "filesystem",
+                        "mode": "operator_create_workspace",
+                        "summary": "如果需要新的可写工作区，可以让你补一个。",
+                        "grants": ["filesystem", "workspace_write"],
+                        "requires_operator": True,
+                    },
+                    "primary_status": "completed",
+                },
+            }
+        ]
+
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+        embodied = summary[0].get("embodied_context") if isinstance(summary[0].get("embodied_context"), dict) else {}
+        self.assertEqual(embodied.get("kind"), "access_state_refreshed")
+        self.assertEqual(embodied.get("api_key_state"), "present")
+        self.assertEqual(embodied.get("filesystem_state"), "writable")
+        self.assertEqual(embodied.get("network_access"), "enabled")
+        self.assertEqual(embodied.get("session_continuity"), "stable")
+        self.assertEqual(embodied.get("session_recovery_mode"), "refresh_session")
+        self.assertEqual(embodied.get("selected_access_proposal", {}).get("mode"), "operator_create_workspace")
+        self.assertEqual(embodied.get("access_acquire_proposals", [])[0]["target"], "filesystem")
+
+        rendered = render_proactive_continuity_cli_text(history, limit=5)
+        self.assertIn("bodyfx=access_state_refreshed", rendered)
+        self.assertIn("session=stable:refresh_session", rendered)
+        self.assertIn("fs=writable", rendered)
+        self.assertIn("net=enabled", rendered)
+        self.assertIn("proposal=operator_create_workspace@filesystem", rendered)
+
+    def test_proactive_continuity_cli_summary_normalizes_content_only_rows_via_shared_export_contract(self):
+        history = [
+            {
+                "id": "12",
+                "content": {
+                    "summary": " 她把这条稳定入口继续带进后续连续性里。 ",
+                    "kind": " Promoted ",
+                    "trace_family": " Access_State_Refresh_Followthrough ",
+                    "carryover_mode": " Continue_Work_Surface ",
+                    "carryover_strength": "0.53",
+                    "semantic_continuity_depth": "0.68",
+                    "long_term_axis_count": "4",
+                    "embodied_context": {
+                        "kind": "access_state_refreshed",
+                        "api_key_state": "present",
+                        "filesystem_state": "writable",
+                        "network_access": "enabled",
+                    },
+                },
+            }
+        ]
+
+        summary = build_proactive_continuity_cli_summary(history, limit=5)
+
+        self.assertEqual(summary[0]["id"], 12)
+        self.assertEqual(summary[0]["kind"], "promoted")
+        self.assertEqual(summary[0]["trace_family"], "access_state_refresh_followthrough")
+        self.assertEqual(summary[0]["carryover_mode"], "continue_work_surface")
+        self.assertEqual(summary[0]["carryover_strength"], 0.53)
+        self.assertEqual(summary[0]["semantic_continuity_depth"], 0.68)
+        self.assertEqual(summary[0]["long_term_axis_count"], 4)
+        self.assertIn("carry=continue_work_surface:0.53", summary[0].get("preview_line") or "")
 
     def test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue(self):
         summary = build_evolution_cli_summary(
@@ -1765,6 +2221,10 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(event_bodyfx.get("artifact_source_title"), "Persistence")
         self.assertEqual(event_bodyfx.get("artifact_source_tool_name"), "search_web")
         self.assertTrue(bool(event_bodyfx.get("requested_help")))
+        self.assertIn("scheduled_life_due@scheduler", event_residue.get("preview_line") or "")
+        self.assertIn("bodyfx=access_request_pending", event_residue.get("preview_line") or "")
+        self.assertIn("source=Persistence", event_residue.get("preview_line") or "")
+        self.assertIn("refs=17", event_residue.get("preview_line") or "")
         lifecycle = summary.get("agenda_lifecycle") if isinstance(summary.get("agenda_lifecycle"), dict) else {}
         self.assertEqual(lifecycle.get("kind"), "released_to_self_activity")
         self.assertEqual(lifecycle.get("carryover_mode"), "own_rhythm")

@@ -3,17 +3,159 @@ from __future__ import annotations
 import unittest
 
 from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
+from amadeus_thread0.graph_parts.action_packets import build_tool_action_packet
 from amadeus_thread0.runtime.final_state import (
     resolve_action_packets,
     resolve_action_trace,
     resolve_autonomy_block_reason,
     resolve_autonomy_intent,
+    resolve_digital_body_consequence,
     resolve_digital_body_state,
     resolve_pending_action_proposal,
 )
 
 
 class AutonomyWritebackTests(unittest.TestCase):
+    def test_reconsolidation_snapshot_distinguishes_sandbox_completed_blocked_and_pending(self):
+        base_body = {
+            "active_surface": "tooling",
+            "perception_channels": ["dialogue", "filesystem"],
+            "action_channels": ["language", "structured_action", "tooling"],
+            "world_surfaces": ["filesystem", "sandbox"],
+            "access_state": {
+                "mode": "tool_enabled",
+                "filesystem_state": "writable",
+                "sandbox_mode": "restricted",
+                "sandbox_state": {
+                    "availability": "restricted",
+                    "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                    "execution_policy": "approval_required",
+                    "runner_kind": "local_restricted_runner",
+                    "isolation_level": "host_local_restricted",
+                },
+            },
+            "resource_state": {
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/ap/stdout.txt",
+                "active_artifact_label": "stdout.txt",
+                "artifact_carrier": "filesystem",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+            },
+        }
+
+        def _snapshot_for(status: str, *, exit_code: int, run_id: str) -> dict[str, object]:
+            packet = build_tool_action_packet(
+                tool_name="execute_workspace_command",
+                proposal_id=run_id,
+                args={"argv": ["python", "emit.py"]},
+                action="approve",
+                status=status,
+                result_summary="sandbox done" if status == "completed" else "sandbox blocked",
+                block_reason="sandbox blocked" if status == "blocked" else "",
+                execution_spec={
+                    "executor": "python",
+                    "profile": "python_script",
+                    "argv": ["python", "emit.py"],
+                    "cwd": "E:/runtime/workspaces/lab-notes",
+                    "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                    "timeout_s": 25,
+                    "writes_expected": False,
+                    "expected_artifacts": [],
+                },
+                execution_preview={
+                    "runner_kind": "local_restricted_runner",
+                    "isolation_level": "host_local_restricted",
+                    "argv": ["python", "emit.py"],
+                    "cwd": "E:/runtime/workspaces/lab-notes",
+                    "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                    "timeout_s": 25,
+                    "writes_expected": False,
+                    "expected_artifacts": [],
+                },
+                execution_result={
+                    "run_id": run_id,
+                    "status": status if status in {"completed", "blocked"} else "",
+                    "exit_code": exit_code,
+                    "duration_ms": 42,
+                    "stdout_log_ref": f"E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/{run_id}/stdout.txt",
+                    "stderr_log_ref": f"E:/runtime/workspaces/lab-notes/.amadeus/sandbox-runs/{run_id}/stderr.txt",
+                    "produced_artifacts": [],
+                    "error_summary": "" if status == "completed" else "process exited with code 2",
+                },
+            )
+            return build_reconsolidation_snapshot(
+                current_event={"kind": "user_utterance"},
+                appraisal={"interaction_frame": "task"},
+                world_model_state={},
+                semantic_narrative_profile={},
+                latent_state={"self_coherence": 0.82},
+                emotion_state={"label": "focused"},
+                bond_state={"trust": 0.6},
+                behavior_action={"interaction_mode": "tooling"},
+                action_packets=[packet],
+                digital_body_state=base_body,
+            )
+
+        completed = _snapshot_for("completed", exit_code=0, run_id="ap-sandbox-completed")
+        blocked = _snapshot_for("blocked", exit_code=2, run_id="ap-sandbox-blocked")
+        pending_packet = build_tool_action_packet(
+            tool_name="execute_workspace_command",
+            proposal_id="ap-sandbox-pending",
+            args={"argv": ["python", "emit.py"]},
+            action="approve",
+            status="awaiting_approval",
+            execution_spec={
+                "executor": "python",
+                "profile": "python_script",
+                "argv": ["python", "emit.py"],
+                "cwd": "E:/runtime/workspaces/lab-notes",
+                "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                "timeout_s": 25,
+                "writes_expected": False,
+                "expected_artifacts": [],
+            },
+            execution_preview={
+                "runner_kind": "local_restricted_runner",
+                "isolation_level": "host_local_restricted",
+                "argv": ["python", "emit.py"],
+                "cwd": "E:/runtime/workspaces/lab-notes",
+                "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                "timeout_s": 25,
+                "writes_expected": False,
+                "expected_artifacts": [],
+            },
+        )
+        pending = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[pending_packet],
+            digital_body_state={
+                **base_body,
+                "active_surface": "approval_gate",
+                "action_channels": ["language", "structured_action", "approval_gate", "tooling"],
+                "access_state": {
+                    **base_body["access_state"],
+                    "mode": "approval_pending",
+                    "pending_approval_count": 1,
+                    "external_mutation_pending": True,
+                },
+            },
+        )
+
+        self.assertEqual(completed["digital_body_consequence"]["kind"], "sandbox_execution_completed")
+        self.assertEqual(completed["digital_body_consequence"]["sandbox_exit_code"], 0)
+        self.assertEqual(blocked["digital_body_consequence"]["kind"], "sandbox_execution_blocked")
+        self.assertEqual(blocked["digital_body_consequence"]["sandbox_exit_code"], 2)
+        self.assertEqual(pending["digital_body_consequence"]["kind"], "access_request_pending")
+        self.assertEqual(pending["digital_body_consequence"]["primary_status"], "awaiting_approval")
+
     def test_build_reconsolidation_snapshot_compacts_autonomy_payload(self):
         snapshot = build_reconsolidation_snapshot(
             current_event={"kind": "user_utterance"},
@@ -71,6 +213,30 @@ class AutonomyWritebackTests(unittest.TestCase):
                     "conditions": ["human_approval_required", "external_mutation_gated"],
                     "pending_approval_count": 1,
                     "external_mutation_pending": True,
+                    "browser_session": "present",
+                    "account_state": "logged_in",
+                    "cookie_state": "present",
+                    "api_key_state": "missing",
+                    "quota_state": "ok",
+                    "sandbox_mode": "restricted",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "selected_access_proposal": {
+                        "target": "api_key",
+                        "mode": "operator_provide_api_key",
+                        "summary": "先补一个可用 API key。",
+                        "operator_action": "填入一个可用 key。",
+                        "grants": ["api_key"],
+                        "pending_grants": ["api_key"],
+                        "completion_ratio": 0.0,
+                        "requires_operator": True,
+                    },
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                        "execution_policy": "approval_required",
+                        "last_status": "gated",
+                    },
                 },
                 "resource_state": {"action_packet_count": 1, "pending_approval_count": 1},
                 "body_constraints": ["human_approval_required", "external_mutation_gated"],
@@ -86,6 +252,15 @@ class AutonomyWritebackTests(unittest.TestCase):
         self.assertTrue(bool(artifact_context.get("preview_truncated")))
         self.assertEqual(snapshot["action_trace"][0]["event"], "tool_gate_decision")
         self.assertEqual(snapshot["digital_body_state"]["access_state"]["mode"], "approval_pending")
+        access_state = snapshot["digital_body_state"]["access_state"]
+        self.assertEqual(access_state["session_state"]["continuity"], "stable")
+        self.assertEqual(access_state["account_state_detail"]["login_state"], "logged_in")
+        self.assertEqual(access_state["account_state_detail"]["api_key_state"], "missing")
+        self.assertEqual(access_state["quota_state_detail"]["provider_state"], "ok")
+        self.assertEqual(access_state["permission_state"]["approval_state"], "approval_pending")
+        self.assertEqual(access_state["permission_state"]["pending_grants"], ["api_key"])
+        self.assertEqual(access_state["sandbox_state"]["availability"], "restricted")
+        self.assertEqual(access_state["sandbox_state"]["allowed_roots"], ["E:/runtime/workspaces/lab-notes"])
         self.assertEqual(snapshot["digital_body_consequence"]["kind"], "access_request_pending")
         self.assertIn("human_approval", snapshot["digital_body_consequence"]["requested_access"])
         self.assertEqual(snapshot["digital_body_consequence"]["artifact_carrier"], "source_ref")
@@ -95,6 +270,186 @@ class AutonomyWritebackTests(unittest.TestCase):
             snapshot["digital_body_consequence"]["artifact_source_query"],
             "langgraph persistence checkpointer thread",
         )
+        consequence = snapshot["digital_body_consequence"]
+        self.assertEqual(consequence["session_state"]["continuity"], "stable")
+        self.assertEqual(consequence["account_state_detail"]["login_state"], "logged_in")
+        self.assertEqual(consequence["account_state_detail"]["api_key_state"], "missing")
+        self.assertEqual(consequence["quota_state_detail"]["provider_state"], "ok")
+        self.assertEqual(consequence["permission_state"]["approval_state"], "approval_pending")
+        self.assertEqual(consequence["permission_state"]["pending_grants"], ["api_key"])
+        self.assertEqual(consequence["sandbox_state"]["availability"], "restricted")
+
+    def test_reconsolidation_snapshot_preserves_workspace_root_for_completed_workspace_artifact(self):
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.81},
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.55},
+            behavior_action={"interaction_mode": "tooling", "primary_motive": "restore_workspace_continuity"},
+            action_packets=[
+                {
+                    "proposal_id": "ap-ws-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:reopen_file",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "reacquire_artifact",
+                    "result_summary": "已重新接回文件 plan.md。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "notes/plan.md",
+                        "artifact_label": "plan.md",
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "reacquisition_mode": "reopen_file",
+                        "preview": "# plan\nkeep going\n",
+                        "exists": True,
+                    },
+                }
+            ],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue"],
+                "action_channels": ["language", "tooling"],
+                "access_state": {"mode": "tool_enabled"},
+                "resource_state": {
+                    "action_packet_count": 1,
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/plan.md",
+                    "active_artifact_label": "plan.md",
+                    "artifact_reacquisition_mode": "reopen_file",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+        )
+        artifact_context = snapshot["action_packets"][0].get("artifact_context") if isinstance(snapshot["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(snapshot["digital_body_consequence"]["kind"], "artifact_reacquired")
+        self.assertEqual(snapshot["digital_body_consequence"]["workspace_root"], "E:/runtime/workspaces/lab-notes")
+
+    def test_reconsolidation_snapshot_preserves_workspace_root_for_completed_workspace_mutation_packet(self):
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "neutral"},
+            bond_state={"trust": 0.56},
+            behavior_action={"interaction_mode": "tooling", "primary_motive": "continue_workspace_task"},
+            action_packets=[
+                {
+                    "proposal_id": "ap-mutate-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:append_file",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "append_workspace_file",
+                    "result_summary": "已继续写入文件 plan.md。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "notes/plan.md",
+                        "artifact_label": "plan.md",
+                        "workspace_root": "E:/runtime/workspaces/lab-notes",
+                        "reacquisition_mode": "reopen_file",
+                        "preview": "# plan\nmore notes\n",
+                        "exists": True,
+                    },
+                }
+            ],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue"],
+                "action_channels": ["language", "tooling"],
+                "access_state": {"mode": "tool_enabled"},
+                "resource_state": {
+                    "action_packet_count": 1,
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "notes/plan.md",
+                    "active_artifact_label": "plan.md",
+                    "artifact_reacquisition_mode": "reopen_file",
+                    "artifact_mutation_mode": "append",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+        )
+        artifact_context = snapshot["action_packets"][0].get("artifact_context") if isinstance(snapshot["action_packets"][0].get("artifact_context"), dict) else {}
+        self.assertEqual(artifact_context.get("workspace_root"), "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(snapshot["digital_body_consequence"]["kind"], "workspace_file_updated")
+        self.assertEqual(snapshot["digital_body_consequence"]["workspace_root"], "E:/runtime/workspaces/lab-notes")
+        self.assertEqual(snapshot["digital_body_consequence"]["artifact_mutation_mode"], "append")
+
+    def test_reconsolidation_snapshot_normalizes_resource_state_source_ref_identity_fields(self):
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "relationship"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.8},
+            emotion_state={"label": "care"},
+            bond_state={"trust": 0.62},
+            behavior_action={"interaction_mode": "checkin", "primary_motive": "honor_continuity"},
+            action_packets=[
+                {
+                    "proposal_id": "ap-src-identity-1",
+                    "origin": "counterpart_request",
+                    "intent": "artifact:rerun_search",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "reacquire_artifact",
+                    "result_summary": "已重新接回检索结果 Persistence v2。",
+                    "writeback_ready": True,
+                }
+            ],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue"],
+                "action_channels": ["language", "tooling"],
+                "access_state": {"mode": "tool_enabled"},
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_label": "Persistence",
+                    "artifact_carrier": " source_ref ",
+                    "artifact_source_ref_ids": ["21", "21", "17", "0", -1],
+                    "preferred_source_ref_id": "21",
+                    "preferred_anchor_reason": " Primary_More_Current ",
+                    "artifact_source_url": " https://docs.langchain.com/oss/python/langgraph/persistence ",
+                    "artifact_source_query": " langgraph persistence checkpointer thread recovery ",
+                    "artifact_source_title": " Persistence v2 ",
+                    "artifact_source_tool_name": " search_web ",
+                },
+            },
+        )
+
+        consequence = snapshot["digital_body_consequence"]
+        self.assertEqual(consequence["artifact_carrier"], "source_ref")
+        self.assertEqual(consequence["artifact_source_ref_ids"], [21, 17])
+        self.assertEqual(consequence["preferred_source_ref_id"], 21)
+        self.assertEqual(consequence["preferred_anchor_reason"], "primary_more_current")
+        self.assertEqual(
+            consequence["artifact_source_url"],
+            "https://docs.langchain.com/oss/python/langgraph/persistence",
+        )
+        self.assertEqual(
+            consequence["artifact_source_query"],
+            "langgraph persistence checkpointer thread recovery",
+        )
+        self.assertEqual(consequence["artifact_source_title"], "Persistence v2")
+        self.assertEqual(consequence["artifact_source_tool_name"], "search_web")
 
     def test_final_state_resolvers_prefer_frozen_terminal_packets(self):
         reconsolidation_snapshot = {
@@ -122,6 +477,7 @@ class AutonomyWritebackTests(unittest.TestCase):
                     "artifact_kind": "file",
                     "artifact_ref": "notes/plan.md",
                     "artifact_label": "plan.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
                     "reacquisition_mode": "reopen_file",
                     "preview": "# plan\nkeep going\n",
                     "exists": True,
@@ -130,6 +486,16 @@ class AutonomyWritebackTests(unittest.TestCase):
         ],
             "action_trace": [{"proposal_id": "ap-1", "status": "completed", "event": "completed"}],
             "autonomy_block_reason": "",
+            "digital_body_consequence": {
+                "kind": "artifact_reacquired",
+                "summary": "已经把 plan.md 重新接回当前上下文。",
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "notes/plan.md",
+                "active_artifact_label": "plan.md",
+                "artifact_reacquisition_mode": "reopen_file",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+            },
         }
         live_packets = [
             {
@@ -151,7 +517,15 @@ class AutonomyWritebackTests(unittest.TestCase):
         resolved_artifact_context = resolve_action_packets(action_packets=live_packets, reconsolidation_snapshot=reconsolidation_snapshot)[0].get("artifact_context")
         self.assertEqual(resolved_artifact_context["artifact_label"], "plan.md")
         self.assertEqual(resolved_artifact_context["carrier"], "filesystem")
+        self.assertEqual(resolved_artifact_context["workspace_root"], "E:/runtime/workspaces/lab-notes")
         self.assertEqual(resolve_action_trace(action_trace=[], reconsolidation_snapshot=reconsolidation_snapshot)[0]["event"], "completed")
+        self.assertEqual(
+            resolve_digital_body_consequence(
+                digital_body_consequence={},
+                reconsolidation_snapshot=reconsolidation_snapshot,
+            )["workspace_root"],
+            "E:/runtime/workspaces/lab-notes",
+        )
         self.assertEqual(
             resolve_digital_body_state(
                 digital_body_state={},

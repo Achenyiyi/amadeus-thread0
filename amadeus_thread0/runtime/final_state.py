@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 from ..graph_parts.action_packets import (
-    normalize_access_acquire_proposal,
-    normalize_access_acquire_proposals,
     normalize_action_packet,
     normalize_action_packets,
 )
@@ -14,7 +12,11 @@ from ..graph_parts.autonomy_runtime import (
     refresh_autonomy_intent_from_packets,
 )
 from ..graph_parts.behavior_runtime import _behavior_plan_from_action
-from ..graph_parts.digital_body_runtime import digital_body_state_has_signal, normalize_digital_body_state
+from ..graph_parts.digital_body_runtime import (
+    digital_body_state_has_signal,
+    normalize_digital_body_state,
+    normalize_embodied_context,
+)
 from ..evolution_engine.reconsolidation import derive_digital_body_consequence
 from ..utils.counterpart_profile import normalize_counterpart_assessment_profile
 
@@ -25,23 +27,6 @@ def _dict_or_empty(value: Any) -> dict[str, Any]:
 
 def _list_or_empty(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
-
-
-def _positive_int_list(value: Any, *, limit: int = 8) -> list[int]:
-    if not isinstance(value, list):
-        return []
-    out: list[int] = []
-    for item in value:
-        try:
-            ivalue = int(item)
-        except Exception:
-            continue
-        if ivalue <= 0:
-            continue
-        out.append(ivalue)
-        if len(out) >= max(1, int(limit)):
-            break
-    return out
 
 
 def behavior_action_has_signal(action: dict[str, Any] | None) -> bool:
@@ -393,78 +378,20 @@ def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> b
             str(consequence.get("artifact_source_query") or "").strip(),
             str(consequence.get("artifact_source_title") or "").strip(),
             str(consequence.get("artifact_source_tool_name") or "").strip(),
+            str(consequence.get("workspace_root") or "").strip(),
             isinstance(consequence.get("access_acquire_proposals"), list) and bool(consequence.get("access_acquire_proposals")),
             isinstance(consequence.get("selected_access_proposal"), dict) and bool(consequence.get("selected_access_proposal")),
+            isinstance(consequence.get("session_state"), dict) and bool(consequence.get("session_state")),
+            isinstance(consequence.get("account_state_detail"), dict) and bool(consequence.get("account_state_detail")),
+            isinstance(consequence.get("quota_state_detail"), dict) and bool(consequence.get("quota_state_detail")),
+            isinstance(consequence.get("permission_state"), dict) and bool(consequence.get("permission_state")),
+            isinstance(consequence.get("sandbox_state"), dict) and bool(consequence.get("sandbox_state")),
         )
     )
 
 
 def _normalize_digital_body_consequence(consequence: dict[str, Any] | None) -> dict[str, Any]:
-    row = _dict_or_empty(consequence)
-    if not row:
-        return {}
-    normalized = {
-        "kind": str(row.get("kind") or "").strip().lower(),
-        "summary": str(row.get("summary") or "").strip()[:220],
-        "access_mode": str(row.get("access_mode") or "").strip().lower(),
-        "active_surface": str(row.get("active_surface") or "").strip().lower(),
-        "world_surfaces": [
-            str(item).strip().lower()
-            for item in _list_or_empty(row.get("world_surfaces"))
-            if str(item or "").strip()
-        ][:12],
-        "missing_access": [
-            str(item).strip().lower()
-            for item in _list_or_empty(row.get("missing_access"))
-            if str(item or "").strip()
-        ][:12],
-        "requested_access": [
-            str(item).strip().lower()
-            for item in _list_or_empty(row.get("requested_access"))
-            if str(item or "").strip()
-        ][:12],
-        "granted_toolsets": [
-            str(item).strip().lower()
-            for item in _list_or_empty(row.get("granted_toolsets"))
-            if str(item or "").strip()
-        ][:12],
-        "active_tools": [
-            str(item).strip().lower()
-            for item in _list_or_empty(row.get("active_tools"))
-            if str(item or "").strip()
-        ][:8],
-        "block_reason": str(row.get("block_reason") or "").strip()[:220],
-        "retry_after_s": max(0, int(row.get("retry_after_s") or 0)),
-        "cooldown_scope": str(row.get("cooldown_scope") or "").strip().lower(),
-        "session_continuity": str(row.get("session_continuity") or "").strip().lower(),
-        "session_expires_in_s": max(0, int(row.get("session_expires_in_s") or 0)),
-        "session_recovery_mode": str(row.get("session_recovery_mode") or "").strip().lower(),
-        "artifact_continuity": str(row.get("artifact_continuity") or "").strip().lower(),
-        "active_artifact_kind": str(row.get("active_artifact_kind") or "").strip().lower(),
-        "active_artifact_ref": str(row.get("active_artifact_ref") or "").strip()[:220],
-        "active_artifact_label": str(row.get("active_artifact_label") or "").strip()[:160],
-        "artifact_age_s": max(0, int(row.get("artifact_age_s") or 0)),
-        "artifact_reacquisition_mode": str(row.get("artifact_reacquisition_mode") or "").strip().lower(),
-        "artifact_mutation_mode": str(row.get("artifact_mutation_mode") or "").strip().lower(),
-        "artifact_carrier": str(row.get("artifact_carrier") or "").strip().lower(),
-        "artifact_source_ref_ids": _positive_int_list(row.get("artifact_source_ref_ids")),
-        "preferred_source_ref_id": max(0, int(row.get("preferred_source_ref_id") or 0)),
-        "preferred_anchor_reason": str(row.get("preferred_anchor_reason") or "").strip().lower()[:120],
-        "artifact_source_url": str(row.get("artifact_source_url") or "").strip()[:320],
-        "artifact_source_query": str(row.get("artifact_source_query") or "").strip()[:220],
-        "artifact_source_title": str(row.get("artifact_source_title") or "").strip()[:160],
-        "artifact_source_tool_name": str(row.get("artifact_source_tool_name") or "").strip().lower()[:80],
-        "primary_proposal_id": str(row.get("primary_proposal_id") or "").strip(),
-        "primary_status": str(row.get("primary_status") or "").strip().lower(),
-        "primary_origin": str(row.get("primary_origin") or "").strip().lower(),
-        "primary_intent": str(row.get("primary_intent") or "").strip().lower(),
-        "primary_tool_name": str(row.get("primary_tool_name") or "").strip().lower(),
-        "procedural_growth": bool(row.get("procedural_growth", False)),
-        "environmental_friction": bool(row.get("environmental_friction", False)),
-        "requested_help": bool(row.get("requested_help", False)),
-        "access_acquire_proposals": normalize_access_acquire_proposals(row.get("access_acquire_proposals")),
-        "selected_access_proposal": normalize_access_acquire_proposal(row.get("selected_access_proposal")),
-    }
+    normalized = normalize_embodied_context(consequence)
     return normalized if digital_body_consequence_has_signal(normalized) else {}
 
 
@@ -733,15 +660,83 @@ def resolve_digital_body_consequence(
     live_consequence = _normalize_digital_body_consequence(digital_body_consequence)
     if digital_body_consequence_has_signal(live_consequence):
         return live_consequence
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    raw_frozen_consequence = _dict_or_empty(recon.get("digital_body_consequence"))
+    resolved_body = normalize_digital_body_state(digital_body_state)
+    access_state = _dict_or_empty(resolved_body.get("access_state"))
+    resource_state = _dict_or_empty(resolved_body.get("resource_state"))
+    body_fill_raw = {
+        "access_mode": access_state.get("mode"),
+        "active_surface": resolved_body.get("active_surface"),
+        "world_surfaces": resolved_body.get("world_surfaces"),
+        "missing_access": access_state.get("missing_access"),
+        "requested_access": access_state.get("requestable_access"),
+        "granted_toolsets": access_state.get("granted_toolsets"),
+        "active_tools": resolved_body.get("active_tools"),
+        "block_reason": access_state.get("block_reason"),
+        "retry_after_s": access_state.get("retry_after_s"),
+        "cooldown_scope": access_state.get("cooldown_scope"),
+        "browser_session": access_state.get("browser_session"),
+        "account_state": access_state.get("account_state"),
+        "cookie_state": access_state.get("cookie_state"),
+        "api_key_state": access_state.get("api_key_state"),
+        "quota_state": access_state.get("quota_state"),
+        "filesystem_state": access_state.get("filesystem_state"),
+        "sandbox_mode": access_state.get("sandbox_mode"),
+        "network_access": access_state.get("network_access"),
+        "session_continuity": access_state.get("session_continuity"),
+        "session_expires_in_s": access_state.get("session_expires_in_s"),
+        "session_recovery_mode": access_state.get("session_recovery_mode"),
+        "pending_approval_count": access_state.get("pending_approval_count"),
+        "external_mutation_pending": access_state.get("external_mutation_pending"),
+        "access_acquire_proposals": access_state.get("access_acquire_proposals"),
+        "selected_access_proposal": access_state.get("selected_access_proposal"),
+        "session_state": access_state.get("session_state"),
+        "account_state_detail": access_state.get("account_state_detail"),
+        "quota_state_detail": access_state.get("quota_state_detail"),
+        "permission_state": access_state.get("permission_state"),
+        "sandbox_state": access_state.get("sandbox_state"),
+        "artifact_continuity": resource_state.get("artifact_continuity"),
+        "active_artifact_kind": resource_state.get("active_artifact_kind"),
+        "active_artifact_ref": resource_state.get("active_artifact_ref"),
+        "active_artifact_label": resource_state.get("active_artifact_label"),
+        "artifact_age_s": resource_state.get("artifact_age_s"),
+        "artifact_reacquisition_mode": resource_state.get("artifact_reacquisition_mode"),
+        "artifact_carrier": resource_state.get("artifact_carrier"),
+        "artifact_source_ref_ids": resource_state.get("artifact_source_ref_ids"),
+        "preferred_source_ref_id": resource_state.get("preferred_source_ref_id"),
+        "preferred_anchor_reason": resource_state.get("preferred_anchor_reason"),
+        "artifact_source_url": resource_state.get("artifact_source_url"),
+        "artifact_source_query": resource_state.get("artifact_source_query"),
+        "artifact_source_title": resource_state.get("artifact_source_title"),
+        "artifact_source_tool_name": resource_state.get("artifact_source_tool_name"),
+        "workspace_root": resource_state.get("workspace_root"),
+        "blocked_packet_count": resource_state.get("blocked_packet_count"),
+        "completed_packet_count": resource_state.get("completed_packet_count"),
+        "external_tool_count": resource_state.get("external_tool_count"),
+    }
+    if any(
+        key in raw_frozen_consequence
+        for key in ("session_state", "session_continuity", "session_expires_in_s", "session_recovery_mode")
+    ):
+        body_fill_raw.pop("session_state", None)
+    derived_raw = derive_digital_body_consequence(
+        digital_body_state=digital_body_state,
+        action_packets=action_packets,
+    )
     frozen_consequence = _reconsolidation_digital_body_consequence(reconsolidation_snapshot)
     if digital_body_consequence_has_signal(frozen_consequence):
-        return frozen_consequence
-    derived = _normalize_digital_body_consequence(
-        derive_digital_body_consequence(
-            digital_body_state=digital_body_state,
-            action_packets=action_packets,
+        merged_frozen = _normalize_digital_body_consequence(
+            {
+                **body_fill_raw,
+                **_dict_or_empty(derived_raw),
+                **raw_frozen_consequence,
+            }
         )
-    )
+        if digital_body_consequence_has_signal(merged_frozen):
+            return merged_frozen
+        return frozen_consequence
+    derived = _normalize_digital_body_consequence(derived_raw)
     if digital_body_consequence_has_signal(derived):
         return derived
     return {}
