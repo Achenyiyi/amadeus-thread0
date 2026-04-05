@@ -17,6 +17,7 @@ The target is not arbitrary cleanliness. The target is:
 amadeus-thread0/
 ├── amadeus_thread0/        # primary Python package
 ├── frontend/               # frozen frontend workspace; not the active implementation phase
+├── skills/                 # authored local SKILL.md packages
 ├── docs/                   # architecture, evaluation, defense, maintenance docs
 ├── evals/                  # evaluation entrypoints and reports
 ├── tests/                  # regression suite
@@ -73,6 +74,8 @@ amadeus_thread0/
   LangGraph assembly and runtime cache lifecycle.
 - `tool_nodes.py`
   tool gate, tool execution, tool-limit handling, and post-model routing.
+- `skill_runtime.py`
+  session-level skill activation, backend skill envelope shaping, and active-skill prompt disclosure.
 - `autonomy_runtime.py`
   derives bounded companion autonomy from frozen runtime state into `autonomy_intent`.
 - `action_packets.py`
@@ -130,6 +133,7 @@ Rule:
 - `final_state.py`
 - `runtime_bundle.py`
 - `sandbox_runner.py`
+- `skill_registry.py`
 - `thread_runtime.py`
 - `tool_approval.py`
 - `modeling.py`
@@ -174,6 +178,14 @@ Rule:
 - `allowed_roots` / `cwd` boundary checks
 - scrubbed environment assembly
 - per-run trace artifact emission (`run.json`, `stdout.txt`, `stderr.txt`)
+
+`skill_registry.py` holds the managed skills ecosystem surface:
+
+- local authored skill discovery from `skills/`
+- remote catalog / install cache / registry truth
+- session activation state from auto-match plus manual override
+- `SKILL.md` metadata parsing plus on-demand disclosure for active skills
+- install/update/enable/disable/pin/unpin lifecycle helpers
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
@@ -257,14 +269,18 @@ Rule:
   - `run_companion_autonomy_audit.py`
   - `run_digital_embodiment_audit.py`
   - `run_sandbox_embodied_execution_audit.py`
+  - `run_skills_ecosystem_audit.py`
 - manual smoke packs:
   - `run_freeze_gate_smokes.py`
   - `run_companion_autonomy_smokes.py`
   - `run_digital_embodiment_smokes.py`
   - `run_sandbox_embodied_execution_smokes.py`
+  - `run_skills_ecosystem_smokes.py`
+- baseline helpers:
+  - `print_latest_sandbox_baseline.py`
 - artifacts:
   - `evals/reports/` stores authoritative json/md reports
-  - `evals/_tmp/` stores temporary runtime fixtures for bounded smoke scenarios such as sandbox execution
+  - `evals/_tmp/` stores temporary runtime fixtures for bounded smoke scenarios such as sandbox execution and skills lifecycle continuity
 
 `tests/` mirrors those gates with owning-layer coverage.
 Current sandbox closure coverage lives in:
@@ -274,6 +290,13 @@ Current sandbox closure coverage lives in:
 - `tests/test_sandbox_backend_contract.py`
 - `tests/test_sandbox_embodied_execution_smokes.py`
 - `tests/test_sandbox_embodied_execution_audit.py`
+
+Current skills closure coverage lives in:
+
+- `tests/test_skill_registry.py`
+- `tests/test_skill_runtime.py`
+- `tests/test_skills_ecosystem_smokes.py`
+- `tests/test_skills_ecosystem_audit.py`
 
 ## Frontend Workspace
 
@@ -294,6 +317,10 @@ Current sandbox closure coverage lives in:
   `python evals/run_sandbox_embodied_execution_audit.py`
 - sandbox manual smokes:
   `python evals/run_sandbox_embodied_execution_smokes.py`
+- skills ecosystem audit:
+  `python evals/run_skills_ecosystem_audit.py`
+- skills ecosystem manual smokes:
+  `python evals/run_skills_ecosystem_smokes.py`
 - frontend dev shell:
   `cd frontend && npm run dev`
 - deployment config:

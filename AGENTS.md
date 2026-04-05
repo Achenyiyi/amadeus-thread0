@@ -46,14 +46,22 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 
 - `Digital Embodiment Convergence Phase 2` is formally closed and preserved as a baseline.
 - `Sandbox Embodied Execution Phase 1` is now also closed and preserved as the current execution baseline.
-- Current objective is to preserve the closed backend baselines, not widen execution scope or switch to frontend polish.
+- `Skills Ecosystem Formal Closure` is now also closed and preserved as the current capability-ecology baseline.
+- No post-skills phase is selected yet; the default posture is to preserve the closed baselines rather than widening execution scope or reopening frontend polish.
 - Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, and `digital_embodiment_phase2_ready` are preserved baselines.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, and `skills_ecosystem_ready` are preserved baselines.
 - While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona
   - one unified memory substrate
-  - one digital body whose Phase 2 access/resource truth and Phase 1 workspace-local execution truth both stay closed and must not regress
+  - one digital body whose access/resource truth, workspace-local execution truth, and skills capability ecology all stay closed and must not regress
+- The preserved skills contract layered onto that body contract is:
+  - one global skills registry outside autobiographical memory
+  - one session activation layer derived from auto-match plus manual override
+  - `SKILL.md`-driven progressive disclosure rather than full-context skill stuffing
+  - approval-gated `install/update/enable/disable/pin/unpin`
+  - completed skill use writing back only as procedural / embodied continuity
+  - skills as digital-body capability assets, not persona-core identity
 - The preserved Phase 1 execution boundary remains:
   - `host-local restricted execution`
   - `workspace-only execution`
@@ -65,7 +73,8 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   3. preserve `digital_embodiment_phase1_ready`
   4. preserve `digital_embodiment_phase2_ready`
   5. preserve `sandbox_embodied_execution_phase1_ready`
-  6. do not widen beyond the approved workspace-local runner surface unless a new phase is explicitly selected
+  6. preserve `skills_ecosystem_ready`
+  7. do not widen beyond the approved workspace-local runner surface unless a new phase is explicitly selected
 
 ## Backend Freeze Gate Baseline
 
@@ -244,11 +253,80 @@ Sandbox embodied execution is not considered closed until all of the following a
     - `disallowed_command_or_outside_root_blocked`
     - `followup_continue_from_last_run_log_or_artifact`
 
+## Skills Ecosystem Closure Gate
+
+This gate is now satisfied and becomes a preserved backend baseline.
+Do not reopen it during ordinary maintenance unless one of the criteria below regresses.
+No next capability-ecology phase is selected yet.
+
+Skills ecosystem work is not considered closed until all of the following are true:
+
+- skills remain part of the digital body / capability ecology, not persona-core:
+  - registry truth does not enter autobiographical memory
+  - active skills may influence tool selection, execution strategy, and bounded artifact usage
+  - active skills must not rewrite persona-core, relationship-core, or self-narrative core
+- runtime truth stays on one skills contract:
+  - global registry truth
+  - session activation truth
+  - backend `skills` envelope
+  - no second top-level skill truth surface is introduced
+- session skill state stays stable:
+  - `catalog_version`
+  - `manual_enabled`
+  - `manual_disabled`
+  - `pinned_skill_ids`
+  - `matched_skill_ids`
+  - `active_skill_ids`
+  - `pending_skill_proposal`
+- approval semantics stay bounded and immutable:
+  - `search/inspect/list` remain read surfaces
+  - `install/update/enable/disable/pin/unpin` remain approval-gated mutations
+  - approval payloads keep the same:
+    - `proposal_id`
+    - `operation`
+    - `skill_id`
+    - `source`
+    - `resolved_version`
+    - `hash`
+    - `requested_permissions`
+    - `sandbox_profiles`
+    - `verification_summary`
+- progressive disclosure stays real:
+  - compact registry/catalog surfaces do not inline full `SKILL.md` bodies
+  - only active / inspected skills disclose excerpts or execution guidance
+- continuity/writeback semantics stay honest:
+  - only completed skill install / activation / usage becomes fact
+  - blocked / rejected / pending skill mutations remain unfulfilled intentions or boundary consequences
+  - completed skill effects may surface through:
+    - `digital_body_consequence.kind`
+    - `interaction_carryover.embodied_context.skill_effects`
+    - `reconsolidation_snapshot.skill_effects`
+  - skill install state itself does not become self-narrative identity
+- legacy compatibility remains isolated:
+  - `add_skill/list_skills` remain legacy text-note memory tools
+  - legacy note storage does not pollute runtime registry truth
+- closure validation:
+  - `python evals/run_skills_ecosystem_smokes.py`
+  - `python evals/run_skills_ecosystem_audit.py`
+  - skills audit must report `skills_ecosystem_ready`
+  - the authoritative post-fix closeout artifacts are:
+    - `evals/reports/skills-ecosystem-audit-20260405-130543-closeout-fix-c.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-d.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
+  - required smoke scenarios are:
+    - `local_skill_discovery_and_progressive_disclosure`
+    - `remote_install_proposal_approval_install_enable`
+    - `auto_match_with_manual_disable_and_pin_precedence`
+    - `blocked_or_rejected_skill_mutation_does_not_become_capability`
+    - `completed_skill_usage_resurfaces_in_followup_continuity`
+
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
 - Keep one unified memory substrate. Different experience traces may exist, but they must not become separate "brains."
 - Treat tools, browser, files, shell, and accounts as parts of a `digital body`, not as a static capability checklist.
+- Treat skills as managed digital-body capability assets, not as persona patches or a second system prompt.
+- Keep registry/install/lock truth outside autobiographical memory; only completed skill effects may write back as lived procedural continuity.
 - Missing access, cookies, accounts, or permissions are not only hard stops; they are world conditions she may reason about, work around, ask about, or explicitly request help for.
 - Do not reduce future capability growth to a fixed tool suite. The long-term target is embodied experimentation, procedural learning, and bounded capability formation inside approved environments.
 - Do not hard-script persona behavior with keyword rules unless it is strictly for safety, auditability, or tool routing.
@@ -274,6 +352,7 @@ Sandbox embodied execution is not considered closed until all of the following a
 - `evals/`: local and LangSmith evaluation entrypoints
 - `tests/`: regression suite
 - `docs/`: architecture, evaluation, defense, and maintenance docs
+- `skills/`: authored local `SKILL.md` packages
 
 Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering/PROJECT_STRUCTURE.md)
 
@@ -285,6 +364,8 @@ Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering
   place under `amadeus_thread0/runtime/`
 - General-purpose helper or compatibility export:
   place under `amadeus_thread0/utils/`
+- Authored local skill packages:
+  place under `skills/<skill_id>/`
 - Top-level files under `amadeus_thread0/` should stay thin and mostly serve as compatibility facades or domain entrypoints.
 
 ## High-Risk Zones
@@ -294,6 +375,8 @@ Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering
 - `amadeus_thread0/graph_parts/postprocess.py`
 - `amadeus_thread0/graph_parts/autonomy_runtime.py`
 - `amadeus_thread0/graph_parts/action_packets.py`
+- `amadeus_thread0/graph_parts/skill_runtime.py`
+- `amadeus_thread0/runtime/skill_registry.py`
 - `amadeus_thread0/runtime/sandbox_runner.py`
 - `amadeus_thread0/memory_store.py`
 - `amadeus_thread0/cli.py`
@@ -321,6 +404,13 @@ python -m pytest tests/test_memory_guard.py
 python -m pytest tests/test_session_orchestrator.py
 python -m pytest tests/test_cli_views.py
 python -m pytest tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py
+```
+
+For skills-ecosystem edits, also run:
+
+```powershell
+python -m pytest tests/test_skill_registry.py tests/test_skill_runtime.py
+python -m pytest tests/test_tooling_routing.py tests/test_tool_approval_policy.py
 ```
 
 For entrypoint or structure edits, also verify:

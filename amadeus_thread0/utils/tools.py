@@ -28,6 +28,11 @@ try:
 except Exception:
     MultiServerMCPClient = None  # type: ignore[assignment]
 
+try:
+    from langchain_tavily import TavilySearch
+except Exception:
+    TavilySearch = None  # type: ignore[assignment]
+
 from ..config import SOURCE_RELIABILITY_DEFAULT, TOOL_POLICIES, TOOL_RELIABILITY_WEIGHTS
 from ..graph_parts.digital_body_runtime import (
     access_proposal_identity,
@@ -46,6 +51,12 @@ from ..runtime.sandbox_runner import (
     build_sandbox_command_spec,
 )
 from ..runtime.modeling import _normalize_provider, _resolve_api_key
+from ..runtime.skill_registry import (
+    SkillRegistryError,
+    SkillSecurityError,
+    get_skill_registry_manager,
+    reset_skill_registry_cache,
+)
 from ..runtime.settings import BASE_DIR, get_settings
 from .memory_history_export import normalize_memory_record_exports
 from .relational_history_export import (
@@ -86,8 +97,19 @@ def _get_store() -> MemoryStore:
     return MemoryStore(s.memory_db_path)
 
 
+def _get_skill_registry():
+    return get_skill_registry_manager()
+
+
+def _current_thread_id(default: str = "thread0") -> str:
+    settings = get_settings()
+    thread_id = str(getattr(settings, "thread_id", "") or "").strip()
+    return thread_id or str(default or "thread0")
+
+
 def reset_tool_runtime_caches() -> None:
     _get_store.cache_clear()
+    reset_skill_registry_cache()
 
 
 def _tool_reliability(tool_name: str, fallback: float | None = None) -> float:
@@ -1912,6 +1934,194 @@ def add_skill(name: str, description: str, steps: list[str] | None = None) -> di
 
 
 @tool
+def search_skills(query: str, limit: int = 8) -> dict[str, Any]:
+    """搜索当前可用的 runtime skills catalog（本地 authored + 已安装 + 受控远程 catalog）。"""
+
+    tool_name = "search_skills"
+    try:
+        manager = _get_skill_registry()
+        lim = max(1, min(20, int(limit)))
+        return _ok(tool_name, manager.search(query=str(query or ""), limit=lim))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"query": query})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def inspect_skill(skill_id: str, version: str = "") -> dict[str, Any]:
+    """查看某个 skill 的详细元数据与按需加载后的 SKILL.md 摘要。"""
+
+    tool_name = "inspect_skill"
+    try:
+        manager = _get_skill_registry()
+        return _ok(tool_name, manager.inspect(skill_id=str(skill_id or ""), version=str(version or "")))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"skill_id": skill_id, "version": version})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def list_runtime_skills(query: str = "", thread_id: str = "") -> dict[str, Any]:
+    """查看当前 session 的 skills runtime 激活态。"""
+
+    tool_name = "list_runtime_skills"
+    try:
+        manager = _get_skill_registry()
+        target_thread_id = str(thread_id or "").strip() or _current_thread_id()
+        return _ok(
+            tool_name,
+            manager.list_runtime(
+                thread_id=target_thread_id,
+                query_text=str(query or ""),
+            ),
+        )
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"query": query, "thread_id": thread_id})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def install_skill(
+    skill_id: str,
+    resolved_version: str = "",
+    source: str = "",
+    hash: str = "",
+    requested_permissions: list[str] | None = None,
+    sandbox_profiles: list[str] | None = None,
+    verification_summary: str = "",
+) -> dict[str, Any]:
+    """安装一个 runtime skill。审批后必须沿用同一份 resolved install payload。"""
+
+    tool_name = "install_skill"
+    try:
+        manager = _get_skill_registry()
+        result = manager.install(
+            skill_id=str(skill_id or ""),
+            resolved_version=str(resolved_version or ""),
+            source=str(source or ""),
+            hash_value=str(hash or ""),
+            requested_permissions=requested_permissions,
+            sandbox_profiles=sandbox_profiles,
+            verification_summary=str(verification_summary or ""),
+        )
+        return _ok(tool_name, result)
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {
+                "skill_id": skill_id,
+                "resolved_version": resolved_version,
+                "source": source,
+                "hash": hash,
+            },
+        )
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def update_skill(
+    skill_id: str,
+    resolved_version: str = "",
+    source: str = "",
+    hash: str = "",
+    requested_permissions: list[str] | None = None,
+    sandbox_profiles: list[str] | None = None,
+    verification_summary: str = "",
+) -> dict[str, Any]:
+    """更新一个 runtime skill。审批后必须沿用同一份 resolved update payload。"""
+
+    tool_name = "update_skill"
+    try:
+        manager = _get_skill_registry()
+        result = manager.update(
+            skill_id=str(skill_id or ""),
+            resolved_version=str(resolved_version or ""),
+            source=str(source or ""),
+            hash_value=str(hash or ""),
+            requested_permissions=requested_permissions,
+            sandbox_profiles=sandbox_profiles,
+            verification_summary=str(verification_summary or ""),
+        )
+        return _ok(tool_name, result)
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(
+            tool_name,
+            "BAD_INPUT",
+            str(e),
+            {
+                "skill_id": skill_id,
+                "resolved_version": resolved_version,
+                "source": source,
+                "hash": hash,
+            },
+        )
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def enable_skill(skill_id: str, thread_id: str = "") -> dict[str, Any]:
+    """对当前 session 启用一个已安装或本地 authored 的 skill。"""
+
+    tool_name = "enable_skill"
+    try:
+        manager = _get_skill_registry()
+        return _ok(tool_name, manager.enable(skill_id=str(skill_id or ""), thread_id=str(thread_id or "").strip() or _current_thread_id()))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"skill_id": skill_id, "thread_id": thread_id})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def disable_skill(skill_id: str, thread_id: str = "") -> dict[str, Any]:
+    """对当前 session 禁用一个 skill，手动禁用优先级高于自动匹配。"""
+
+    tool_name = "disable_skill"
+    try:
+        manager = _get_skill_registry()
+        return _ok(tool_name, manager.disable(skill_id=str(skill_id or ""), thread_id=str(thread_id or "").strip() or _current_thread_id()))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"skill_id": skill_id, "thread_id": thread_id})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def pin_skill(skill_id: str, thread_id: str = "") -> dict[str, Any]:
+    """把一个 skill 固定到当前 session 的 active skill layer。"""
+
+    tool_name = "pin_skill"
+    try:
+        manager = _get_skill_registry()
+        return _ok(tool_name, manager.pin(skill_id=str(skill_id or ""), thread_id=str(thread_id or "").strip() or _current_thread_id()))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"skill_id": skill_id, "thread_id": thread_id})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
+def unpin_skill(skill_id: str, thread_id: str = "") -> dict[str, Any]:
+    """解除当前 session 对某个 skill 的 pin。"""
+
+    tool_name = "unpin_skill"
+    try:
+        manager = _get_skill_registry()
+        return _ok(tool_name, manager.unpin(skill_id=str(skill_id or ""), thread_id=str(thread_id or "").strip() or _current_thread_id()))
+    except (SkillRegistryError, SkillSecurityError) as e:
+        return _err(tool_name, "BAD_INPUT", str(e), {"skill_id": skill_id, "thread_id": thread_id})
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e))
+
+
+@tool
 def get_worldline_snapshot(limit: int = 20) -> dict[str, Any]:
     """读取世界线相关快照（只读）：worldline / tensions / self narratives / revision traces。"""
 
@@ -2717,6 +2927,143 @@ def _extract_title_link_blocks(text: str) -> list[dict[str, str]]:
                 }
             )
     return blocks
+
+
+def _normalize_tavily_items(raw: Any, *, limit: int) -> list[dict[str, Any]]:
+    items = raw if isinstance(raw, list) else []
+    dedup: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        title = str(item.get("title") or "").strip() or url
+        snippet = str(item.get("content") or item.get("raw_content") or "").strip()
+        snippet = re.sub(r"\s+", " ", snippet)[:400]
+        published_at = str(item.get("published_date") or item.get("published_at") or "").strip()[:80]
+        try:
+            score = float(item.get("score") or 0.0)
+        except Exception:
+            score = 0.0
+        normalized = {
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "score": score,
+            "published_at": published_at,
+        }
+        previous = dedup.get(url)
+        if previous is None or float(normalized.get("score") or 0.0) > float(previous.get("score") or 0.0):
+            dedup[url] = normalized
+    ordered = sorted(dedup.values(), key=lambda row: float(row.get("score") or 0.0), reverse=True)
+    return ordered[:limit]
+
+
+@tool
+def search_web(
+    query: str,
+    max_results: int = 5,
+    topic: str = "general",
+    search_depth: str = "advanced",
+    time_range: str = "",
+    include_domains: list[str] | None = None,
+    exclude_domains: list[str] | None = None,
+) -> dict[str, Any]:
+    """使用 Tavily 进行联网搜索（只读，自动写入 source_refs 追溯）。"""
+
+    tool_name = "search_web"
+    q = str(query or "").strip()
+    if not q:
+        return _ok(tool_name, {"query": "", "items": [], "source_ref_ids": []})
+
+    if TavilySearch is None:
+        return _err(tool_name, "MISSING_DEP", "langchain_tavily is not available")
+
+    try:
+        k = max(1, min(10, int(max_results)))
+    except Exception:
+        k = 5
+
+    normalized_topic = str(topic or "").strip().lower()
+    if normalized_topic not in {"general", "news", "finance"}:
+        normalized_topic = "general"
+
+    normalized_depth = str(search_depth or "").strip().lower()
+    if normalized_depth not in {"basic", "advanced", "fast", "ultra-fast"}:
+        normalized_depth = "advanced"
+
+    normalized_time_range = str(time_range or "").strip().lower()
+    if normalized_time_range not in {"day", "week", "month", "year"}:
+        normalized_time_range = ""
+
+    cleaned_include_domains = list(
+        dict.fromkeys([str(item).strip() for item in (include_domains or []) if str(item or "").strip()])
+    )[:10]
+    cleaned_exclude_domains = list(
+        dict.fromkeys([str(item).strip() for item in (exclude_domains or []) if str(item or "").strip()])
+    )[:10]
+
+    try:
+        tavily = TavilySearch(
+            name=tool_name,
+            max_results=k,
+            include_answer=False,
+            include_raw_content=False,
+            include_images=False,
+        )
+        raw = tavily._run(
+            query=q,
+            include_domains=cleaned_include_domains or None,
+            exclude_domains=cleaned_exclude_domains or None,
+            search_depth=normalized_depth,
+            time_range=normalized_time_range or None,
+            topic=normalized_topic,
+        )
+        items = _normalize_tavily_items((raw or {}).get("results"), limit=k)
+        source_ref_ids: list[int] = []
+
+        try:
+            store = _get_store()
+            for rec in items:
+                saved = store.add_source_ref(
+                    url=str(rec.get("url") or ""),
+                    title=str(rec.get("title") or ""),
+                    query=q,
+                    tool_name=tool_name,
+                    snippet=str(rec.get("snippet") or ""),
+                    published_at=str(rec.get("published_at") or ""),
+                    reliability_score=_tool_reliability(tool_name),
+                )
+                try:
+                    sid = int(saved.get("id") or 0)
+                except Exception:
+                    sid = 0
+                if sid > 0:
+                    source_ref_ids.append(sid)
+        except Exception:
+            pass
+
+        payload: dict[str, Any] = {
+            "query": q,
+            "max_results": k,
+            "topic": normalized_topic,
+            "search_depth": normalized_depth,
+            "items": items,
+            "source_ref_ids": source_ref_ids,
+        }
+        answer = str((raw or {}).get("answer") or "").strip()
+        if answer:
+            payload["answer"] = answer
+        if cleaned_include_domains:
+            payload["include_domains"] = cleaned_include_domains
+        if cleaned_exclude_domains:
+            payload["exclude_domains"] = cleaned_exclude_domains
+        if normalized_time_range:
+            payload["time_range"] = normalized_time_range
+        return _ok(tool_name, payload)
+    except Exception as e:
+        return _err(tool_name, "INTERNAL", str(e), {"query": q, "max_results": k})
 
 
 @tool
@@ -3863,6 +4210,81 @@ def build_workspace_command_execution_spec(args: dict[str, Any] | None) -> dict[
         "writes_expected": spec.writes_expected,
         "expected_artifacts": list(spec.expected_artifacts),
     }
+
+
+def preview_skill_operation(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    name = str(tool_name or "").strip().lower()
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    if name not in {
+        "install_skill",
+        "update_skill",
+        "enable_skill",
+        "disable_skill",
+        "pin_skill",
+        "unpin_skill",
+    }:
+        return {}
+    skill_id = str(data.get("skill_id") or "").strip()
+    if not skill_id:
+        return {}
+    try:
+        manager = _get_skill_registry()
+        thread_id = str(data.get("thread_id") or "").strip() or _current_thread_id()
+        operation = name.replace("_skill", "")
+        preview = manager.preview_operation(
+            operation=operation,
+            skill_id=skill_id,
+            version=str(data.get("resolved_version") or data.get("version") or "").strip(),
+            thread_id=thread_id,
+        )
+        if not preview:
+            return {}
+        resolved_args = dict(data)
+        resolved_args["skill_id"] = str(preview.get("skill_id") or skill_id).strip().lower()
+        if str(preview.get("resolved_version") or "").strip():
+            resolved_args["resolved_version"] = str(preview.get("resolved_version") or "").strip()
+        if str(preview.get("source") or "").strip():
+            resolved_args["source"] = str(preview.get("source") or "").strip()
+        if str(preview.get("hash") or "").strip():
+            resolved_args["hash"] = str(preview.get("hash") or "").strip().lower()
+        if isinstance(preview.get("requested_permissions"), list):
+            resolved_args["requested_permissions"] = [
+                str(item).strip().lower()
+                for item in (preview.get("requested_permissions") or [])
+                if str(item or "").strip()
+            ][:16]
+        if isinstance(preview.get("sandbox_profiles"), list):
+            resolved_args["sandbox_profiles"] = [
+                str(item).strip().lower()
+                for item in (preview.get("sandbox_profiles") or [])
+                if str(item or "").strip()
+            ][:16]
+        if str(preview.get("verification_summary") or "").strip():
+            resolved_args["verification_summary"] = str(preview.get("verification_summary") or "").strip()
+        if thread_id:
+            resolved_args["thread_id"] = thread_id
+        return {
+            "resolved_args": resolved_args,
+            "skill_preview": {
+                "operation": name,
+                "skill_id": str(preview.get("skill_id") or skill_id).strip().lower(),
+                "resolved_version": str(preview.get("resolved_version") or "").strip(),
+                "source": str(preview.get("source") or "").strip(),
+                "hash": str(preview.get("hash") or "").strip().lower(),
+                "requested_permissions": list(resolved_args.get("requested_permissions") or []),
+                "sandbox_profiles": list(resolved_args.get("sandbox_profiles") or []),
+                "verification_summary": str(preview.get("verification_summary") or "").strip(),
+                "trust_tier": str(preview.get("trust_tier") or "").strip(),
+            },
+        }
+    except Exception as exc:
+        return {
+            "skill_preview": {
+                "operation": name,
+                "skill_id": skill_id,
+                "validation_error": str(exc)[:220],
+            }
+        }
 
 
 def _workspace_relative_from_absolute(path: Path, *, workspace_root: Path) -> str:

@@ -159,6 +159,7 @@ class ToolApprovalPreview:
     args: dict[str, Any]
     meta_preview: dict[str, Any]
     requested_tools: list[str]
+    skill_preview: dict[str, Any]
     access_acquire_proposals: list[dict[str, Any]]
     selected_access_proposal: dict[str, Any]
     mutation_preview: dict[str, Any]
@@ -225,6 +226,7 @@ def build_tool_approval_preview(
     name = str(tool_call.get("name") or "").strip()
     args = _normalize_args(tool_call.get("args"))
     requested_tools: list[str] = []
+    skill_preview = tool_call.get("skill_preview") if isinstance(tool_call.get("skill_preview"), dict) else {}
     access_acquire_proposals: list[dict[str, Any]] = []
     selected_access_proposal: dict[str, Any] = {}
     mutation_preview = _build_mutation_preview(tool_call)
@@ -260,11 +262,30 @@ def build_tool_approval_preview(
             note = str(execution_preview.get("validation_error") or "").strip()[:220]
         else:
             note = "approve 后会在当前 runtime workspace 内按这份受限命令规格执行，并保留日志与产物痕迹。"
+    elif skill_preview:
+        op_name = str(skill_preview.get("operation") or name).strip()
+        skill_id = str(skill_preview.get("skill_id") or "").strip()
+        resolved_version = str(skill_preview.get("resolved_version") or "").strip()
+        reason = f"{op_name} {skill_id}".strip()
+        if resolved_version:
+            reason = f"{reason}@{resolved_version}".strip()
+        requested_permissions = skill_preview.get("requested_permissions") if isinstance(skill_preview.get("requested_permissions"), list) else []
+        sandbox_profiles = skill_preview.get("sandbox_profiles") if isinstance(skill_preview.get("sandbox_profiles"), list) else []
+        verification_summary = str(skill_preview.get("verification_summary") or "").strip()
+        note_parts: list[str] = []
+        if requested_permissions:
+            note_parts.append("permissions=" + ",".join(str(item).strip() for item in requested_permissions[:6] if str(item or "").strip()))
+        if sandbox_profiles:
+            note_parts.append("profiles=" + ",".join(str(item).strip() for item in sandbox_profiles[:6] if str(item or "").strip()))
+        if verification_summary:
+            note_parts.append(verification_summary[:180])
+        note = " | ".join(part for part in note_parts if part)
     return ToolApprovalPreview(
         name=name,
         args=args,
         meta_preview=_build_meta_preview(args),
         requested_tools=requested_tools,
+        skill_preview=skill_preview,
         access_acquire_proposals=access_acquire_proposals,
         selected_access_proposal=selected_access_proposal,
         mutation_preview=mutation_preview,

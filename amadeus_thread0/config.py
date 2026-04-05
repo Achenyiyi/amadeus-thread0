@@ -194,6 +194,7 @@ ABLATE_LIGHT_DIALOG_SHAPING = _env_bool("AMADEUS_ABLATE_LIGHT_DIALOG_SHAPING", d
 # ---- Source reliability / attribution ----
 SOURCE_RELIABILITY_DEFAULT = _env_float("AMADEUS_SOURCE_RELIABILITY_DEFAULT", 0.65)
 TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
+    "search_web": 0.86,
     "search_langchain_docs": 0.88,
     "arxiv_search": 0.92,
     "reacquire_artifact": 0.9,
@@ -202,7 +203,7 @@ TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
     "inspect_workspace_path": 0.9,
     "refresh_access_state": 0.86,
 }
-CLAIM_REQUIRED_TOOLS = {"search_langchain_docs", "arxiv_search"}
+CLAIM_REQUIRED_TOOLS = {"search_web", "search_langchain_docs", "arxiv_search"}
 
 # ---- Memory guard ----
 MEMORY_GUARD_ENABLED = _env_bool("AMADEUS_MEMORY_GUARD_ENABLED", default=True)
@@ -240,11 +241,15 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "get_time": {"risk": "read", "auto_approve": True},
     "calc": {"risk": "read", "auto_approve": True},
     "arxiv_search": {"risk": "read", "auto_approve": True},
+    "search_web": {"risk": "read", "auto_approve": True},
     "get_worldline_snapshot": {"risk": "read", "auto_approve": True},
     "list_source_refs": {"risk": "read", "auto_approve": True},
     "inspect_source_ref": {"risk": "read", "auto_approve": True},
     "compare_source_refs": {"risk": "read", "auto_approve": True},
     "search_langchain_docs": {"risk": "read", "auto_approve": True},
+    "search_skills": {"risk": "read", "auto_approve": True},
+    "inspect_skill": {"risk": "read", "auto_approve": True},
+    "list_runtime_skills": {"risk": "read", "auto_approve": True},
     "list_skills": {"risk": "read", "auto_approve": True},
     "list_memory_ledger": {"risk": "read", "auto_approve": True},
     "list_memory_quarantine": {"risk": "read", "auto_approve": True},
@@ -280,6 +285,12 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "add_unresolved_tension": {"risk": "write", "auto_approve": False},
     "resolve_unresolved_tension": {"risk": "write", "auto_approve": False},
     "add_semantic_self_narrative": {"risk": "write", "auto_approve": False},
+    "install_skill": {"risk": "write", "auto_approve": False},
+    "update_skill": {"risk": "write", "auto_approve": False},
+    "enable_skill": {"risk": "write", "auto_approve": False},
+    "disable_skill": {"risk": "write", "auto_approve": False},
+    "pin_skill": {"risk": "write", "auto_approve": False},
+    "unpin_skill": {"risk": "write", "auto_approve": False},
     "add_skill": {"risk": "write", "auto_approve": False},
     "merge_moments": {"risk": "write", "auto_approve": False},
     "rollback_memory_change": {"risk": "write", "auto_approve": False},

@@ -623,6 +623,81 @@ class BackendSessionTests(unittest.TestCase):
             ["E:/runtime/workspaces/lab-notes/notes/generated.txt"],
         )
 
+    def test_resume_stream_keeps_same_resolved_payload_for_skill_install_approval(self):
+        resolved_args = {
+            "skill_id": "pytest-helper",
+            "resolved_version": "1.1.0",
+            "source": "official_registry",
+            "hash": "abc123",
+            "requested_permissions": ["filesystem_read"],
+            "sandbox_profiles": ["workspace_write"],
+            "verification_summary": "registry verified",
+        }
+        completed_packet = {
+            "proposal_id": "ap-skill-install-1",
+            "origin": "capability_upgrade",
+            "intent": "skills:install",
+            "status": "completed",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "tool_name": "install_skill",
+            "tool_args": resolved_args,
+            "result_summary": "installed pytest-helper@1.1.0",
+            "writeback_ready": True,
+        }
+
+        class FakeSkillResumableStreamGraph(FakeStreamGraph):
+            def __init__(self):
+                super().__init__(stream_rows=[], state_values={})
+                self.initial_rows = [
+                    (
+                        "values",
+                        {
+                            "__interrupt__": (
+                                {
+                                    "value": {
+                                        "kind": "tool_approval",
+                                        "source": "skills",
+                                        "tool_calls": [
+                                            {
+                                                "name": "install_skill",
+                                                "args": resolved_args,
+                                                "proposal_id": "ap-skill-install-1",
+                                                "skill_preview": {
+                                                    "operation": "install_skill",
+                                                    **resolved_args,
+                                                },
+                                            }
+                                        ],
+                                    }
+                                },
+                            )
+                        },
+                    )
+                ]
+                self.resume_rows = [("values", {"action_packets": [completed_packet], "pending_action_proposal": {}})]
+
+            def stream(self, payload, config=None, stream_mode=None):
+                rows = self.initial_rows if isinstance(payload, dict) else self.resume_rows
+                for row in rows:
+                    yield row
+
+        graph = FakeSkillResumableStreamGraph()
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        first = session.invoke_stream({"messages": [{"role": "user", "content": "install pytest helper"}]})
+        resumed = session.resume_stream([{"action": "approve"}])
+
+        self.assertIsNotNone(first.approval_request)
+        assert first.approval_request is not None
+        self.assertEqual(first.approval_request.source, "skills")
+        self.assertEqual(first.approval_request.tool_calls[0]["proposal_id"], "ap-skill-install-1")
+        self.assertEqual(first.approval_request.tool_calls[0]["skill_preview"]["hash"], "abc123")
+        self.assertEqual(first.values["pending_action_proposal"]["proposal_id"], "ap-skill-install-1")
+        self.assertEqual(first.values["pending_action_proposal"]["tool_args"]["resolved_version"], "1.1.0")
+        self.assertEqual(resumed.values["action_packets"][0]["proposal_id"], "ap-skill-install-1")
+        self.assertEqual(resumed.values["action_packets"][0]["tool_args"], resolved_args)
+
     def test_invoke_stream_synthesizes_access_request_from_pending_access_packet(self):
         packet = {
             "proposal_id": "ap-access-help-1",
@@ -3733,6 +3808,95 @@ class BackendSessionTests(unittest.TestCase):
                 extra_tags=["pulse"],
             )
         self.assertEqual(payload, {"event_override": {"kind": "idle"}})
+
+    def test_backend_session_surfaces_completed_skill_usage_consequence(self):
+        values = {
+            "current_event": {"kind": "user_utterance", "text": "继续顺着刚才那条 skill 的资料线索走"},
+            "session_skill_state": {
+                "catalog_version": "skills-v1",
+                "catalog_entries": [
+                    {
+                        "skill_id": "source-ref-anchor-review",
+                        "name": "source-ref-anchor-review",
+                        "description": "Read continuity-focused source materials",
+                        "version": "1.0.0",
+                        "status": "authored_local",
+                    }
+                ],
+                "active_skill_ids": ["source-ref-anchor-review"],
+                "active_skill_entries": [
+                    {
+                        "skill_id": "source-ref-anchor-review",
+                        "name": "source-ref-anchor-review",
+                        "description": "Read continuity-focused source materials",
+                        "version": "1.0.0",
+                        "status": "authored_local",
+                        "allowed_tools": ["search_web", "inspect_source_ref"],
+                    }
+                ],
+            },
+            "digital_body_state": {
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "source_ref"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["source_ref", "saved_material"],
+                "access_state": {"mode": "tool_enabled", "network_access": "enabled"},
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "search_result",
+                    "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                    "active_artifact_label": "LangGraph Persistence",
+                    "artifact_carrier": "source_ref",
+                    "artifact_source_ref_ids": [21, 17],
+                    "preferred_source_ref_id": 21,
+                    "preferred_anchor_reason": "primary_more_current",
+                    "artifact_source_tool_name": "search_web",
+                },
+            },
+            "action_packets": [
+                {
+                    "proposal_id": "ap-skill-usage-1",
+                    "origin": "motive_goal",
+                    "intent": "tool:search_web",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "search_web",
+                    "tool_args": {"query": "langgraph persistence checkpointer"},
+                    "result_summary": "searched continuity materials",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_label": "LangGraph Persistence",
+                        "source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread",
+                        "source_title": "LangGraph Persistence",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+        }
+
+        self._assert_backend_session_consequence_surface(
+            values=values,
+            expect={
+                "kind": "skill_usage_completed",
+                "primary_tool_name": "search_web",
+                "active_artifact_kind": "search_result",
+                "active_artifact_label": "LangGraph Persistence",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [21, 17],
+                "artifact_source_tool_name": "search_web",
+                "preferred_source_ref_id": 21,
+                "preferred_anchor_reason": "primary_more_current",
+                "procedural_growth": False,
+            },
+        )
 
 
 if __name__ == "__main__":

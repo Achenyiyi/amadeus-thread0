@@ -32,6 +32,7 @@ from .relational_runtime import (
 from .retrieval import _retrieve_context
 from .runtime_services import _audit_jsonl
 from .semantic_narrative import _semantic_narrative_profile
+from .skill_runtime import derive_session_skill_state
 from .state import ThreadState
 from .turn_events import _now_ts
 
@@ -789,6 +790,15 @@ def _prepare_turn_runtime(
         session_context=session_context,
         last_external_tools=state.get("last_external_tools"),
     )
+    session_skill_state = derive_session_skill_state(
+        thread_id=str((session_context or {}).get("thread_id") or "thread"),
+        query_text=effective_user_text or user_text,
+        current_event=current_event,
+        digital_body_state=digital_body_state,
+        pending_action_proposal=autonomy_runtime.get("pending_action_proposal")
+        if isinstance(autonomy_runtime.get("pending_action_proposal"), dict)
+        else {},
+    )
     writeback_reconsolidation_snapshot = build_reconsolidation_snapshot(
         current_event=current_event,
         appraisal=appraisal,
@@ -807,6 +817,7 @@ def _prepare_turn_runtime(
         action_trace=autonomy_runtime.get("action_trace"),
         autonomy_block_reason=autonomy_runtime.get("autonomy_block_reason"),
         digital_body_state=digital_body_state,
+        session_skill_state=session_skill_state,
     )
     if not external_probe_mode and current_event_kind in {
         "user_utterance",
@@ -923,6 +934,7 @@ def _prepare_turn_runtime(
         action_trace=autonomy_runtime.get("action_trace"),
         autonomy_block_reason=autonomy_runtime.get("autonomy_block_reason"),
         digital_body_state=digital_body_state,
+        session_skill_state=session_skill_state,
     )
     _audit_jsonl(
         "decision_audit.jsonl",
@@ -1005,6 +1017,7 @@ def _prepare_turn_runtime(
         "action_trace": list(autonomy_runtime.get("action_trace") or []),
         "autonomy_block_reason": str(autonomy_runtime.get("autonomy_block_reason") or ""),
         "digital_body_state": digital_body_state,
+        "session_skill_state": session_skill_state,
         "session_context": session_context,
         "tsundere": tsundere,
     }

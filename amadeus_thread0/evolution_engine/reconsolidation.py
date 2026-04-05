@@ -23,6 +23,7 @@ from ..graph_parts.digital_body_runtime import (
     normalize_digital_body_state,
     normalize_embodied_context,
 )
+from ..graph_parts.skill_runtime import derive_skill_effects
 from ..utils.counterpart_profile import compact_counterpart_profile
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
@@ -275,6 +276,7 @@ def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any
         for item in (carryover.get("source_tags") if isinstance(carryover.get("source_tags"), list) else [])
         if str(item or "").strip()
     ][:12]
+    embodied_context = normalize_embodied_context(carryover.get("embodied_context"))
     snapshot = {
         "source": str(carryover.get("source") or "").strip().lower(),
         "strength": clamp01(carryover.get("strength"), 0.0),
@@ -283,6 +285,8 @@ def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any
         "note": str(carryover.get("note") or "").strip()[:220],
         "source_tags": source_tags,
     }
+    if embodied_context:
+        snapshot["embodied_context"] = embodied_context
     if any(
         (
             snapshot["source"],
@@ -291,6 +295,7 @@ def _compact_interaction_carryover_snapshot(interaction_carryover: dict[str, Any
             snapshot["note"],
             snapshot["strength"] > 0.0,
             bool(snapshot["source_tags"]),
+            bool(snapshot.get("embodied_context")),
         )
     ):
         return snapshot
@@ -743,6 +748,7 @@ def derive_digital_body_consequence(
     *,
     digital_body_state: dict[str, Any] | None,
     action_packets: Any = None,
+    session_skill_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = normalize_digital_body_state(digital_body_state)
     if not body:
@@ -812,6 +818,27 @@ def derive_digital_body_consequence(
     primary_origin = str(primary_packet.get("origin") or "").strip().lower()
     primary_intent = str(primary_packet.get("intent") or "").strip().lower()
     primary_tool_name = str(primary_packet.get("tool_name") or "").strip().lower()
+    skill_effects = derive_skill_effects(
+        session_skill_state,
+        action_packets,
+        digital_body_state=body,
+    )
+    primary_skill_effect = next(
+        (
+            dict(item)
+            for item in skill_effects
+            if str(item.get("tool_name") or "").strip().lower() == primary_tool_name
+        ),
+        dict(skill_effects[0]) if skill_effects else {},
+    )
+    primary_skill_operation = str(primary_skill_effect.get("operation") or "").strip().lower()
+    primary_skill_status = str(primary_skill_effect.get("status") or primary_status).strip().lower()
+    primary_skill_name = str(
+        primary_skill_effect.get("name")
+        or primary_skill_effect.get("skill_id")
+        or ""
+    ).strip()
+    primary_skill_version = str(primary_skill_effect.get("version") or "").strip()
     primary_execution_spec = dict(primary_packet.get("execution_spec") or {}) if isinstance(primary_packet.get("execution_spec"), dict) else {}
     primary_execution_result = dict(primary_packet.get("execution_result") or {}) if isinstance(primary_packet.get("execution_result"), dict) else {}
     primary_artifact_context = normalize_artifact_context(primary_packet.get("artifact_context"))
@@ -970,6 +997,32 @@ def derive_digital_body_consequence(
             or primary_intent == "access:refresh_state"
         )
     )
+    skill_mutation_completed_signal = bool(
+        primary_tool_name in {"install_skill", "update_skill", "enable_skill", "disable_skill", "pin_skill", "unpin_skill"}
+        and primary_skill_operation in {"install", "update", "enable", "disable", "pin", "unpin"}
+        and primary_skill_status == "completed"
+    )
+    skill_mutation_blocked_signal = bool(
+        primary_tool_name in {"install_skill", "update_skill", "enable_skill", "disable_skill", "pin_skill", "unpin_skill"}
+        and primary_skill_operation in {"install", "update", "enable", "disable", "pin", "unpin"}
+        and primary_skill_status in {"blocked", "rejected"}
+    )
+    skill_usage_signal = bool(
+        primary_status == "completed"
+        and primary_skill_operation == "use"
+        and not any(
+            (
+                sandbox_execution_signal,
+                access_resolution_signal,
+                workspace_inspection_signal,
+                source_ref_inspection_signal,
+                source_ref_compare_signal,
+                artifact_reacquired_signal,
+                access_refresh_signal,
+                file_mutation_signal,
+            )
+        )
+    )
     growth_signal = bool(
         completed_packet_count > 0
         and not workspace_inspection_signal
@@ -1018,7 +1071,48 @@ def derive_digital_body_consequence(
         "reattach_workspace": "先把工作面重新接回当前上下文",
     }.get(artifact_reacquisition_mode, "先把前面的工作面重新接回来")
 
-    if sandbox_execution_signal and primary_status == "completed" and not approval_signal:
+    if skill_mutation_blocked_signal:
+        kind = "skill_mutation_blocked"
+        summary = str(primary_packet.get("result_summary") or block_reason or "").strip()[:220]
+        if not summary:
+            skill_label = primary_skill_name or "这条 skill 变更"
+            summary = f"{skill_label} 这次变更没有真正落地，当前只留下被阻断或被拒绝的能力调整痕迹。"
+        category_summaries = {
+            "agency_style": "她会把被阻断的 skill 变更记成未完成的能力调整，而不是冒充成已经拥有的新能力。",
+            "presence_style": "就算这次 skill 变更没落地，她也会记住卡住的是哪条能力生态路径，方便后续继续处理。",
+            "boundary_style": "审批没过或执行被挡住时，能力生态会停在边界外，不会被写成已经接进身体里的事实。",
+        }
+    elif skill_mutation_completed_signal:
+        skill_label = primary_skill_name or "这条 skill"
+        if primary_tool_name in {"install_skill", "update_skill"}:
+            kind = "skill_install_completed"
+            summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+            if not summary:
+                version_phrase = f"@{primary_skill_version}" if primary_skill_version else ""
+                summary = f"{skill_label}{version_phrase} 已经真实安装完成，能力生态里多了一条可管理的新入口。"
+            category_summaries = {
+                "agency_style": "她会把真正安装完成的 skill 记成能力生态里新增的一条身体入口，而不是继续停留在提案阶段。",
+                "presence_style": "安装一旦完成，后续就能顺着这条 skill 的落盘对象和约束继续，而不是回到抽象说明。",
+                "boundary_style": "只有真的装完的 skill 才会进入可用能力面；提案或审批本身不会被混写成已经拥有。",
+            }
+        else:
+            kind = "skill_activation_changed"
+            summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+            if not summary:
+                operation_label = {
+                    "enable_skill": "启用",
+                    "disable_skill": "停用",
+                    "pin_skill": "固定",
+                    "unpin_skill": "解除固定",
+                }.get(primary_tool_name, "切换")
+                version_phrase = f"@{primary_skill_version}" if primary_skill_version else ""
+                summary = f"{skill_label}{version_phrase} 的会话激活态已经完成{operation_label}，后续匹配会沿这次变更继续。"
+            category_summaries = {
+                "agency_style": "她会把 skill 激活层的真实切换记成已经发生的能力生态变化，而不是把旧状态继续假装成还在生效。",
+                "presence_style": "技能激活态一旦切换，后续匹配和执行策略会顺着新状态继续，不会停在过时的候选层。",
+                "boundary_style": "启用、停用和 pin 这些能力生态变更只有在真正完成后，才会进入后续连续性。",
+            }
+    elif sandbox_execution_signal and primary_status == "completed" and not approval_signal:
         kind = "sandbox_execution_completed"
         summary = str(primary_packet.get("result_summary") or "").strip()[:220]
         if not summary:
@@ -1149,6 +1243,17 @@ def derive_digital_body_consequence(
             "agency_style": "她会把重新核对过的入口状态当成新的环境事实，而不是继续依赖上一轮过期的 access 猜测。",
             "presence_style": "入口状态一旦重新核对完成，她就能把之后的动作建立在最新环境上，而不是悬在旧会话残影里。",
             "boundary_style": "她不会把刷新状态误写成已经登录或越权执行；这只是核对当前边界，不是跨过边界。",
+        }
+    elif skill_usage_signal:
+        kind = "skill_usage_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            skill_label = primary_skill_name or "这条 skill"
+            summary = f"{skill_label} 这次已经真正参与了当前动作，后续可以顺着它留下的工作面继续。"
+        category_summaries = {
+            "agency_style": "她会把真正用过一次的 skill 记成实际发生过的做事路径，而不是只把它留在说明层。",
+            "presence_style": "一旦 skill 已经实际参与过当前动作，后续注意力会顺着它留下的产物、材料或工作面继续。",
+            "boundary_style": "只有完成后的 skill 使用后果才会进入连续性；没跑完的调用不会被提前写成能力事实。",
         }
     elif growth_signal and not approval_signal and not friction_signal:
         kind = "embodied_growth"
@@ -1336,6 +1441,7 @@ def derive_digital_body_consequence(
         "quota_state_detail": quota_state_detail,
         "permission_state": permission_state,
         "sandbox_state": sandbox_state,
+        "skill_effects": skill_effects,
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,
     }
@@ -1360,6 +1466,7 @@ def build_reconsolidation_snapshot(
     action_trace: Any = None,
     autonomy_block_reason: str | None = None,
     digital_body_state: dict[str, Any] | None = None,
+    session_skill_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
     behavior = behavior_action if isinstance(behavior_action, dict) else {}
@@ -1386,9 +1493,15 @@ def build_reconsolidation_snapshot(
     action_trace_snapshot = _compact_action_trace_snapshot(action_trace)
     block_reason = str(autonomy_block_reason or "").strip()[:220]
     digital_body_snapshot = _compact_digital_body_state_snapshot(digital_body_state)
+    skill_effects = derive_skill_effects(
+        session_skill_state,
+        action_packets,
+        digital_body_state=digital_body_snapshot,
+    )
     digital_body_consequence = derive_digital_body_consequence(
         digital_body_state=digital_body_snapshot,
         action_packets=action_packets,
+        session_skill_state=session_skill_state,
     )
     salience = app.get("salience") if isinstance(app.get("salience"), dict) else {}
     lineage_snapshot = semantic.get("lineage_snapshot") if isinstance(semantic.get("lineage_snapshot"), dict) else {}
@@ -1412,6 +1525,7 @@ def build_reconsolidation_snapshot(
         "autonomy_block_reason": block_reason,
         "digital_body_state": digital_body_snapshot,
         "digital_body_consequence": digital_body_consequence,
+        "skill_effects": skill_effects,
         "semantic_anchor_bundle": semantic_anchor_bundle,
         "salience": dict(salience),
         "world_model": {

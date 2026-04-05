@@ -243,6 +243,71 @@ class ToolApprovalPolicyTests(unittest.TestCase):
         self.assertEqual(preview.reason, "python emit_artifact.py")
         self.assertIn("受限命令规格执行", preview.note)
 
+    def test_summarize_tool_approval_request_surfaces_skill_mutation_preview(self):
+        batch = summarize_tool_approval_request(
+            source="skills",
+            tool_calls=[
+                {
+                    "name": "install_skill",
+                    "args": {
+                        "skill_id": "pytest-helper",
+                        "resolved_version": "1.1.0",
+                        "source": "official_registry",
+                    },
+                    "skill_preview": {
+                        "operation": "install_skill",
+                        "skill_id": "pytest-helper",
+                        "resolved_version": "1.1.0",
+                        "source": "official_registry",
+                        "hash": "abc123",
+                        "requested_permissions": ["filesystem_read"],
+                        "sandbox_profiles": ["workspace_write"],
+                        "verification_summary": "registry verified",
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "install_skill")
+        self.assertEqual(preview.reason, "install_skill pytest-helper@1.1.0")
+        self.assertEqual(preview.skill_preview["hash"], "abc123")
+        self.assertIn("permissions=filesystem_read", preview.note)
+        self.assertIn("profiles=workspace_write", preview.note)
+
+    def test_summarize_tool_approval_request_surfaces_skill_activation_preview(self):
+        batch = summarize_tool_approval_request(
+            source="skills",
+            tool_calls=[
+                {
+                    "name": "enable_skill",
+                    "args": {"skill_id": "source-ref-anchor-review"},
+                    "skill_preview": {
+                        "operation": "enable_skill",
+                        "skill_id": "source-ref-anchor-review",
+                        "resolved_version": "1.0.0",
+                        "source": "local_authored",
+                        "hash": "local123",
+                        "requested_permissions": [],
+                        "sandbox_profiles": [],
+                        "verification_summary": "local authored skill",
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "enable_skill")
+        self.assertEqual(preview.reason, "enable_skill source-ref-anchor-review@1.0.0")
+        self.assertEqual(preview.skill_preview["source"], "local_authored")
+        self.assertIn("local authored skill", preview.note)
+
 
 if __name__ == "__main__":
     unittest.main()

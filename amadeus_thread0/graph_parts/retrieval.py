@@ -72,6 +72,11 @@ def _digital_body_trace_identity(item: dict[str, Any]) -> dict[str, Any]:
         "artifact_source_ref_ids": list(embodied.get("artifact_source_ref_ids") or []),
         "artifact_source_title": str(embodied.get("artifact_source_title") or _record_value(item, "artifact_source_title", "") or "").strip(),
         "artifact_source_query": str(embodied.get("artifact_source_query") or _record_value(item, "artifact_source_query", "") or "").strip(),
+        "skill_effects": [
+            dict(effect)
+            for effect in (embodied.get("skill_effects") if isinstance(embodied.get("skill_effects"), list) else [])
+            if isinstance(effect, dict)
+        ][:6],
     }
 
 def _commitment_priority(item: dict[str, Any]) -> float:
@@ -258,10 +263,22 @@ def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
     kind = str(identity.get("kind") or "").strip().lower()
     carrier = str(identity.get("artifact_carrier") or "").strip().lower()
     source_title = str(identity.get("artifact_source_title") or "").strip()
+    skill_effects = [dict(effect) for effect in (identity.get("skill_effects") or []) if isinstance(effect, dict)]
     try:
         source_ref_count = len(identity.get("artifact_source_ref_ids") or [])
     except Exception:
         source_ref_count = 0
+    if kind in {"skill_install_completed", "skill_activation_changed", "skill_usage_completed", "skill_mutation_blocked"}:
+        primary = dict(skill_effects[0]) if skill_effects else {}
+        operation = str(primary.get("operation") or "").strip().lower()
+        use_kind = str(primary.get("use_kind") or "").strip().lower()
+        return _clamp01(
+            0.26
+            + 0.08 * min(2, len(skill_effects))
+            + (0.10 if operation in {"install", "update"} else 0.06 if operation else 0.0)
+            + (0.06 if use_kind in {"source_ref_continuity", "workspace_workflow"} else 0.0),
+            0.0,
+        )
     if kind == "source_material_compared":
         return _clamp01(
             0.34
@@ -272,6 +289,8 @@ def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
         )
     if kind in {"source_material_inspected", "artifact_reacquired"} and carrier == "source_ref":
         return _clamp01(0.22 + 0.06 * min(2, source_ref_count), 0.0)
+    if skill_effects:
+        return _clamp01(0.18 + 0.05 * min(2, len(skill_effects)), 0.0)
     return 0.0
 
 
@@ -283,14 +302,26 @@ def _digital_body_consequence_trace_line(item: dict[str, Any]) -> str:
     kind = str(identity.get("kind") or "").strip().lower()
     source_title = str(identity.get("artifact_source_title") or "").strip()
     source_query = str(identity.get("artifact_source_query") or "").strip()
+    skill_effects = [dict(effect) for effect in (identity.get("skill_effects") or []) if isinstance(effect, dict)]
+    skill_label = ""
+    if skill_effects:
+        primary = dict(skill_effects[0])
+        skill_name = str(primary.get("name") or primary.get("skill_id") or "").strip()
+        skill_operation = str(primary.get("operation") or "").strip().lower()
+        skill_use_kind = str(primary.get("use_kind") or "").strip().lower()
+        skill_label = "/".join(part for part in (skill_name, skill_operation or skill_use_kind) if part)
     if not kind:
-        return summary
+        return f"{skill_label}: {summary}" if skill_label else summary
     label = source_title or source_query
     if label:
         norm_summary = _norm_text(summary)
         norm_label = _norm_text(label)
         if norm_label and norm_label not in norm_summary:
+            if skill_label:
+                return f"D:{kind}[{skill_label}]({label[:80]}): {summary}"
             return f"D:{kind}({label[:80]}): {summary}"
+    if skill_label:
+        return f"D:{kind}[{skill_label}]: {summary}"
     return f"D:{kind}: {summary}"
 
 

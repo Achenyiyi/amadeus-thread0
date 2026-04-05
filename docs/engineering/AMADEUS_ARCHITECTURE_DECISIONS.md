@@ -11,11 +11,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Amadeus-K` remains a `digital persona system`, not a personal ops shell.
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
-- The latest closed execution target is `Sandbox Embodied Execution Phase 1`: one fixed persona interacting with the digital world through one unified memory substrate and one bounded runtime body, now extended to truthful workspace-local execution.
+- The latest closed execution target is `Skills Ecosystem Formal Closure`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, and one managed capability ecology that does not invade persona-core.
 
 ## Backend Status
 
-Status as of `2026-04-04`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready`
+Status as of `2026-04-05`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -23,6 +23,7 @@ For backend purposes, the structural decisions in this document are now split in
 - autonomy gate: `python evals/run_companion_autonomy_audit.py`
 - digital embodiment gate: `python evals/run_digital_embodiment_audit.py`
 - sandbox embodiment gate: `python evals/run_sandbox_embodied_execution_audit.py`
+- skills ecosystem gate: `python evals/run_skills_ecosystem_audit.py`
 - current handoff posture:
   - frontend remains frozen
   - backend contract is stable enough to consume
@@ -30,6 +31,8 @@ For backend purposes, the structural decisions in this document are now split in
   - digital embodiment phase 1 remains the preserved workspace/access/resource baseline
   - digital embodiment phase 2 is formally closed on the same body contract
   - sandbox embodied execution phase 1 is formally closed on the same body contract
+  - skills ecosystem formal closure is now also formally closed on the same body contract
+  - no next backend expansion phase is selected in this document yet
   - current execution posture remains `host-local restricted execution`, not a provider-grade sandbox
   - no wider execution surface is opened in this run
 
@@ -53,6 +56,9 @@ Closure evidence by decision family:
 - `Capability Bus Outside Persona Core`
   - runtime: tool routing and approval stay in runtime/tooling surfaces, not persona authority surfaces
   - checks: `tests/test_tooling_routing.py`, `tests/test_tool_approval_policy.py`
+- `Managed Skills Ecosystem`
+  - runtime: `amadeus_thread0.runtime.skill_registry`, `amadeus_thread0.graph_parts.skill_runtime`, `amadeus_thread0.runtime.backend_api`, `amadeus_thread0.runtime.backend_session`
+  - checks: `tests/test_skill_registry.py`, `tests/test_skill_runtime.py`, `tests/test_skills_ecosystem_smokes.py`, `tests/test_skills_ecosystem_audit.py`, `tests/test_tool_approval_policy.py`, `tests/test_backend_api.py`, `tests/test_backend_session.py`, `tests/test_autonomy_writeback.py`, `tests/test_world_model_residue.py`
 - `Relational Boundary Guard + Full Persona Traceability`
   - runtime: `counterpart_assessment`, `boundary_pressure`, `reconsolidation_snapshot`, `writeback_trace`
   - checks: `tests/test_behavior_runtime_alignment.py`, `tests/test_memory_guard.py`, `tests/test_backend_api.py`, `tests/test_cli_views.py`
@@ -121,6 +127,39 @@ Sandbox Embodied Execution Phase 1 preserved contract:
     - `evals/reports/sandbox-embodied-execution-audit-20260404-225854-phase1-closeout-b.{json,md}`
     - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
     - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
+
+Skills Ecosystem Formal Closure preserved contract:
+
+- keep skills on the existing body/runtime contract:
+  - global registry truth
+  - session activation truth
+  - backend `skills` envelope
+  - no second top-level skill state container
+- registry/install/lock truth remains outside autobiographical memory:
+  - install status
+  - resolved version
+  - hash
+  - source
+  - verification metadata
+  do not become self-narrative identity
+- completed skill effects may re-enter lived continuity only through final semantics:
+  - `digital_body_consequence.kind`
+  - `interaction_carryover.embodied_context.skill_effects`
+  - `reconsolidation_snapshot.skill_effects`
+  - retrieval resurfacing from final writeback
+- blocked / rejected / pending skill mutations do not become capability facts
+- authored local skills now exist as real repo-owned packages, not only test fixtures:
+  - `skills/source-ref-anchor-review/`
+  - `skills/workspace-regression-triage/`
+- closeout evidence for this phase is:
+  - `evals/run_skills_ecosystem_smokes.py`
+  - `evals/run_skills_ecosystem_audit.py`
+  - post-fix authoritative ready reports:
+    - `evals/reports/skills-ecosystem-audit-20260405-130543-closeout-fix-c.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-d.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
+  - the latest smoke artifact is:
+    - `evals/reports/skills-ecosystem-smokes-20260405-130823-20260405-130706-closeout-fix-e-smokes.{json,md}`
 
 ## P0 Decisions
 
@@ -477,6 +516,24 @@ Sandbox Embodied Execution Phase 1 preserved contract:
   - eventually form bounded new workflows or helper capabilities inside approved/sandboxed environments
 - Host-side arbitrary code generation remains unsafe and out of scope until explicit sandbox and approval contracts exist.
 
+### 7j. Managed Skills Ecosystem Lives Outside Persona Core
+
+- `SKILL.md` packages are a capability-management layer, not a persona-authority layer.
+- The runtime should support:
+  - authored local skills from `skills/`
+  - controlled remote registry discovery
+  - install/update/enable/disable/pin/unpin lifecycle operations
+  - global registry truth plus session activation truth
+  - progressive disclosure so only active skills expose instruction excerpts
+- Skills belong to the digital-body / capability ecology:
+  - install state, version, hash, and registry metadata do not enter autobiographical memory
+  - their usage consequences may later write back as procedural competence or artifact continuity
+- Approval policy remains strict:
+  - `search/inspect/list` are read surfaces
+  - `install/update/enable/disable/pin/unpin` are approval-gated mutations
+  - approved skill mutations must execute the same resolved payload, not a regenerated plan
+- Managed skills do not override persona-core, relationship-core, or self-narrative core.
+
 ### 8. Presence Layer Becomes Formal Runtime Infrastructure
 
 - Typing, silence, interruption recovery, delayed continuation, and proactive re-entry belong to a dedicated presence layer.
@@ -518,6 +575,10 @@ Sandbox Embodied Execution Phase 1 preserved contract:
 ### 13. Dynamic Skill Generation Is Deferred
 
 - Host-side arbitrary skill/tool generation remains deferred.
+- This does not block a managed skills ecosystem:
+  - authored `SKILL.md` packages
+  - controlled remote install/update
+  - approval-gated activation
 - In the near term, only explicit capability-upgrade proposals are allowed.
 - Long-term digital-embodiment convergence may include bounded helper creation or workflow synthesis, but only inside sandboxed / approval-gated execution surfaces.
 

@@ -26,6 +26,21 @@ MEMORY_WRITE_TOOLS = {
     "rollback_memory_change",
 }
 
+SKILL_MUTATION_TOOLS = {
+    "install_skill",
+    "update_skill",
+    "enable_skill",
+    "disable_skill",
+    "pin_skill",
+    "unpin_skill",
+}
+
+SKILL_READ_TOOLS = {
+    "search_skills",
+    "inspect_skill",
+    "list_runtime_skills",
+}
+
 
 WORLDLINE_ABLATION_READ_TOOLS = {
     "get_memory_snapshot",

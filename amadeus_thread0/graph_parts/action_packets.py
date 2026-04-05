@@ -741,6 +741,9 @@ def risk_from_tool_name(name: str) -> str:
         "compare_source_refs",
         "inspect_workspace_path",
         "refresh_access_state",
+        "search_skills",
+        "inspect_skill",
+        "list_runtime_skills",
     }:
         return "read"
     return "external_mutation"
@@ -752,6 +755,15 @@ def _tool_packet_intent(name: str) -> str:
         return "toolset_upgrade_proposal"
     if tool_name == "execute_workspace_command":
         return "sandbox:execute_workspace_command"
+    if tool_name in {
+        "install_skill",
+        "update_skill",
+        "enable_skill",
+        "disable_skill",
+        "pin_skill",
+        "unpin_skill",
+    }:
+        return f"skills:{tool_name.replace('_skill', '')}"
     return f"tool:{tool_name}"
 
 
@@ -779,7 +791,17 @@ def build_tool_action_packet(
     return normalize_action_packet(
         {
             "proposal_id": proposal_id or make_proposal_id(name, action, result_summary),
-            "origin": "capability_upgrade" if name == "request_toolset_upgrade" else "motive_goal",
+            "origin": "capability_upgrade"
+            if name in {
+                "request_toolset_upgrade",
+                "install_skill",
+                "update_skill",
+                "enable_skill",
+                "disable_skill",
+                "pin_skill",
+                "unpin_skill",
+            }
+            else "motive_goal",
             "intent": intent,
             "status": packet_status,
             "risk": risk,

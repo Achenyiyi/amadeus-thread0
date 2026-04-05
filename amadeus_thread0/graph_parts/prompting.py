@@ -117,6 +117,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
     recent_events = state.get("recent_events") if isinstance(state.get("recent_events"), list) else []
     behavior_action = state.get("behavior_action") if isinstance(state.get("behavior_action"), dict) else {}
     digital_body_state = state.get("digital_body_state") if isinstance(state.get("digital_body_state"), dict) else {}
+    session_skill_state = state.get("session_skill_state") if isinstance(state.get("session_skill_state"), dict) else {}
     session_context = state.get("session_context") if isinstance(state.get("session_context"), dict) else {}
     behavior_agenda = _resolve_behavior_agenda(
         state.get("behavior_agenda"),
@@ -334,6 +335,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
         current_event=current_event,
         digital_body_state=digital_body_state,
         session_context=session_context,
+        session_skill_state=session_skill_state,
     )
     renderer_hint = _renderer_guidance(
         response_style_hint=response_style_hint,
@@ -707,6 +709,7 @@ def _build_task_prompt(state: ThreadState, user_text: str, store: MemoryStore) -
             current_event=current_event,
             digital_body_state=digital_body_state,
             session_context=session_context,
+            session_skill_state=session_skill_state,
         )
         runtime_state_block = (
             "运行态摘记：\n" + runtime_state_brief + "\n"

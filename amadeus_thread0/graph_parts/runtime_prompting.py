@@ -18,6 +18,7 @@ from .prompt_helpers import (
     _compact_long_horizon_continuity_hint,
     _relationship_weather_phrase,
 )
+from .skill_runtime import active_skill_prompt_block
 
 def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -296,6 +297,7 @@ def _prompt_state_snapshot(
     current_event: dict[str, Any] | None,
     digital_body_state: dict[str, Any] | None = None,
     session_context: dict[str, Any] | None = None,
+    session_skill_state: dict[str, Any] | None = None,
 ) -> str:
     payload = {
         "response_style_hint": str(response_style_hint or "").strip() or "natural",
@@ -322,6 +324,14 @@ def _prompt_state_snapshot(
     body_hints = context.get("digital_body_hints") if isinstance(context.get("digital_body_hints"), dict) else {}
     if body_hints:
         payload["digital_body_hints"] = dict(body_hints)
+    if isinstance(session_skill_state, dict) and session_skill_state:
+        payload["session_skill_state"] = {
+            "catalog_version": str(session_skill_state.get("catalog_version") or ""),
+            "matched_skill_ids": list(session_skill_state.get("matched_skill_ids") or []),
+            "active_skill_ids": list(session_skill_state.get("active_skill_ids") or []),
+            "manual_overrides": dict(session_skill_state.get("manual_overrides") or {}),
+            "pending_skill_proposal": dict(session_skill_state.get("pending_skill_proposal") or {}),
+        }
     return _safe_json(payload)
 
 def _runtime_state_level(value: Any, *, low: str, mid: str, high: str, default: float = 0.5) -> str:
@@ -516,6 +526,7 @@ def _prompt_state_runtime_brief(
     current_event: dict[str, Any] | None,
     digital_body_state: dict[str, Any] | None = None,
     session_context: dict[str, Any] | None = None,
+    session_skill_state: dict[str, Any] | None = None,
 ) -> str:
     emotion = dict(emotion_state or {})
     bond = dict(bond_state or {})
@@ -580,6 +591,7 @@ def _prompt_state_runtime_brief(
         session_context=session_context,
         current_event=current_event,
     )
+    skill_hint = active_skill_prompt_block(session_skill_state)
     embodied_carryover_hint = _compact_embodied_carryover_hint(carryover)
     action_embodied_hint = _compact_embodied_action_hint(action)
     embodied_context = normalize_embodied_context(carryover.get("embodied_context") or action.get("embodied_context"))
@@ -632,6 +644,8 @@ def _prompt_state_runtime_brief(
             else "当前还挂着的环境条件"
         )
         lines.append(f"- {embodied_prefix}：{embodied_runtime_hint}。")
+    if skill_hint:
+        lines.append(f"- {skill_hint}")
 
     long_horizon_hint = _compact_long_horizon_continuity_hint(
         world_model_state=world,

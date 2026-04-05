@@ -412,6 +412,20 @@ class DigitalBodyStatePayload(TypedDict, total=False):
     body_constraints: list[str]
 
 
+class SessionSkillStatePayload(TypedDict, total=False):
+    catalog_version: str
+    catalog_entries: list[dict[str, Any]]
+    manual_enabled: list[str]
+    manual_disabled: list[str]
+    pinned_skill_ids: list[str]
+    matched_skill_ids: list[str]
+    matched_skill_entries: list[dict[str, Any]]
+    active_skill_ids: list[str]
+    active_skill_entries: list[dict[str, Any]]
+    pending_skill_proposal: dict[str, Any]
+    manual_overrides: dict[str, list[str]]
+
+
 class ThreadState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     final_text: str
@@ -456,6 +470,7 @@ class ThreadState(TypedDict, total=False):
     action_trace: list[dict[str, Any]]
     autonomy_block_reason: str
     digital_body_state: DigitalBodyStatePayload
+    session_skill_state: SessionSkillStatePayload
     pending_utterance_fragment: str
     pending_user_goal: str
     retrieved_context: dict[str, Any]

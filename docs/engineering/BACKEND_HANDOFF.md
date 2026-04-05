@@ -31,6 +31,7 @@ For handoff purposes, the current backend should already be treated as:
 - turn/event/readback execution: `amadeus_thread0.runtime.backend_session`
 - final-state normalization: `amadeus_thread0.runtime.final_state`
 - restricted execution runner: `amadeus_thread0.runtime.sandbox_runner`
+- managed skills registry: `amadeus_thread0.runtime.skill_registry`
 
 ## Autonomy Envelope
 
@@ -54,6 +55,54 @@ For sandbox execution packets, the stable contract additions are:
 - `autonomy.pending_approval.execution_preview`
 
 Frontend/CLI may render these as preview/result surfaces, but they must not reinterpret them as permission to widen execution scope.
+
+## Skills Envelope
+
+Frontend and CLI should consume the `skills` block directly instead of reconstructing session skill state from prompt text or legacy memory notes.
+
+Current turn/event payloads now expose:
+
+- `skills.installed`
+- `skills.matched`
+- `skills.active`
+- `skills.manual_overrides`
+- `skills.pending_approval`
+
+Interpretation rules:
+
+- `installed` is the compact registry/session catalog surface:
+  - no full `SKILL.md` body
+  - metadata only (`skill_id/name/description/version/status/triggers/surfaces/...`)
+- `matched` is the compact subset selected by runtime auto-match
+- `active` is the only skill surface allowed to carry progressive-disclosure guidance such as `skill_excerpt`
+- `manual_overrides` is the session-local override truth:
+  - `enabled`
+  - `disabled`
+  - `pinned`
+- `pending_approval` is the only stable approval surface for skill mutations:
+  - `proposal_id`
+  - `operation`
+  - `skill_id`
+  - `resolved_version`
+  - `source`
+  - `hash`
+  - `requested_permissions`
+  - `sandbox_profiles`
+  - `verification_summary`
+- skill registry/install state does not belong to autobiographical memory:
+  - backend may write procedural/result consequences from final action packets later
+  - backend must not present "pending install" as if the capability were already active
+- skill continuity stays inside existing embodied / summary surfaces:
+  - `digital_body_consequence.kind` may now truthfully use:
+    - `skill_install_completed`
+    - `skill_activation_changed`
+    - `skill_usage_completed`
+    - `skill_mutation_blocked`
+  - `interaction_carryover.embodied_context.skill_effects` and `reconsolidation_snapshot.skill_effects` are the minimal cross-turn skill consequence surfaces
+  - these are final-effect surfaces only; they do not replace registry truth
+- interpretation rule:
+  - completed install / enable / disable / use may appear as fact
+  - proposal / pending / blocked / rejected mutations must not be rendered as already-owned capability
 
 ## Embodiment Envelope
 
@@ -119,6 +168,10 @@ Interpretation rules:
   - `source_title`
   - `source_tool_name`
 - `digital_body` is the current runtime/body condition.
+- completed skill effects may also surface through the same embodied continuity path:
+  - `digital_body_consequence.skill_effects`
+  - `interaction_carryover.embodied_context.skill_effects`
+  - retrieval/export surfaces that already carry embodied context
 - `digital_body.access_state` is the only stable access-truth container:
   - flat compatibility fields such as `mode`, `session_continuity`, `browser_session`, `quota_state`
   - phase 2 nested detail mirrors such as:
@@ -180,6 +233,21 @@ Interpretation rules:
   - current bounded exception:
     - if the selected approved path is `operator_create_workspace`
     - backend may truthfully execute local workspace creation through `create_workspace_access`
+
+## Skills Handoff Status
+
+Skills closure is now treated as preserved backend contract, not an open buildout slice.
+
+- current authored local skills are:
+  - `skills/source-ref-anchor-review`
+  - `skills/workspace-regression-triage`
+- current closeout evidence is:
+  - `evals/run_skills_ecosystem_smokes.py`
+  - `evals/run_skills_ecosystem_audit.py`
+  - ready reports:
+    - `evals/reports/skills-ecosystem-audit-20260405-130543-closeout-fix-c.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-d.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
     - but only inside the runtime-owned `AMADEUS_DATA_DIR/workspaces/` boundary
     - after that execution:
       - the same access path may close as `status=completed`
