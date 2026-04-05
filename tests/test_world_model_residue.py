@@ -8892,6 +8892,125 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_skill_usage_writeback_resurfaces_into_followup_continuity(self):
+        from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
+        from amadeus_thread0.graph_parts.action_packets import build_tool_action_packet
+        from amadeus_thread0.graph_parts.memory_evolution import _record_digital_body_consequence
+
+        digital_body = {
+            "active_surface": "tooling",
+            "perception_channels": ["dialogue", "source_ref"],
+            "action_channels": ["language", "structured_action", "tooling"],
+            "world_surfaces": ["source_ref", "saved_material"],
+            "access_state": {"mode": "tool_enabled", "network_access": "enabled"},
+            "resource_state": {
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "search_result",
+                "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "active_artifact_label": "LangGraph Persistence",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [21, 17],
+                "preferred_source_ref_id": 21,
+                "preferred_anchor_reason": "primary_more_current",
+                "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "artifact_source_query": "langgraph persistence checkpointer thread",
+                "artifact_source_title": "LangGraph Persistence",
+                "artifact_source_tool_name": "search_web",
+            },
+        }
+        session_skill_state = {
+            "catalog_version": "skills-v1",
+            "catalog_entries": [
+                {
+                    "skill_id": "source-ref-anchor-review",
+                    "name": "source-ref-anchor-review",
+                    "description": "Read continuity-focused source materials",
+                    "version": "1.0.0",
+                    "status": "authored_local",
+                }
+            ],
+            "active_skill_ids": ["source-ref-anchor-review"],
+            "active_skill_entries": [
+                {
+                    "skill_id": "source-ref-anchor-review",
+                    "name": "source-ref-anchor-review",
+                    "description": "Read continuity-focused source materials",
+                    "version": "1.0.0",
+                    "status": "authored_local",
+                    "allowed_tools": ["search_web", "inspect_source_ref"],
+                }
+            ],
+        }
+        packet = {
+            **build_tool_action_packet(
+                tool_name="search_web",
+                proposal_id="ap-skill-usage-1",
+                args={"query": "langgraph persistence checkpointer"},
+                status="completed",
+                result_summary="searched continuity materials",
+            ),
+            "artifact_context": {
+                "carrier": "source_ref",
+                "artifact_kind": "search_result",
+                "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "artifact_label": "LangGraph Persistence",
+                "source_ref_ids": [21, 17],
+                "preferred_source_ref_id": 21,
+                "preferred_anchor_reason": "primary_more_current",
+                "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "source_query": "langgraph persistence checkpointer thread",
+                "source_title": "LangGraph Persistence",
+                "source_tool_name": "search_web",
+            },
+        }
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.8},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[packet],
+            digital_body_state=digital_body,
+            session_skill_state=session_skill_state,
+        )
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                wrote = _record_digital_body_consequence(
+                    store,
+                    digital_body_state=digital_body,
+                    reconsolidation_snapshot=snapshot,
+                    source="test:skills",
+                    confidence=0.88,
+                )
+                self.assertTrue(wrote)
+                traces = [
+                    item
+                    for item in store.list_revision_traces(limit=12)
+                    if str(item.get("namespace") or item.get("content", {}).get("namespace") or "").strip() == "digital_body_consequence"
+                ]
+                self.assertTrue(traces)
+                event, carryover = _apply_retrieved_behavior_trace_bridge(
+                    retrieved={"digital_body_consequence_traces": traces},
+                    current_event={"kind": "user_utterance", "text": "继续顺着刚才那条 skill 的材料线索走"},
+                    interaction_carryover={},
+                )
+                self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+                self.assertIn("skill:source-ref-anchor-review", carryover.get("source_tags") or [])
+                self.assertIn("skillop:use", carryover.get("source_tags") or [])
+                embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+                self.assertEqual(str(embodied_context.get("kind") or ""), "skill_usage_completed")
+                self.assertEqual(
+                    str((embodied_context.get("skill_effects") or [{}])[0].get("skill_id") or ""),
+                    "source-ref-anchor-review",
+                )
+            finally:
+                store.close()
+
 
 if __name__ == "__main__":
     unittest.main()

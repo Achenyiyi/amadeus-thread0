@@ -35,6 +35,7 @@ from ..utils.relational_history_export import (
 )
 from ..utils.revision_trace_export import normalize_revision_trace_exports
 from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_ref_exports
+from ..graph_parts.skill_runtime import backend_skill_envelope
 from .event_identity import resolve_readback_current_event
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -310,6 +311,8 @@ def _approval_trace_entry(
     name = str(tool_name or "").strip()
     if name == "execute_workspace_command":
         intent = "sandbox:execute_workspace_command"
+    elif name in {"install_skill", "update_skill", "enable_skill", "disable_skill", "pin_skill", "unpin_skill"}:
+        intent = f"skills:{name.replace('_skill', '')}"
     else:
         intent = "toolset_upgrade_proposal" if name == "request_toolset_upgrade" else f"tool:{name.lower()}"
     return {
@@ -675,6 +678,7 @@ def _apply_access_request_resolution(
         action_trace=action_trace,
         autonomy_block_reason=autonomy_block_reason,
         digital_body_state=digital_body_state,
+        session_skill_state=_dict_or_empty(data.get("session_skill_state")),
     )
     return {
         **data,
@@ -759,6 +763,15 @@ def _resolved_digital_body_consequence(
         digital_body_state=resolved_body,
         action_packets=action_packets,
         reconsolidation_snapshot=reconsolidation_snapshot,
+        session_skill_state=_dict_or_empty(data.get("session_skill_state")),
+    )
+
+
+def _resolved_skills(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = values if isinstance(values, dict) else {}
+    return backend_skill_envelope(
+        data.get("session_skill_state"),
+        pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
     )
 
 

@@ -2765,6 +2765,148 @@ class BackendApiTests(unittest.TestCase):
                 self.assertIn("workspace_write", payload["digital_body"]["access_state"]["missing_access"])
                 self.assertIn("human_approval", payload["digital_body"]["access_state"]["requestable_access"])
 
+    def test_turn_response_surfaces_skills_envelope_and_live_pending_skill_proposal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "session_skill_state": {
+                    "catalog_version": "skills-v1",
+                    "catalog_entries": [
+                        {
+                            "skill_id": "pytest-helper",
+                            "name": "pytest-helper",
+                            "description": "Helps with pytest workflows",
+                            "version": "1.0.0",
+                            "status": "installed",
+                        }
+                    ],
+                    "matched_skill_entries": [
+                        {
+                            "skill_id": "pytest-helper",
+                            "name": "pytest-helper",
+                            "description": "Helps with pytest workflows",
+                            "version": "1.0.0",
+                            "status": "installed",
+                        }
+                    ],
+                    "active_skill_entries": [],
+                    "manual_overrides": {"enabled": [], "disabled": [], "pinned": []},
+                },
+                "pending_action_proposal": {
+                    "proposal_id": "ap-skill-install-1",
+                    "tool_name": "install_skill",
+                    "tool_args": {
+                        "skill_id": "pytest-helper",
+                        "resolved_version": "1.1.0",
+                        "source": "official_registry",
+                        "hash": "abc123",
+                        "requested_permissions": ["filesystem_read"],
+                        "sandbox_profiles": ["workspace_write"],
+                        "verification_summary": "registry verified",
+                    },
+                },
+            }
+
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+            skills = turn_response.payload["skills"]
+
+            self.assertEqual(skills["installed"][0]["skill_id"], "pytest-helper")
+            self.assertEqual(skills["matched"][0]["skill_id"], "pytest-helper")
+            self.assertEqual(skills["active"], [])
+            self.assertEqual(skills["pending_approval"]["proposal_id"], "ap-skill-install-1")
+            self.assertEqual(skills["pending_approval"]["resolved_version"], "1.1.0")
+            self.assertEqual(skills["pending_approval"]["sandbox_profiles"], ["workspace_write"])
+
+    def test_turn_response_surfaces_completed_skill_usage_as_digital_body_consequence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "session_skill_state": {
+                    "catalog_version": "skills-v1",
+                    "catalog_entries": [
+                        {
+                            "skill_id": "source-ref-anchor-review",
+                            "name": "source-ref-anchor-review",
+                            "description": "Read continuity-focused source materials",
+                            "version": "1.0.0",
+                            "status": "authored_local",
+                        }
+                    ],
+                    "active_skill_ids": ["source-ref-anchor-review"],
+                    "active_skill_entries": [
+                        {
+                            "skill_id": "source-ref-anchor-review",
+                            "name": "source-ref-anchor-review",
+                            "description": "Read continuity-focused source materials",
+                            "version": "1.0.0",
+                            "status": "authored_local",
+                            "allowed_tools": ["search_web", "inspect_source_ref"],
+                            "skill_excerpt": "Inspect the preferred saved source first.",
+                        }
+                    ],
+                },
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "source_ref"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["source_ref", "saved_material"],
+                    "access_state": {"mode": "tool_enabled", "network_access": "enabled"},
+                    "resource_state": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "search_result",
+                        "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "active_artifact_label": "LangGraph Persistence",
+                        "artifact_carrier": "source_ref",
+                        "artifact_source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_source_query": "langgraph persistence checkpointer thread",
+                        "artifact_source_title": "LangGraph Persistence",
+                        "artifact_source_tool_name": "search_web",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-skill-usage-1",
+                        "origin": "motive_goal",
+                        "intent": "tool:search_web",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "search_web",
+                        "tool_args": {"query": "langgraph persistence checkpointer"},
+                        "result_summary": "searched continuity materials",
+                        "writeback_ready": True,
+                        "artifact_context": {
+                            "carrier": "source_ref",
+                            "artifact_kind": "search_result",
+                            "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "artifact_label": "LangGraph Persistence",
+                            "source_ref_ids": [21, 17],
+                            "preferred_source_ref_id": 21,
+                            "preferred_anchor_reason": "primary_more_current",
+                            "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                            "source_query": "langgraph persistence checkpointer thread",
+                            "source_title": "LangGraph Persistence",
+                            "source_tool_name": "search_web",
+                        },
+                    }
+                ],
+            }
+
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+            consequence = turn_response.payload["digital_body_consequence"]
+            self.assertEqual(consequence["kind"], "skill_usage_completed")
+            self.assertEqual(consequence["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+            self.assertEqual(turn_response.payload["skills"]["active"][0]["skill_id"], "source-ref-anchor-review")
+
 
 if __name__ == "__main__":
     unittest.main()

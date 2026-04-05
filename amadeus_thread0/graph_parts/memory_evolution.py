@@ -395,6 +395,8 @@ def _embodied_context_shift_score(current: dict[str, Any] | None, previous: dict
     for key in ("requested_access", "missing_access", "granted_toolsets", "active_tools"):
         if list(curr.get(key) or []) != list(prev.get(key) or []):
             score += 0.10
+    if list(curr.get("skill_effects") or []) != list(prev.get("skill_effects") or []):
+        score += 0.12
     return min(1.0, score)
 
 
@@ -454,6 +456,13 @@ def _proactive_continuity_embodied_context(
     ):
         return context
     if kind == "environmental_friction" and bool(context.get("environmental_friction", False)):
+        return context
+    if kind in {
+        "skill_install_completed",
+        "skill_activation_changed",
+        "skill_usage_completed",
+        "skill_mutation_blocked",
+    } and bool(context.get("skill_effects")):
         return context
     if kind in {"access_request_resolved", "workspace_access_resolved"} and any(
         (
@@ -4297,6 +4306,11 @@ def _record_digital_body_consequence(
         "selected_access_proposal": dict(consequence.get("selected_access_proposal") or {})
         if isinstance(consequence.get("selected_access_proposal"), dict)
         else {},
+        "skill_effects": [
+            dict(item)
+            for item in (consequence.get("skill_effects") if isinstance(consequence.get("skill_effects"), list) else [])
+            if isinstance(item, dict)
+        ][:8],
     }
     embodied_context = _normalized_embodied_context(consequence)
     if embodied_context:
@@ -4685,13 +4699,66 @@ def _record_digital_body_consequence_long_horizon_memory(
     active_artifact_kind = str(item.get("active_artifact_kind") or "").strip().lower()
     active_artifact_label = str(item.get("active_artifact_label") or item.get("active_artifact_ref") or "").strip()
     artifact_reacquisition_mode = str(item.get("artifact_reacquisition_mode") or "").strip().lower()
+    skill_effects = [
+        dict(effect)
+        for effect in (item.get("skill_effects") if isinstance(item.get("skill_effects"), list) else [])
+        if isinstance(effect, dict)
+    ][:8]
+    primary_skill = dict(skill_effects[0]) if skill_effects else {}
+    skill_label = str(primary_skill.get("name") or primary_skill.get("skill_id") or "").strip()
+    skill_version = str(primary_skill.get("version") or "").strip()
+    skill_operation = str(primary_skill.get("operation") or "").strip().lower()
+    skill_use_kind = str(primary_skill.get("use_kind") or "").strip().lower()
 
     worldline_category = ""
     worldline_summary = ""
     worldline_tags = ["digital_body", kind]
     importance = 0.0
 
-    if procedural_growth:
+    if kind == "skill_install_completed" and skill_effects:
+        worldline_category = "skill_capability"
+        version_phrase = f"@{skill_version}" if skill_version else ""
+        worldline_summary = f"她把 {skill_label or '一条新 skill'}{version_phrase} 真正接进了能力生态里，之后遇到相关任务时可以按这条路径继续。"
+        importance = _clamp01(0.62 + 0.06 * min(2, len(skill_effects)))
+        worldline_tags.extend(
+            [
+                str(primary_skill.get("skill_id") or "").strip().lower(),
+                "skill_install",
+            ]
+        )
+    elif kind == "skill_activation_changed" and skill_effects:
+        worldline_category = "skill_activation"
+        version_phrase = f"@{skill_version}" if skill_version else ""
+        worldline_summary = f"{skill_label or '这条 skill'}{version_phrase} 的会话激活态已经真实切换完成，后续匹配会沿这次能力生态变化继续。"
+        importance = _clamp01(0.54 + 0.06 * min(2, len(skill_effects)))
+        worldline_tags.extend(
+            [
+                str(primary_skill.get("skill_id") or "").strip().lower(),
+                f"skill_{skill_operation or 'activation'}",
+            ]
+        )
+    elif kind == "skill_usage_completed" and skill_effects:
+        worldline_category = "skill_usage"
+        worldline_summary = f"{skill_label or '这条 skill'} 这次已经真正参与了当前动作，后续连续性会顺着它留下的工作面继续。"
+        importance = _clamp01(0.52 + 0.06 * min(2, len(skill_effects)) + (0.04 if skill_use_kind else 0.0))
+        worldline_tags.extend(
+            [
+                str(primary_skill.get("skill_id") or "").strip().lower(),
+                "skill_usage",
+                skill_use_kind,
+            ]
+        )
+    elif kind == "skill_mutation_blocked" and skill_effects:
+        worldline_category = "skill_mutation_blocked"
+        worldline_summary = f"{skill_label or '这条 skill'} 这次能力变更没有真正落地，她把它记成被边界挡住的一次未完成调整。"
+        importance = _clamp01(0.48 + 0.06 * min(2, len(skill_effects)))
+        worldline_tags.extend(
+            [
+                str(primary_skill.get("skill_id") or "").strip().lower(),
+                "skill_mutation_blocked",
+            ]
+        )
+    elif procedural_growth:
         worldline_category = "embodied_growth"
         capability_phrase = "、".join((granted_toolsets or active_tools)[:3]) if (granted_toolsets or active_tools) else "新的环境入口"
         worldline_summary = f"她把{capability_phrase}这类入口真正接进了自己的数字身体里，之后处理类似事情时会更顺手。"

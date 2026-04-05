@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..graph_parts.skill_runtime import backend_skill_envelope
 from ..utils.memory_history_export import normalize_memory_history_export
 from ..utils.relational_history_export import (
     normalize_counterpart_assessment_export,
@@ -152,6 +153,7 @@ def _resolved_digital_body_consequence(
         digital_body_state=resolved_body,
         action_packets=action_packets,
         reconsolidation_snapshot=reconsolidation_snapshot,
+        session_skill_state=_dict_or_empty(data.get("session_skill_state")),
     )
 
 
@@ -512,6 +514,10 @@ class BackendAPI:
         counterpart_assessment = _resolved_counterpart_assessment(values)
         agenda_lifecycle_residue = _resolved_agenda_lifecycle_residue(values)
         autonomy = _resolved_autonomy(values)
+        skills = backend_skill_envelope(
+            values.get("session_skill_state"),
+            pending_action_proposal=_dict_or_empty(values.get("pending_action_proposal")),
+        )
         digital_body = _resolved_digital_body(values)
         digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
@@ -541,6 +547,7 @@ class BackendAPI:
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
             "turn_summary": self.backend_session.build_evolution_summary(state_values=summary_values),
             "autonomy": autonomy,
+            "skills": skills,
             "digital_body": digital_body,
             "digital_body_consequence": digital_body_consequence,
             "writeback_trace": writeback_trace,
@@ -564,6 +571,10 @@ class BackendAPI:
         counterpart_assessment = _resolved_counterpart_assessment(values)
         agenda_lifecycle_residue = _resolved_agenda_lifecycle_residue(values)
         autonomy = _resolved_autonomy(values)
+        skills = backend_skill_envelope(
+            values.get("session_skill_state"),
+            pending_action_proposal=_dict_or_empty(values.get("pending_action_proposal")),
+        )
         digital_body = _resolved_digital_body(values)
         digital_body_consequence = _resolved_digital_body_consequence(values, digital_body=digital_body)
         internal_state = _internal_state_trace(values)
@@ -597,6 +608,7 @@ class BackendAPI:
             "sources": sources,
             "pending_utterance_fragment": str(values.get("pending_utterance_fragment") or "").strip(),
             "autonomy": autonomy,
+            "skills": skills,
             "digital_body": digital_body,
             "digital_body_consequence": digital_body_consequence,
             "writeback_trace": writeback_trace,

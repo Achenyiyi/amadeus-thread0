@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .action_packets import compact_artifact_identity, normalize_action_packets
+from .skill_runtime import normalize_skill_effects
 
 _OWN_RHYTHM_EVENT_KINDS = {
     "self_activity_state",
@@ -1219,6 +1220,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         else {}
     )
     sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
+    skill_effects = normalize_skill_effects(row.get("skill_effects"))
 
     kind = _clean_state_label(row.get("kind"))
     if not kind:
@@ -1302,6 +1304,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "quota_state_detail": quota_state_detail,
         "permission_state": permission_state,
         "sandbox_state": sandbox_state,
+        "skill_effects": skill_effects,
     }
     if not any(
         (
@@ -1372,6 +1375,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["quota_state_detail"],
             normalized["permission_state"],
             normalized["sandbox_state"],
+            normalized["skill_effects"],
         )
     ):
         return {}

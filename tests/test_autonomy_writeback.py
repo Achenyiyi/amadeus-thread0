@@ -636,6 +636,158 @@ class AutonomyWritebackTests(unittest.TestCase):
             "tool failed",
         )
 
+    def test_reconsolidation_snapshot_distinguishes_skill_install_usage_and_blocked_mutation(self):
+        source_body = {
+            "active_surface": "tooling",
+            "perception_channels": ["dialogue", "source_ref"],
+            "action_channels": ["language", "structured_action", "tooling"],
+            "world_surfaces": ["source_ref", "saved_material"],
+            "access_state": {"mode": "tool_enabled", "network_access": "enabled"},
+            "resource_state": {
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "search_result",
+                "active_artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "active_artifact_label": "LangGraph Persistence",
+                "artifact_carrier": "source_ref",
+                "artifact_source_ref_ids": [21, 17],
+                "preferred_source_ref_id": 21,
+                "preferred_anchor_reason": "primary_more_current",
+                "artifact_source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                "artifact_source_query": "langgraph persistence checkpointer thread",
+                "artifact_source_title": "LangGraph Persistence",
+                "artifact_source_tool_name": "search_web",
+            },
+        }
+        session_skill_state = {
+            "catalog_version": "skills-v1",
+            "catalog_entries": [
+                {
+                    "skill_id": "source-ref-anchor-review",
+                    "name": "source-ref-anchor-review",
+                    "description": "Read continuity-focused source materials",
+                    "version": "1.0.0",
+                    "status": "authored_local",
+                }
+            ],
+            "active_skill_ids": ["source-ref-anchor-review"],
+            "active_skill_entries": [
+                {
+                    "skill_id": "source-ref-anchor-review",
+                    "name": "source-ref-anchor-review",
+                    "description": "Read continuity-focused source materials",
+                    "version": "1.0.0",
+                    "status": "authored_local",
+                    "allowed_tools": ["search_web", "inspect_source_ref"],
+                }
+            ],
+        }
+
+        install_snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.8},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[
+                build_tool_action_packet(
+                    tool_name="install_skill",
+                    proposal_id="ap-skill-install-1",
+                    args={
+                        "skill_id": "source-ref-anchor-review",
+                        "resolved_version": "1.0.0",
+                        "source": "local_authored",
+                        "hash": "abc123",
+                        "requested_permissions": ["filesystem_read"],
+                        "sandbox_profiles": [],
+                        "verification_summary": "local authored skill",
+                    },
+                    action="approve",
+                    status="completed",
+                    result_summary="installed source-ref-anchor-review@1.0.0",
+                )
+            ],
+            digital_body_state=source_body,
+            session_skill_state=session_skill_state,
+        )
+        blocked_snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.8},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[
+                build_tool_action_packet(
+                    tool_name="install_skill",
+                    proposal_id="ap-skill-blocked-1",
+                    args={
+                        "skill_id": "blocked-anchor-pack",
+                        "resolved_version": "1.0.0",
+                        "source": "official_registry",
+                        "hash": "blocked123",
+                        "requested_permissions": ["filesystem_read"],
+                        "sandbox_profiles": [],
+                        "verification_summary": "registry verified",
+                    },
+                    action="approve",
+                    status="blocked",
+                    result_summary="skill install blocked",
+                    block_reason="operator rejected mutation",
+                )
+            ],
+            digital_body_state=source_body,
+            session_skill_state={},
+        )
+        usage_snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.8},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[
+                {
+                    **build_tool_action_packet(
+                        tool_name="search_web",
+                        proposal_id="ap-skill-usage-1",
+                        args={"query": "langgraph persistence checkpointer"},
+                        status="completed",
+                        result_summary="searched continuity materials",
+                    ),
+                    "artifact_context": {
+                        "carrier": "source_ref",
+                        "artifact_kind": "search_result",
+                        "artifact_ref": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "artifact_label": "LangGraph Persistence",
+                        "source_ref_ids": [21, 17],
+                        "preferred_source_ref_id": 21,
+                        "preferred_anchor_reason": "primary_more_current",
+                        "source_url": "https://docs.langchain.com/oss/python/langgraph/persistence",
+                        "source_query": "langgraph persistence checkpointer thread",
+                        "source_title": "LangGraph Persistence",
+                        "source_tool_name": "search_web",
+                    },
+                }
+            ],
+            digital_body_state=source_body,
+            session_skill_state=session_skill_state,
+        )
+
+        self.assertEqual(install_snapshot["digital_body_consequence"]["kind"], "skill_install_completed")
+        self.assertEqual(install_snapshot["digital_body_consequence"]["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+        self.assertEqual(blocked_snapshot["digital_body_consequence"]["kind"], "skill_mutation_blocked")
+        self.assertEqual(blocked_snapshot["digital_body_consequence"]["skill_effects"][0]["status"], "blocked")
+        self.assertEqual(usage_snapshot["digital_body_consequence"]["kind"], "skill_usage_completed")
+        self.assertEqual(usage_snapshot["skill_effects"][0]["operation"], "use")
+        self.assertEqual(usage_snapshot["digital_body_consequence"]["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+
 
 if __name__ == "__main__":
     unittest.main()

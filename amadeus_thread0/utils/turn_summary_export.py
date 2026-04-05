@@ -115,11 +115,53 @@ def _clean_access_acquire_proposals(values: Any, *, limit: int = 8) -> list[dict
     return out
 
 
+def _clean_skill_effects(values: Any, *, limit: int = 6) -> list[dict[str, Any]]:
+    if not isinstance(values, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        skill_id = str(item.get("skill_id") or "").strip().lower()
+        name = str(item.get("name") or "").strip()
+        status = str(item.get("status") or "").strip().lower()
+        operation = str(item.get("operation") or "").strip().lower()
+        use_kind = str(item.get("use_kind") or "").strip().lower()
+        tool_name = str(item.get("tool_name") or "").strip().lower()
+        artifact_carrier = str(item.get("artifact_carrier") or "").strip().lower()
+        artifact_ref = str(item.get("artifact_ref") or "").strip()
+        artifact_label = str(item.get("artifact_label") or "").strip()
+        version = str(item.get("version") or "").strip()
+        source = str(item.get("source") or "").strip()
+        trust_tier = str(item.get("trust_tier") or "").strip().lower()
+        if not any((skill_id, name, status, operation, use_kind, tool_name, artifact_ref, artifact_label)):
+            continue
+        out.append(
+            {
+                "skill_id": skill_id,
+                "name": name,
+                "version": version,
+                "source": source,
+                "trust_tier": trust_tier,
+                "status": status,
+                "operation": operation,
+                "use_kind": use_kind,
+                "tool_name": tool_name,
+                "artifact_carrier": artifact_carrier,
+                "artifact_ref": artifact_ref,
+                "artifact_label": artifact_label,
+            }
+        )
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
 def summarize_embodied_context(state: Any) -> dict[str, Any]:
     normalized = normalize_embodied_context(state)
     if not normalized:
         return {}
-    return {
+    summary = {
         "kind": str(normalized.get("kind") or "").strip(),
         "summary": str(normalized.get("summary") or "").strip(),
         "access_mode": str(normalized.get("access_mode") or "").strip(),
@@ -179,6 +221,10 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
         "environmental_friction": bool(normalized.get("environmental_friction", False)),
         "requested_help": bool(normalized.get("requested_help", False)),
     }
+    skill_effects = _clean_skill_effects(normalized.get("skill_effects"), limit=6)
+    if skill_effects:
+        summary["skill_effects"] = skill_effects
+    return summary
 
 
 def summarize_interaction_carryover(carryover: Any) -> dict[str, Any]:

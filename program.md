@@ -11,13 +11,13 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-04-04`
+- Date: `2026-04-05`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: `Sandbox Embodied Execution Phase 1 formally closed`
+- Mainline phase: `Skills Ecosystem Formal Closure` preserved on top of the closed embodiment / sandbox baselines
 - Immediate research focus:
   - frontend remains paused
-  - active work is now `post-closeout baseline preservation`, not more open-ended sandbox widening
-  - no next execution phase is selected yet
+  - active work is now `managed skills ecosystem`, not more open-ended sandbox widening
+  - no new execution surface is selected yet
   - the Chinese lexical-rule replacement discussion has been recorded as a future deferred track, not the current slice
 - Active backend focus:
   - preserve `freeze_gate_ready`
@@ -25,12 +25,24 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `digital_embodiment_phase1_ready`
   - preserve `digital_embodiment_phase2_ready`
   - preserve `sandbox_embodied_execution_phase1_ready`
+  - preserve `skills_ecosystem_ready`
+  - keep `skills` as a closed managed capability ecology:
+    - global registry
+    - session activation
+    - `SKILL.md` progressive disclosure
+    - approval-gated mutations
+    - no persona-core override
+    - completed usage writes back only as procedural / embodied continuity
+  - keep `search_web` as the canonical real internet-search tool, now backed by Tavily and the existing `source_ref` continuity path
+  - keep `search_langchain_docs` as compatibility-only until it is deliberately retired; do not route new generic web-search work through the docs-only MCP path
   - keep the closed `digital_body.access_state` / `digital_body.resource_state` contract stable
   - keep the new `host-local restricted execution` contract stable without widening into browser/network/package-install/arbitrary host codegen
+  - keep the new skills ecosystem contract stable without reopening persona-core or introducing a second skill truth model
   - keep saved-material continuity on `source_ref` until a real browser runtime exists
   - do not open a wider execution or embodiment surface until the repo explicitly selects the next phase
   - do not reopen broad Chinese lexical rewrites before the embodiment phase reaches a stable replacement contract
   - do not spend current mainline time on reply naturalness / tone micro-polish unless it blocks runtime correctness or contract closure
+  - no next post-skills backend phase is selected yet; default posture is preservation, not expansion
 - Current frontend-handoff focus:
   - frontend remains frozen
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
@@ -55,6 +67,28 @@ This file is the live development ledger for `amadeus-thread0`.
     - all 3 reports show:
       - `overall_status=passed`
       - `readiness=sandbox_embodied_execution_phase1_ready`
+  - formally closed `Skills Ecosystem Formal Closure`:
+    - preserved the selected architecture:
+      - `LangGraph + LangChain` remains the control plane
+      - skills remain `digital body / capability ecology`, not persona-core
+      - runtime registry truth remains outside autobiographical memory
+      - only completed install / activation / usage writes back as procedural or embodied continuity
+    - added closeout tooling:
+      - `evals/run_skills_ecosystem_smokes.py`
+      - `evals/run_skills_ecosystem_audit.py`
+      - `evals/print_latest_sandbox_baseline.py`
+      - `tests/test_skills_ecosystem_smokes.py`
+      - `tests/test_skills_ecosystem_audit.py`
+    - added/kept real repo-owned local skills:
+      - `skills/source-ref-anchor-review/`
+      - `skills/workspace-regression-triage/`
+    - post-fix authoritative ready reports now include:
+      - `evals/reports/skills-ecosystem-audit-20260405-130543-closeout-fix-c.{json,md}`
+      - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-d.{json,md}`
+      - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
+    - all 3 reports show:
+      - `overall_status=passed`
+      - `readiness=skills_ecosystem_ready`
   - formally closed `Digital Embodiment Convergence Phase 2`:
     - fixed the audit readiness/history bookkeeping bug so top-level readiness and `recent_audits[-1]` now stay aligned
     - added `evals/run_digital_embodiment_smokes.py` and wired its 4 required scenarios into the blocking phase-2 audit check
@@ -9399,3 +9433,237 @@ This file is the live development ledger for `amadeus-thread0`.
     - `digital_embodiment_phase2_ready`
     - `sandbox_embodied_execution_phase1_ready`
   - do not widen the execution surface until the next bounded phase is explicitly selected
+
+## 2026-04-05 Run 224
+
+- Focus:
+  - install and wire a real Tavily-backed internet-search tool into the current backend without widening the embodiment or execution architecture
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/config.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/graph_parts/tooling.py`
+  - `requirements.txt`
+  - `tests/test_search_web_tool.py`
+  - `tests/test_tooling_routing.py`
+  - `program.md`
+- Key changes:
+  - installed `langchain-tavily` into the active environment and pinned it in `requirements.txt`
+  - added a formal `search_web` tool backed by `langchain_tavily.TavilySearch`:
+    - normalizes Tavily results into the repo's existing `items + source_ref_ids` contract
+    - dedupes by URL and preserves stable `title/url/snippet/published_at/score`
+    - writes saved materials into the unified `source_refs` store with `tool_name=search_web`
+  - wired `search_web` into the repo's official tool path:
+    - `TOOL_RELIABILITY_WEIGHTS`
+    - `CLAIM_REQUIRED_TOOLS`
+    - `TOOL_POLICIES`
+    - builtin tool registry
+    - explicit tool-call parsing in `graph_parts/tooling.py`
+  - kept `search_langchain_docs` intact as a compatibility path so existing docs-specific flows do not regress, but the new canonical generic web-search surface is now `search_web`
+  - added direct coverage for:
+    - Tavily result normalization + `source_ref` persistence
+    - explicit `search_web` routing from natural-language tool instructions
+  - verified one real networked call end-to-end:
+    - `search_web.invoke(...)` returned live results from LangChain docs and persisted `source_ref_ids`
+- Validation:
+  - `python -m py_compile amadeus_thread0\utils\tools.py amadeus_thread0\config.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\graph_parts\tooling.py tests\test_search_web_tool.py tests\test_tooling_routing.py`
+  - `python -m pytest tests\test_search_web_tool.py tests\test_tooling_routing.py tests\test_tool_runtime.py tests\test_tool_approval_policy.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+  - real call smoke: `search_web.invoke({'query': 'LangGraph interrupts human in the loop', 'max_results': 2, 'include_domains': ['docs.langchain.com']})`
+- Result:
+  - Tavily is now installed and available as the repo's real `search_web` capability
+  - the tool writes back into the existing saved-material / `source_ref` continuity path instead of opening a second web-search truth model
+  - focused tests, AGENTS graph minimum set, and AGENTS tool-path set all stayed green
+- Next:
+  - if we want to finish the web-search consolidation, the next clean slice is to retire or alias remaining `search_langchain_docs`-specific callers and tests onto `search_web`
+  - otherwise keep this as a preserved backend baseline and continue the main architecture track without reopening frontend work
+
+## 2026-04-05 Run 225
+
+- Focus:
+  - implement the first formal `skills ecosystem` on the existing `LangGraph + LangChain` backbone without reopening persona-core or widening execution scope
+- Files changed:
+  - `amadeus_thread0/runtime/skill_registry.py`
+  - `amadeus_thread0/graph_parts/skill_runtime.py`
+  - `amadeus_thread0/graph_parts/tooling.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/tool_approval.py`
+  - `amadeus_thread0/graph_parts/prepare_turn_runtime.py`
+  - `amadeus_thread0/graph_parts/runtime_prompting.py`
+  - `amadeus_thread0/graph_parts/prompting.py`
+  - `amadeus_thread0/graph_parts/state.py`
+  - `amadeus_thread0/graph_parts/tool_nodes.py`
+  - `amadeus_thread0/graph_parts/tool_policies.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `amadeus_thread0/utils/tool_registry.py`
+  - `amadeus_thread0/config.py`
+  - `tests/test_skill_registry.py`
+  - `tests/test_skill_runtime.py`
+  - `tests/test_tooling_routing.py`
+  - `tests/test_tool_approval_policy.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `skills/README.md`
+  - `program.md`
+- Key changes:
+  - completed the new managed skills runtime surface:
+    - `runtime/skill_registry.py` now owns:
+      - local authored `skills/` discovery
+      - controlled remote catalog loading
+      - install/update lifecycle
+      - registry/lock truth
+      - session override state
+      - runtime auto-match computation
+    - `graph_parts/skill_runtime.py` now owns:
+      - normalized session skill state
+      - backend `skills` envelope shaping
+      - active-skill prompt disclosure
+  - fixed the initial runtime gaps that would have broken the contract:
+    - `update_skill` no longer aliases raw install semantics; it now validates against `preview_operation(operation=\"update\")`
+    - local file / Windows path catalog sources now work when explicitly allowed for tests or controlled local registries
+    - zip install now rejects:
+      - path traversal
+      - drive-qualified members
+      - symlink entries, including symlink directories
+    - failed installs clean up partial target directories instead of leaving broken cache state behind
+    - registry snapshot `catalog_version` is now written from the post-update snapshot, not stale pre-update state
+  - tightened progressive disclosure so the compact catalog stays compact:
+    - compact `installed/matched/catalog` surfaces no longer expose `skill_excerpt`
+    - full `SKILL.md` excerpt now only appears on:
+      - `inspect_skill`
+      - active runtime entries
+      - active prompt hinting
+  - finished approval/runtime/backend integration:
+    - skill mutation tools now reuse the existing action-packet + approval path
+    - resolved skill payloads are attached before approval so post-approval execution keeps the same:
+      - `proposal_id`
+      - `skill_id`
+      - `resolved_version`
+      - `source`
+      - `hash`
+      - `requested_permissions`
+      - `sandbox_profiles`
+      - `verification_summary`
+    - backend turn/event payloads now expose the stable `skills` block:
+      - `installed`
+      - `matched`
+      - `active`
+      - `manual_overrides`
+      - `pending_approval`
+  - added natural-language routing for skill lifecycle commands:
+    - `安装技能`
+    - `启用技能`
+    - `禁用技能`
+    - `固定技能`
+    - `取消固定技能`
+    - `查看当前技能列表`
+  - kept legacy compatibility intact:
+    - old `add_skill/list_skills` remain note-style memory tools
+    - they do not pollute the new runtime registry
+- Validation:
+  - `python -m py_compile amadeus_thread0\runtime\skill_registry.py amadeus_thread0\graph_parts\skill_runtime.py amadeus_thread0\utils\tools.py amadeus_thread0\runtime\tool_approval.py amadeus_thread0\runtime\backend_api.py amadeus_thread0\runtime\backend_session.py amadeus_thread0\graph_parts\tool_nodes.py amadeus_thread0\graph_parts\runtime_prompting.py amadeus_thread0\graph_parts\prompting.py amadeus_thread0\graph_parts\prepare_turn_runtime.py amadeus_thread0\graph_parts\state.py amadeus_thread0\graph_parts\tool_policies.py amadeus_thread0\graph_parts\action_packets.py amadeus_thread0\utils\tool_registry.py amadeus_thread0\config.py`
+  - `python -m pytest tests\test_skill_registry.py tests\test_skill_runtime.py tests\test_tooling_routing.py tests\test_tool_approval_policy.py -q`
+  - `python -m pytest tests\test_backend_api.py -k skills_envelope -q`
+  - `python -m pytest tests\test_backend_session.py -k skill_install_approval -q`
+  - `python -m pytest tests\test_skill_registry.py tests\test_skill_runtime.py tests\test_tooling_routing.py tests\test_tool_approval_policy.py tests\test_backend_session.py tests\test_backend_api.py -q`
+  - `python -m pytest tests\test_daily_surface_gating.py tests\test_generation_profile.py tests\test_dialogue_mode_counterpart.py tests\test_world_model_residue.py tests\test_subjective_review_pack.py tests\test_companion_autonomy_runtime.py tests\test_autonomy_writeback.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py tests\test_cli_views.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py -q`
+- Result:
+  - the repo now has a formal skills ecosystem that matches the selected architecture:
+    - `LangGraph + LangChain` stays the main control plane
+    - skills are managed assets, not prompt scraps
+    - active skills disclose instructions only when matched/activated
+    - install/update/enable/disable/pin/unpin stay approval-gated
+    - legacy skill notes remain isolated compatibility surfaces
+  - focused skills tests and the AGENTS-required graph/tool-path baselines stayed green
+- Next:
+  - if we want to push this lane further, the next clean slice is either:
+    - add a controlled remote registry source and sample authored skills under `skills/`
+    - or connect final completed skill usage traces into writeback/retrieval as procedural competence residue
+  - otherwise preserve this as the current managed-skills baseline and continue the main architecture track
+
+## 2026-04-05 Run 226
+
+- Focus:
+  - formally close the managed `skills ecosystem` slice with audit/smoke tooling, continuity semantics, authored local skill samples, and repo-level contract sync
+- Files changed:
+  - `evals/run_skills_ecosystem_smokes.py`
+  - `evals/run_skills_ecosystem_audit.py`
+  - `evals/print_latest_sandbox_baseline.py`
+  - `tests/test_skills_ecosystem_smokes.py`
+  - `tests/test_skills_ecosystem_audit.py`
+  - `tests/test_skill_runtime.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_tool_approval_policy.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - added the formal closeout tooling for skills:
+    - `run_skills_ecosystem_smokes.py` with 5 fixed closure scenarios
+    - `run_skills_ecosystem_audit.py` with blocking checks for:
+      - registry / lock truth
+      - progressive disclosure
+      - approval payload immutability
+      - auto-match vs manual override precedence
+      - persona-core isolation
+      - legacy compatibility isolation
+      - formal manual smokes
+  - connected completed skill effects into the existing continuity path instead of inventing a second memory system:
+    - `skill_install_completed`
+    - `skill_activation_changed`
+    - `skill_usage_completed`
+    - `skill_mutation_blocked`
+    now flow through `digital_body_consequence`, `interaction_carryover.embodied_context.skill_effects`, reconsolidation, and retrieval-facing residue
+  - added post-fix baseline selection logic:
+    - `print_latest_sandbox_baseline.py` now chooses the latest authoritative sandbox report with:
+      - `overall_status=passed`
+      - `readiness_status=sandbox_embodied_execution_phase1_ready`
+    - this prevents newer failed sandbox artifacts from incorrectly poisoning the skills closeout gate
+  - synced repository contracts to `Skills Ecosystem Formal Closure`:
+    - skills are fixed as `digital body / capability ecology`
+    - registry/install/lock truth stays outside autobiographical memory
+    - only completed install / activation / usage becomes lived fact
+    - pending / blocked / rejected skill mutation never masquerades as owned capability
+  - preserved real repo-owned local skills as authored packages:
+    - `skills/source-ref-anchor-review/`
+    - `skills/workspace-regression-triage/`
+- Validation:
+  - `python -m py_compile evals/run_skills_ecosystem_audit.py evals/print_latest_sandbox_baseline.py tests/test_skills_ecosystem_audit.py`
+  - `python -m pytest tests/test_skills_ecosystem_audit.py -q`
+  - `python evals/print_latest_sandbox_baseline.py`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag closeout-fix-a`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag closeout-fix-b`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag closeout-fix-c`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag closeout-fix-d`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag closeout-fix-e`
+- Result:
+  - `Skills Ecosystem Formal Closure` is now closed as a preserved backend baseline
+  - post-fix authoritative ready artifacts are:
+    - `evals/reports/skills-ecosystem-audit-20260405-130543-closeout-fix-c.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-d.{json,md}`
+    - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
+  - the latest smoke artifact is:
+    - `evals/reports/skills-ecosystem-smokes-20260405-130823-20260405-130706-closeout-fix-e-smokes.{json,md}`
+  - the preserved baseline stack is now:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital_embodiment_phase1_ready`
+    - `digital_embodiment_phase2_ready`
+    - `sandbox_embodied_execution_phase1_ready`
+    - `skills_ecosystem_ready`
+- Next:
+  - no post-skills backend phase is selected yet
+  - default posture is to preserve the closed baselines until the next architecture decision is explicitly chosen

@@ -40,7 +40,7 @@ from .memory_evolution import _auto_reconsolidate_after_tool
 from .persona_runtime import _is_external_probe_context
 from .runtime_services import _audit_jsonl, _get_store, _get_tool_bundle
 from .state import ThreadState
-from .tool_policies import MEMORY_WRITE_TOOLS, WORLDLINE_ABLATION_READ_TOOLS
+from .tool_policies import MEMORY_WRITE_TOOLS, SKILL_MUTATION_TOOLS, WORLDLINE_ABLATION_READ_TOOLS
 from .tool_runtime import (
     _build_evidence_from_tool_result,
     _invoke_tool,
@@ -48,6 +48,7 @@ from .tool_runtime import (
 )
 from ..utils.tools import (
     build_workspace_command_execution_spec,
+    preview_skill_operation,
     preview_workspace_command_execution,
     preview_workspace_mutation,
 )
@@ -179,6 +180,12 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         execution_spec = build_workspace_command_execution_spec(args)
         if execution_spec:
             row["execution_spec"] = execution_spec
+        skill_preview = preview_skill_operation(name, args)
+        if isinstance(skill_preview.get("resolved_args"), dict):
+            row["args"] = dict(skill_preview.get("resolved_args") or {})
+            args = row["args"]
+        if isinstance(skill_preview.get("skill_preview"), dict) and skill_preview.get("skill_preview"):
+            row["skill_preview"] = dict(skill_preview.get("skill_preview") or {})
         if name in auto_set and risk != "external_mutation":
             queued.append({**row, "action": "approve"})
         else:
@@ -188,6 +195,8 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         source = (
             "memory"
             if any(str(x.get("name") or "") in MEMORY_WRITE_TOOLS for x in need_human)
+            else "skills"
+            if any(str(x.get("name") or "") in SKILL_MUTATION_TOOLS for x in need_human)
             else "dialog"
         )
         resume = interrupt(
@@ -1012,6 +1021,9 @@ def _rebuild_reconsolidation_with_autonomy(
         action_trace=action_trace,
         autonomy_block_reason=autonomy_block_reason,
         digital_body_state=digital_body_state,
+        session_skill_state=state.get("session_skill_state")
+        if isinstance(state.get("session_skill_state"), dict)
+        else {},
     )
 
 

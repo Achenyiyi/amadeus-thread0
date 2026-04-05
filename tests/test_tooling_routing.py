@@ -31,6 +31,47 @@ def test_parse_explicit_tool_call_prefers_named_registered_tool():
     assert calls[0]["args"]["value"] == "凶真"
 
 
+def test_parse_explicit_tool_call_builds_search_web_query_args():
+    tools = [SimpleNamespace(name="search_web")]
+
+    calls = _parse_explicit_tool_call("请调用 search_web 工具，搜索 LangGraph interrupts 官方文档", tools)
+
+    assert calls is not None
+    assert calls[0]["name"] == "search_web"
+    assert calls[0]["args"]["query"] == "LangGraph interrupts 官方文档"
+    assert calls[0]["args"]["max_results"] == 5
+
+
+def test_parse_explicit_tool_call_routes_enable_skill_from_natural_language():
+    tools = [SimpleNamespace(name="enable_skill")]
+
+    calls = _parse_explicit_tool_call("请启用技能 pytest-helper", tools)
+
+    assert calls is not None
+    assert calls[0]["name"] == "enable_skill"
+    assert calls[0]["args"]["skill_id"] == "pytest-helper"
+
+
+def test_parse_explicit_tool_call_routes_install_skill_from_natural_language():
+    tools = [SimpleNamespace(name="install_skill")]
+
+    calls = _parse_explicit_tool_call("帮我安装技能 web-research", tools)
+
+    assert calls is not None
+    assert calls[0]["name"] == "install_skill"
+    assert calls[0]["args"]["skill_id"] == "web-research"
+
+
+def test_parse_explicit_tool_call_routes_runtime_skill_listing():
+    tools = [SimpleNamespace(name="list_runtime_skills")]
+
+    calls = _parse_explicit_tool_call("看看当前技能列表", tools)
+
+    assert calls is not None
+    assert calls[0]["name"] == "list_runtime_skills"
+    assert calls[0]["args"] == {}
+
+
 def test_infer_memory_tool_calls_adds_commitment_and_worldline_event_for_explicit_request():
     calls = _infer_memory_tool_calls("请记住，下周一起复盘实验，别忘了提醒我。")
     names = [call["name"] for call in calls]

@@ -77,6 +77,79 @@ def _build_followup_for_upgrade(text: str, mentioned_registered: list[str]) -> l
         )
     return calls
 
+
+def _extract_skill_ref(text: str) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    quoted = re.search(r"[\"'“”]([A-Za-z0-9._-]{2,80})[\"'“”]", raw)
+    if quoted:
+        return quoted.group(1).strip().lower()
+    match = re.search(r"技能\s*[:： ]*\s*([A-Za-z0-9._-]{2,80})", raw, flags=re.I)
+    if match:
+        return match.group(1).strip().lower()
+    tokens = re.findall(r"[A-Za-z0-9._-]{2,80}", raw)
+    for token in tokens[::-1]:
+        lower = token.strip().lower()
+        if lower not in {"skill", "skills", "enable", "disable", "install", "update", "pin", "unpin", "inspect", "runtime"}:
+            return lower
+    return ""
+
+
+def _parse_skill_runtime_call(text: str, available_names: set[str]) -> list[dict[str, Any]] | None:
+    if not text:
+        return None
+    skill_tools = {
+        "search_skills",
+        "inspect_skill",
+        "install_skill",
+        "update_skill",
+        "enable_skill",
+        "disable_skill",
+        "pin_skill",
+        "unpin_skill",
+        "list_runtime_skills",
+    }
+    if not (skill_tools & available_names):
+        return None
+
+    raw = str(text or "").strip()
+    skill_id = _extract_skill_ref(raw)
+
+    if "list_runtime_skills" in available_names and any(
+        marker in raw for marker in {"技能列表", "当前技能", "运行时技能", "已安装技能", "有哪些技能", "看看技能列表"}
+    ):
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "list_runtime_skills", "args": {}}]
+
+    search_match = re.search(r"(?:搜索|查找|找一下|搜一下)(?:一下)?技能\s*[:： ]*\s*(.+)$", raw)
+    if "search_skills" in available_names and search_match:
+        query = search_match.group(1).strip("，,。 ")
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "search_skills", "args": {"query": query[:160], "limit": 8}}]
+
+    inspect_match = re.search(r"(?:查看|看看|检查|inspect)(?:一下)?技能", raw, flags=re.I)
+    if "inspect_skill" in available_names and inspect_match and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "inspect_skill", "args": {"skill_id": skill_id}}]
+
+    if "unpin_skill" in available_names and re.search(r"(?:取消固定|取消置顶|unpin)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "unpin_skill", "args": {"skill_id": skill_id}}]
+
+    if "pin_skill" in available_names and re.search(r"(?:固定|置顶|pin)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "pin_skill", "args": {"skill_id": skill_id}}]
+
+    if "disable_skill" in available_names and re.search(r"(?:禁用|停用|关闭|disable)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "disable_skill", "args": {"skill_id": skill_id}}]
+
+    if "enable_skill" in available_names and re.search(r"(?:启用|开启|enable)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "enable_skill", "args": {"skill_id": skill_id}}]
+
+    if "install_skill" in available_names and re.search(r"(?:安装|装上|引入|install)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "install_skill", "args": {"skill_id": skill_id}}]
+
+    if "update_skill" in available_names and re.search(r"(?:更新|升级|update)(?:一下)?技能", raw, flags=re.I) and skill_id:
+        return [{"id": f"call_{uuid.uuid4().hex[:8]}", "name": "update_skill", "args": {"skill_id": skill_id}}]
+
+    return None
+
 def _parse_explicit_tool_call(user_text: str, tools: list[BaseTool]) -> list[dict[str, Any]] | None:
     text = str(user_text or "").strip()
     if not text:
@@ -84,8 +157,12 @@ def _parse_explicit_tool_call(user_text: str, tools: list[BaseTool]) -> list[dic
 
     names = {str(getattr(t, "name", "") or "").strip(): t for t in tools}
     all_registered = {str(name).strip() for name in TOOL_POLICIES.keys() if str(name).strip()}
+    available_names = set(names.keys()) | set(all_registered)
     if not names and not all_registered:
         return None
+    skill_runtime_call = _parse_skill_runtime_call(text, available_names)
+    if skill_runtime_call:
+        return skill_runtime_call
     has_named_tool = any(name and name in text for name in all_registered)
     wants_upgrade = any(marker in text for marker in {"申请解锁", "先申请解锁", "升级", "解锁", "开放权限"})
     if ("调用" not in text and "使用" not in text and not wants_upgrade and not has_named_tool) or (
@@ -126,13 +203,13 @@ def _parse_explicit_tool_call(user_text: str, tools: list[BaseTool]) -> list[dic
 
     args: dict[str, Any] = {}
 
-    if hit_name in {"search_langchain_docs", "arxiv_search"}:
+    if hit_name in {"search_web", "search_langchain_docs", "arxiv_search"}:
         m = re.search(r"(?:检索|搜索|查询)(.+?)(?:，|,|并|并且|$)", text)
         q = m.group(1).strip() if m else text
         q = q.replace("工具", "").replace(hit_name, "").strip()
         args = {"query": q or "langchain langgraph"}
-        if hit_name == "search_langchain_docs":
-            args["max_results"] = 3
+        if hit_name == "search_web":
+            args["max_results"] = 5
         else:
             args["max_results"] = 3
 

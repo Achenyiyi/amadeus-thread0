@@ -386,6 +386,7 @@ def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> b
             isinstance(consequence.get("quota_state_detail"), dict) and bool(consequence.get("quota_state_detail")),
             isinstance(consequence.get("permission_state"), dict) and bool(consequence.get("permission_state")),
             isinstance(consequence.get("sandbox_state"), dict) and bool(consequence.get("sandbox_state")),
+            isinstance(consequence.get("skill_effects"), list) and bool(consequence.get("skill_effects")),
         )
     )
 
@@ -656,6 +657,7 @@ def resolve_digital_body_consequence(
     digital_body_state: dict[str, Any] | None = None,
     action_packets: Any = None,
     reconsolidation_snapshot: dict[str, Any] | None = None,
+    session_skill_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     live_consequence = _normalize_digital_body_consequence(digital_body_consequence)
     if digital_body_consequence_has_signal(live_consequence):
@@ -723,6 +725,7 @@ def resolve_digital_body_consequence(
     derived_raw = derive_digital_body_consequence(
         digital_body_state=digital_body_state,
         action_packets=action_packets,
+        session_skill_state=session_skill_state,
     )
     frozen_consequence = _reconsolidation_digital_body_consequence(reconsolidation_snapshot)
     if digital_body_consequence_has_signal(frozen_consequence):

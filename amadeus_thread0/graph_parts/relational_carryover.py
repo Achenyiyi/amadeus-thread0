@@ -455,6 +455,13 @@ def _build_retrieved_behavior_trace_bridge(
                 _trace_value(trace, "active_artifact_kind", embodied_context.get("active_artifact_kind", "")) or ""
             ).strip().lower()
             workspace_root = str(embodied_context.get("workspace_root") or "").strip()
+            skill_effects = [
+                dict(effect)
+                for effect in (embodied_context.get("skill_effects") if isinstance(embodied_context.get("skill_effects"), list) else [])
+                if isinstance(effect, dict)
+            ][:6]
+            primary_skill = dict(skill_effects[0]) if skill_effects else {}
+            skill_use_kind = str(primary_skill.get("use_kind") or "").strip().lower()
             work_surface_kinds = {"workspace_file_updated", "workspace_path_inspected"}
             source_surface_kinds = {"source_material_compared", "source_material_inspected"}
             access_state_kinds = {"workspace_access_resolved", "access_state_refreshed"}
@@ -497,6 +504,14 @@ def _build_retrieved_behavior_trace_bridge(
                     )
                 ):
                     continue
+            elif body_consequence_kind in {
+                "skill_install_completed",
+                "skill_activation_changed",
+                "skill_usage_completed",
+                "skill_mutation_blocked",
+            }:
+                if not skill_effects:
+                    continue
             else:
                 continue
         elif plan_kind in {"", "none", "observe_only", "respond_now", "speak_now"}:
@@ -522,6 +537,10 @@ def _build_retrieved_behavior_trace_bridge(
                 if body_consequence_kind in {"source_material_compared", "source_material_inspected"}
                 else "access_state"
                 if body_consequence_kind in {"workspace_access_resolved", "access_state_refreshed"}
+                else "source_anchor"
+                if skill_use_kind == "source_ref_continuity"
+                else "workspace_surface"
+                if skill_use_kind == "workspace_workflow"
                 else "workspace_surface"
             )
             if carryover_strength <= 0.0:
@@ -533,6 +552,10 @@ def _build_retrieved_behavior_trace_bridge(
                     "workspace_file_updated": 0.34,
                     "workspace_path_inspected": 0.24,
                     "artifact_reacquired": 0.28,
+                    "skill_install_completed": 0.28,
+                    "skill_activation_changed": 0.22,
+                    "skill_usage_completed": 0.30,
+                    "skill_mutation_blocked": 0.20,
                 }.get(body_consequence_kind, 0.24)
             if presence_residue <= 0.0:
                 presence_residue = {
@@ -543,6 +566,10 @@ def _build_retrieved_behavior_trace_bridge(
                     "workspace_file_updated": 0.10,
                     "workspace_path_inspected": 0.08,
                     "artifact_reacquired": 0.10,
+                    "skill_install_completed": 0.10,
+                    "skill_activation_changed": 0.08,
+                    "skill_usage_completed": 0.10,
+                    "skill_mutation_blocked": 0.08,
                 }.get(body_consequence_kind, 0.08)
             if ambient_resonance <= 0.0:
                 ambient_resonance = {
@@ -553,6 +580,10 @@ def _build_retrieved_behavior_trace_bridge(
                     "workspace_file_updated": 0.10,
                     "workspace_path_inspected": 0.08,
                     "artifact_reacquired": 0.10,
+                    "skill_install_completed": 0.08,
+                    "skill_activation_changed": 0.06,
+                    "skill_usage_completed": 0.10,
+                    "skill_mutation_blocked": 0.06,
                 }.get(body_consequence_kind, 0.10)
             if not summary:
                 summary = {
@@ -563,6 +594,10 @@ def _build_retrieved_behavior_trace_bridge(
                     "workspace_file_updated": "前面那条文件工作面已经真的接上了，后面的推进可以顺着这块表面继续。",
                     "workspace_path_inspected": "前面那条文件工作面已经重新看过一遍，后面的推进可以顺着这块表面继续。",
                     "artifact_reacquired": "前面那块工作面已经重新接回当前上下文，后面的动作可以顺着它继续。",
+                    "skill_install_completed": "前面那条 skill 安装已经真的落地了，后面的匹配和执行会顺着这条能力生态继续。",
+                    "skill_activation_changed": "前面那条 skill 的激活态已经切换完成，后面的决策会沿这次能力生态变化继续。",
+                    "skill_usage_completed": "前面那条 skill 已经真正参与过一次动作了，后面的推进可以顺着它留下的工作面继续。",
+                    "skill_mutation_blocked": "前面那条 skill 变更没有真正落地，后面如果还要继续，得沿着被挡住的边界重新处理。",
                 }.get(
                     body_consequence_kind,
                     "前面那条工作面已经重新接回当前上下文，后面的推进可以顺着它继续。",
@@ -595,6 +630,20 @@ def _build_retrieved_behavior_trace_bridge(
             f"body_consequence_kind:{body_consequence_kind}" if body_consequence_kind else "",
             f"trigger_family:{trigger_family}" if trigger_family else "",
         ]
+        for skill_effect in [
+            dict(effect)
+            for effect in (embodied_context.get("skill_effects") if isinstance(embodied_context.get("skill_effects"), list) else [])
+            if isinstance(effect, dict)
+        ][:3]:
+            skill_id = str(skill_effect.get("skill_id") or "").strip().lower()
+            operation = str(skill_effect.get("operation") or "").strip().lower()
+            use_kind = str(skill_effect.get("use_kind") or "").strip().lower()
+            if skill_id:
+                source_tags.append(f"skill:{skill_id}")
+            if operation:
+                source_tags.append(f"skillop:{operation}")
+            if use_kind:
+                source_tags.append(f"skilluse:{use_kind}")
         if source_plan_kind and source_plan_kind != plan_kind:
             source_tags.append(f"source_plan_kind:{source_plan_kind}")
         relationship_effect = str(_trace_value(trace, "relationship_effect", "") or "").strip().lower()
