@@ -156,6 +156,158 @@ class AutonomyWritebackTests(unittest.TestCase):
         self.assertEqual(pending["digital_body_consequence"]["kind"], "access_request_pending")
         self.assertEqual(pending["digital_body_consequence"]["primary_status"], "awaiting_approval")
 
+    def test_reconsolidation_snapshot_distinguishes_browser_completed_blocked_and_takeover(self):
+        base_body = {
+            "active_surface": "tooling",
+            "perception_channels": ["dialogue", "browser"],
+            "action_channels": ["language", "structured_action", "tooling"],
+            "world_surfaces": ["browser", "filesystem"],
+            "access_state": {
+                "mode": "tool_enabled",
+                "browser_session": "present",
+                "filesystem_state": "writable",
+                "browser_runtime_state": {
+                    "availability": "available",
+                    "profile_root": "E:/runtime/browser/profiles/thread-browser",
+                    "context_status": "active",
+                    "active_page_id": "page-1",
+                    "active_tab_count": 1,
+                    "downloads_dir": "E:/runtime/browser/downloads/thread-browser",
+                    "last_action_status": "completed",
+                    "last_run_id": "ap-browser-open-1",
+                    "manual_takeover_required": False,
+                    "runner_kind": "playwright_persistent_context",
+                    "isolation_level": "persistent_profile_runtime",
+                },
+            },
+            "resource_state": {
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "page",
+                "active_artifact_ref": "page:page-1",
+                "active_artifact_label": "Docs",
+                "artifact_carrier": "browser_page",
+                "artifact_source_url": "https://example.com/docs",
+                "browser_profile_id": "thread-browser",
+                "browser_tab_id": "tab-1",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+            },
+        }
+
+        def _snapshot_for(*, proposal_id: str, tool_name: str, intent: str, status: str, action_kind: str, manual_takeover_required: bool, error_summary: str) -> dict[str, object]:
+            packet = build_tool_action_packet(
+                tool_name=tool_name,
+                proposal_id=proposal_id,
+                args={"target_ref": "e2"},
+                action="approve",
+                status=status,
+                result_summary="browser done" if status == "completed" else error_summary,
+                block_reason=error_summary if status == "blocked" else "",
+                browser_execution_spec={
+                    "operation": action_kind,
+                    "profile_id": "thread-browser",
+                    "page_ref": "page:page-1",
+                    "target_ref": "e2",
+                    "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                    "browser_downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                    "timeout_s": 20,
+                    "wait_until": "load",
+                },
+                browser_execution_preview={
+                    "runner_kind": "playwright_persistent_context",
+                    "isolation_level": "persistent_profile_runtime",
+                    "operation": action_kind,
+                    "profile_id": "thread-browser",
+                    "page_ref": "page:page-1",
+                    "page_url": "https://example.com/docs",
+                    "page_title": "Docs",
+                    "target_ref": "e2",
+                    "target_label": "Approve action",
+                    "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                    "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                    "timeout_s": 20,
+                    "verification_summary": "browser preview",
+                },
+                browser_execution_result={
+                    "run_id": proposal_id,
+                    "status": status,
+                    "profile_id": "thread-browser",
+                    "page_id": "page-1",
+                    "tab_id": "tab-1",
+                    "url": "https://example.com/docs",
+                    "title": "Docs",
+                    "action_kind": action_kind,
+                    "target_ref": "e2",
+                    "duration_ms": 45,
+                    "active_tab_count": 1,
+                    "last_action_status": status,
+                    "download_path": "",
+                    "upload_source": "",
+                    "error_summary": error_summary,
+                    "manual_takeover_required": manual_takeover_required,
+                },
+            )
+            packet["intent"] = intent
+            body = {
+                **base_body,
+                "access_state": {
+                    **base_body["access_state"],
+                    "browser_runtime_state": {
+                        **base_body["access_state"]["browser_runtime_state"],
+                        "last_action_status": status,
+                        "last_run_id": proposal_id,
+                        "manual_takeover_required": manual_takeover_required,
+                        "context_status": "manual_takeover" if manual_takeover_required else "active",
+                    },
+                },
+            }
+            return build_reconsolidation_snapshot(
+                current_event={"kind": "user_utterance"},
+                appraisal={"interaction_frame": "task"},
+                world_model_state={},
+                semantic_narrative_profile={},
+                latent_state={"self_coherence": 0.82},
+                emotion_state={"label": "focused"},
+                bond_state={"trust": 0.6},
+                behavior_action={"interaction_mode": "tooling"},
+                action_packets=[packet],
+                digital_body_state=body,
+            )
+
+        completed = _snapshot_for(
+            proposal_id="ap-browser-open-1",
+            tool_name="browser_open_url",
+            intent="browser:open_url",
+            status="completed",
+            action_kind="open_url",
+            manual_takeover_required=False,
+            error_summary="",
+        )
+        blocked = _snapshot_for(
+            proposal_id="ap-browser-click-1",
+            tool_name="browser_click",
+            intent="browser:click",
+            status="blocked",
+            action_kind="click",
+            manual_takeover_required=False,
+            error_summary="browser action timed out after 20s",
+        )
+        takeover = _snapshot_for(
+            proposal_id="ap-browser-fill-1",
+            tool_name="browser_fill",
+            intent="browser:fill",
+            status="blocked",
+            action_kind="fill",
+            manual_takeover_required=True,
+            error_summary="sensitive credential entry requires manual browser takeover",
+        )
+
+        self.assertEqual(completed["digital_body_consequence"]["kind"], "browser_navigation_completed")
+        self.assertEqual(completed["digital_body_consequence"]["browser_run_id"], "ap-browser-open-1")
+        self.assertEqual(blocked["digital_body_consequence"]["kind"], "browser_action_blocked")
+        self.assertEqual(blocked["digital_body_consequence"]["browser_last_exit_status"], "blocked")
+        self.assertEqual(takeover["digital_body_consequence"]["kind"], "browser_takeover_requested")
+        self.assertTrue(takeover["digital_body_consequence"]["browser_runtime_state"]["manual_takeover_required"])
+
     def test_build_reconsolidation_snapshot_compacts_autonomy_payload(self):
         snapshot = build_reconsolidation_snapshot(
             current_event={"kind": "user_utterance"},
@@ -787,6 +939,100 @@ class AutonomyWritebackTests(unittest.TestCase):
         self.assertEqual(usage_snapshot["digital_body_consequence"]["kind"], "skill_usage_completed")
         self.assertEqual(usage_snapshot["skill_effects"][0]["operation"], "use")
         self.assertEqual(usage_snapshot["digital_body_consequence"]["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+
+    def test_reconsolidation_snapshot_preserves_sandbox_phase2_isolated_runner_identity(self):
+        packet = build_tool_action_packet(
+            tool_name="execute_workspace_command",
+            proposal_id="ap-sandbox-phase2-writeback",
+            args={"argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"]},
+            action="approve",
+            status="completed",
+            result_summary="sandbox phase2 done",
+            execution_spec={
+                "executor": "pytest",
+                "profile": "pytest",
+                "runner_kind": "docker_isolated_runner",
+                "isolation_level": "docker_local_isolated",
+                "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                "network_policy": "none",
+                "workspace_root_kind": "attached_repo_root",
+                "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                "cwd": "E:/repo/amadeus-thread0",
+                "allowed_roots": ["E:/repo/amadeus-thread0"],
+                "timeout_s": 60,
+                "writes_expected": False,
+                "expected_artifacts": [],
+            },
+            execution_preview={
+                "runner_kind": "docker_isolated_runner",
+                "isolation_level": "docker_local_isolated",
+                "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                "network_policy": "none",
+                "workspace_root_kind": "attached_repo_root",
+                "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                "cwd": "E:/repo/amadeus-thread0",
+                "allowed_roots": ["E:/repo/amadeus-thread0"],
+                "timeout_s": 60,
+                "writes_expected": False,
+                "expected_artifacts": [],
+            },
+            execution_result={
+                "run_id": "ap-sandbox-phase2-writeback",
+                "status": "completed",
+                "exit_code": 0,
+                "duration_ms": 52,
+                "stdout_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-sandbox-phase2-writeback/stdout.txt",
+                "stderr_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-sandbox-phase2-writeback/stderr.txt",
+                "produced_artifacts": [],
+                "error_summary": "",
+            },
+        )
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[packet],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "filesystem"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["filesystem", "sandbox"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        "execution_policy": "approval_required",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                    },
+                },
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_ref": "E:/repo/amadeus-thread0",
+                    "active_artifact_label": "amadeus-thread0",
+                    "artifact_carrier": "filesystem",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+        )
+
+        consequence = snapshot["digital_body_consequence"]
+        self.assertEqual(consequence["kind"], "sandbox_execution_completed")
+        self.assertEqual(consequence["sandbox_runner_kind"], "docker_isolated_runner")
+        self.assertEqual(consequence["sandbox_network_policy"], "none")
+        self.assertEqual(consequence["workspace_root_kind"], "attached_repo_root")
 
 
 if __name__ == "__main__":

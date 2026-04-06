@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..graph_parts.action_packets import normalize_access_acquire_proposal, normalize_access_acquire_proposals
@@ -131,6 +131,9 @@ def _build_execution_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "runner_kind",
         "isolation_level",
+        "image_ref",
+        "network_policy",
+        "workspace_root_kind",
         "cwd",
         "timeout_s",
         "writes_expected",
@@ -153,6 +156,44 @@ def _build_execution_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _build_browser_execution_preview(tool_call: dict[str, Any]) -> dict[str, Any]:
+    preview = tool_call.get("browser_execution_preview")
+    if not isinstance(preview, dict):
+        return {}
+    normalized: dict[str, Any] = {}
+    for key in (
+        "runner_kind",
+        "isolation_level",
+        "operation",
+        "profile_id",
+        "page_ref",
+        "page_url",
+        "page_title",
+        "target_ref",
+        "target_tag",
+        "target_label",
+        "target_role",
+        "target_input_type",
+        "input_payload_schema",
+        "download_target",
+        "upload_source",
+        "downloads_root",
+        "timeout_s",
+        "verification_summary",
+        "requires_manual_takeover",
+        "validation_code",
+        "validation_error",
+    ):
+        value = preview.get(key)
+        if value in (None, "", [], {}):
+            continue
+        normalized[key] = value
+    allowed_roots = preview.get("allowed_roots")
+    if isinstance(allowed_roots, list):
+        normalized["allowed_roots"] = [str(item).strip() for item in allowed_roots if str(item or "").strip()][:8]
+    return normalized
+
+
 @dataclass(frozen=True)
 class ToolApprovalPreview:
     name: str
@@ -164,6 +205,7 @@ class ToolApprovalPreview:
     selected_access_proposal: dict[str, Any]
     mutation_preview: dict[str, Any]
     execution_preview: dict[str, Any]
+    browser_execution_preview: dict[str, Any]
     reason: str
     note: str
     needs_second_confirmation: bool
@@ -176,6 +218,7 @@ class ToolApprovalBatch:
     total_tool_call_count: int
     hidden_tool_call_count: int
     visible_tool_calls: list[ToolApprovalPreview]
+    assist_request: dict[str, Any] = field(default_factory=dict)
 
 
 def should_auto_resume_memory_approval(
@@ -231,6 +274,7 @@ def build_tool_approval_preview(
     selected_access_proposal: dict[str, Any] = {}
     mutation_preview = _build_mutation_preview(tool_call)
     execution_preview = _build_execution_preview(tool_call)
+    browser_execution_preview = _build_browser_execution_preview(tool_call)
     reason = ""
     note = ""
     if name == "request_toolset_upgrade":
@@ -262,6 +306,15 @@ def build_tool_approval_preview(
             note = str(execution_preview.get("validation_error") or "").strip()[:220]
         else:
             note = "approve 后会在当前 runtime workspace 内按这份受限命令规格执行，并保留日志与产物痕迹。"
+    elif browser_execution_preview:
+        operation = str(browser_execution_preview.get("operation") or name).strip()
+        page_url = str(browser_execution_preview.get("page_url") or "").strip()
+        target_ref = str(browser_execution_preview.get("target_ref") or "").strip()
+        reason = " ".join(part for part in [operation, page_url or target_ref] if part).strip()[:220]
+        if str(browser_execution_preview.get("validation_error") or "").strip():
+            note = str(browser_execution_preview.get("validation_error") or "").strip()[:220]
+        else:
+            note = str(browser_execution_preview.get("verification_summary") or "").strip()[:220]
     elif skill_preview:
         op_name = str(skill_preview.get("operation") or name).strip()
         skill_id = str(skill_preview.get("skill_id") or "").strip()
@@ -290,6 +343,7 @@ def build_tool_approval_preview(
         selected_access_proposal=selected_access_proposal,
         mutation_preview=mutation_preview,
         execution_preview=execution_preview,
+        browser_execution_preview=browser_execution_preview,
         reason=reason,
         note=note,
         needs_second_confirmation=needs_second_confirmation(source, name, args),
@@ -303,6 +357,7 @@ def summarize_tool_approval_request(
     hide_memory_logs: bool,
     max_calls: Any,
     toolset_upgrade_ttl_s: Any,
+    assist_request: dict[str, Any] | None = None,
 ) -> ToolApprovalBatch:
     normalized_calls = _normalize_tool_calls(tool_calls)
     max_visible = _coerce_positive_int(max_calls, default=12)
@@ -321,6 +376,7 @@ def summarize_tool_approval_request(
             )
             for tool_call in visible_calls
         ],
+        assist_request=dict(assist_request or {}) if isinstance(assist_request, dict) else {},
     )
 
 

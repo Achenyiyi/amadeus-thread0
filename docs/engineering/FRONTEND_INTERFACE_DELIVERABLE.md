@@ -185,6 +185,7 @@ Important provenance:
 - `digital_body` is the resolved current runtime/body state
 - `digital_body_consequence` is the resolved embodied consequence of this turn; it should be treated as frozen final semantics, not recomputed in the frontend
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
+- when a turn is blocked on missing access or manual browser takeover, `final_text` may deliberately come from the derived persona-facing `assist_request.message` rather than a stale assistant draft; frontend should treat that as the authoritative user-visible reply for the pending turn
 
 ### `event_round.payload`
 
@@ -399,6 +400,7 @@ These are non-negotiable frontend rules.
 - Do not derive `behavior_action`, `behavior_plan`, or `interaction_carryover` in the frontend.
 - Treat `turn_summary`, `behavior_action`, `behavior_plan`, and `reconsolidation_snapshot` as one coherent final-turn packet.
 - Treat `digital_body` as current body state and `digital_body_consequence` as frozen turn consequence; do not collapse them into one field.
+- If an approval or manual-takeover interrupt is active, render `assist_request.message` as the first user-visible line before any structured approval summary.
 - `digital_body.resource_state` and `digital_body_consequence` may both carry artifact continuity facts such as `artifact_continuity`, `active_artifact_kind`, `active_artifact_label`, and `artifact_reacquisition_mode`; these are backend-owned world-state traces and should be rendered as environment continuity, not as relationship stance.
 - Unknown additive keys must be ignored, not stripped by strict parsing.
 
@@ -434,6 +436,11 @@ Recommended adapter behavior:
 - forward the graph payload, do not reinterpret it into another internal schema
 - keep `run_config.configurable.thread_id` authoritative
 - treat approval requests as interrupt events, not as failed turns
+- when `approval_request.payload.assist_request` is present:
+  - show `assist_request.message` first
+  - keep the structured approval payload visible underneath
+  - preserve the same `proposal_id`
+- when `assist_request.resume_mode=auto_continue`, do not ask the user a second "是否继续"; after approval or takeover resolution the backend may resume the same task automatically
 
 ## Event Round Contract
 
@@ -504,6 +511,7 @@ Streaming recommendation:
 - use SSE or WebSocket for future `/api/turns/stream`
 - stream token chunks and optional approval interrupts
 - still end the turn on one `assistant_turn` final envelope
+- if the runtime resumes from `just_resolved_access` or `just_completed_takeover`, the eventual `final_text` may be prefixed by a short acknowledgement before continuing the task body; this is expected backend behavior, not duplicate output
 
 ## Minimum Frontend Bootstrap Sequence
 

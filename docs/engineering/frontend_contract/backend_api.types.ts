@@ -207,6 +207,20 @@ export interface AccessAcquireProposal extends JsonRecord {
   completion_ratio?: number;
 }
 
+export interface AssistRequest extends JsonRecord {
+  kind?: string;
+  message?: string;
+  requested_access?: string[];
+  missing_access?: string[];
+  selected_access_proposal?: AccessAcquireProposal | JsonRecord;
+  requires_manual_takeover?: boolean;
+  resume_mode?: string;
+  proposal_id?: string;
+  profile_id?: string;
+  page_ref?: string;
+  tab_id?: string;
+}
+
 export interface ActionPacket extends JsonRecord {
   proposal_id?: string;
   origin?: string;
@@ -221,8 +235,11 @@ export interface ActionPacket extends JsonRecord {
   linked_queue_id?: string;
   tool_name?: string;
   block_reason?: string;
+  assist_request?: AssistRequest | JsonRecord;
   access_acquire_proposals?: AccessAcquireProposal[];
   selected_access_proposal?: AccessAcquireProposal | JsonRecord;
+  execution_preview?: JsonRecord;
+  browser_execution_preview?: JsonRecord;
 }
 
 export interface AutonomyIntent extends JsonRecord {

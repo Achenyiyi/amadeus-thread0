@@ -11,11 +11,12 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Amadeus-K` remains a `digital persona system`, not a personal ops shell.
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
-- The latest closed execution target is `Skills Ecosystem Formal Closure`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, and one managed capability ecology that does not invade persona-core.
+- The latest closed execution target is `Live Browser Runtime Closure Phase 1`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, one managed capability ecology, and one truthful live browser/runtime surface that still stays outside persona-core.
+- The current active execution target is `Sandbox Embodied Execution Phase 2`: preserve the closed baselines while upgrading coding/research execution from host-local restricted runs to a Docker-isolated local backend.
 
 ## Backend Status
 
-Status as of `2026-04-05`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready`
+Status as of `2026-04-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-in-progress`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -23,7 +24,9 @@ For backend purposes, the structural decisions in this document are now split in
 - autonomy gate: `python evals/run_companion_autonomy_audit.py`
 - digital embodiment gate: `python evals/run_digital_embodiment_audit.py`
 - sandbox embodiment gate: `python evals/run_sandbox_embodied_execution_audit.py`
+- sandbox phase 2 gate: `python evals/run_sandbox_phase2_audit.py`
 - skills ecosystem gate: `python evals/run_skills_ecosystem_audit.py`
+- live browser gate: `python evals/run_live_browser_runtime_audit.py`
 - current handoff posture:
   - frontend remains frozen
   - backend contract is stable enough to consume
@@ -32,9 +35,18 @@ For backend purposes, the structural decisions in this document are now split in
   - digital embodiment phase 2 is formally closed on the same body contract
   - sandbox embodied execution phase 1 is formally closed on the same body contract
   - skills ecosystem formal closure is now also formally closed on the same body contract
-  - no next backend expansion phase is selected in this document yet
-  - current execution posture remains `host-local restricted execution`, not a provider-grade sandbox
-  - no wider execution surface is opened in this run
+  - live browser runtime closure phase 1 is now also formally closed on the same body contract
+  - `search_web + source_ref` continuity remains preserved as the saved-material path; live browser is additive, not a replacement
+  - current active backend expansion phase is `Sandbox Embodied Execution Phase 2`
+  - current workspace execution posture is split into:
+    - preserved baseline: `host-local restricted execution`
+    - active closeout target: `docker-isolated local execution`
+  - current live browser posture remains Playwright persistent-profile runtime with approval-gated mutations and manual takeover for sensitive login steps
+  - current access-negotiation posture is persona-first but truth-bound:
+    - missing access or sensitive takeover should surface as a persona-facing request first
+    - approval/manual takeover then reuses the same structured truth
+    - after resolution the runtime should auto-continue on the same task when safe
+    - no credential guessing, OTP simulation, CAPTCHA bypass, or cookie forgery paths are allowed
 
 Closure evidence by decision family:
 
@@ -75,7 +87,7 @@ Phase 2 preserved contract:
   - `digital_body.access_state`
   - `digital_body.resource_state`
 - do not open a second work-only container for session/account/search/sandbox state
-- external material remains truthful through saved `source_ref` continuity until a real browser runtime exists
+- saved `source_ref` continuity remains the truthful saved-material carrier, and live browser runtime is now an additive real-time surface rather than a fake reopen shim
 - `selected_access_proposal` remains the stable active path while partial/completed access truth evolves
 - new world facts such as session/account/quota/permission/sandbox state must resurface through:
   - `digital_body_consequence`
@@ -100,7 +112,7 @@ Sandbox Embodied Execution Phase 1 preserved contract:
 - the current execution surface is intentionally narrow:
   - `host-local restricted execution`
   - `workspace-local commands only`
-  - no browser runtime, no network download, no package install, no arbitrary host-side codegen
+  - no package install, no arbitrary host-side codegen
 - execution remains approval-gated and packet-owned:
   - intent: `sandbox:execute_workspace_command`
   - stable packet fields:
@@ -127,6 +139,51 @@ Sandbox Embodied Execution Phase 1 preserved contract:
     - `evals/reports/sandbox-embodied-execution-audit-20260404-225854-phase1-closeout-b.{json,md}`
     - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
     - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
+
+Sandbox Embodied Execution Phase 2 active contract:
+
+- keep the same single body/runtime truth:
+  - `digital_body.access_state`
+  - `digital_body.resource_state`
+  - `autonomy.action_packets[*]`
+- Docker is the canonical phase-2 runner family:
+  - `runner_kind=docker_isolated_runner`
+  - `isolation_level=docker_local_isolated`
+  - explicit `image_ref`
+  - default `network_policy=none`
+  - no privileged mode, Docker socket mount, or host secret passthrough
+- allowed execution surface remains bounded to coding/research closure:
+  - `python`
+  - `pytest`
+  - `rg`
+  - read-only `git`
+  - raw shell strings, shell wrappers, package managers, git mutation, and networked execution remain blocked
+- workspace truth remains explicit:
+  - runtime-owned workspace stays the default safe root
+  - `operator_attach_repo_root` is the only new attach path in this phase
+  - attached root must resolve to a real git worktree root
+  - completed attach writes `workspace_root_attached`
+  - pending/rejected attach does not become owned capability
+- packet contract additions for phase 2 stay on the existing execution family:
+  - `execution_spec.runner_kind`
+  - `execution_spec.isolation_level`
+  - `execution_spec.image_ref`
+  - `execution_spec.network_policy`
+  - `execution_spec.workspace_root_kind`
+  - same fields mirrored on `execution_preview`
+- embodied writeback/resurfacing must preserve:
+  - `run_id`
+  - `cwd`
+  - `profile`
+  - `exit_code`
+  - `workspace_root`
+  - artifact/log refs
+  - isolated runner identity
+- current local implementation status:
+  - Docker rerun cleanup now removes stale `container.cid` and stale container names before reuse of the same `proposal_id`
+  - completed follow-up `inspect_workspace_path` now wins over ambient sandbox restriction when there is no real missing access/block reason
+  - targeted phase-2 backend/residue regressions are green
+  - authoritative phase-2 smoke/audit closeout is still pending fresh Docker reports on this machine because the local Docker CLI is currently hanging despite Docker Desktop backend activity
 
 Skills Ecosystem Formal Closure preserved contract:
 
@@ -160,6 +217,53 @@ Skills Ecosystem Formal Closure preserved contract:
     - `evals/reports/skills-ecosystem-audit-20260405-130706-closeout-fix-e.{json,md}`
   - the latest smoke artifact is:
     - `evals/reports/skills-ecosystem-smokes-20260405-130823-20260405-130706-closeout-fix-e-smokes.{json,md}`
+
+Live Browser Runtime Closure Phase 1 preserved contract:
+
+- keep the same single body contract:
+  - `digital_body.access_state`
+  - `digital_body.resource_state`
+- live browser truth now stays inside that existing contract:
+  - `digital_body.access_state.browser_runtime_state`
+  - `digital_body.resource_state.browser_profile_id`
+  - `digital_body.resource_state.browser_tab_id`
+  - `artifact_carrier=browser_page`
+- browser actions remain packet-owned and approval-gated through the same autonomy path:
+  - `browser_execution_spec`
+  - `browser_execution_preview`
+  - `browser_execution_result`
+  - `autonomy.pending_approval.browser_execution_preview`
+- live browser does not replace saved-material continuity:
+  - `search_web` remains the discovery path
+  - `source_ref` remains the long-horizon saved-material carrier
+  - live pages only become saved material through explicit capture
+- login/session boundary remains truthful:
+  - runtime may navigate to login flows and detect state
+  - sensitive credential / OTP / passkey steps must become manual takeover on the same persistent profile
+  - blocked / pending / takeover-requested actions do not become completed facts
+  - the same blocked/pending truth may also derive a persona-facing `assist_request`:
+    - `kind=grant_access` for missing access
+    - `kind=manual_takeover` for sensitive browser entry
+  - this is bounded translation, not a new truth model and not a prompt-only workaround
+  - after operator resolution, runtime should prefer a short confirmation plus automatic continuation on the same task instead of re-asking whether to continue
+- file transfer boundary remains truthful:
+  - downloads only into runtime downloads or approved workspace roots
+  - uploads only from approved workspace roots
+  - no arbitrary host-path traversal
+- closeout evidence for this phase is:
+  - `evals/run_live_browser_runtime_smokes.py`
+  - `evals/run_live_browser_runtime_audit.py`
+  - targeted browser/runtime/backend/residue tests in:
+    - `tests/test_browser_runner.py`
+    - `tests/test_browser_runtime.py`
+    - `tests/test_browser_backend_contract.py`
+    - `tests/test_live_browser_runtime_smokes.py`
+    - `tests/test_live_browser_runtime_audit.py`
+    - browser-focused extensions in `tests/test_backend_session.py`, `tests/test_backend_api.py`, `tests/test_autonomy_writeback.py`, `tests/test_world_model_residue.py`, and `tests/test_tool_approval_policy.py`
+  - fresh authoritative ready reports now include:
+    - `evals/reports/live-browser-runtime-audit-20260405-224517-closeout-a.{json,md}`
+    - `evals/reports/live-browser-runtime-audit-20260405-224803-closeout-b.{json,md}`
+    - `evals/reports/live-browser-runtime-audit-20260405-225039-closeout-c.{json,md}`
 
 ## P0 Decisions
 
@@ -258,6 +362,11 @@ Skills Ecosystem Formal Closure preserved contract:
 - `memory_write` packets reuse the existing memory approval policy.
 - `external_mutation` packets always require human approval.
 - Rejected or blocked packets never masquerade as completed facts.
+- when a packet is blocked by missing access or manual browser takeover, runtime may derive a bounded persona-facing `assist_request` from the same packet/body truth:
+  - it may explain the concrete blockage
+  - it may ask the operator to resolve it
+  - it may promise automatic continuation after resolution
+  - it does not widen execution authority or replace the structured truth surfaces
 - The first concrete direct-execution slice is `artifact reacquisition`:
   - when a prior file/work-surface is detached or missing
   - and the packet is low-risk `read`
@@ -266,9 +375,9 @@ Skills Ecosystem Formal Closure preserved contract:
     - `tool_name=reacquire_artifact`
     - `tool_args={mode, artifact_kind, artifact_ref, artifact_label}`
   - those fields exist so execution can stay packet-owned even if live carryover has already moved on
-  - for browser/search-like surfaces, the current bounded carrier is `saved source_refs`, not a fake live browser session:
+  - for saved browser/search-like material, one bounded carrier remains `saved source_refs`:
     - previously retrieved pages/search results may be reattached from stored `url/title/query/snippet`
-    - true live browser reopening remains deferred until a real browser/runtime surface exists
+    - the separate live browser/runtime surface now owns real-time page continuity; saved-material reacquisition remains the long-horizon re-entry path
 - The next bounded direct-execution slice is `access state refresh`:
   - when session/access conditions are present but the runtime can still do a truthful read-only recheck
   - the graph may execute a bounded `access:refresh_state` packet before the next model turn
@@ -352,6 +461,13 @@ Skills Ecosystem Formal Closure preserved contract:
   - she may ask the operator for credentials or approval
   - she may create bounded new access such as a fresh account where appropriate
   - she may choose an alternate path when direct access is unavailable
+  - when she asks, that request should sound like her, but it must stay grounded in the real runtime condition rather than hallucinated capability
+  - when the operator resolves the condition, she should briefly confirm that the entrance is open and continue automatically when safe
+  - she must not "solve" access by self-crack behavior such as:
+    - credential guessing
+    - OTP simulation
+    - CAPTCHA bypass
+    - cookie forgery
 - the current bounded implementation path is still proposal-first:
   - `access:request_help` may now surface both:
     - `path_kind=acquire_existing`
@@ -645,5 +761,8 @@ Skills Ecosystem Formal Closure preserved contract:
 6. `Companion Autonomy Closure` - `baseline-closed`
 7. `Digital Body / Unified Experience / Embodied Capability` - `baseline-closed through digital embodiment phase 2`
 8. `Sandbox Embodied Execution Phase 1` - `baseline-closed`
-9. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
-10. later frontend / multimodal integration - `intentionally deferred`
+9. `Skills Ecosystem Formal Closure` - `baseline-closed`
+10. `Live Browser Runtime Closure Phase 1` - `baseline-closed`
+11. `Sandbox Embodied Execution Phase 2` - `in progress`
+12. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
+13. later frontend / multimodal integration - `intentionally deferred`

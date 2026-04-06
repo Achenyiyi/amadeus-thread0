@@ -47,7 +47,9 @@ from .tool_runtime import (
     _memory_guard_check,
 )
 from ..utils.tools import (
+    build_browser_execution_spec_payload,
     build_workspace_command_execution_spec,
+    preview_browser_execution,
     preview_skill_operation,
     preview_workspace_command_execution,
     preview_workspace_mutation,
@@ -180,6 +182,12 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
         execution_spec = build_workspace_command_execution_spec(args)
         if execution_spec:
             row["execution_spec"] = execution_spec
+        browser_execution_preview = preview_browser_execution(name, args)
+        if browser_execution_preview:
+            row["browser_execution_preview"] = browser_execution_preview
+        browser_execution_spec = build_browser_execution_spec_payload(name, args)
+        if browser_execution_spec:
+            row["browser_execution_spec"] = browser_execution_spec
         skill_preview = preview_skill_operation(name, args)
         if isinstance(skill_preview.get("resolved_args"), dict):
             row["args"] = dict(skill_preview.get("resolved_args") or {})
@@ -197,6 +205,8 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
             if any(str(x.get("name") or "") in MEMORY_WRITE_TOOLS for x in need_human)
             else "skills"
             if any(str(x.get("name") or "") in SKILL_MUTATION_TOOLS for x in need_human)
+            else "browser"
+            if any(str(x.get("name") or "").startswith("browser_") for x in need_human)
             else "dialog"
         )
         resume = interrupt(
@@ -250,6 +260,12 @@ def _node_tool_gate(state: ThreadState) -> dict[str, Any]:
             mutation_preview=row.get("mutation_preview") if isinstance(row.get("mutation_preview"), dict) else None,
             execution_spec=row.get("execution_spec") if isinstance(row.get("execution_spec"), dict) else None,
             execution_preview=row.get("execution_preview") if isinstance(row.get("execution_preview"), dict) else None,
+            browser_execution_spec=row.get("browser_execution_spec")
+            if isinstance(row.get("browser_execution_spec"), dict)
+            else None,
+            browser_execution_preview=row.get("browser_execution_preview")
+            if isinstance(row.get("browser_execution_preview"), dict)
+            else None,
         )
         action_packets = upsert_action_packet(action_packets, packet)
         action_trace.append(
@@ -438,11 +454,16 @@ def _workspace_access_mutation_candidate(
     selected = normalize_access_acquire_proposal(row.get("selected_access_proposal"))
     if intent != "access:request_help" or status != "approved" or not proposal_id or not selected:
         return {}
-    if str(selected.get("path_kind") or "").strip().lower() != "create_new":
+    path_kind = str(selected.get("path_kind") or "").strip().lower()
+    selected_mode = str(selected.get("mode") or "").strip().lower()
+    if (path_kind, selected_mode) not in {
+        ("create_new", "operator_create_workspace"),
+        ("acquire_existing", "operator_attach_repo_root"),
+    }:
         return {}
-    if str(selected.get("mode") or "").strip().lower() != "operator_create_workspace":
-        return {}
-    tool_name = str(row.get("tool_name") or "").strip().lower() or "create_workspace_access"
+    tool_name = str(row.get("tool_name") or "").strip().lower() or (
+        "create_workspace_access" if selected_mode == "operator_create_workspace" else "attach_repo_root_access"
+    )
     tool_args = dict(row.get("tool_args") or {}) if isinstance(row.get("tool_args"), dict) else {}
     if tool_args:
         hints = (
@@ -459,10 +480,16 @@ def _workspace_access_mutation_candidate(
         if access_proposals:
             hints["access_acquire_proposals"] = access_proposals
         hints["selected_access_proposal"] = selected
-        tool_args = {
-            "workspace_name": str(selected.get("workspace_name") or row.get("workspace_name") or "").strip(),
-            "access_hints": hints,
-        }
+        if selected_mode == "operator_create_workspace":
+            tool_args = {
+                "workspace_name": str(selected.get("workspace_name") or row.get("workspace_name") or "").strip(),
+                "access_hints": hints,
+            }
+        else:
+            tool_args = {
+                "repo_root": str(hints.get("workspace_root") or "").strip(),
+                "access_hints": hints,
+            }
     if not isinstance(hints.get("selected_access_proposal"), dict):
         hints["selected_access_proposal"] = selected
     if selected_access_proposal_resolved(hints=hints, proposal=selected):
@@ -471,7 +498,7 @@ def _workspace_access_mutation_candidate(
         "candidate_kind": "workspace_access_mutation",
         "proposal_id": proposal_id,
         "intent": intent,
-        "mode": "create_workspace_access",
+        "mode": "create_workspace_access" if selected_mode == "operator_create_workspace" else "attach_repo_root_access",
         "target": str(selected.get("target") or "filesystem").strip() or "filesystem",
         "label": str(selected.get("summary") or selected.get("operator_action") or "workspace").strip() or "workspace",
         "packet": row,
@@ -938,6 +965,24 @@ def _execution_result_from_tool_result(result: Any) -> dict[str, Any]:
     return dict(execution_result) if isinstance(execution_result, dict) else {}
 
 
+def _browser_execution_preview_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    preview = row.get("browser_execution_preview")
+    return dict(preview) if isinstance(preview, dict) else {}
+
+
+def _browser_execution_spec_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    spec = row.get("browser_execution_spec")
+    return dict(spec) if isinstance(spec, dict) else {}
+
+
+def _browser_execution_result_from_tool_result(result: Any) -> dict[str, Any]:
+    row = dict(result) if isinstance(result, dict) else {}
+    execution_result = row.get("browser_execution_result")
+    return dict(execution_result) if isinstance(execution_result, dict) else {}
+
+
 def _artifact_hints_from_tool_result(result: Any) -> dict[str, Any]:
     row = dict(result) if isinstance(result, dict) else {}
     hints = dict(row.get("access_hints") or {}) if isinstance(row.get("access_hints"), dict) else {}
@@ -979,6 +1024,9 @@ def _artifact_hints_from_tool_result(result: Any) -> dict[str, Any]:
     if carrier == "filesystem":
         if "filesystem" not in world_surfaces:
             world_surfaces.append("filesystem")
+    elif carrier == "browser_page":
+        if "browser" not in world_surfaces:
+            world_surfaces.append("browser")
     elif carrier == "source_ref":
         for surface in ("source_ref", "browser"):
             if surface not in world_surfaces:
@@ -1423,6 +1471,16 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             if isinstance(existing_packet.get("execution_preview"), dict)
             else {}
         )
+        browser_execution_spec = (
+            dict(existing_packet.get("browser_execution_spec") or {})
+            if isinstance(existing_packet.get("browser_execution_spec"), dict)
+            else {}
+        )
+        browser_execution_preview = (
+            dict(existing_packet.get("browser_execution_preview") or {})
+            if isinstance(existing_packet.get("browser_execution_preview"), dict)
+            else {}
+        )
 
         record: dict[str, Any] = {
             "tool": name,
@@ -1451,6 +1509,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     mutation_preview=mutation_preview,
                     execution_spec=execution_spec,
                     execution_preview=execution_preview,
+                    browser_execution_spec=browser_execution_spec,
+                    browser_execution_preview=browser_execution_preview,
                 ),
             )
             action_trace.append(
@@ -1491,6 +1551,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     mutation_preview=mutation_preview,
                     execution_spec=execution_spec,
                     execution_preview=execution_preview,
+                    browser_execution_spec=browser_execution_spec,
+                    browser_execution_preview=browser_execution_preview,
                 ),
             )
             action_trace.append(
@@ -1528,6 +1590,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     mutation_preview=mutation_preview,
                     execution_spec=execution_spec,
                     execution_preview=execution_preview,
+                    browser_execution_spec=browser_execution_spec,
+                    browser_execution_preview=browser_execution_preview,
                 ),
             )
             action_trace.append(
@@ -1558,6 +1622,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     mutation_preview=mutation_preview,
                     execution_spec=execution_spec,
                     execution_preview=execution_preview,
+                    browser_execution_spec=browser_execution_spec,
+                    browser_execution_preview=browser_execution_preview,
                 ),
             )
             action_trace.append(
@@ -1610,6 +1676,9 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
             execution_spec_from_result = _execution_spec_from_tool_result(result)
             execution_preview_from_result = _execution_preview_from_tool_result(result)
             execution_result = _execution_result_from_tool_result(result)
+            browser_execution_spec_from_result = _browser_execution_spec_from_tool_result(result)
+            browser_execution_preview_from_result = _browser_execution_preview_from_tool_result(result)
+            browser_execution_result = _browser_execution_result_from_tool_result(result)
             if tool_hints or artifact_hints:
                 hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
                 hints.update(tool_hints)
@@ -1627,6 +1696,10 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                 packet_status = "blocked"
                 packet_event = "tool_blocked"
                 block_reason = str(execution_result.get("error_summary") or result_summary or "").strip()
+            elif str(browser_execution_result.get("status") or "").strip().lower() == "blocked":
+                packet_status = "blocked"
+                packet_event = "tool_blocked"
+                block_reason = str(browser_execution_result.get("error_summary") or result_summary or "").strip()
             completed_packet = build_tool_action_packet(
                 tool_name=name,
                 proposal_id=proposal_id,
@@ -1638,6 +1711,9 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                 execution_spec=execution_spec_from_result or execution_spec,
                 execution_preview=execution_preview_from_result or execution_preview,
                 execution_result=execution_result,
+                browser_execution_spec=browser_execution_spec_from_result or browser_execution_spec,
+                browser_execution_preview=browser_execution_preview_from_result or browser_execution_preview,
+                browser_execution_result=browser_execution_result,
             )
             if access_acquire_proposals:
                 completed_packet["access_acquire_proposals"] = access_acquire_proposals
@@ -1683,6 +1759,8 @@ def _node_tool_execute(state: ThreadState) -> dict[str, Any]:
                     mutation_preview=mutation_preview,
                     execution_spec=execution_spec,
                     execution_preview=execution_preview,
+                    browser_execution_spec=browser_execution_spec,
+                    browser_execution_preview=browser_execution_preview,
                 ),
             )
             action_trace.append(

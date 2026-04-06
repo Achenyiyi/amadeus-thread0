@@ -160,9 +160,16 @@ class ToolApprovalPolicyTests(unittest.TestCase):
             hide_memory_logs=True,
             max_calls=3,
             toolset_upgrade_ttl_s=180,
+            assist_request={
+                "kind": "grant_access",
+                "message": "喂，先把 API key 给我，我接上就继续。",
+                "resume_mode": "auto_continue",
+            },
         )
 
         self.assertTrue(batch.show_logs)
+        self.assertEqual(batch.assist_request["kind"], "grant_access")
+        self.assertIn("API key", batch.assist_request["message"])
         preview = batch.visible_tool_calls[0]
         self.assertEqual(preview.name, "access_request_help")
         self.assertEqual(preview.reason, "这一步需要先补一个可用 API key。")
@@ -242,6 +249,78 @@ class ToolApprovalPolicyTests(unittest.TestCase):
         self.assertEqual(preview.execution_preview["allowed_roots"], ["E:/runtime/workspaces/lab-notes"])
         self.assertEqual(preview.reason, "python emit_artifact.py")
         self.assertIn("受限命令规格执行", preview.note)
+
+    def test_summarize_tool_approval_request_surfaces_sandbox_phase2_docker_preview(self):
+        batch = summarize_tool_approval_request(
+            source="dialog",
+            tool_calls=[
+                {
+                    "name": "execute_workspace_command",
+                    "args": {
+                        "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                        "cwd": ".",
+                    },
+                    "execution_preview": {
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                        "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                        "cwd": "E:/repo/amadeus-thread0",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        "timeout_s": 60,
+                        "writes_expected": False,
+                        "expected_artifacts": [],
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.execution_preview["runner_kind"], "docker_isolated_runner")
+        self.assertEqual(preview.execution_preview["network_policy"], "none")
+        self.assertEqual(preview.execution_preview["workspace_root_kind"], "attached_repo_root")
+
+    def test_summarize_tool_approval_request_surfaces_browser_execution_preview(self):
+        batch = summarize_tool_approval_request(
+            source="dialog",
+            tool_calls=[
+                {
+                    "name": "browser_download_click",
+                    "args": {"target_ref": "e3"},
+                    "browser_execution_preview": {
+                        "runner_kind": "playwright_persistent_context",
+                        "isolation_level": "persistent_profile_runtime",
+                        "operation": "download_click",
+                        "profile_id": "thread-browser",
+                        "page_ref": "page:page-1",
+                        "page_url": "https://example.com/report",
+                        "page_title": "Report",
+                        "target_ref": "e3",
+                        "target_label": "Download payload",
+                        "download_target": "E:/runtime/workspaces/lab-notes/downloads/payload.txt",
+                        "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+                        "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                        "timeout_s": 20,
+                        "verification_summary": "download into the runtime-controlled browser directory",
+                    },
+                }
+            ],
+            hide_memory_logs=True,
+            max_calls=3,
+            toolset_upgrade_ttl_s=180,
+        )
+
+        preview = batch.visible_tool_calls[0]
+        self.assertEqual(preview.name, "browser_download_click")
+        self.assertEqual(preview.browser_execution_preview["runner_kind"], "playwright_persistent_context")
+        self.assertEqual(preview.browser_execution_preview["download_target"], "E:/runtime/workspaces/lab-notes/downloads/payload.txt")
+        self.assertEqual(preview.reason, "download_click https://example.com/report")
+        self.assertEqual(preview.note, "download into the runtime-controlled browser directory")
 
     def test_summarize_tool_approval_request_surfaces_skill_mutation_preview(self):
         batch = summarize_tool_approval_request(

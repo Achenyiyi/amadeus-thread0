@@ -678,6 +678,62 @@ class FinalStateTests(unittest.TestCase):
         self.assertFalse(bool(consequence["procedural_growth"]))
         self.assertIn("today.md", consequence["summary"])
 
+    def test_resolve_digital_body_consequence_keeps_workspace_inspection_over_ambient_sandbox_limit(self):
+        consequence = resolve_digital_body_consequence(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem", "sandbox"],
+                "access_state": {
+                    "mode": "limited",
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "pending_approval_count": 0,
+                    "missing_access": [],
+                    "requestable_access": [],
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "execution_policy": "approval_required",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "last_status": "completed",
+                    },
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                    "active_artifact_label": "today.md",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+            action_packets=[
+                {
+                    "proposal_id": "ap-inspect-file-ambient-limit-1",
+                    "origin": "motive_goal",
+                    "intent": "tool:inspect_workspace_path",
+                    "status": "completed",
+                    "risk": "read",
+                    "requires_approval": False,
+                    "tool_name": "inspect_workspace_path",
+                    "result_summary": "已查看文件 today.md，当前内容已经重新接回工作面。",
+                    "writeback_ready": True,
+                    "artifact_context": {
+                        "carrier": "filesystem",
+                        "artifact_kind": "file",
+                        "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/today.md",
+                        "artifact_label": "today.md",
+                        "reacquisition_mode": "reopen_file",
+                        "exists": True,
+                    },
+                }
+            ],
+        )
+
+        self.assertEqual(consequence["kind"], "workspace_path_inspected")
+        self.assertEqual(consequence["primary_tool_name"], "inspect_workspace_path")
+        self.assertFalse(bool(consequence["environmental_friction"]))
+
     def test_resolve_digital_body_consequence_derives_artifact_reacquired_from_source_ref_surface(self):
         consequence = resolve_digital_body_consequence(
             digital_body_state={

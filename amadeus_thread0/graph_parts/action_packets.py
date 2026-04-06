@@ -3,6 +3,14 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
+from .browser_runtime import (
+    BROWSER_MUTATION_TOOL_NAMES,
+    BROWSER_READ_TOOL_NAMES,
+    browser_tool_intent,
+    normalize_browser_execution_preview,
+    normalize_browser_execution_result,
+    normalize_browser_execution_spec,
+)
 from .tool_policies import MEMORY_WRITE_TOOLS
 
 _VALID_ORIGINS = {"motive_goal", "own_rhythm", "counterpart_request", "capability_upgrade"}
@@ -184,6 +192,11 @@ def normalize_execution_spec(value: Any) -> dict[str, Any]:
     normalized = {
         "executor": _clean_text(row.get("executor"), limit=64).lower(),
         "profile": _clean_text(row.get("profile"), limit=64).lower(),
+        "runner_kind": _clean_text(row.get("runner_kind"), limit=80).lower(),
+        "isolation_level": _clean_text(row.get("isolation_level"), limit=80).lower(),
+        "image_ref": _clean_text(row.get("image_ref"), limit=160),
+        "network_policy": _clean_text(row.get("network_policy"), limit=32).lower(),
+        "workspace_root_kind": _clean_text(row.get("workspace_root_kind"), limit=64).lower(),
         "argv": argv,
         "cwd": _clean_text(row.get("cwd"), limit=320),
         "allowed_roots": allowed_roots,
@@ -195,6 +208,11 @@ def normalize_execution_spec(value: Any) -> dict[str, Any]:
         (
             normalized["executor"],
             normalized["profile"],
+            normalized["runner_kind"],
+            normalized["isolation_level"],
+            normalized["image_ref"],
+            normalized["network_policy"],
+            normalized["workspace_root_kind"],
             normalized["argv"],
             normalized["cwd"],
             normalized["allowed_roots"],
@@ -221,23 +239,33 @@ def normalize_execution_preview(value: Any) -> dict[str, Any]:
     normalized = {
         "runner_kind": _clean_text(row.get("runner_kind"), limit=80).lower(),
         "isolation_level": _clean_text(row.get("isolation_level"), limit=80).lower(),
+        "image_ref": _clean_text(row.get("image_ref"), limit=160),
+        "network_policy": _clean_text(row.get("network_policy"), limit=32).lower(),
+        "workspace_root_kind": _clean_text(row.get("workspace_root_kind"), limit=64).lower(),
         "argv": argv,
         "cwd": _clean_text(row.get("cwd"), limit=320),
         "allowed_roots": allowed_roots,
         "timeout_s": max(0, _coerce_int(row.get("timeout_s"), 0)),
         "writes_expected": _coerce_bool(row.get("writes_expected"), False),
         "expected_artifacts": expected_artifacts,
+        "validation_code": _clean_text(row.get("validation_code"), limit=64).upper(),
+        "validation_error": _clean_text(row.get("validation_error")),
     }
     if any(
         (
             normalized["runner_kind"],
             normalized["isolation_level"],
+            normalized["image_ref"],
+            normalized["network_policy"],
+            normalized["workspace_root_kind"],
             normalized["argv"],
             normalized["cwd"],
             normalized["allowed_roots"],
             normalized["timeout_s"] > 0,
             normalized["writes_expected"],
             normalized["expected_artifacts"],
+            normalized["validation_code"],
+            normalized["validation_error"],
         )
     ):
         return normalized
@@ -528,6 +556,12 @@ def action_packet_has_signal(packet: Any) -> bool:
         return True
     if normalize_execution_result(packet.get("execution_result")):
         return True
+    if normalize_browser_execution_spec(packet.get("browser_execution_spec")):
+        return True
+    if normalize_browser_execution_preview(packet.get("browser_execution_preview")):
+        return True
+    if normalize_browser_execution_result(packet.get("browser_execution_result")):
+        return True
     if _normalize_tool_args(packet.get("tool_args")):
         return True
     return bool(normalize_capability_steps(packet.get("capability_steps")))
@@ -560,6 +594,9 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
     execution_spec = normalize_execution_spec(row.get("execution_spec"))
     execution_preview = normalize_execution_preview(row.get("execution_preview"))
     execution_result = normalize_execution_result(row.get("execution_result"))
+    browser_execution_spec = normalize_browser_execution_spec(row.get("browser_execution_spec"))
+    browser_execution_preview = normalize_browser_execution_preview(row.get("browser_execution_preview"))
+    browser_execution_result = normalize_browser_execution_result(row.get("browser_execution_result"))
     tool_args = _normalize_tool_args(row.get("tool_args"))
     requires_approval = _coerce_bool(row.get("requires_approval"), risk != "read")
     writeback_ready = _coerce_bool(row.get("writeback_ready"), status == "completed")
@@ -593,6 +630,9 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
         "execution_spec": execution_spec,
         "execution_preview": execution_preview,
         "execution_result": execution_result,
+        "browser_execution_spec": browser_execution_spec,
+        "browser_execution_preview": browser_execution_preview,
+        "browser_execution_result": browser_execution_result,
     }
 
 
@@ -734,6 +774,10 @@ def risk_from_tool_name(name: str) -> str:
     tool_name = _clean_text(name).lower()
     if tool_name in MEMORY_WRITE_TOOLS:
         return "memory_write"
+    if tool_name in BROWSER_READ_TOOL_NAMES:
+        return "read"
+    if tool_name in BROWSER_MUTATION_TOOL_NAMES:
+        return "external_mutation"
     if tool_name in {
         "request_toolset_upgrade",
         "reacquire_artifact",
@@ -751,6 +795,9 @@ def risk_from_tool_name(name: str) -> str:
 
 def _tool_packet_intent(name: str) -> str:
     tool_name = _clean_text(name).lower()
+    browser_intent = browser_tool_intent(tool_name)
+    if browser_intent:
+        return browser_intent
     if tool_name == "request_toolset_upgrade":
         return "toolset_upgrade_proposal"
     if tool_name == "execute_workspace_command":
@@ -780,6 +827,9 @@ def build_tool_action_packet(
     execution_spec: dict[str, Any] | None = None,
     execution_preview: dict[str, Any] | None = None,
     execution_result: dict[str, Any] | None = None,
+    browser_execution_spec: dict[str, Any] | None = None,
+    browser_execution_preview: dict[str, Any] | None = None,
+    browser_execution_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     name = _clean_text(tool_name)
     risk = risk_from_tool_name(name)
@@ -826,6 +876,9 @@ def build_tool_action_packet(
             "execution_spec": normalize_execution_spec(execution_spec),
             "execution_preview": normalize_execution_preview(execution_preview),
             "execution_result": normalize_execution_result(execution_result),
+            "browser_execution_spec": normalize_browser_execution_spec(browser_execution_spec),
+            "browser_execution_preview": normalize_browser_execution_preview(browser_execution_preview),
+            "browser_execution_result": normalize_browser_execution_result(browser_execution_result),
         }
     )
 
@@ -857,6 +910,9 @@ __all__ = [
     "normalize_action_packet",
     "normalize_action_packets",
     "normalize_artifact_context",
+    "normalize_browser_execution_preview",
+    "normalize_browser_execution_result",
+    "normalize_browser_execution_spec",
     "normalize_capability_steps",
     "normalize_execution_preview",
     "normalize_execution_result",

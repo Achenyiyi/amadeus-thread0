@@ -202,6 +202,10 @@ TOOL_RELIABILITY_WEIGHTS: dict[str, float] = {
     "compare_source_refs": 0.9,
     "inspect_workspace_path": 0.9,
     "refresh_access_state": 0.86,
+    "browser_open_url": 0.91,
+    "browser_follow_link": 0.91,
+    "browser_snapshot": 0.91,
+    "browser_capture_page_to_source_ref": 0.93,
 }
 CLAIM_REQUIRED_TOOLS = {"search_web", "search_langchain_docs", "arxiv_search"}
 
@@ -257,9 +261,25 @@ TOOL_POLICIES: dict[str, dict[str, object]] = {
     "reacquire_artifact": {"risk": "read", "auto_approve": True},
     "inspect_workspace_path": {"risk": "read", "auto_approve": True},
     "refresh_access_state": {"risk": "read", "auto_approve": True},
+    "browser_open_url": {"risk": "read", "auto_approve": True},
+    "browser_follow_link": {"risk": "read", "auto_approve": True},
+    "browser_list_tabs": {"risk": "read", "auto_approve": True},
+    "browser_select_tab": {"risk": "read", "auto_approve": True},
+    "browser_go_back": {"risk": "read", "auto_approve": True},
+    "browser_go_forward": {"risk": "read", "auto_approve": True},
+    "browser_reload": {"risk": "read", "auto_approve": True},
+    "browser_snapshot": {"risk": "read", "auto_approve": True},
+    "browser_capture_page_to_source_ref": {"risk": "read", "auto_approve": True},
 
     # write / sensitive
     "create_workspace_access": {"risk": "write", "auto_approve": False},
+    "attach_repo_root_access": {"risk": "write", "auto_approve": False},
+    "browser_click": {"risk": "write", "auto_approve": False},
+    "browser_fill": {"risk": "write", "auto_approve": False},
+    "browser_press_key": {"risk": "write", "auto_approve": False},
+    "browser_download_click": {"risk": "write", "auto_approve": False},
+    "browser_upload_file": {"risk": "write", "auto_approve": False},
+    "browser_begin_manual_takeover": {"risk": "write", "auto_approve": False},
     "execute_workspace_command": {"risk": "write", "auto_approve": False},
     "write_workspace_file": {"risk": "write", "auto_approve": False},
     "append_workspace_file": {"risk": "write", "auto_approve": False},

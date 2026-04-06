@@ -36,6 +36,29 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("run=ap-sandbox-1", rendered)
         self.assertIn("exit=0", rendered)
 
+    def test_render_action_packet_cli_text_surfaces_sandbox_phase2_runner_identity(self):
+        rendered = render_action_packet_cli_text(
+            [
+                {
+                    "proposal_id": "ap-sandbox-phase2-1",
+                    "origin": "motive_goal",
+                    "intent": "sandbox:execute_workspace_command",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "execution_spec": {
+                        "runner_kind": "docker_isolated_runner",
+                        "workspace_root_kind": "attached_repo_root",
+                    },
+                    "execution_result": {
+                        "run_id": "ap-sandbox-phase2-1",
+                        "exit_code": 0,
+                    },
+                }
+            ]
+        )
+        self.assertIn("runner=docker_isolated_runner", rendered)
+        self.assertIn("root=attached_repo_root", rendered)
+
     def test_build_evolution_cli_summary_surfaces_continuity_vector(self):
         summary = build_evolution_cli_summary(
             relationship={
@@ -1022,6 +1045,84 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("bodyfx=workspace_access_resolved", line)
         self.assertIn("artifact=workspace:lab-notes:attached", line)
         self.assertIn("root=E:/runtime/workspaces/lab-notes", line)
+
+    def test_build_evolution_cli_summary_surfaces_phase2_sandbox_identity_fields(self):
+        summary = build_evolution_cli_summary(
+            digital_body_state={
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                    "sandbox_state": {
+                        "availability": "available",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                    },
+                },
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "artifact_carrier": "filesystem",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "active_artifact_label": "stdout.txt",
+                },
+            },
+            digital_body_consequence={
+                "kind": "sandbox_execution_completed",
+                "summary": "刚才那次 Docker 隔离执行已经跑完，可以顺着日志继续看。",
+                "access_mode": "tool_enabled",
+                "active_surface": "tooling",
+                "world_surfaces": ["filesystem"],
+                "artifact_carrier": "filesystem",
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "file",
+                "active_artifact_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt",
+                "active_artifact_label": "stdout.txt",
+                "workspace_root": "E:/repo/amadeus-thread0",
+                "workspace_root_kind": "attached_repo_root",
+                "sandbox_run_id": "ap-docker-1",
+                "sandbox_command_profile": "pytest",
+                "sandbox_stdout_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt",
+                "sandbox_stderr_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stderr.txt",
+                "sandbox_exit_code": 0,
+                "sandbox_duration_ms": 312,
+                "sandbox_runner_kind": "docker_isolated_runner",
+                "sandbox_isolation_level": "docker_local_isolated",
+                "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                "sandbox_network_policy": "none",
+                "sandbox_produced_artifacts": [
+                    "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt"
+                ],
+            },
+        )
+
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(digital_body_consequence.get("kind"), "sandbox_execution_completed")
+        self.assertEqual(digital_body_consequence.get("sandbox_run_id"), "ap-docker-1")
+        self.assertEqual(digital_body_consequence.get("sandbox_runner_kind"), "docker_isolated_runner")
+        self.assertEqual(digital_body_consequence.get("sandbox_isolation_level"), "docker_local_isolated")
+        self.assertEqual(digital_body_consequence.get("sandbox_image_ref"), "amadeus-thread0/sandbox-phase2:py312")
+        self.assertEqual(digital_body_consequence.get("sandbox_network_policy"), "none")
+        self.assertEqual(digital_body_consequence.get("workspace_root_kind"), "attached_repo_root")
+        self.assertEqual(digital_body_consequence.get("sandbox_produced_artifacts"), [
+            "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt"
+        ])
+        self.assertEqual(current_turn.get("digital_body_consequence_kind"), "sandbox_execution_completed")
+        self.assertEqual(current_turn.get("digital_body_workspace_root"), "E:/repo/amadeus-thread0")
+
+        line = build_evolution_summary_line(summary)
+        self.assertIn("bodyfx=sandbox_execution_completed", line)
+        self.assertIn("root=E:/repo/amadeus-thread0", line)
 
     def test_build_evolution_cli_summary_surfaces_workspace_file_updated_consequence(self):
         summary = build_evolution_cli_summary(

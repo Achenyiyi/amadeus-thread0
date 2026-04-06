@@ -69,6 +69,10 @@ class FakeStreamGraph:
 
     def update_state(self, config, values, as_node=None):
         self.updated_states.append((config, values, as_node))
+        if isinstance(values, dict):
+            merged = dict(self._state_values)
+            merged.update(values)
+            self._state_values = merged
 
 
 class FakeInvokeGraph:
@@ -456,6 +460,11 @@ class BackendSessionTests(unittest.TestCase):
         execution_spec = {
             "executor": "python",
             "profile": "python_script",
+            "runner_kind": "local_restricted_runner",
+            "isolation_level": "host_local_restricted",
+            "image_ref": "",
+            "network_policy": "host",
+            "workspace_root_kind": "runtime_owned",
             "argv": ["python", "emit_artifact.py"],
             "cwd": "E:/runtime/workspaces/lab-notes",
             "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
@@ -466,6 +475,9 @@ class BackendSessionTests(unittest.TestCase):
         execution_preview = {
             "runner_kind": "local_restricted_runner",
             "isolation_level": "host_local_restricted",
+            "image_ref": "",
+            "network_policy": "host",
+            "workspace_root_kind": "runtime_owned",
             "argv": ["python", "emit_artifact.py"],
             "cwd": "E:/runtime/workspaces/lab-notes",
             "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
@@ -529,6 +541,11 @@ class BackendSessionTests(unittest.TestCase):
         execution_spec = {
             "executor": "python",
             "profile": "python_script",
+            "runner_kind": "local_restricted_runner",
+            "isolation_level": "host_local_restricted",
+            "image_ref": "",
+            "network_policy": "host",
+            "workspace_root_kind": "runtime_owned",
             "argv": ["python", "emit_artifact.py"],
             "cwd": "E:/runtime/workspaces/lab-notes",
             "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
@@ -539,6 +556,9 @@ class BackendSessionTests(unittest.TestCase):
         execution_preview = {
             "runner_kind": "local_restricted_runner",
             "isolation_level": "host_local_restricted",
+            "image_ref": "",
+            "network_policy": "host",
+            "workspace_root_kind": "runtime_owned",
             "argv": ["python", "emit_artifact.py"],
             "cwd": "E:/runtime/workspaces/lab-notes",
             "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
@@ -621,6 +641,200 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(
             resumed.values["action_packets"][0]["execution_result"]["produced_artifacts"],
             ["E:/runtime/workspaces/lab-notes/notes/generated.txt"],
+        )
+
+    def test_invoke_stream_preserves_browser_execution_preview_in_approval_request(self):
+        browser_execution_spec = {
+            "operation": "click",
+            "profile_id": "thread-browser",
+            "page_ref": "page:page-1",
+            "target_ref": "e2",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "browser_downloads_root": "E:/runtime/browser/downloads/thread-browser",
+            "timeout_s": 20,
+            "wait_until": "load",
+        }
+        browser_execution_preview = {
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime",
+            "operation": "click",
+            "profile_id": "thread-browser",
+            "page_ref": "page:page-1",
+            "page_url": "https://example.com/tasks",
+            "page_title": "Task Board",
+            "target_ref": "e2",
+            "target_label": "Approve action",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+            "timeout_s": 20,
+            "verification_summary": "click the requested page element in the current persistent browser context",
+        }
+        graph = FakeStreamGraph(
+            stream_rows=[
+                (
+                    "values",
+                    {
+                        "__interrupt__": (
+                            {
+                                "value": {
+                                    "kind": "tool_approval",
+                                    "source": "dialog",
+                                    "tool_calls": [
+                                        {
+                                            "name": "browser_click",
+                                            "args": {"target_ref": "e2"},
+                                            "proposal_id": "ap-browser-click-approve-1",
+                                            "browser_execution_spec": browser_execution_spec,
+                                            "browser_execution_preview": browser_execution_preview,
+                                        }
+                                    ],
+                                }
+                            },
+                        )
+                    },
+                )
+            ],
+            state_values={},
+        )
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "click it"}]})
+
+        self.assertIsNotNone(result.approval_request)
+        assert result.approval_request is not None
+        self.assertEqual(result.approval_request.tool_calls[0]["proposal_id"], "ap-browser-click-approve-1")
+        self.assertEqual(
+            result.approval_request.tool_calls[0]["browser_execution_preview"]["runner_kind"],
+            "playwright_persistent_context",
+        )
+        self.assertEqual(
+            result.values["pending_action_proposal"]["intent"],
+            "browser:click",
+        )
+        self.assertEqual(
+            result.values["pending_action_proposal"]["browser_execution_spec"]["target_ref"],
+            "e2",
+        )
+        self.assertEqual(
+            result.values["pending_action_proposal"]["browser_execution_preview"]["page_title"],
+            "Task Board",
+        )
+
+    def test_resume_stream_keeps_same_browser_execution_spec_for_browser_approval(self):
+        browser_execution_spec = {
+            "operation": "download_click",
+            "profile_id": "thread-browser",
+            "page_ref": "page:page-1",
+            "target_ref": "e3",
+            "download_target": "E:/runtime/workspaces/lab-notes/downloads/payload.txt",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "browser_downloads_root": "E:/runtime/browser/downloads/thread-browser",
+            "timeout_s": 20,
+            "wait_until": "load",
+        }
+        browser_execution_preview = {
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime",
+            "operation": "download_click",
+            "profile_id": "thread-browser",
+            "page_ref": "page:page-1",
+            "page_url": "https://example.com/report",
+            "page_title": "Report",
+            "target_ref": "e3",
+            "target_label": "Download payload",
+            "download_target": "E:/runtime/workspaces/lab-notes/downloads/payload.txt",
+            "allowed_roots": ["E:/runtime/workspaces/lab-notes"],
+            "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+            "timeout_s": 20,
+            "verification_summary": "download into the runtime-controlled browser directory",
+        }
+        completed_packet = {
+            "proposal_id": "ap-browser-download-approve-1",
+            "origin": "motive_goal",
+            "intent": "browser:download_click",
+            "status": "completed",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "tool_name": "browser_download_click",
+            "browser_execution_spec": browser_execution_spec,
+            "browser_execution_preview": browser_execution_preview,
+            "browser_execution_result": {
+                "run_id": "ap-browser-download-approve-1",
+                "status": "completed",
+                "profile_id": "thread-browser",
+                "page_id": "page-1",
+                "tab_id": "tab-1",
+                "url": "https://example.com/report",
+                "title": "Report",
+                "action_kind": "download_click",
+                "target_ref": "e3",
+                "duration_ms": 55,
+                "active_tab_count": 1,
+                "last_action_status": "completed",
+                "download_path": "E:/runtime/workspaces/lab-notes/downloads/payload.txt",
+                "upload_source": "",
+                "error_summary": "",
+                "manual_takeover_required": False,
+            },
+            "writeback_ready": True,
+        }
+
+        class FakeBrowserResumableStreamGraph(FakeStreamGraph):
+            def __init__(self):
+                super().__init__(stream_rows=[], state_values={})
+                self.initial_rows = [
+                    (
+                        "values",
+                        {
+                            "__interrupt__": (
+                                {
+                                    "value": {
+                                        "kind": "tool_approval",
+                                        "source": "dialog",
+                                        "tool_calls": [
+                                            {
+                                                "name": "browser_download_click",
+                                                "args": {"target_ref": "e3"},
+                                                "proposal_id": "ap-browser-download-approve-1",
+                                                "browser_execution_spec": browser_execution_spec,
+                                                "browser_execution_preview": browser_execution_preview,
+                                            }
+                                        ],
+                                    }
+                                },
+                            )
+                        },
+                    )
+                ]
+                self.resume_rows = [("values", {"action_packets": [completed_packet], "pending_action_proposal": {}})]
+
+            def stream(self, payload, config=None, stream_mode=None):
+                rows = self.initial_rows if isinstance(payload, dict) else self.resume_rows
+                for row in rows:
+                    yield row
+
+        graph = FakeBrowserResumableStreamGraph()
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        first = session.invoke_stream({"messages": [{"role": "user", "content": "download it"}]})
+        resumed = session.resume_stream([{"action": "approve"}])
+
+        self.assertEqual(
+            first.values["pending_action_proposal"]["browser_execution_spec"]["profile_id"],
+            browser_execution_spec["profile_id"],
+        )
+        self.assertEqual(
+            first.values["pending_action_proposal"]["browser_execution_spec"]["target_ref"],
+            browser_execution_spec["target_ref"],
+        )
+        self.assertEqual(
+            first.values["pending_action_proposal"]["browser_execution_spec"]["download_target"],
+            browser_execution_spec["download_target"],
+        )
+        self.assertEqual(resumed.values["action_packets"][0]["browser_execution_spec"], browser_execution_spec)
+        self.assertEqual(
+            resumed.values["action_packets"][0]["browser_execution_result"]["download_path"],
+            "E:/runtime/workspaces/lab-notes/downloads/payload.txt",
         )
 
     def test_resume_stream_keeps_same_resolved_payload_for_skill_install_approval(self):
@@ -783,6 +997,55 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(proposals[0]["target"], "account_login")
         self.assertEqual(proposals[0]["mode"], "operator_login")
         self.assertEqual(result.values["pending_action_proposal"]["proposal_id"], "ap-access-help-1")
+
+    def test_invoke_stream_access_request_includes_assist_request(self):
+        proposal = {
+            "target": "api_key",
+            "mode": "operator_provide_api_key",
+            "summary": "先补一个可用 API key。",
+            "operator_action": "填入一个可用 key。",
+            "grants": ["api_key"],
+            "requires_operator": True,
+        }
+        packet = {
+            "proposal_id": "ap-access-help-assist",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "expected_effect": "先把缺的 API key 补齐。",
+            "access_acquire_proposals": [proposal],
+            "selected_access_proposal": proposal,
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "digital_body_state": {
+                "access_state": {
+                    "mode": "approval_pending",
+                    "missing_access": ["api_key"],
+                    "requestable_access": ["api_key", "human_approval"],
+                    "selected_access_proposal": proposal,
+                    "access_acquire_proposals": [proposal],
+                },
+                "resource_state": {},
+            },
+            "session_context": {"digital_body_hints": {"requested_help": True}},
+        }
+        graph = FakeStreamGraph(stream_rows=[("values", values)], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "继续"}]})
+
+        self.assertIsNotNone(result.approval_request)
+        assert result.approval_request is not None
+        assist = result.approval_request.payload.get("assist_request") if isinstance(result.approval_request.payload, dict) else {}
+        self.assertEqual(assist.get("kind"), "grant_access")
+        self.assertEqual(assist.get("resume_mode"), "auto_continue")
+        self.assertEqual(assist.get("selected_access_proposal", {}).get("mode"), "operator_provide_api_key")
+        self.assertIn("API key", assist.get("message", ""))
 
     def test_invoke_stream_defaults_selected_access_proposal_from_candidates(self):
         packet = {
@@ -1227,6 +1490,93 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(packet_out["tool_args"]["workspace_name"], "")
         self.assertEqual(result.values["autonomy_intent"]["mode"], "access_acquire_planned")
 
+    def test_resume_stream_approved_repo_root_attach_path_persists_execution_binding(self):
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_attach_repo_root",
+            "path_kind": "acquire_existing",
+            "summary": "先把当前仓库根目录挂成 workspace。",
+            "operator_action": "批准把当前 git worktree 根目录挂接成 workspace。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+        repo_root = "E:/repo/amadeus-thread0"
+        packet = {
+            "proposal_id": "ap-access-help-attach-root",
+            "origin": "counterpart_request",
+            "intent": "access:request_help",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "capability_steps": [
+                {
+                    "kind": "access",
+                    "name": "request_help",
+                    "target": "filesystem",
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": "先把当前仓库根目录挂成 workspace。",
+                }
+            ],
+            "expected_effect": "先把当前仓库根目录挂成 workspace。",
+            "result_summary": "",
+            "writeback_ready": False,
+            "access_acquire_proposals": [proposal],
+            "selected_access_proposal": proposal,
+        }
+        values = {
+            "current_event": {"kind": "user_utterance"},
+            "action_packets": [packet],
+            "pending_action_proposal": dict(packet),
+            "action_trace": [],
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "reason": "先把当前仓库根目录挂成 workspace。",
+                "primary_proposal_id": "ap-access-help-attach-root",
+            },
+            "session_context": {
+                "digital_body_hints": {
+                    "filesystem_state": "missing",
+                    "workspace_root": repo_root,
+                    "workspace_root_kind": "attached_repo_root",
+                    "missing_access": ["filesystem", "workspace_write"],
+                    "requestable_access": ["filesystem", "workspace_write", "human_approval"],
+                    "requested_help": True,
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                }
+            },
+            "interaction_carryover": {},
+            "toolset_unlocks": {},
+            "behavior_queue": [],
+            "turn_appraisal": {},
+            "world_model_state": {},
+            "semantic_narrative_profile": {},
+            "evolution_state": {},
+            "emotion_state": {},
+            "bond_state": {},
+            "counterpart_assessment": {},
+            "behavior_action": {},
+            "behavior_plan": {},
+            "agenda_lifecycle_residue": {},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream([{"action": "approve"}])
+
+        packet_out = result.values["action_packets"][0]
+        self.assertEqual(packet_out["status"], "approved")
+        self.assertEqual(packet_out["tool_name"], "attach_repo_root_access")
+        self.assertEqual(packet_out["tool_args"]["repo_root"], repo_root)
+        self.assertEqual(packet_out["tool_args"]["access_hints"]["workspace_root_kind"], "attached_repo_root")
+        self.assertEqual(
+            packet_out["tool_args"]["access_hints"]["selected_access_proposal"]["mode"],
+            "operator_attach_repo_root",
+        )
+        self.assertEqual(result.values["autonomy_intent"]["mode"], "access_acquire_planned")
+
     def test_resume_stream_keeps_partial_access_arrival_as_approved(self):
         proposal = {
             "target": "account_login",
@@ -1327,6 +1677,220 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(hints["missing_access"], ["browser_session"])
         self.assertIn("selected_access_proposal", hints)
 
+    def test_resume_stream_completed_access_auto_continues_current_task(self):
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_create_workspace",
+            "summary": "先新建一个可写工作区。",
+            "operator_action": "新建一个可写工作区。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+
+        class AutoContinueGraph(FakeStreamGraph):
+            def __init__(self):
+                super().__init__(
+                    stream_rows=[],
+                    state_values={
+                        "current_event": {
+                            "kind": "user_utterance",
+                            "text": "继续把 lab notes 写下去",
+                            "effective_text": "继续把 lab notes 写下去",
+                            "semantic_goal": "继续把 lab notes 写下去",
+                        },
+                        "action_packets": [
+                            {
+                                "proposal_id": "ap-access-auto-1",
+                                "origin": "counterpart_request",
+                                "intent": "access:request_help",
+                                "status": "awaiting_approval",
+                                "risk": "external_mutation",
+                                "requires_approval": True,
+                                "expected_effect": "先新建一个可写工作区。",
+                                "access_acquire_proposals": [proposal],
+                                "selected_access_proposal": proposal,
+                            }
+                        ],
+                        "pending_action_proposal": {
+                            "proposal_id": "ap-access-auto-1",
+                            "origin": "counterpart_request",
+                            "intent": "access:request_help",
+                            "status": "awaiting_approval",
+                            "risk": "external_mutation",
+                            "requires_approval": True,
+                            "expected_effect": "先新建一个可写工作区。",
+                            "access_acquire_proposals": [proposal],
+                            "selected_access_proposal": proposal,
+                        },
+                        "digital_body_state": {
+                            "access_state": {
+                                "mode": "approval_pending",
+                                "missing_access": ["filesystem", "workspace_write"],
+                                "requestable_access": ["filesystem", "workspace_write", "human_approval"],
+                                "selected_access_proposal": proposal,
+                                "access_acquire_proposals": [proposal],
+                            },
+                            "resource_state": {},
+                        },
+                        "session_context": {"digital_body_hints": {"requested_help": True}},
+                    },
+                )
+                self.stream_payloads = []
+
+            def stream(self, payload, config=None, stream_mode=None):
+                self.stream_payloads.append(payload)
+                yield (
+                    "values",
+                    {
+                        "final_text": "我已经继续把那个工作区里的文件接着写下去了。",
+                        "current_event": {
+                            "kind": "access_resume",
+                            "digital_body_hints": {
+                                "just_resolved_access": {
+                                    "proposal_id": "ap-access-auto-1",
+                                    "selected_access_proposal": proposal,
+                                }
+                            },
+                        },
+                    },
+                )
+
+        graph = AutoContinueGraph()
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.resume_stream(
+            [
+                {
+                    "action": "edit",
+                    "args": {
+                        "access_updates": {
+                            "filesystem_state": "writable",
+                            "missing_access": [],
+                            "requestable_access": [],
+                            "selected_access_proposal": proposal,
+                        }
+                    },
+                }
+            ]
+        )
+
+        self.assertTrue(graph.stream_payloads)
+        event_override = graph.stream_payloads[-1].get("event_override") if isinstance(graph.stream_payloads[-1], dict) else {}
+        self.assertEqual(event_override.get("kind"), "access_resume")
+        self.assertEqual(event_override.get("semantic_goal"), "继续把 lab notes 写下去")
+        final_text = session.extract_final_text(result.values, streamed_text=result.streamed_text)
+        self.assertIn("已经接上了", final_text)
+        self.assertIn("我已经继续把那个工作区里的文件接着写下去了。", final_text)
+
+    def test_invoke_stream_short_takeover_confirmation_auto_continues(self):
+        proposal = {
+            "target": "account_login",
+            "mode": "operator_login",
+            "summary": "先把现有账号登录补回来。",
+            "operator_action": "登录目标账号。",
+            "grants": ["account_login", "browser_session"],
+            "requires_operator": True,
+        }
+
+        class TakeoverContinueGraph(FakeStreamGraph):
+            def __init__(self):
+                super().__init__(
+                    stream_rows=[],
+                    state_values={
+                        "current_event": {
+                            "kind": "user_utterance",
+                            "text": "去把订单页打开",
+                            "effective_text": "去把订单页打开",
+                            "semantic_goal": "去把订单页打开",
+                        },
+                        "action_packets": [
+                            {
+                                "proposal_id": "ap-browser-takeover-1",
+                                "intent": "browser:fill",
+                                "status": "blocked",
+                                "risk": "external_mutation",
+                                "requires_approval": True,
+                                "tool_name": "browser_fill",
+                                "browser_execution_preview": {
+                                    "operation": "fill",
+                                    "profile_id": "thread-browser",
+                                    "page_ref": "page:page-1",
+                                    "page_title": "Login",
+                                    "target_ref": "password",
+                                    "target_label": "密码输入框",
+                                    "requires_manual_takeover": True,
+                                },
+                                "browser_execution_result": {
+                                    "status": "blocked",
+                                    "profile_id": "thread-browser",
+                                    "page_id": "page-1",
+                                    "tab_id": "tab-1",
+                                    "title": "Login",
+                                    "target_ref": "password",
+                                    "manual_takeover_required": True,
+                                },
+                                "selected_access_proposal": proposal,
+                            }
+                        ],
+                        "digital_body_state": {
+                            "access_state": {
+                                "browser_runtime_state": {
+                                    "availability": "available",
+                                    "context_status": "manual_takeover",
+                                    "manual_takeover_required": True,
+                                    "last_run_id": "ap-browser-takeover-1",
+                                },
+                                "selected_access_proposal": proposal,
+                            },
+                            "resource_state": {"active_artifact_label": "Login"},
+                        },
+                        "session_context": {
+                            "digital_body_hints": {
+                                "browser_runtime_state": {
+                                    "availability": "available",
+                                    "context_status": "manual_takeover",
+                                    "manual_takeover_required": True,
+                                    "last_run_id": "ap-browser-takeover-1",
+                                }
+                            }
+                        },
+                    },
+                )
+                self.stream_payloads = []
+
+            def stream(self, payload, config=None, stream_mode=None):
+                self.stream_payloads.append(payload)
+                yield (
+                    "values",
+                    {
+                        "final_text": "我已经接着把订单页往下看了。",
+                        "current_event": {
+                            "kind": "access_resume",
+                            "digital_body_hints": {
+                                "just_completed_takeover": {
+                                    "proposal_id": "ap-browser-takeover-1",
+                                    "profile_id": "thread-browser",
+                                    "page_ref": "page:page-1",
+                                    "tab_id": "tab-1",
+                                }
+                            },
+                        },
+                    },
+                )
+
+        graph = TakeoverContinueGraph()
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        result = session.invoke_stream({"messages": [{"role": "user", "content": "好了"}]})
+
+        self.assertTrue(graph.stream_payloads)
+        event_override = graph.stream_payloads[-1].get("event_override") if isinstance(graph.stream_payloads[-1], dict) else {}
+        self.assertEqual(event_override.get("kind"), "access_resume")
+        self.assertEqual(event_override.get("semantic_goal"), "去把订单页打开")
+        final_text = session.extract_final_text(result.values, streamed_text=result.streamed_text)
+        self.assertIn("浏览器这边已经接回来了", final_text)
+        self.assertIn("我已经接着把订单页往下看了。", final_text)
+
     def test_extract_final_text_prefers_explicit_final_text_field(self):
         session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
         text = session.extract_final_text(
@@ -1336,6 +1900,117 @@ class BackendSessionTests(unittest.TestCase):
             }
         )
         self.assertEqual(text, "finalized-answer")
+
+    def test_extract_final_text_prefers_assist_request_message_when_access_is_pending(self):
+        session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
+        proposal = {
+            "target": "filesystem",
+            "mode": "operator_create_workspace",
+            "summary": "先新建一个可写工作区。",
+            "operator_action": "新建一个可写工作区。",
+            "grants": ["filesystem", "workspace_write"],
+            "requires_operator": True,
+        }
+        text = session.extract_final_text(
+            {
+                "final_text": "stale-final",
+                "pending_action_proposal": {
+                    "proposal_id": "ap-access-pending-text",
+                    "intent": "access:request_help",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                },
+                "digital_body_state": {
+                    "access_state": {
+                        "mode": "approval_pending",
+                        "missing_access": ["filesystem", "workspace_write"],
+                        "requestable_access": ["filesystem", "workspace_write", "human_approval"],
+                        "selected_access_proposal": proposal,
+                        "access_acquire_proposals": [proposal],
+                    },
+                    "resource_state": {},
+                },
+            }
+        )
+        self.assertIn("工作区写入入口", text)
+        self.assertIn("不用你再提醒", text)
+
+    def test_extract_final_text_prefixes_resume_ack_after_access_resume(self):
+        session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
+        text = session.extract_final_text(
+            {
+                "final_text": "我已经继续把后面的检查做下去了。",
+                "current_event": {
+                    "kind": "access_resume",
+                    "digital_body_hints": {
+                        "just_resolved_access": {
+                            "proposal_id": "ap-access-ack-1",
+                            "selected_access_proposal": {
+                                "mode": "operator_create_workspace",
+                                "target": "filesystem",
+                                "operator_action": "先把可写工作区开出来",
+                            },
+                        }
+                    },
+                },
+            }
+        )
+        self.assertTrue(text.startswith("好，"))
+        self.assertIn("我继续", text)
+        self.assertIn("我已经继续把后面的检查做下去了。", text)
+
+    def test_extract_final_text_prefers_manual_takeover_request_when_browser_is_blocked(self):
+        session = BackendSession(graph=object(), memory_store=FakeMemoryStore(), thread_id="thread-a")
+        text = session.extract_final_text(
+            {
+                "final_text": "stale",
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-browser-fill-1",
+                        "intent": "browser:fill",
+                        "status": "blocked",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "browser_fill",
+                        "browser_execution_preview": {
+                            "operation": "fill",
+                            "profile_id": "thread-browser",
+                            "page_ref": "page:page-1",
+                            "page_title": "Login",
+                            "target_ref": "password",
+                            "target_label": "密码输入框",
+                            "requires_manual_takeover": True,
+                        },
+                        "browser_execution_result": {
+                            "status": "blocked",
+                            "profile_id": "thread-browser",
+                            "page_id": "page-1",
+                            "tab_id": "tab-1",
+                            "title": "Login",
+                            "target_ref": "password",
+                            "manual_takeover_required": True,
+                            "error_summary": "sensitive credential entry requires manual browser takeover",
+                        },
+                    }
+                ],
+                "digital_body_state": {
+                    "access_state": {
+                        "browser_runtime_state": {
+                            "availability": "available",
+                            "context_status": "manual_takeover",
+                            "manual_takeover_required": True,
+                            "last_run_id": "ap-browser-fill-1",
+                        }
+                    },
+                    "resource_state": {"active_artifact_label": "Login"},
+                },
+            }
+        )
+        self.assertIn("密码、OTP、passkey、验证码", text)
+        self.assertIn("你接管一下", text)
 
     def test_invoke_event_round_auto_resumes_memory_interrupt(self):
         before_values = {"messages": [SimpleNamespace(content="before")]}

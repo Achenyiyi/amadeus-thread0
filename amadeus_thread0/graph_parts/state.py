@@ -276,6 +276,9 @@ class ActionPacketPayload(TypedDict, total=False):
     execution_spec: dict[str, Any]
     execution_preview: dict[str, Any]
     execution_result: dict[str, Any]
+    browser_execution_spec: dict[str, Any]
+    browser_execution_preview: dict[str, Any]
+    browser_execution_result: dict[str, Any]
 
 
 class AutonomyIntentPayload(TypedDict, total=False):
@@ -318,6 +321,7 @@ class DigitalBodyAccessPayload(TypedDict, total=False):
     quota_state_detail: "DigitalBodyQuotaStateDetailPayload"
     permission_state: "DigitalBodyPermissionStatePayload"
     sandbox_state: "DigitalBodySandboxStatePayload"
+    browser_runtime_state: "DigitalBodyBrowserRuntimeStatePayload"
 
 
 class DigitalBodySessionStatePayload(TypedDict, total=False):
@@ -374,6 +378,20 @@ class DigitalBodySandboxStatePayload(TypedDict, total=False):
     arbitrary_execution: bool
 
 
+class DigitalBodyBrowserRuntimeStatePayload(TypedDict, total=False):
+    availability: str
+    profile_root: str
+    context_status: str
+    active_page_id: str
+    active_tab_count: int
+    downloads_dir: str
+    last_action_status: str
+    last_run_id: str
+    manual_takeover_required: bool
+    runner_kind: str
+    isolation_level: str
+
+
 class DigitalBodyResourcePayload(TypedDict, total=False):
     behavior_queue_depth: int
     action_packet_count: int
@@ -398,6 +416,8 @@ class DigitalBodyResourcePayload(TypedDict, total=False):
     artifact_source_title: str
     artifact_source_tool_name: str
     workspace_root: str
+    browser_profile_id: str
+    browser_tab_id: str
 
 
 class DigitalBodyStatePayload(TypedDict, total=False):
