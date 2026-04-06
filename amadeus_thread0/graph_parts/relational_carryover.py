@@ -455,6 +455,7 @@ def _build_retrieved_behavior_trace_bridge(
                 _trace_value(trace, "active_artifact_kind", embodied_context.get("active_artifact_kind", "")) or ""
             ).strip().lower()
             workspace_root = str(embodied_context.get("workspace_root") or "").strip()
+            sandbox_run_id = str(embodied_context.get("sandbox_run_id") or "").strip()
             skill_effects = [
                 dict(effect)
                 for effect in (embodied_context.get("skill_effects") if isinstance(embodied_context.get("skill_effects"), list) else [])
@@ -465,6 +466,7 @@ def _build_retrieved_behavior_trace_bridge(
             work_surface_kinds = {"workspace_file_updated", "workspace_path_inspected"}
             source_surface_kinds = {"source_material_compared", "source_material_inspected"}
             access_state_kinds = {"workspace_access_resolved", "access_state_refreshed"}
+            sandbox_surface_kinds = {"sandbox_execution_completed", "sandbox_execution_blocked"}
             if body_consequence_kind in source_surface_kinds:
                 if artifact_carrier != "source_ref":
                     continue
@@ -504,6 +506,28 @@ def _build_retrieved_behavior_trace_bridge(
                     )
                 ):
                     continue
+            elif body_consequence_kind == "workspace_root_attached":
+                if not any(
+                    (
+                        workspace_root,
+                        active_artifact_kind in {"file", "workspace"},
+                        artifact_carrier == "filesystem",
+                    )
+                ):
+                    continue
+            elif body_consequence_kind in sandbox_surface_kinds:
+                if not any(
+                    (
+                        sandbox_run_id,
+                        workspace_root,
+                        artifact_carrier == "filesystem",
+                        active_artifact_kind in {"file", "workspace"},
+                        bool(embodied_context.get("sandbox_stdout_log_ref")),
+                        bool(embodied_context.get("sandbox_stderr_log_ref")),
+                        bool(embodied_context.get("sandbox_produced_artifacts")),
+                    )
+                ):
+                    continue
             elif body_consequence_kind in {
                 "skill_install_completed",
                 "skill_activation_changed",
@@ -536,7 +560,7 @@ def _build_retrieved_behavior_trace_bridge(
                 "source_anchor"
                 if body_consequence_kind in {"source_material_compared", "source_material_inspected"}
                 else "access_state"
-                if body_consequence_kind in {"workspace_access_resolved", "access_state_refreshed"}
+                if body_consequence_kind in {"workspace_access_resolved", "access_state_refreshed", "workspace_root_attached"}
                 else "source_anchor"
                 if skill_use_kind == "source_ref_continuity"
                 else "workspace_surface"
@@ -549,9 +573,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "source_material_inspected": 0.24,
                     "workspace_access_resolved": 0.28,
                     "access_state_refreshed": 0.22,
+                    "workspace_root_attached": 0.28,
                     "workspace_file_updated": 0.34,
                     "workspace_path_inspected": 0.24,
                     "artifact_reacquired": 0.28,
+                    "sandbox_execution_completed": 0.34,
+                    "sandbox_execution_blocked": 0.24,
                     "skill_install_completed": 0.28,
                     "skill_activation_changed": 0.22,
                     "skill_usage_completed": 0.30,
@@ -563,9 +590,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "source_material_inspected": 0.08,
                     "workspace_access_resolved": 0.08,
                     "access_state_refreshed": 0.06,
+                    "workspace_root_attached": 0.08,
                     "workspace_file_updated": 0.10,
                     "workspace_path_inspected": 0.08,
                     "artifact_reacquired": 0.10,
+                    "sandbox_execution_completed": 0.10,
+                    "sandbox_execution_blocked": 0.08,
                     "skill_install_completed": 0.10,
                     "skill_activation_changed": 0.08,
                     "skill_usage_completed": 0.10,
@@ -577,9 +607,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "source_material_inspected": 0.12,
                     "workspace_access_resolved": 0.08,
                     "access_state_refreshed": 0.06,
+                    "workspace_root_attached": 0.08,
                     "workspace_file_updated": 0.10,
                     "workspace_path_inspected": 0.08,
                     "artifact_reacquired": 0.10,
+                    "sandbox_execution_completed": 0.10,
+                    "sandbox_execution_blocked": 0.08,
                     "skill_install_completed": 0.08,
                     "skill_activation_changed": 0.06,
                     "skill_usage_completed": 0.10,
@@ -591,9 +624,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "source_material_inspected": "前面那条材料已经重新看过一遍了，当前判断会顺着这条资料面继续。",
                     "workspace_access_resolved": "前面那条工作区入口已经接上了，后面的文件动作可以在同一个边界里继续。",
                     "access_state_refreshed": "前面那条入口状态已经重新确认过了，后面的推进可以顺着这条路继续。",
+                    "workspace_root_attached": "前面那条 repo root 已经正式挂接成当前 workspace，后面的代码和研究动作可以顺着这块真实工作面继续。",
                     "workspace_file_updated": "前面那条文件工作面已经真的接上了，后面的推进可以顺着这块表面继续。",
                     "workspace_path_inspected": "前面那条文件工作面已经重新看过一遍，后面的推进可以顺着这块表面继续。",
                     "artifact_reacquired": "前面那块工作面已经重新接回当前上下文，后面的动作可以顺着它继续。",
+                    "sandbox_execution_completed": "前面那次受限执行已经真实跑完，后面的排查和推进可以顺着它留下的日志或产物继续。",
+                    "sandbox_execution_blocked": "前面那次受限执行没有真正跑通，后面的排查可以顺着它留下的错误日志和边界继续。",
                     "skill_install_completed": "前面那条 skill 安装已经真的落地了，后面的匹配和执行会顺着这条能力生态继续。",
                     "skill_activation_changed": "前面那条 skill 的激活态已经切换完成，后面的决策会沿这次能力生态变化继续。",
                     "skill_usage_completed": "前面那条 skill 已经真正参与过一次动作了，后面的推进可以顺着它留下的工作面继续。",

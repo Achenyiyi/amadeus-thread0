@@ -47,14 +47,16 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 - `Digital Embodiment Convergence Phase 2` is formally closed and preserved as a baseline.
 - `Sandbox Embodied Execution Phase 1` is now also closed and preserved as the current execution baseline.
 - `Skills Ecosystem Formal Closure` is now also closed and preserved as the current capability-ecology baseline.
-- No post-skills phase is selected yet; the default posture is to preserve the closed baselines rather than widening execution scope or reopening frontend polish.
+- `Live Browser Runtime Closure Phase 1` is now also closed and preserved as the current live-environment baseline.
+- Current active backend phase is `Sandbox Embodied Execution Phase 2`: add a Docker-isolated local execution backend for approved coding/research workspace commands without opening arbitrary host shell or a second body/memory truth model.
 - Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, and `skills_ecosystem_ready` are preserved baselines.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, and `live_browser_runtime_phase1_ready` are preserved baselines.
+- `sandbox_embodied_execution_phase2_ready` is the active readiness target, not a preserved baseline yet.
 - While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona
   - one unified memory substrate
-  - one digital body whose access/resource truth, workspace-local execution truth, and skills capability ecology all stay closed and must not regress
+  - one digital body whose access/resource truth, workspace-local execution truth, skills capability ecology, and live browser/runtime truth all stay closed and must not regress
 - The preserved skills contract layered onto that body contract is:
   - one global skills registry outside autobiographical memory
   - one session activation layer derived from auto-match plus manual override
@@ -62,11 +64,25 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - approval-gated `install/update/enable/disable/pin/unpin`
   - completed skill use writing back only as procedural / embodied continuity
   - skills as digital-body capability assets, not persona-core identity
-- The preserved Phase 1 execution boundary remains:
+- The preserved bounded execution/body surfaces now include:
   - `host-local restricted execution`
   - `workspace-only execution`
   - `read auto / execute approval`
-  - no browser execution, no package install, no network download, no arbitrary host-side codegen
+  - in-progress `Docker-isolated local execution`:
+    - runner kind: `docker_isolated_runner`
+    - isolation level: `docker_local_isolated`
+    - default network policy: `none`
+    - Python-first image owned by this repository
+    - allowed command families remain bounded to `python`, `pytest`, `rg`, and read-only `git`
+    - package install, shell wrappers, git mutation, Docker socket mounting, privileged containers, and host secret passthrough remain blocked
+    - runtime-owned workspace stays default; attaching a real repo root requires explicit operator approval
+  - `live browser/runtime surface` via Playwright persistent profiles:
+    - read actions may auto-execute
+    - webpage mutation / download / upload actions always require approval
+    - sensitive login / OTP / passkey steps must hand off to manual takeover on the same persistent profile
+    - downloads stay inside runtime-controlled downloads or workspace roots
+    - uploads stay inside approved workspace roots
+  - no package install, no arbitrary host-side codegen, no new-account registration in the live-browser phase
 - Default optimization order:
   1. preserve `freeze_gate_ready`
   2. preserve `companion_autonomy_ready`
@@ -74,7 +90,8 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   4. preserve `digital_embodiment_phase2_ready`
   5. preserve `sandbox_embodied_execution_phase1_ready`
   6. preserve `skills_ecosystem_ready`
-  7. do not widen beyond the approved workspace-local runner surface unless a new phase is explicitly selected
+  7. preserve `live_browser_runtime_phase1_ready`
+  8. close `Sandbox Embodied Execution Phase 2` without widening beyond approved Docker-isolated workspace execution
 
 ## Backend Freeze Gate Baseline
 
@@ -253,6 +270,56 @@ Sandbox embodied execution is not considered closed until all of the following a
     - `disallowed_command_or_outside_root_blocked`
     - `followup_continue_from_last_run_log_or_artifact`
 
+## Sandbox Embodied Execution Phase 2 Gate
+
+Sandbox embodied execution phase 2 is not considered closed until all of the following are true:
+
+- phase 1 remains a preserved baseline:
+  - `host-local restricted execution` stays available as compatibility fallback
+  - existing `execution_spec` / `execution_preview` / `execution_result` packet surfaces stay stable
+- Docker execution is the canonical phase-2 backend:
+  - runner kind: `docker_isolated_runner`
+  - isolation level: `docker_local_isolated`
+  - image ref is explicit on `execution_spec` / `execution_preview` and `digital_body.access_state.sandbox_state`
+  - network policy is `none`
+  - no privileged mode, Docker socket mount, host secret passthrough, or package-install surface is exposed
+- execution remains packet-owned and approval-gated:
+  - intent stays `sandbox:execute_workspace_command`
+  - risk stays `external_mutation`
+  - approval/resume must reuse the same `proposal_id` and frozen `execution_spec`
+- allowed command surface remains narrow:
+  - `python`
+  - `pytest`
+  - `rg`
+  - read-only `git`
+  - shell wrappers, `pip`, package managers, git write/network subcommands, and network-requiring runtime commands remain blocked
+- repo-root attach is truthful:
+  - default workspace root kind is `runtime_owned`
+  - `operator_attach_repo_root` requires explicit approval
+  - completed attach writes `digital_body_consequence.kind=workspace_root_attached`
+  - pending/rejected attach never becomes owned capability
+- embodied writeback preserves isolated-run identity:
+  - `run_id`
+  - `cwd`
+  - `profile`
+  - `exit_code`
+  - `workspace_root`
+  - artifact/log refs
+  - `runner_kind`
+  - `isolation_level`
+  - `image_ref`
+  - `network_policy`
+- closure validation:
+  - `python evals/run_sandbox_phase2_smokes.py`
+  - `python evals/run_sandbox_phase2_audit.py`
+  - sandbox phase-2 audit must report `sandbox_embodied_execution_phase2_ready` for 3 consecutive fresh runs
+  - required smoke scenarios are:
+    - runtime workspace command runs inside Docker after approval and writes truthful logs/artifacts
+    - approved current repo-root attach followed by bounded pytest/read-only git workflow in Docker
+    - blocked command families stay blocked
+    - follow-up turn continues from the last isolated run log/artifact
+    - pending/rejected attach proposal does not become owned capability
+
 ## Skills Ecosystem Closure Gate
 
 This gate is now satisfied and becomes a preserved backend baseline.
@@ -320,6 +387,50 @@ Skills ecosystem work is not considered closed until all of the following are tr
     - `blocked_or_rejected_skill_mutation_does_not_become_capability`
     - `completed_skill_usage_resurfaces_in_followup_continuity`
 
+## Live Browser Runtime Closure Phase 1 Gate
+
+This gate is now satisfied and becomes a preserved backend baseline.
+Do not reopen it during ordinary maintenance unless one of the criteria below regresses.
+No post-browser embodiment phase is selected yet.
+
+Live browser runtime work is not considered closed until all of the following are true:
+
+- browser truth stays on the same body contract:
+  - `digital_body.access_state.browser_runtime_state`
+  - `digital_body.resource_state.browser_profile_id`
+  - `digital_body.resource_state.browser_tab_id`
+  - `artifact_carrier=browser_page` for live-page continuity
+- browser actions stay packet-owned:
+  - browser actions remain `action_packets`
+  - stable packet fields:
+    - `browser_execution_spec`
+    - `browser_execution_preview`
+    - `browser_execution_result`
+  - `autonomy.pending_approval.browser_execution_preview` must expose the same preview used for approval
+- runtime boundary stays explicit:
+  - runner is Playwright Python persistent context
+  - runtime profile is isolated from the user's normal browser profile
+  - live browser does not widen host-side code generation or package-install rights
+- approval semantics stay bounded:
+  - read-side navigation/snapshot actions may auto-execute
+  - clicks/fills/key submits/downloads/uploads remain `external_mutation`
+  - sensitive credential / OTP / passkey steps must request manual browser takeover on the same profile
+  - blocked / pending / takeover-requested browser actions must not be written as completed facts
+- saved material remains additive, not replaced:
+  - `search_web` and `source_ref` continuity remain valid
+  - live browser pages only become long-horizon saved material through explicit capture
+- closure validation:
+  - `python evals/run_live_browser_runtime_smokes.py`
+  - `python evals/run_live_browser_runtime_audit.py`
+  - live browser audit must report `live_browser_runtime_phase1_ready` for 3 consecutive fresh runs
+  - required smoke scenarios are:
+    - `open_follow_continue`
+    - `login_takeover_resume`
+    - `interaction_after_approval`
+    - `download_boundary`
+    - `upload_boundary`
+    - `capture_to_source_ref`
+
 ## Non-Negotiable System Principles
 
 - Persona core is fixed. Evolution updates state, not identity.
@@ -375,7 +486,9 @@ Detailed structure: [`docs/engineering/PROJECT_STRUCTURE.md`](./docs/engineering
 - `amadeus_thread0/graph_parts/postprocess.py`
 - `amadeus_thread0/graph_parts/autonomy_runtime.py`
 - `amadeus_thread0/graph_parts/action_packets.py`
+- `amadeus_thread0/graph_parts/browser_runtime.py`
 - `amadeus_thread0/graph_parts/skill_runtime.py`
+- `amadeus_thread0/runtime/browser_runner.py`
 - `amadeus_thread0/runtime/skill_registry.py`
 - `amadeus_thread0/runtime/sandbox_runner.py`
 - `amadeus_thread0/memory_store.py`
@@ -438,6 +551,15 @@ For `sandbox embodied execution` edits, also verify:
 python -m pytest tests/test_sandbox_runner.py tests/test_sandbox_execution_runtime.py tests/test_sandbox_backend_contract.py
 python -m pytest tests/test_sandbox_embodied_execution_smokes.py tests/test_sandbox_embodied_execution_audit.py
 python evals/run_sandbox_embodied_execution_audit.py
+```
+
+For `live browser runtime` edits, also verify:
+
+```powershell
+python -m pytest tests/test_browser_runner.py tests/test_browser_runtime.py tests/test_browser_backend_contract.py
+python -m pytest tests/test_live_browser_runtime_smokes.py tests/test_live_browser_runtime_audit.py
+python evals/run_live_browser_runtime_smokes.py
+python evals/run_live_browser_runtime_audit.py
 ```
 
 ## Documentation Map

@@ -403,9 +403,21 @@ def render_action_packet_cli_text(packets: Any, *, limit: int = 4) -> str:
         origin = str(item.get("origin") or "").strip() or "-"
         effect = str(item.get("expected_effect") or item.get("result_summary") or "").strip()
         execution_result = item.get("execution_result") if isinstance(item.get("execution_result"), dict) else {}
+        execution_preview = item.get("execution_preview") if isinstance(item.get("execution_preview"), dict) else {}
+        execution_spec = item.get("execution_spec") if isinstance(item.get("execution_spec"), dict) else {}
         line = f"- {proposal_id} | {origin} | {intent} | {status} | {risk}"
         if effect:
             line += " | " + effect[:120]
+        runner_kind = str(execution_preview.get("runner_kind") or execution_spec.get("runner_kind") or "").strip()
+        workspace_root_kind = str(
+            execution_preview.get("workspace_root_kind")
+            or execution_spec.get("workspace_root_kind")
+            or ""
+        ).strip()
+        if runner_kind:
+            line += f" | runner={runner_kind}"
+        if workspace_root_kind:
+            line += f" | root={workspace_root_kind}"
         if execution_result:
             run_id = str(execution_result.get("run_id") or "").strip()
             exit_code = execution_result.get("exit_code")

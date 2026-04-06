@@ -8892,6 +8892,115 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_retrieved_digital_body_trace_bridge_preserves_phase2_sandbox_identity_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "刚才那次隔离执行已经跑完，可以沿同一 repo root 和日志继续往下查。",
+                            "body_consequence_kind": "sandbox_execution_completed",
+                            "embodied_context": {
+                                "kind": "sandbox_execution_completed",
+                                "access_mode": "tool_enabled",
+                                "workspace_root": "E:/repo/amadeus-thread0",
+                                "workspace_root_kind": "attached_repo_root",
+                                "artifact_carrier": "filesystem",
+                                "active_artifact_kind": "file",
+                                "active_artifact_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt",
+                                "active_artifact_label": "stdout.txt",
+                                "sandbox_run_id": "ap-docker-1",
+                                "sandbox_command_profile": "pytest",
+                                "sandbox_stdout_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt",
+                                "sandbox_stderr_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stderr.txt",
+                                "sandbox_exit_code": 0,
+                                "sandbox_duration_ms": 312,
+                                "sandbox_runner_kind": "docker_isolated_runner",
+                                "sandbox_isolation_level": "docker_local_isolated",
+                                "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                                "sandbox_network_policy": "none",
+                                "sandbox_produced_artifacts": [
+                                    "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-docker-1/stdout.txt"
+                                ],
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "继续接着刚才那次 docker 里的测试结果往下查。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:sandbox_execution_completed", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:sandbox_execution_completed", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "sandbox_execution_completed")
+        self.assertEqual(str(embodied_context.get("workspace_root") or ""), "E:/repo/amadeus-thread0")
+        self.assertEqual(str(embodied_context.get("workspace_root_kind") or ""), "attached_repo_root")
+        self.assertEqual(str(embodied_context.get("sandbox_run_id") or ""), "ap-docker-1")
+        self.assertEqual(str(embodied_context.get("sandbox_runner_kind") or ""), "docker_isolated_runner")
+        self.assertEqual(str(embodied_context.get("sandbox_isolation_level") or ""), "docker_local_isolated")
+        self.assertEqual(str(embodied_context.get("sandbox_image_ref") or ""), "amadeus-thread0/sandbox-phase2:py312")
+        self.assertEqual(str(embodied_context.get("sandbox_network_policy") or ""), "none")
+        self.assertEqual(str(embodied_context.get("active_artifact_label") or ""), "stdout.txt")
+
+    def test_revision_trace_store_preserves_live_browser_context(self):
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                store.add_revision_trace(
+                    namespace="digital_body_consequence",
+                    target_id="browser_navigation_completed",
+                    before_summary="",
+                    after_summary="当前 live browser 页面已经稳定接上，可以沿同一 tab 继续。",
+                    reason="browser_navigation_completed",
+                    operator="test",
+                    source="test:browser",
+                    metadata={
+                        "body_consequence_kind": "browser_navigation_completed",
+                        "embodied_context": {
+                            "kind": "browser_navigation_completed",
+                            "artifact_carrier": "browser_page",
+                            "active_artifact_kind": "page",
+                            "active_artifact_ref": "page:page-1",
+                            "active_artifact_label": "LangGraph Docs",
+                            "browser_run_id": "ap-browser-open-1",
+                            "browser_profile_id": "thread-browser",
+                            "browser_page_id": "page-1",
+                            "browser_tab_id": "tab-1",
+                            "browser_url": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+                            "browser_title": "Interrupts",
+                            "browser_last_action_kind": "open_url",
+                            "browser_last_exit_status": "completed",
+                            "browser_runtime_state": {
+                                "availability": "available",
+                                "context_status": "active",
+                                "active_page_id": "page-1",
+                                "active_tab_count": 1,
+                                "last_action_status": "completed",
+                                "last_run_id": "ap-browser-open-1",
+                                "manual_takeover_required": False,
+                            },
+                        },
+                    },
+                )
+                traces = store.list_revision_traces(limit=8)
+                self.assertTrue(traces)
+                content = traces[0].get("content") if isinstance(traces[0].get("content"), dict) else {}
+                embodied_context = content.get("embodied_context") if isinstance(content.get("embodied_context"), dict) else {}
+                self.assertEqual(str(content.get("body_consequence_kind") or ""), "browser_navigation_completed")
+                self.assertEqual(str(embodied_context.get("kind") or ""), "browser_navigation_completed")
+                self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "browser_page")
+                self.assertEqual(str(embodied_context.get("browser_run_id") or ""), "ap-browser-open-1")
+                self.assertEqual(str(embodied_context.get("browser_profile_id") or ""), "thread-browser")
+                self.assertEqual(str(embodied_context.get("browser_page_id") or ""), "page-1")
+                self.assertEqual(str(embodied_context.get("browser_tab_id") or ""), "tab-1")
+                self.assertIn("langgraph/interrupts", str(embodied_context.get("browser_url") or ""))
+                self.assertEqual(str(embodied_context.get("browser_last_exit_status") or ""), "completed")
+            finally:
+                store.close()
+
     def test_skill_usage_writeback_resurfaces_into_followup_continuity(self):
         from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
         from amadeus_thread0.graph_parts.action_packets import build_tool_action_packet

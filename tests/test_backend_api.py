@@ -610,6 +610,125 @@ class BackendApiTests(unittest.TestCase):
                 "repair_attempt",
             )
 
+    def test_turn_response_surfaces_live_browser_runtime_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "current_event": {"kind": "user_utterance"},
+                "autonomy_intent": {
+                    "mode": "execute",
+                    "origin": "counterpart_request",
+                    "primary_proposal_id": "ap-browser-open-api-1",
+                },
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "browser"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["browser", "filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "browser_session": "present",
+                        "browser_runtime_state": {
+                            "availability": "available",
+                            "profile_root": "E:/runtime/browser/profiles/thread-a",
+                            "context_status": "active",
+                            "active_page_id": "page-1",
+                            "active_tab_count": 1,
+                            "downloads_dir": "E:/runtime/browser/downloads/thread-a",
+                            "last_action_status": "completed",
+                            "last_run_id": "ap-browser-open-api-1",
+                            "manual_takeover_required": False,
+                            "runner_kind": "playwright_persistent_context",
+                            "isolation_level": "persistent_profile_runtime",
+                        },
+                    },
+                    "resource_state": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "page",
+                        "active_artifact_ref": "page:page-1",
+                        "active_artifact_label": "Docs",
+                        "artifact_carrier": "browser_page",
+                        "artifact_source_url": "https://example.com/docs",
+                        "browser_profile_id": "thread-a",
+                        "browser_tab_id": "tab-1",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-browser-open-api-1",
+                        "origin": "counterpart_request",
+                        "intent": "browser:open_url",
+                        "status": "completed",
+                        "risk": "read",
+                        "requires_approval": False,
+                        "tool_name": "browser_open_url",
+                        "browser_execution_spec": {
+                            "operation": "open_url",
+                            "profile_id": "thread-a",
+                            "navigation_url": "https://example.com/docs",
+                            "allowed_roots": ["E:/runtime/workspaces/lab"],
+                            "browser_downloads_root": "E:/runtime/browser/downloads/thread-a",
+                            "timeout_s": 20,
+                            "wait_until": "load",
+                        },
+                        "browser_execution_preview": {
+                            "runner_kind": "playwright_persistent_context",
+                            "isolation_level": "persistent_profile_runtime",
+                            "operation": "open_url",
+                            "profile_id": "thread-a",
+                            "page_url": "https://example.com/docs",
+                            "page_title": "Docs",
+                            "allowed_roots": ["E:/runtime/workspaces/lab"],
+                            "downloads_root": "E:/runtime/browser/downloads/thread-a",
+                            "timeout_s": 20,
+                            "verification_summary": "open the requested page in the persistent browser profile",
+                        },
+                        "browser_execution_result": {
+                            "run_id": "ap-browser-open-api-1",
+                            "status": "completed",
+                            "profile_id": "thread-a",
+                            "page_id": "page-1",
+                            "tab_id": "tab-1",
+                            "url": "https://example.com/docs",
+                            "title": "Docs",
+                            "action_kind": "open_url",
+                            "target_ref": "",
+                            "duration_ms": 41,
+                            "active_tab_count": 1,
+                            "last_action_status": "completed",
+                            "download_path": "",
+                            "upload_source": "",
+                            "error_summary": "",
+                            "manual_takeover_required": False,
+                        },
+                    }
+                ],
+                "digital_body_consequence": {
+                    "kind": "browser_navigation_completed",
+                    "summary": "The requested page is now open in the live browser runtime.",
+                    "browser_run_id": "ap-browser-open-api-1",
+                    "browser_profile_id": "thread-a",
+                    "browser_page_id": "page-1",
+                    "browser_tab_id": "tab-1",
+                    "browser_url": "https://example.com/docs",
+                    "browser_title": "Docs",
+                    "browser_last_action_kind": "open_url",
+                    "browser_last_exit_status": "completed",
+                },
+            }
+
+            payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+
+            self.assertEqual(payload["autonomy"]["action_packets"][0]["intent"], "browser:open_url")
+            self.assertEqual(payload["autonomy"]["action_packets"][0]["browser_execution_result"]["run_id"], "ap-browser-open-api-1")
+            self.assertEqual(payload["digital_body"]["access_state"]["browser_runtime_state"]["last_run_id"], "ap-browser-open-api-1")
+            self.assertEqual(payload["digital_body"]["resource_state"]["browser_profile_id"], "thread-a")
+            self.assertEqual(payload["digital_body_consequence"]["kind"], "browser_navigation_completed")
+            self.assertEqual(payload["digital_body_consequence"]["browser_tab_id"], "tab-1")
+
     def test_turn_response_normalizes_source_material_exports(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -926,6 +1045,107 @@ class BackendApiTests(unittest.TestCase):
                     consequence["permission_state"]["selected_access_proposal"]["mode"],
                     "operator_provide_api_key",
                 )
+
+    def test_turn_response_surfaces_access_assist_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            proposal = {
+                "target": "filesystem",
+                "mode": "operator_create_workspace",
+                "summary": "先新建一个可写工作区。",
+                "operator_action": "新建一个可写工作区。",
+                "grants": ["filesystem", "workspace_write"],
+                "requires_operator": True,
+            }
+            state_values = {
+                "digital_body_state": {
+                    "access_state": {
+                        "mode": "approval_pending",
+                        "missing_access": ["filesystem", "workspace_write"],
+                        "requestable_access": ["filesystem", "workspace_write", "human_approval"],
+                        "selected_access_proposal": proposal,
+                        "access_acquire_proposals": [proposal],
+                    },
+                    "resource_state": {},
+                },
+                "pending_action_proposal": {
+                    "proposal_id": "ap-access-assist-api",
+                    "intent": "access:request_help",
+                    "status": "awaiting_approval",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "access_acquire_proposals": [proposal],
+                    "selected_access_proposal": proposal,
+                },
+            }
+
+            payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+
+            assist = payload["autonomy"]["pending_approval"]["assist_request"]
+            self.assertEqual(assist["kind"], "grant_access")
+            self.assertEqual(assist["resume_mode"], "auto_continue")
+            self.assertEqual(assist["selected_access_proposal"]["mode"], "operator_create_workspace")
+            self.assertIn("工作区写入入口", assist["message"])
+
+    def test_turn_response_surfaces_manual_takeover_assist_request(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-browser-takeover-api",
+                        "intent": "browser:fill",
+                        "status": "blocked",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "browser_fill",
+                        "browser_execution_preview": {
+                            "operation": "fill",
+                            "profile_id": "thread-browser",
+                            "page_ref": "page:page-1",
+                            "page_title": "Login",
+                            "target_ref": "password",
+                            "target_label": "密码输入框",
+                            "requires_manual_takeover": True,
+                        },
+                        "browser_execution_result": {
+                            "status": "blocked",
+                            "profile_id": "thread-browser",
+                            "page_id": "page-1",
+                            "tab_id": "tab-1",
+                            "title": "Login",
+                            "target_ref": "password",
+                            "manual_takeover_required": True,
+                        },
+                    }
+                ],
+                "digital_body_state": {
+                    "access_state": {
+                        "browser_runtime_state": {
+                            "availability": "available",
+                            "context_status": "manual_takeover",
+                            "manual_takeover_required": True,
+                            "last_run_id": "ap-browser-takeover-api",
+                        }
+                    },
+                    "resource_state": {"active_artifact_label": "Login"},
+                },
+            }
+
+            payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+
+            pending = payload["autonomy"]["pending_approval"]
+            self.assertEqual(pending["proposal_id"], "ap-browser-takeover-api")
+            self.assertEqual(pending["assist_request"]["kind"], "manual_takeover")
+            self.assertTrue(pending["assist_request"]["requires_manual_takeover"])
+            self.assertEqual(pending["assist_request"]["profile_id"], "thread-browser")
+            self.assertIn("密码、OTP、passkey、验证码", pending["assist_request"]["message"])
 
     def test_turn_and_event_responses_preserve_digital_body_artifact_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2906,6 +3126,120 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(consequence["kind"], "skill_usage_completed")
             self.assertEqual(consequence["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
             self.assertEqual(turn_response.payload["skills"]["active"][0]["skill_id"], "source-ref-anchor-review")
+
+    def test_turn_response_surfaces_sandbox_phase2_docker_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "filesystem"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["filesystem", "sandbox"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "filesystem_state": "writable",
+                        "sandbox_mode": "restricted",
+                        "sandbox_state": {
+                            "availability": "restricted",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                            "execution_policy": "approval_required",
+                            "last_status": "completed",
+                            "runner_kind": "docker_isolated_runner",
+                            "isolation_level": "docker_local_isolated",
+                            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                            "network_policy": "none",
+                            "workspace_root_kind": "attached_repo_root",
+                            "last_command_profile": "pytest",
+                            "last_exit_code": 0,
+                            "last_run_id": "ap-sandbox-phase2-api",
+                            "arbitrary_execution": False,
+                        },
+                    },
+                    "resource_state": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/repo/amadeus-thread0",
+                        "active_artifact_label": "amadeus-thread0",
+                        "artifact_carrier": "filesystem",
+                        "workspace_root": "E:/repo/amadeus-thread0",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-sandbox-phase2-api",
+                        "intent": "sandbox:execute_workspace_command",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "execute_workspace_command",
+                        "execution_spec": {
+                            "executor": "pytest",
+                            "profile": "pytest",
+                            "runner_kind": "docker_isolated_runner",
+                            "isolation_level": "docker_local_isolated",
+                            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                            "network_policy": "none",
+                            "workspace_root_kind": "attached_repo_root",
+                            "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                            "cwd": "E:/repo/amadeus-thread0",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                            "timeout_s": 60,
+                            "writes_expected": False,
+                            "expected_artifacts": [],
+                        },
+                        "execution_preview": {
+                            "runner_kind": "docker_isolated_runner",
+                            "isolation_level": "docker_local_isolated",
+                            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                            "network_policy": "none",
+                            "workspace_root_kind": "attached_repo_root",
+                            "argv": ["pytest", "-q", "tests/test_sandbox_phase2_repo_fixture.py"],
+                            "cwd": "E:/repo/amadeus-thread0",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                            "timeout_s": 60,
+                            "writes_expected": False,
+                            "expected_artifacts": [],
+                        },
+                        "execution_result": {
+                            "run_id": "ap-sandbox-phase2-api",
+                            "status": "completed",
+                            "exit_code": 0,
+                            "duration_ms": 88,
+                            "stdout_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-sandbox-phase2-api/stdout.txt",
+                            "stderr_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-sandbox-phase2-api/stderr.txt",
+                            "produced_artifacts": [],
+                            "error_summary": "",
+                        },
+                    }
+                ],
+                "digital_body_consequence": {
+                    "kind": "sandbox_execution_completed",
+                    "summary": "Docker 隔离执行已经完成。",
+                    "sandbox_runner_kind": "docker_isolated_runner",
+                    "sandbox_network_policy": "none",
+                    "workspace_root_kind": "attached_repo_root",
+                },
+            }
+
+            payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+
+            self.assertEqual(
+                payload["autonomy"]["action_packets"][0]["execution_preview"]["runner_kind"],
+                "docker_isolated_runner",
+            )
+            self.assertEqual(
+                payload["digital_body"]["access_state"]["sandbox_state"]["workspace_root_kind"],
+                "attached_repo_root",
+            )
+            self.assertEqual(
+                payload["digital_body"]["access_state"]["sandbox_state"]["network_policy"],
+                "none",
+            )
+            self.assertEqual(payload["digital_body_consequence"]["sandbox_runner_kind"], "docker_isolated_runner")
 
 
 if __name__ == "__main__":

@@ -1312,8 +1312,13 @@ def main():
                 hide_memory_logs=bool(HIDE_TOOL_APPROVAL_LOGS),
                 max_calls=TOOL_CALLS_MAX,
                 toolset_upgrade_ttl_s=TOOLSET_UPGRADE_TTL_S,
+                assist_request=payload.get("assist_request") if isinstance(payload, dict) else None,
             )
             decisions = []
+            assist_request = approval_batch.assist_request if isinstance(approval_batch.assist_request, dict) else {}
+            assist_message = str(assist_request.get("message") or "").strip()
+            if assist_message:
+                print(f"\nAmadeus> {assist_message}")
             if approval_batch.show_logs:
                 if approval_batch.hidden_tool_call_count > 0:
                     print(
@@ -1335,6 +1340,8 @@ def main():
                         print("  mutation_preview=" + json.dumps(preview.mutation_preview, ensure_ascii=False))
                     if preview.execution_preview:
                         print("  execution_preview=" + json.dumps(preview.execution_preview, ensure_ascii=False))
+                    if preview.browser_execution_preview:
+                        print("  browser_execution_preview=" + json.dumps(preview.browser_execution_preview, ensure_ascii=False))
                     if preview.reason:
                         print("  reason=" + preview.reason)
                     if preview.note:

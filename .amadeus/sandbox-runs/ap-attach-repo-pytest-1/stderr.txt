@@ -1,0 +1,3 @@
+docker: container ID file found, make sure the other container isn't running or delete E:\桌面\amadeus-thread0\.amadeus\sandbox-runs\ap-attach-repo-pytest-1\container.cid
+
+Run 'docker run --help' for more information

@@ -7,6 +7,8 @@ import json
 import operator as op
 import os
 import re
+import shutil
+import subprocess
 import time
 import uuid
 from datetime import datetime
@@ -45,10 +47,19 @@ from ..graph_parts.digital_body_runtime import (
 )
 from ..memory_store import MemoryStore
 from ..runtime.sandbox_runner import (
-    LocalRestrictedSandboxRunner,
+    ATTACHED_REPO_WORKSPACE_ROOT_KIND,
+    DEFAULT_WORKSPACE_ROOT_KIND,
     SandboxValidationError,
     build_execution_preview,
     build_sandbox_command_spec,
+    execute_sandbox_command,
+    sandbox_docker_image_ref,
+)
+from ..runtime.browser_runner import (
+    BrowserValidationError,
+    build_browser_execution_preview,
+    build_browser_execution_spec,
+    get_browser_session_manager,
 )
 from ..runtime.modeling import _normalize_provider, _resolve_api_key
 from ..runtime.skill_registry import (
@@ -65,6 +76,7 @@ from .relational_history_export import (
 )
 from .revision_trace_export import normalize_revision_trace_exports
 from .source_material_export import normalize_source_ref_exports
+from ..graph_parts.browser_runtime import build_browser_runtime_state
 
 
 def _meta(tool_name: str) -> dict[str, Any]:
@@ -108,6 +120,11 @@ def _current_thread_id(default: str = "thread0") -> str:
 
 
 def reset_tool_runtime_caches() -> None:
+    if _get_store.cache_info().currsize:
+        try:
+            _get_store().close()
+        except Exception:
+            pass
     _get_store.cache_clear()
     reset_skill_registry_cache()
 
@@ -455,6 +472,162 @@ def _workspace_artifact_context(
     }
 
 
+def _workspace_root_kind_from_hints(hints: dict[str, Any] | None) -> str:
+    row = dict(hints or {})
+    sandbox_state = dict(row.get("sandbox_state") or {}) if isinstance(row.get("sandbox_state"), dict) else {}
+    kind = str(
+        sandbox_state.get("workspace_root_kind")
+        or row.get("workspace_root_kind")
+        or DEFAULT_WORKSPACE_ROOT_KIND
+    ).strip().lower()
+    if kind == ATTACHED_REPO_WORKSPACE_ROOT_KIND:
+        return ATTACHED_REPO_WORKSPACE_ROOT_KIND
+    return DEFAULT_WORKSPACE_ROOT_KIND
+
+
+def _default_sandbox_state(
+    *,
+    workspace_root: Path,
+    workspace_root_kind: str,
+    hints: dict[str, Any] | None,
+) -> dict[str, Any]:
+    existing = dict(hints.get("sandbox_state") or {}) if isinstance(dict(hints or {}).get("sandbox_state"), dict) else {}
+    try:
+        probe_spec = build_sandbox_command_spec(
+            argv=["python", "-m", "pytest", "--version"],
+            cwd=".",
+            allowed_roots=[str(workspace_root)],
+            timeout_s=10,
+            writes_expected=False,
+            expected_artifacts=[],
+            runner_kind=existing.get("runner_kind"),
+            image_ref=existing.get("image_ref") or sandbox_docker_image_ref(""),
+            network_policy=existing.get("network_policy"),
+            workspace_root_kind=workspace_root_kind,
+        )
+    except SandboxValidationError:
+        probe_spec = build_sandbox_command_spec(
+            argv=["python", "-m", "pytest", "--version"],
+            cwd=".",
+            allowed_roots=[str(workspace_root)],
+            timeout_s=10,
+            writes_expected=False,
+            expected_artifacts=[],
+            workspace_root_kind=workspace_root_kind,
+        )
+    return {
+        "availability": "restricted",
+        "allowed_roots": [str(workspace_root)],
+        "execution_policy": "approval_required",
+        "last_status": str(existing.get("last_status") or "gated").strip().lower() or "gated",
+        "runner_kind": str(existing.get("runner_kind") or probe_spec.runner_kind).strip().lower(),
+        "isolation_level": str(existing.get("isolation_level") or probe_spec.isolation_level).strip().lower(),
+        "image_ref": str(existing.get("image_ref") or probe_spec.image_ref).strip(),
+        "network_policy": str(existing.get("network_policy") or probe_spec.network_policy).strip().lower(),
+        "workspace_root_kind": str(existing.get("workspace_root_kind") or probe_spec.workspace_root_kind).strip().lower(),
+        "last_command_profile": str(existing.get("last_command_profile") or "").strip().lower(),
+        "last_exit_code": int(existing.get("last_exit_code") or 0),
+        "last_run_id": str(existing.get("last_run_id") or "").strip(),
+        "arbitrary_execution": False,
+    }
+
+
+def _proposal_is_operator_enable_sandbox(value: Any) -> bool:
+    proposal = normalize_access_acquire_proposal(value)
+    return (
+        str(proposal.get("target") or "").strip() == "sandbox"
+        and str(proposal.get("mode") or "").strip() == "operator_enable_sandbox"
+    )
+
+
+def _hints_explicitly_request_sandbox(hints: dict[str, Any] | None) -> bool:
+    row = dict(hints or {})
+    for key in ("missing_access", "requestable_access"):
+        values = row.get(key)
+        if isinstance(values, list) and any(str(item or "").strip().lower() == "sandbox" for item in values):
+            return True
+    if _proposal_is_operator_enable_sandbox(row.get("selected_access_proposal")):
+        return True
+    for proposal in normalize_access_acquire_proposals(row.get("access_acquire_proposals")):
+        if _proposal_is_operator_enable_sandbox(proposal):
+            return True
+    return False
+
+
+def _strip_unsolicited_sandbox_access_surface(
+    surface: dict[str, Any] | None,
+    *,
+    original_hints: dict[str, Any] | None,
+) -> dict[str, Any]:
+    sanitized = dict(surface or {})
+    if not sanitized or _hints_explicitly_request_sandbox(original_hints):
+        return sanitized
+
+    def _filter_labels(values: Any) -> list[str]:
+        if not isinstance(values, list):
+            return []
+        return [
+            str(item).strip().lower()
+            for item in values
+            if str(item or "").strip() and str(item or "").strip().lower() != "sandbox"
+        ][:12]
+
+    def _filter_proposals(values: Any) -> list[dict[str, Any]]:
+        return [
+            proposal
+            for proposal in normalize_access_acquire_proposals(values)
+            if not _proposal_is_operator_enable_sandbox(proposal)
+        ]
+
+    for key in ("missing_access", "requestable_access", "resolved_grants", "pending_grants"):
+        values = _filter_labels(sanitized.get(key))
+        if values:
+            sanitized[key] = values
+        else:
+            sanitized.pop(key, None)
+
+    conditions = [
+        str(item).strip().lower()
+        for item in (sanitized.get("conditions") if isinstance(sanitized.get("conditions"), list) else [])
+        if str(item or "").strip() and str(item or "").strip().lower() != "access_acquire_planned"
+    ][:12]
+    if conditions:
+        sanitized["conditions"] = conditions
+    else:
+        sanitized.pop("conditions", None)
+
+    proposals = _filter_proposals(sanitized.get("access_acquire_proposals"))
+    if proposals:
+        sanitized["access_acquire_proposals"] = proposals
+    else:
+        sanitized.pop("access_acquire_proposals", None)
+    if _proposal_is_operator_enable_sandbox(sanitized.get("selected_access_proposal")):
+        sanitized.pop("selected_access_proposal", None)
+
+    permission_state = dict(sanitized.get("permission_state") or {}) if isinstance(sanitized.get("permission_state"), dict) else {}
+    if permission_state:
+        for key in ("missing_access", "requestable_access", "resolved_grants", "pending_grants"):
+            values = _filter_labels(permission_state.get(key))
+            if values:
+                permission_state[key] = values
+            else:
+                permission_state.pop(key, None)
+        proposals = _filter_proposals(permission_state.get("access_acquire_proposals"))
+        if proposals:
+            permission_state["access_acquire_proposals"] = proposals
+        else:
+            permission_state.pop("access_acquire_proposals", None)
+        if _proposal_is_operator_enable_sandbox(permission_state.get("selected_access_proposal")):
+            permission_state.pop("selected_access_proposal", None)
+        pending_count = int(permission_state.get("pending_approval_count") or 0)
+        if not permission_state.get("pending_grants") and not permission_state.get("selected_access_proposal") and pending_count <= 0:
+            permission_state["approval_state"] = "open"
+            permission_state["external_mutation_pending"] = False
+        sanitized["permission_state"] = permission_state
+
+    return sanitized
+
+
 def _file_artifact_context(
     path: Path,
     *,
@@ -495,6 +668,7 @@ def _workspace_access_hints(
     hints: dict[str, Any],
     workspace_root: Path,
     active_path: Path | None = None,
+    workspace_root_kind: str = DEFAULT_WORKSPACE_ROOT_KIND,
     source_tool_name: str = "create_workspace_access",
 ) -> dict[str, Any]:
     refreshed = dict(hints or {})
@@ -516,8 +690,16 @@ def _workspace_access_hints(
             "artifact_source_tool_name": str(source_tool_name or "").strip() or "create_workspace_access",
             "workspace_path": str(focus_path),
             "workspace_root": str(workspace_root),
+            "workspace_root_kind": str(workspace_root_kind or DEFAULT_WORKSPACE_ROOT_KIND).strip().lower(),
         }
     )
+    sandbox_state = _default_sandbox_state(
+        workspace_root=workspace_root,
+        workspace_root_kind=_workspace_root_kind_from_hints({"workspace_root_kind": workspace_root_kind, **refreshed}),
+        hints=refreshed,
+    )
+    refreshed["sandbox_mode"] = str(sandbox_state.get("availability") or "restricted").strip().lower()
+    refreshed["sandbox_state"] = sandbox_state
     refreshed.setdefault("world_surfaces", [])
     if isinstance(refreshed.get("world_surfaces"), list):
         surfaces = [str(item).strip().lower() for item in refreshed.get("world_surfaces", []) if str(item or "").strip()]
@@ -549,6 +731,7 @@ def _workspace_file_hints(
 ) -> dict[str, Any]:
     refreshed = dict(hints or {})
     resolved_workspace_root = workspace_root or file_path.parent
+    workspace_root_kind = _workspace_root_kind_from_hints(refreshed)
     refreshed.update(
         {
             "filesystem_state": "writable",
@@ -566,8 +749,16 @@ def _workspace_file_hints(
             "artifact_source_tool_name": str(source_tool_name or "").strip() or "write_workspace_file",
             "workspace_path": str(file_path.parent),
             "workspace_root": str(resolved_workspace_root),
+            "workspace_root_kind": workspace_root_kind,
         }
     )
+    sandbox_state = _default_sandbox_state(
+        workspace_root=resolved_workspace_root,
+        workspace_root_kind=workspace_root_kind,
+        hints=refreshed,
+    )
+    refreshed["sandbox_mode"] = str(sandbox_state.get("availability") or "restricted").strip().lower()
+    refreshed["sandbox_state"] = sandbox_state
     refreshed.setdefault("world_surfaces", [])
     if isinstance(refreshed.get("world_surfaces"), list):
         surfaces = [str(item).strip().lower() for item in refreshed.get("world_surfaces", []) if str(item or "").strip()]
@@ -895,8 +1086,9 @@ def _resolve_runtime_workspace(
 ) -> Path | None:
     root = _workspace_root_dir()
     root_resolved = root.resolve(strict=False)
+    workspace_root_kind = _workspace_root_kind_from_hints(hints)
     explicit_name = _slugify_workspace_name(workspace_name, fallback="workspace") if str(workspace_name or "").strip() else ""
-    if explicit_name:
+    if explicit_name and workspace_root_kind != ATTACHED_REPO_WORKSPACE_ROOT_KIND:
         candidate = root / explicit_name
         if candidate.exists() and candidate.is_dir() and _path_within_root(candidate, root_resolved):
             return candidate
@@ -912,6 +1104,20 @@ def _resolve_runtime_workspace(
         if not text:
             continue
         candidate = Path(text).expanduser()
+        if workspace_root_kind == ATTACHED_REPO_WORKSPACE_ROOT_KIND:
+            if not candidate.is_absolute():
+                continue
+            if _path_contains_symlink(candidate):
+                continue
+            try:
+                resolved = candidate.resolve(strict=True)
+            except Exception:
+                continue
+            git_probe = resolved if resolved.is_dir() else resolved.parent
+            git_root = _resolve_git_worktree_root(git_probe)
+            if git_root is not None and (git_root == resolved or git_root in resolved.parents):
+                return git_root
+            continue
         if not candidate.is_absolute():
             candidate = root / candidate
         resolved = candidate.resolve(strict=False)
@@ -3434,6 +3640,7 @@ def create_workspace_access(
             hints=hints,
             workspace_root=workspace_path,
             active_path=workspace_path,
+            workspace_root_kind=DEFAULT_WORKSPACE_ROOT_KIND,
             source_tool_name=tool_name,
         )
         body = derive_digital_body_state(
@@ -3446,7 +3653,9 @@ def create_workspace_access(
             last_external_tools=["create_workspace_access"],
         )
         access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        access_state = _strip_unsolicited_sandbox_access_surface(access_state, original_hints=hints)
         resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        refreshed_hints = _strip_unsolicited_sandbox_access_surface(refreshed_hints, original_hints=hints)
         artifact_context = _workspace_artifact_context(
             workspace_path,
             workspace_root=workspace_path,
@@ -3464,6 +3673,7 @@ def create_workspace_access(
                 "workspace_path": str(workspace_path),
                 "workspace_name": workspace_path.name,
                 "workspace_root": str(workspace_root),
+                "workspace_root_kind": DEFAULT_WORKSPACE_ROOT_KIND,
                 "created_new": created_new,
                 "access_hints": refreshed_hints,
                 "access_state": access_state,
@@ -3478,6 +3688,130 @@ def create_workspace_access(
             "INTERNAL",
             str(e),
             {"workspace_name": workspace_name, "access_hints": hints},
+        )
+
+
+def _path_contains_symlink(path: Path) -> bool:
+    current = path.expanduser()
+    while True:
+        try:
+            if current.is_symlink():
+                return True
+        except Exception:
+            return True
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return False
+
+
+def _resolve_git_worktree_root(path: Path) -> Path | None:
+    git = shutil.which("git")
+    if not git:
+        return None
+    try:
+        completed = subprocess.run(
+            [git, "-C", str(path), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            shell=False,
+        )
+    except Exception:
+        return None
+    if int(completed.returncode) != 0:
+        return None
+    raw = str(completed.stdout or "").strip()
+    if not raw:
+        return None
+    resolved = Path(raw).expanduser().resolve(strict=False)
+    return resolved if resolved.exists() and resolved.is_dir() else None
+
+
+@tool
+def attach_repo_root_access(
+    repo_root: str,
+    access_hints: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把一个经 operator 批准的现有 git worktree 根目录挂接成当前 workspace。"""
+
+    tool_name = "attach_repo_root_access"
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    try:
+        raw_root = str(repo_root or hints.get("workspace_root") or "").strip()
+        if not raw_root:
+            return _err(tool_name, "REPO_ROOT_REQUIRED", "repo_root is required for attach_repo_root_access")
+        repo_path_raw = Path(raw_root).expanduser()
+        if not repo_path_raw.is_absolute():
+            return _err(tool_name, "ABSOLUTE_REPO_ROOT_REQUIRED", "repo_root must be an absolute path")
+        if _path_contains_symlink(repo_path_raw):
+            return _err(tool_name, "SYMLINK_ESCAPE_BLOCKED", "repo_root cannot pass through symlinked paths")
+        repo_path = repo_path_raw.resolve(strict=True)
+        if not repo_path.is_dir():
+            return _err(tool_name, "INVALID_REPO_ROOT", "repo_root must resolve to an existing directory")
+        git_root = _resolve_git_worktree_root(repo_path)
+        if git_root is None:
+            return _err(tool_name, "GIT_ROOT_REQUIRED", "repo_root must resolve to a git worktree root")
+        if str(git_root).lower() != str(repo_path).lower():
+            return _err(
+                tool_name,
+                "GIT_ROOT_REQUIRED",
+                "repo_root must point at the git worktree root itself, not a parent or child path",
+                {"git_root": str(git_root), "repo_root": str(repo_path)},
+            )
+
+        refreshed_hints = _workspace_access_hints(
+            hints=hints,
+            workspace_root=repo_path,
+            active_path=repo_path,
+            workspace_root_kind=ATTACHED_REPO_WORKSPACE_ROOT_KIND,
+            source_tool_name=tool_name,
+        )
+        body = derive_digital_body_state(
+            current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "filesystem"}},
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"digital_body_hints": refreshed_hints},
+            last_external_tools=[tool_name],
+        )
+        access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+        access_state = _strip_unsolicited_sandbox_access_surface(access_state, original_hints=hints)
+        resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+        refreshed_hints = _strip_unsolicited_sandbox_access_surface(refreshed_hints, original_hints=hints)
+        artifact_context = _workspace_artifact_context(
+            repo_path,
+            workspace_root=repo_path,
+            source_tool_name=tool_name,
+        )
+        summary = f"已把仓库根目录 {repo_path.name} 挂接成当前 workspace，后面的代码/研究动作现在有真实落点了。"
+        return _ok(
+            tool_name,
+            {
+                "summary": summary,
+                "workspace_path": str(repo_path),
+                "workspace_name": repo_path.name,
+                "workspace_root": str(repo_path),
+                "workspace_root_kind": ATTACHED_REPO_WORKSPACE_ROOT_KIND,
+                "access_hints": refreshed_hints,
+                "access_state": access_state,
+                "resource_state": resource_state,
+                "artifact_context": artifact_context,
+                "filesystem_state": str(access_state.get("filesystem_state") or "writable").strip().lower(),
+            },
+        )
+    except RuntimeError:
+        raise
+    except Exception as e:
+        return _err(
+            tool_name,
+            "INTERNAL",
+            str(e),
+            {"repo_root": repo_root, "access_hints": hints},
         )
 
 
@@ -4136,12 +4470,22 @@ def preview_workspace_command_execution(tool_name: str, args: dict[str, Any] | N
         return {}
 
     hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    sandbox_state = dict(hints.get("sandbox_state") or {}) if isinstance(hints.get("sandbox_state"), dict) else {}
+    workspace_root_kind = str(
+        data.get("workspace_root_kind")
+        or sandbox_state.get("workspace_root_kind")
+        or hints.get("workspace_root_kind")
+        or _workspace_root_kind_from_hints(hints)
+    ).strip().lower() or DEFAULT_WORKSPACE_ROOT_KIND
     workspace_name = str(data.get("workspace_name") or "").strip()
     raw_argv = [str(item).strip() for item in (data.get("argv") if isinstance(data.get("argv"), list) else []) if str(item or "").strip()]
     raw_cwd = str(data.get("cwd") or ".").strip() or "."
     preview = {
-        "runner_kind": "local_restricted_runner",
-        "isolation_level": "host_local_restricted",
+        "runner_kind": str(sandbox_state.get("runner_kind") or "").strip().lower(),
+        "isolation_level": str(sandbox_state.get("isolation_level") or "").strip().lower(),
+        "image_ref": str(sandbox_state.get("image_ref") or "").strip(),
+        "network_policy": str(sandbox_state.get("network_policy") or "").strip().lower(),
+        "workspace_root_kind": workspace_root_kind,
         "argv": raw_argv[:64],
         "cwd": raw_cwd.replace("\\", "/"),
         "allowed_roots": [],
@@ -4166,6 +4510,10 @@ def preview_workspace_command_execution(tool_name: str, args: dict[str, Any] | N
             timeout_s=data.get("timeout_s"),
             writes_expected=data.get("writes_expected"),
             expected_artifacts=data.get("expected_artifacts"),
+            runner_kind=data.get("runner_kind") or sandbox_state.get("runner_kind"),
+            image_ref=data.get("image_ref") or sandbox_state.get("image_ref") or sandbox_docker_image_ref(""),
+            network_policy=data.get("network_policy") or sandbox_state.get("network_policy"),
+            workspace_root_kind=workspace_root_kind,
         )
         return {
             **build_execution_preview(spec),
@@ -4185,6 +4533,13 @@ def preview_workspace_command_execution(tool_name: str, args: dict[str, Any] | N
 def build_workspace_command_execution_spec(args: dict[str, Any] | None) -> dict[str, Any]:
     data = dict(args or {}) if isinstance(args, dict) else {}
     hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    sandbox_state = dict(hints.get("sandbox_state") or {}) if isinstance(hints.get("sandbox_state"), dict) else {}
+    workspace_root_kind = str(
+        data.get("workspace_root_kind")
+        or sandbox_state.get("workspace_root_kind")
+        or hints.get("workspace_root_kind")
+        or _workspace_root_kind_from_hints(hints)
+    ).strip().lower() or DEFAULT_WORKSPACE_ROOT_KIND
     workspace_name = str(data.get("workspace_name") or "").strip()
     workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
     if workspace_path is None:
@@ -4197,12 +4552,21 @@ def build_workspace_command_execution_spec(args: dict[str, Any] | None) -> dict[
             timeout_s=data.get("timeout_s"),
             writes_expected=data.get("writes_expected"),
             expected_artifacts=data.get("expected_artifacts"),
+            runner_kind=data.get("runner_kind") or sandbox_state.get("runner_kind"),
+            image_ref=data.get("image_ref") or sandbox_state.get("image_ref") or sandbox_docker_image_ref(""),
+            network_policy=data.get("network_policy") or sandbox_state.get("network_policy"),
+            workspace_root_kind=workspace_root_kind,
         )
     except Exception:
         return {}
     return {
         "executor": spec.executor,
         "profile": spec.profile,
+        "runner_kind": spec.runner_kind,
+        "isolation_level": spec.isolation_level,
+        "image_ref": spec.image_ref,
+        "network_policy": spec.network_policy,
+        "workspace_root_kind": spec.workspace_root_kind,
         "argv": list(spec.argv),
         "cwd": spec.cwd,
         "allowed_roots": list(spec.allowed_roots),
@@ -4210,6 +4574,625 @@ def build_workspace_command_execution_spec(args: dict[str, Any] | None) -> dict[
         "writes_expected": spec.writes_expected,
         "expected_artifacts": list(spec.expected_artifacts),
     }
+
+
+_BROWSER_TOOL_OPERATIONS = {
+    "browser_open_url": "open_url",
+    "browser_follow_link": "follow_link",
+    "browser_list_tabs": "list_tabs",
+    "browser_select_tab": "select_tab",
+    "browser_go_back": "go_back",
+    "browser_go_forward": "go_forward",
+    "browser_reload": "reload",
+    "browser_snapshot": "snapshot",
+    "browser_capture_page_to_source_ref": "capture_page",
+    "browser_click": "click",
+    "browser_fill": "fill",
+    "browser_press_key": "press_key",
+    "browser_download_click": "download_click",
+    "browser_upload_file": "upload_file",
+    "browser_begin_manual_takeover": "begin_manual_takeover",
+}
+
+
+def _browser_operation_for_tool_name(tool_name: str) -> str:
+    return str(_BROWSER_TOOL_OPERATIONS.get(str(tool_name or "").strip().lower()) or "").strip().lower()
+
+
+def _browser_data_dir() -> Path:
+    return Path(get_settings().data_dir).resolve(strict=False)
+
+
+def _browser_downloads_dir_for_profile(profile_id: str) -> Path:
+    safe_profile = str(profile_id or "").strip() or _current_thread_id()
+    return (_browser_data_dir() / "browser" / "downloads" / safe_profile).resolve(strict=False)
+
+
+def _browser_run_root(run_id: str) -> Path:
+    return (_browser_data_dir() / "browser" / "runs" / str(run_id or "").strip()).resolve(strict=False)
+
+
+def _browser_profile_id_from_args(*, hints: dict[str, Any], explicit_profile_id: Any = "") -> str:
+    explicit = str(explicit_profile_id or "").strip()
+    if explicit:
+        return explicit
+    carried = str(hints.get("browser_profile_id") or "").strip()
+    if carried:
+        return carried
+    return _current_thread_id()
+
+
+def _browser_page_ref_from_args(*, hints: dict[str, Any], explicit_page_ref: Any = "") -> str:
+    explicit = str(explicit_page_ref or "").strip()
+    if explicit:
+        return explicit
+    page_id = str(hints.get("browser_page_id") or "").strip()
+    if page_id:
+        return f"page:{page_id}"
+    runtime_state = dict(hints.get("browser_runtime_state") or {}) if isinstance(hints.get("browser_runtime_state"), dict) else {}
+    active_page_id = str(runtime_state.get("active_page_id") or "").strip()
+    if active_page_id:
+        return f"page:{active_page_id}"
+    return ""
+
+
+def _browser_workspace_root(*, hints: dict[str, Any], workspace_name: Any = "") -> Path | None:
+    return _resolve_runtime_workspace(
+        hints=hints,
+        workspace_name=str(workspace_name or "").strip(),
+    )
+
+
+def _browser_allowed_roots(*, hints: dict[str, Any], workspace_name: Any = "") -> list[str]:
+    workspace_root = _browser_workspace_root(hints=hints, workspace_name=workspace_name)
+    return [str(workspace_root)] if workspace_root is not None else []
+
+
+def _browser_targets_from_hints(hints: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = hints.get("browser_snapshot_targets")
+    if not isinstance(raw, list):
+        return []
+    targets: list[dict[str, Any]] = []
+    for item in raw[:64]:
+        if not isinstance(item, dict):
+            continue
+        target_ref = str(item.get("target_ref") or "").strip()
+        if not target_ref:
+            continue
+        targets.append(
+            {
+                "target_ref": target_ref,
+                "tag": str(item.get("tag") or "").strip().lower(),
+                "role": str(item.get("role") or "").strip().lower(),
+                "label": str(item.get("label") or "").strip(),
+                "text": str(item.get("text") or "").strip(),
+                "href": str(item.get("href") or "").strip(),
+                "input_type": str(item.get("input_type") or "").strip().lower(),
+                "autocomplete": str(item.get("autocomplete") or "").strip().lower(),
+                "sensitive": bool(item.get("sensitive", False)),
+            }
+        )
+    return targets
+
+
+def _browser_target_from_hints(hints: dict[str, Any], target_ref: Any) -> dict[str, Any]:
+    ref = str(target_ref or "").strip()
+    if not ref:
+        return {}
+    for item in _browser_targets_from_hints(hints):
+        if str(item.get("target_ref") or "").strip() == ref:
+            return dict(item)
+    return {}
+
+
+def _browser_page_state_from_hints(hints: dict[str, Any], *, profile_id: str, page_ref: str) -> dict[str, Any]:
+    runtime_state = dict(hints.get("browser_runtime_state") or {}) if isinstance(hints.get("browser_runtime_state"), dict) else {}
+    page_id = str(hints.get("browser_page_id") or runtime_state.get("active_page_id") or "").strip()
+    tab_id = str(hints.get("browser_tab_id") or "").strip()
+    url = str(hints.get("browser_url") or hints.get("artifact_source_url") or "").strip()
+    title = str(hints.get("browser_title") or hints.get("artifact_source_title") or hints.get("active_artifact_label") or "").strip()
+    active_tab_count = int(runtime_state.get("active_tab_count") or 0)
+    downloads_dir = str(runtime_state.get("downloads_dir") or _browser_downloads_dir_for_profile(profile_id)).strip()
+    profile_root = str(runtime_state.get("profile_root") or (_browser_data_dir() / "browser" / "profiles" / profile_id)).strip()
+    if not page_id and page_ref.startswith("page:"):
+        page_id = page_ref.split(":", 1)[1].strip()
+    return {
+        "profile_id": profile_id,
+        "profile_root": profile_root,
+        "downloads_dir": downloads_dir,
+        "page_id": page_id,
+        "tab_id": tab_id,
+        "url": url,
+        "title": title,
+        "active_tab_count": active_tab_count,
+        "manual_takeover_required": bool(runtime_state.get("manual_takeover_required", False)),
+        "context_status": str(runtime_state.get("context_status") or "").strip(),
+    }
+
+
+def build_browser_execution_spec_payload(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    name = str(tool_name or "").strip().lower()
+    operation = _browser_operation_for_tool_name(name)
+    if not operation:
+        return {}
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    workspace_name = str(data.get("workspace_name") or "").strip()
+    profile_id = _browser_profile_id_from_args(hints=hints, explicit_profile_id=data.get("profile_id"))
+    try:
+        spec = build_browser_execution_spec(
+            operation=operation,
+            profile_id=profile_id,
+            page_ref=_browser_page_ref_from_args(hints=hints, explicit_page_ref=data.get("page_ref")),
+            navigation_url=data.get("url") if name == "browser_open_url" else data.get("navigation_url"),
+            target_ref=data.get("target_ref"),
+            input_text=data.get("text") if name == "browser_fill" else data.get("input_text"),
+            key=data.get("key"),
+            upload_source=data.get("upload_source"),
+            download_target=data.get("download_target"),
+            allowed_roots=_browser_allowed_roots(hints=hints, workspace_name=workspace_name),
+            browser_downloads_root=str(_browser_downloads_dir_for_profile(profile_id)),
+            timeout_s=data.get("timeout_s"),
+            wait_until=data.get("wait_until"),
+        )
+    except Exception:
+        return {}
+    return {
+        "operation": spec.operation,
+        "profile_id": spec.profile_id,
+        "page_ref": spec.page_ref,
+        "navigation_url": spec.navigation_url,
+        "target_ref": spec.target_ref,
+        "input_text": spec.input_text,
+        "key": spec.key,
+        "upload_source": spec.upload_source,
+        "download_target": spec.download_target,
+        "allowed_roots": list(spec.allowed_roots),
+        "browser_downloads_root": spec.browser_downloads_root,
+        "timeout_s": spec.timeout_s,
+        "wait_until": spec.wait_until,
+    }
+
+
+def preview_browser_execution(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
+    name = str(tool_name or "").strip().lower()
+    operation = _browser_operation_for_tool_name(name)
+    if not operation:
+        return {}
+    data = dict(args or {}) if isinstance(args, dict) else {}
+    hints = dict(data.get("access_hints") or {}) if isinstance(data.get("access_hints"), dict) else {}
+    profile_id = _browser_profile_id_from_args(hints=hints, explicit_profile_id=data.get("profile_id"))
+    preview: dict[str, Any] = {
+        "runner_kind": "playwright_persistent_context",
+        "isolation_level": "persistent_profile_runtime",
+        "operation": operation,
+        "profile_id": profile_id,
+        "page_ref": _browser_page_ref_from_args(hints=hints, explicit_page_ref=data.get("page_ref")),
+        "page_url": str(data.get("url") or hints.get("browser_url") or hints.get("artifact_source_url") or "").strip()[:1200],
+        "page_title": str(hints.get("browser_title") or hints.get("artifact_source_title") or hints.get("active_artifact_label") or "").strip()[:220],
+        "target_ref": str(data.get("target_ref") or "").strip()[:64],
+        "allowed_roots": _browser_allowed_roots(hints=hints, workspace_name=data.get("workspace_name")),
+        "downloads_root": str(_browser_downloads_dir_for_profile(profile_id)),
+        "timeout_s": max(1, min(int(data.get("timeout_s") or 20), 180)),
+        "verification_summary": "",
+        "requires_manual_takeover": False,
+    }
+    try:
+        spec = build_browser_execution_spec(
+            operation=operation,
+            profile_id=profile_id,
+            page_ref=preview["page_ref"],
+            navigation_url=data.get("url") if name == "browser_open_url" else data.get("navigation_url"),
+            target_ref=data.get("target_ref"),
+            input_text=data.get("text") if name == "browser_fill" else data.get("input_text"),
+            key=data.get("key"),
+            upload_source=data.get("upload_source"),
+            download_target=data.get("download_target"),
+            allowed_roots=preview["allowed_roots"],
+            browser_downloads_root=preview["downloads_root"],
+            timeout_s=data.get("timeout_s"),
+            wait_until=data.get("wait_until"),
+        )
+        hinted_page_state = _browser_page_state_from_hints(hints, profile_id=spec.profile_id, page_ref=spec.page_ref)
+        target = _browser_target_from_hints(hints, spec.target_ref)
+        verification_summary = {
+            "open_url": "navigate the live browser to the requested url",
+            "follow_link": "follow a link target from the current live page",
+            "list_tabs": "inspect the current live browser tabs",
+            "select_tab": "switch the active live browser tab",
+            "go_back": "move the live browser history backward",
+            "go_forward": "move the live browser history forward",
+            "reload": "reload the current live browser page",
+            "snapshot": "capture a fresh DOM/text snapshot for the current live page",
+            "capture_page": "save the current live page into source_ref continuity",
+            "click": "click a live page element after approval",
+            "fill": "fill a live page input field after approval",
+            "press_key": "send a keyboard action to the live page after approval",
+            "download_click": "download into the runtime-controlled browser directory",
+            "upload_file": "upload a workspace-scoped file into the live page",
+            "begin_manual_takeover": "request manual takeover on the current live browser page",
+        }.get(spec.operation, "")
+        built_preview = build_browser_execution_preview(
+            spec,
+            page_url=str(hinted_page_state.get("url") or spec.navigation_url or "").strip(),
+            page_title=str(hinted_page_state.get("title") or "").strip(),
+            target=target,
+            verification_summary=verification_summary,
+        )
+        if spec.operation == "begin_manual_takeover":
+            built_preview["requires_manual_takeover"] = True
+        return {**built_preview, "validation_code": "", "validation_error": ""}
+    except BrowserValidationError as exc:
+        preview["validation_code"] = str(exc.code or "INVALID_SPEC").strip().upper()
+        preview["validation_error"] = str(exc)[:220]
+        return preview
+    except Exception as exc:
+        preview["validation_code"] = "INTERNAL"
+        preview["validation_error"] = str(exc)[:220]
+        return preview
+
+
+def _browser_page_artifact_context(
+    *,
+    tool_name: str,
+    page_state: dict[str, Any],
+    text_preview: str,
+    snapshot_targets: list[dict[str, Any]] | None = None,
+    source_ref_ids: list[int] | None = None,
+    preferred_source_ref_id: int = 0,
+    preferred_anchor_reason: str = "",
+) -> dict[str, Any]:
+    title = str(page_state.get("title") or "").strip()
+    url = str(page_state.get("url") or "").strip()
+    page_id = str(page_state.get("page_id") or "").strip()
+    label = title or url or page_id or "browser-page"
+    preview_text = str(text_preview or "").strip()[:1200]
+    targets = [
+        dict(item)
+        for item in (snapshot_targets if isinstance(snapshot_targets, list) else [])
+        if isinstance(item, dict)
+    ][:64]
+    return {
+        "carrier": "browser_page",
+        "artifact_kind": "page",
+        "artifact_ref": f"page:{page_id}" if page_id else (url or label),
+        "artifact_label": label[:160],
+        "reacquisition_mode": "browser_snapshot",
+        "preview": preview_text,
+        "preview_truncated": len(str(text_preview or "").strip()) > len(preview_text),
+        "exists": True,
+        "updated_at": int(time.time()),
+        "source_ref_ids": [int(item) for item in (source_ref_ids or []) if int(item) > 0][:8],
+        "preferred_source_ref_id": int(preferred_source_ref_id or 0),
+        "preferred_anchor_reason": str(preferred_anchor_reason or "").strip()[:120],
+        "source_url": url[:320],
+        "source_query": "",
+        "source_title": title[:160] or label[:160],
+        "source_tool_name": str(tool_name or "").strip()[:80],
+        "snapshot_targets": targets,
+    }
+
+
+def _browser_download_artifact_context(
+    *,
+    tool_name: str,
+    download_path: Path,
+    workspace_root: Path | None,
+) -> dict[str, Any]:
+    try:
+        content = download_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        content = ""
+    context = _file_artifact_context(
+        download_path,
+        content=content,
+        workspace_root=workspace_root or download_path.parent,
+        source_tool_name=tool_name,
+    )
+    context["carrier"] = "filesystem"
+    context["artifact_kind"] = "file"
+    return context
+
+
+def _browser_hints_from_result(
+    *,
+    hints: dict[str, Any],
+    tool_name: str,
+    page_state: dict[str, Any],
+    result: dict[str, Any],
+    artifact_context: dict[str, Any],
+    browser_runtime_state: dict[str, Any],
+    workspace_root: Path | None,
+) -> dict[str, Any]:
+    refreshed = dict(hints or {})
+    artifact_ref = str(artifact_context.get("artifact_ref") or "").strip()
+    artifact_label = str(artifact_context.get("artifact_label") or "").strip()
+    artifact_kind = str(artifact_context.get("artifact_kind") or "").strip().lower()
+    carrier = str(artifact_context.get("carrier") or "").strip().lower()
+    refreshed.update(
+        {
+            "browser_session": "present",
+            "browser_profile_id": str(page_state.get("profile_id") or "").strip(),
+            "browser_tab_id": str(page_state.get("tab_id") or "").strip(),
+            "browser_page_id": str(page_state.get("page_id") or "").strip(),
+            "browser_url": str(page_state.get("url") or "").strip()[:1200],
+            "browser_title": str(page_state.get("title") or "").strip()[:220],
+            "browser_runtime_state": dict(browser_runtime_state or {}),
+            "browser_snapshot_targets": [
+                dict(item)
+                for item in (result.get("snapshot_targets") if isinstance(result.get("snapshot_targets"), list) else [])
+                if isinstance(item, dict)
+            ][:64],
+            "artifact_continuity": "attached",
+            "active_artifact_kind": artifact_kind,
+            "active_artifact_ref": artifact_ref,
+            "active_artifact_label": artifact_label[:160],
+            "artifact_age_s": 0,
+            "artifact_reacquisition_mode": str(artifact_context.get("reacquisition_mode") or "").strip().lower(),
+            "artifact_carrier": carrier,
+            "artifact_source_ref_ids": [int(item) for item in (artifact_context.get("source_ref_ids") or []) if int(item) > 0][:8],
+            "preferred_source_ref_id": int(artifact_context.get("preferred_source_ref_id") or 0),
+            "preferred_anchor_reason": str(artifact_context.get("preferred_anchor_reason") or "").strip()[:120],
+            "artifact_source_url": str(artifact_context.get("source_url") or "").strip()[:320],
+            "artifact_source_query": str(artifact_context.get("source_query") or "").strip()[:220],
+            "artifact_source_title": str(artifact_context.get("source_title") or "").strip()[:160],
+            "artifact_source_tool_name": str(artifact_context.get("source_tool_name") or tool_name).strip()[:80],
+        }
+    )
+    if workspace_root is not None:
+        refreshed["workspace_root"] = str(workspace_root)
+    if carrier == "filesystem":
+        refreshed["filesystem_state"] = _probe_filesystem_state(workspace_root or Path(artifact_ref).parent)
+    if bool(browser_runtime_state.get("manual_takeover_required", False)):
+        refreshed["block_reason"] = str(result.get("error_summary") or "manual browser takeover required").strip()[:220]
+        refreshed["requestable_access"] = list(
+            dict.fromkeys(
+                [
+                    *[
+                        str(item).strip().lower()
+                        for item in (refreshed.get("requestable_access") if isinstance(refreshed.get("requestable_access"), list) else [])
+                        if str(item or "").strip()
+                    ],
+                    "human_approval",
+                ]
+            )
+        )[:12]
+    world_surfaces = [
+        str(item).strip().lower()
+        for item in (refreshed.get("world_surfaces") if isinstance(refreshed.get("world_surfaces"), list) else [])
+        if str(item or "").strip()
+    ]
+    for surface in ("browser", "filesystem" if carrier == "filesystem" else ""):
+        if surface and surface not in world_surfaces:
+            world_surfaces.append(surface)
+    refreshed["world_surfaces"] = world_surfaces[:12]
+    return refreshed
+
+
+def _browser_result_summary(tool_name: str, result: dict[str, Any], artifact_context: dict[str, Any]) -> str:
+    status = str(result.get("status") or "").strip().lower()
+    if status == "blocked":
+        return str(result.get("error_summary") or "the live browser action was blocked").strip()
+    name = str(tool_name or "").strip().lower()
+    label = str(artifact_context.get("artifact_label") or "").strip()
+    if name == "browser_open_url":
+        return f"已打开实时页面 {label or '当前网页'}，现在可以沿这条 live page 继续。"
+    if name == "browser_follow_link":
+        return f"已顺着当前页面的链接接到了 {label or '下一个 live page'}。"
+    if name == "browser_snapshot":
+        return f"已抓取当前实时页面快照 {label or 'live page'}，现在能继续沿这页判断。"
+    if name == "browser_capture_page_to_source_ref":
+        return f"已把当前实时页面 {label or 'live page'} 落成 source_ref，可从 live page 或 saved material 两条路继续。"
+    if name == "browser_download_click":
+        return f"已把下载产物接到受控目录：{label or str(result.get('download_path') or '').strip()}。"
+    if name == "browser_upload_file":
+        return "已把受控 workspace 里的文件送进当前页面，这个上传动作已经真实发生。"
+    if name == "browser_begin_manual_takeover":
+        return "已把当前 live browser 交给人工接管，接管完成后可以在同一 profile 上继续。"
+    return f"已完成浏览器动作 {name}，当前 live page continuity 已更新。"
+
+
+def _execute_browser_tool(
+    *,
+    tool_name: str,
+    access_hints: dict[str, Any] | None,
+    workspace_name: str = "",
+    proposal_id: str = "",
+    profile_id: str = "",
+    page_ref: str = "",
+    url: str = "",
+    target_ref: str = "",
+    text: str = "",
+    key: str = "",
+    upload_source: str = "",
+    download_target: str = "",
+    timeout_s: int = 20,
+    wait_until: str = "load",
+    capture_to_source_ref: bool = False,
+) -> dict[str, Any]:
+    hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    operation = _browser_operation_for_tool_name(tool_name)
+    if not operation:
+        return _err(tool_name, "INVALID_BROWSER_TOOL", f"unsupported browser tool: {tool_name}")
+    resolved_profile_id = _browser_profile_id_from_args(hints=hints, explicit_profile_id=profile_id)
+    resolved_page_ref = _browser_page_ref_from_args(hints=hints, explicit_page_ref=page_ref)
+    workspace_root = _browser_workspace_root(hints=hints, workspace_name=workspace_name)
+    try:
+        spec = build_browser_execution_spec(
+            operation=operation,
+            profile_id=resolved_profile_id,
+            page_ref=resolved_page_ref,
+            navigation_url=url,
+            target_ref=target_ref,
+            input_text=text,
+            key=key,
+            upload_source=upload_source,
+            download_target=download_target,
+            allowed_roots=[str(workspace_root)] if workspace_root is not None else [],
+            browser_downloads_root=str(_browser_downloads_dir_for_profile(resolved_profile_id)),
+            timeout_s=timeout_s,
+            wait_until=wait_until,
+        )
+    except BrowserValidationError as exc:
+        return _err(tool_name, str(exc.code or "INVALID_BROWSER_SPEC").strip().upper(), str(exc))
+
+    preview = preview_browser_execution(
+        tool_name,
+        {
+            "profile_id": spec.profile_id,
+            "page_ref": spec.page_ref,
+            "url": spec.navigation_url,
+            "target_ref": spec.target_ref,
+            "text": spec.input_text,
+            "key": spec.key,
+            "upload_source": spec.upload_source,
+            "download_target": spec.download_target,
+            "timeout_s": spec.timeout_s,
+            "wait_until": spec.wait_until,
+            "workspace_name": workspace_name,
+            "access_hints": hints,
+        },
+    )
+    run_id = str(proposal_id or "").strip() or f"browser-run-{uuid.uuid4().hex[:12]}"
+    manager = get_browser_session_manager(str(_browser_data_dir()))
+    browser_result = manager.execute(
+        proposal_id=run_id,
+        spec=spec,
+        run_root=_browser_run_root(run_id),
+    )
+    page_state = manager.current_page_state(profile_id=spec.profile_id, page_ref=spec.page_ref)
+    page_result = {
+        "run_id": browser_result.run_id,
+        "status": browser_result.status,
+        "profile_id": browser_result.profile_id,
+        "page_id": browser_result.page_id,
+        "tab_id": browser_result.tab_id,
+        "url": browser_result.url,
+        "title": browser_result.title,
+        "action_kind": browser_result.action_kind,
+        "target_ref": browser_result.target_ref,
+        "duration_ms": browser_result.duration_ms,
+        "active_tab_count": browser_result.active_tab_count,
+        "last_action_status": browser_result.last_action_status,
+        "download_path": browser_result.download_path,
+        "upload_source": browser_result.upload_source,
+        "error_summary": browser_result.error_summary,
+        "manual_takeover_required": browser_result.manual_takeover_required,
+        "text_preview": browser_result.text_preview,
+        "snapshot_targets": list(browser_result.snapshot_targets),
+    }
+
+    saved_source_ref_ids: list[int] = []
+    preferred_source_ref_id = 0
+    preferred_anchor_reason = ""
+    if capture_to_source_ref and str(page_state.get("url") or "").strip():
+        store = _get_store()
+        saved = store.add_source_ref(
+            url=str(page_state.get("url") or "").strip(),
+            title=str(page_state.get("title") or "").strip(),
+            query="",
+            tool_name=tool_name,
+            snippet=str(browser_result.text_preview or "").strip()[:2400],
+            retrieved_at=int(time.time()),
+            reliability_score=_tool_reliability(tool_name, fallback=0.88),
+            span_hint=str(page_state.get("page_id") or "").strip(),
+        )
+        try:
+            preferred_source_ref_id = int(saved.get("id") or 0)
+        except Exception:
+            preferred_source_ref_id = 0
+        if preferred_source_ref_id > 0:
+            saved_source_ref_ids = [preferred_source_ref_id]
+            preferred_anchor_reason = "captured_live_page"
+
+    if str(browser_result.download_path or "").strip():
+        download_path = Path(str(browser_result.download_path)).resolve(strict=False)
+        artifact_context = _browser_download_artifact_context(
+            tool_name=tool_name,
+            download_path=download_path,
+            workspace_root=workspace_root or _infer_workspace_root_for_artifact(download_path),
+        )
+    else:
+        artifact_context = _browser_page_artifact_context(
+            tool_name=tool_name,
+            page_state=page_state,
+            text_preview=str(browser_result.text_preview or "").strip(),
+            snapshot_targets=browser_result.snapshot_targets,
+            source_ref_ids=saved_source_ref_ids,
+            preferred_source_ref_id=preferred_source_ref_id,
+            preferred_anchor_reason=preferred_anchor_reason,
+        )
+
+    browser_runtime_state = build_browser_runtime_state(
+        profile_root=page_state.get("profile_root"),
+        downloads_dir=page_state.get("downloads_dir"),
+        page_id=page_state.get("page_id"),
+        active_tab_count=page_state.get("active_tab_count"),
+        last_action_status=browser_result.last_action_status,
+        last_run_id=browser_result.run_id,
+        manual_takeover_required=browser_result.manual_takeover_required,
+        context_status=page_state.get("context_status") or ("manual_takeover" if browser_result.manual_takeover_required else "active"),
+        availability="available",
+    )
+    refreshed_hints = _browser_hints_from_result(
+        hints=hints,
+        tool_name=tool_name,
+        page_state=page_state,
+        result=page_result,
+        artifact_context=artifact_context,
+        browser_runtime_state=browser_runtime_state,
+        workspace_root=workspace_root,
+    )
+    body = derive_digital_body_state(
+        current_event={"kind": "user_utterance", "perception": {"channel": "runtime", "modality": "browser"}},
+        behavior_queue=[],
+        action_packets=[],
+        toolset_unlocks={},
+        autonomy_block_reason=str(browser_result.error_summary or "").strip(),
+        session_context={"digital_body_hints": refreshed_hints},
+        last_external_tools=[tool_name],
+    )
+    access_state = dict(body.get("access_state") or {}) if isinstance(body.get("access_state"), dict) else {}
+    resource_state = dict(body.get("resource_state") or {}) if isinstance(body.get("resource_state"), dict) else {}
+    browser_spec_payload = build_browser_execution_spec_payload(
+        tool_name,
+        {
+            "profile_id": spec.profile_id,
+            "page_ref": spec.page_ref,
+            "url": spec.navigation_url,
+            "target_ref": spec.target_ref,
+            "text": spec.input_text,
+            "key": spec.key,
+            "upload_source": spec.upload_source,
+            "download_target": spec.download_target,
+            "timeout_s": spec.timeout_s,
+            "wait_until": spec.wait_until,
+            "workspace_name": workspace_name,
+            "access_hints": hints,
+        },
+    )
+    summary = _browser_result_summary(tool_name, page_result, artifact_context)
+    payload: dict[str, Any] = {
+        "summary": summary,
+        "browser_page": page_state,
+        "browser_runtime_state": browser_runtime_state,
+        "browser_execution_spec": browser_spec_payload,
+        "browser_execution_preview": {
+            key: value
+            for key, value in preview.items()
+            if value not in (None, "", [], {})
+        },
+        "browser_execution_result": page_result,
+        "artifact_context": artifact_context,
+        "access_hints": refreshed_hints,
+        "access_state": access_state,
+        "resource_state": resource_state,
+    }
+    if saved_source_ref_ids:
+        payload["source_ref_ids"] = saved_source_ref_ids
+        payload["preferred_source_ref_id"] = preferred_source_ref_id
+        payload["preferred_anchor_reason"] = preferred_anchor_reason
+    return _ok(tool_name, payload)
 
 
 def preview_skill_operation(tool_name: str, args: dict[str, Any] | None) -> dict[str, Any]:
@@ -4295,6 +5278,339 @@ def _workspace_relative_from_absolute(path: Path, *, workspace_root: Path) -> st
 
 
 @tool
+def browser_open_url(
+    url: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    wait_until: str = "load",
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """在持久 live browser profile 中打开一个 URL（只读导航）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_open_url",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        url=str(url or "").strip(),
+        timeout_s=timeout_s,
+        wait_until=wait_until,
+    )
+
+
+@tool
+def browser_follow_link(
+    target_ref: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """在当前 live page 上跟随一个链接目标（只读导航）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_follow_link",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        target_ref=str(target_ref or "").strip(),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_list_tabs(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """查看当前 live browser profile 中的 tab 状态（只读）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_list_tabs",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_select_tab(
+    page_ref: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """切换当前 live browser 的活动 tab。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_select_tab",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_go_back(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    wait_until: str = "load",
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """让当前 live page 后退一步。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_go_back",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+        wait_until=wait_until,
+    )
+
+
+@tool
+def browser_go_forward(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    wait_until: str = "load",
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """让当前 live page 前进一步。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_go_forward",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+        wait_until=wait_until,
+    )
+
+
+@tool
+def browser_reload(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    wait_until: str = "load",
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """刷新当前 live page。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_reload",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+        wait_until=wait_until,
+    )
+
+
+@tool
+def browser_snapshot(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """抓取当前 live page 的 DOM/文本快照，用于后续定位与连续性。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_snapshot",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_click(
+    target_ref: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """点击当前 live page 上的一个元素（审批后执行）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_click",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        target_ref=str(target_ref or "").strip(),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_fill(
+    target_ref: str,
+    text: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """向当前 live page 的输入框填入文本（审批后执行；敏感输入会转人工接管）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_fill",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        target_ref=str(target_ref or "").strip(),
+        text=str(text or ""),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_press_key(
+    key: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """向当前 live page 发送一个按键动作（审批后执行）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_press_key",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        key=str(key or "").strip(),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_download_click(
+    target_ref: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    workspace_name: str = "",
+    download_target: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """点击触发下载，并把文件落到受控目录（审批后执行）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_download_click",
+        access_hints=access_hints,
+        workspace_name=workspace_name,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        target_ref=str(target_ref or "").strip(),
+        download_target=str(download_target or "").strip(),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_upload_file(
+    target_ref: str,
+    upload_source: str,
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    workspace_name: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """把受控 workspace 里的文件上传到当前网页（审批后执行）。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_upload_file",
+        access_hints=access_hints,
+        workspace_name=workspace_name,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        target_ref=str(target_ref or "").strip(),
+        upload_source=str(upload_source or "").strip(),
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_begin_manual_takeover(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """请求把当前 live browser 暂时交给人工接管。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_begin_manual_takeover",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+    )
+
+
+@tool
+def browser_capture_page_to_source_ref(
+    access_hints: dict[str, Any] | None = None,
+    profile_id: str = "",
+    page_ref: str = "",
+    timeout_s: int = 20,
+    proposal_id: str = "",
+) -> dict[str, Any]:
+    """把当前 live page 显式保存进 source_ref continuity。"""
+
+    return _execute_browser_tool(
+        tool_name="browser_capture_page_to_source_ref",
+        access_hints=access_hints,
+        proposal_id=proposal_id,
+        profile_id=profile_id,
+        page_ref=page_ref,
+        timeout_s=timeout_s,
+        capture_to_source_ref=True,
+    )
+
+
+@tool
 def execute_workspace_command(
     argv: list[str],
     cwd: str = ".",
@@ -4309,6 +5625,12 @@ def execute_workspace_command(
 
     tool_name = "execute_workspace_command"
     hints = dict(access_hints) if isinstance(access_hints, dict) else {}
+    existing_sandbox_state = dict(hints.get("sandbox_state") or {}) if isinstance(hints.get("sandbox_state"), dict) else {}
+    workspace_root_kind = str(
+        hints.get("workspace_root_kind")
+        or existing_sandbox_state.get("workspace_root_kind")
+        or _workspace_root_kind_from_hints(hints)
+    ).strip().lower() or DEFAULT_WORKSPACE_ROOT_KIND
     workspace_path = _resolve_runtime_workspace(hints=hints, workspace_name=workspace_name)
     if workspace_path is None:
         return _err(
@@ -4330,6 +5652,10 @@ def execute_workspace_command(
             timeout_s=timeout_s,
             writes_expected=writes_expected,
             expected_artifacts=expected_artifacts,
+            runner_kind=existing_sandbox_state.get("runner_kind"),
+            image_ref=existing_sandbox_state.get("image_ref") or sandbox_docker_image_ref(""),
+            network_policy=existing_sandbox_state.get("network_policy"),
+            workspace_root_kind=workspace_root_kind,
         )
     except SandboxValidationError as exc:
         return _err(tool_name, str(exc.code or "INVALID_SPEC").strip().upper(), str(exc))
@@ -4337,8 +5663,7 @@ def execute_workspace_command(
     execution_preview = build_execution_preview(spec)
     run_id = str(proposal_id or "").strip() or f"run-{uuid.uuid4().hex[:12]}"
     run_root = workspace_path / ".amadeus" / "sandbox-runs" / run_id
-    runner = LocalRestrictedSandboxRunner()
-    execution_result = runner.execute(
+    execution_result = execute_sandbox_command(
         proposal_id=run_id,
         spec=spec,
         run_root=run_root,
@@ -4374,8 +5699,11 @@ def execute_workspace_command(
         "allowed_roots": [str(workspace_path)],
         "execution_policy": "approval_required",
         "last_status": execution_result.status,
-        "runner_kind": runner.runner_kind,
-        "isolation_level": runner.isolation_level,
+        "runner_kind": spec.runner_kind,
+        "isolation_level": spec.isolation_level,
+        "image_ref": spec.image_ref,
+        "network_policy": spec.network_policy,
+        "workspace_root_kind": spec.workspace_root_kind,
         "last_command_profile": spec.profile,
         "last_exit_code": execution_result.exit_code,
         "last_run_id": execution_result.run_id,
@@ -4384,6 +5712,7 @@ def execute_workspace_command(
     refreshed_hints["sandbox_mode"] = "restricted"
     refreshed_hints["sandbox_state"] = sandbox_state
     refreshed_hints["workspace_root"] = str(workspace_path)
+    refreshed_hints["workspace_root_kind"] = spec.workspace_root_kind
     refreshed_hints["filesystem_state"] = _probe_filesystem_state(workspace_path)
 
     body = derive_digital_body_state(
@@ -4418,6 +5747,11 @@ def execute_workspace_command(
             "execution_spec": {
                 "executor": spec.executor,
                 "profile": spec.profile,
+                "runner_kind": spec.runner_kind,
+                "isolation_level": spec.isolation_level,
+                "image_ref": spec.image_ref,
+                "network_policy": spec.network_policy,
+                "workspace_root_kind": spec.workspace_root_kind,
                 "argv": list(spec.argv),
                 "cwd": spec.cwd,
                 "allowed_roots": list(spec.allowed_roots),

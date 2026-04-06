@@ -16,6 +16,7 @@ from ..utils.relational_history_export import (
 from ..utils.revision_trace_export import normalize_revision_trace_export
 from ..utils.runtime_audit import audit_runtime_layout
 from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_material_exports
+from .access_negotiation import attach_assist_request_to_pending_approval, resolve_access_negotiation_context
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -86,9 +87,25 @@ def _resolved_agenda_lifecycle_residue(values: dict[str, Any] | None) -> dict[st
 def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
     data = values if isinstance(values, dict) else {}
     reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    digital_body = resolve_digital_body_state(
+        digital_body_state=_dict_or_empty(data.get("digital_body_state")),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
     action_packets = resolve_action_packets(
         action_packets=data.get("action_packets"),
         reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    pending_approval = resolve_pending_action_proposal(
+        pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    negotiation = resolve_access_negotiation_context(
+        data,
+        pending_action_proposal=pending_approval,
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+        digital_body_state=digital_body,
     )
     return {
         "intent": resolve_autonomy_intent(
@@ -99,10 +116,10 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
             autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
         ),
         "action_packets": action_packets,
-        "pending_approval": resolve_pending_action_proposal(
-            pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
-            action_packets=action_packets,
-            reconsolidation_snapshot=reconsolidation_snapshot,
+        "pending_approval": attach_assist_request_to_pending_approval(
+            pending_approval,
+            assist_request=negotiation.get("assist_request") if isinstance(negotiation, dict) else None,
+            source_packet=negotiation.get("packet") if isinstance(negotiation, dict) else None,
         ),
         "execution_trace": resolve_action_trace(
             action_trace=data.get("action_trace"),

@@ -76,6 +76,8 @@ amadeus_thread0/
   tool gate, tool execution, tool-limit handling, and post-model routing.
 - `skill_runtime.py`
   session-level skill activation, backend skill envelope shaping, and active-skill prompt disclosure.
+- `browser_runtime.py`
+  live-browser state shaping, browser packet preview/result normalization, and body-surface continuity helpers.
 - `autonomy_runtime.py`
   derives bounded companion autonomy from frozen runtime state into `autonomy_intent`.
 - `action_packets.py`
@@ -133,6 +135,8 @@ Rule:
 - `final_state.py`
 - `runtime_bundle.py`
 - `sandbox_runner.py`
+- `browser_runner.py`
+- `access_negotiation.py`
 - `skill_registry.py`
 - `thread_runtime.py`
 - `tool_approval.py`
@@ -145,6 +149,7 @@ Rule:
 - graph turn execution wrappers
 - state snapshot / checkpoint history / behavior queue / persona / worldline / sources view assembly
 - the thin boundary future frontends should depend on instead of CLI print logic
+- access-negotiation auto-continue over the same `proposal_id` after resolved access or manual browser takeover
 
 `final_state.py` holds final-state normalization for readback parity:
 
@@ -170,6 +175,14 @@ Rule:
 - memory auto-resume checks
 - approval preview normalization and clipping
 - second-confirmation detection for high-risk memory writes
+- shared approval-batch rendering inputs such as persona-facing `assist_request`
+
+`access_negotiation.py` holds the bounded access-negotiation persona surface:
+
+- derives persona-facing `assist_request` from existing access/browser truth rather than storing a second truth model
+- covers both `grant_access` and `manual_takeover`
+- builds the auto-continue resume event and short resume acknowledgements after access or browser takeover is resolved
+- keeps sensitive-login friction truthful: request help or manual takeover, never credential guessing / OTP simulation / cookie forgery
 
 `sandbox_runner.py` holds the bounded execution surface for `Sandbox Embodied Execution Phase 1`:
 
@@ -178,6 +191,14 @@ Rule:
 - `allowed_roots` / `cwd` boundary checks
 - scrubbed environment assembly
 - per-run trace artifact emission (`run.json`, `stdout.txt`, `stderr.txt`)
+
+`browser_runner.py` holds the live browser surface for `Live Browser Runtime Closure Phase 1`:
+
+- Playwright persistent-context runtime assembly
+- isolated profile-root management under runtime data dirs
+- run-ledger emission for browser actions
+- packet-owned browser action replay safety via `proposal_id`
+- controlled download/upload boundary enforcement
 
 `skill_registry.py` holds the managed skills ecosystem surface:
 

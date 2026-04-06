@@ -36,6 +36,15 @@ from ..utils.relational_history_export import (
 from ..utils.revision_trace_export import normalize_revision_trace_exports
 from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_ref_exports
 from ..graph_parts.skill_runtime import backend_skill_envelope
+from .access_negotiation import (
+    attach_assist_request_to_pending_approval,
+    build_access_resume_event_override,
+    derive_access_resume_ack,
+    derive_assist_request,
+    looks_like_takeover_completion_signal,
+    payload_user_text,
+    resolve_access_negotiation_context,
+)
 from .event_identity import resolve_readback_current_event
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -163,6 +172,49 @@ def _snapshot_has_pending_graph_interrupt(snapshot: Any) -> bool:
     return bool(next_items)
 
 
+def _manual_takeover_resume_state_update(values: dict[str, Any] | None) -> dict[str, Any]:
+    data = dict(values or {})
+    session_context = _dict_or_empty(data.get("session_context"))
+    hints = dict(session_context.get("digital_body_hints") or {}) if isinstance(session_context.get("digital_body_hints"), dict) else {}
+    if not hints:
+        return {}
+    browser_runtime_state = {}
+    if isinstance(hints.get("browser_runtime_state"), dict):
+        browser_runtime_state = dict(hints.get("browser_runtime_state") or {})
+    else:
+        digital_body_state = resolve_digital_body_state(
+            digital_body_state=_dict_or_empty(data.get("digital_body_state")),
+            reconsolidation_snapshot=_dict_or_empty(data.get("reconsolidation_snapshot")),
+        )
+        access_state = _dict_or_empty(digital_body_state.get("access_state"))
+        if isinstance(access_state.get("browser_runtime_state"), dict):
+            browser_runtime_state = dict(access_state.get("browser_runtime_state") or {})
+    if not browser_runtime_state:
+        return {}
+    browser_runtime_state["manual_takeover_required"] = False
+    if str(browser_runtime_state.get("context_status") or "").strip().lower() in {"", "manual_takeover"}:
+        browser_runtime_state["context_status"] = "active"
+    browser_runtime_state["last_action_status"] = "completed"
+    hints["browser_runtime_state"] = browser_runtime_state
+    hints.pop("block_reason", None)
+    session_context["digital_body_hints"] = hints
+    digital_body_state = derive_digital_body_state(
+        current_event=_dict_or_empty(data.get("current_event")),
+        behavior_queue=data.get("behavior_queue") if isinstance(data.get("behavior_queue"), list) else data.get("behavior_agenda"),
+        action_packets=data.get("action_packets"),
+        interaction_carryover=_dict_or_empty(data.get("interaction_carryover")),
+        toolset_unlocks=_dict_or_empty(data.get("toolset_unlocks")),
+        autonomy_block_reason="",
+        session_context=session_context,
+        last_external_tools=data.get("last_external_tools"),
+    )
+    return {
+        "session_context": session_context,
+        "digital_body_state": digital_body_state,
+        "autonomy_block_reason": "",
+    }
+
+
 @dataclass
 class StreamInvocationResult:
     values: dict[str, Any]
@@ -227,6 +279,8 @@ _ACCESS_HINT_KEYS = {
     "requestable_access",
     "constraints",
     "world_surfaces",
+    "workspace_root",
+    "workspace_root_kind",
     "selected_access_proposal",
 }
 
@@ -293,6 +347,13 @@ def _approval_request_from_pending_access(values: dict[str, Any] | None) -> Tool
             }
         ],
     }
+    assist_request = derive_assist_request(
+        data,
+        pending_action_proposal=packet,
+        digital_body_state=digital_body,
+    )
+    if assist_request:
+        payload["assist_request"] = assist_request
     return ToolApprovalRequest(
         kind="access_request",
         source="access",
@@ -311,6 +372,8 @@ def _approval_trace_entry(
     name = str(tool_name or "").strip()
     if name == "execute_workspace_command":
         intent = "sandbox:execute_workspace_command"
+    elif name.startswith("browser_"):
+        intent = f"browser:{name.removeprefix('browser_')}"
     elif name in {"install_skill", "update_skill", "enable_skill", "disable_skill", "pin_skill", "unpin_skill"}:
         intent = f"skills:{name.replace('_skill', '')}"
     else:
@@ -363,6 +426,12 @@ def _merge_pending_approval_state(
             mutation_preview=tool_call.get("mutation_preview") if isinstance(tool_call.get("mutation_preview"), dict) else None,
             execution_spec=tool_call.get("execution_spec") if isinstance(tool_call.get("execution_spec"), dict) else None,
             execution_preview=tool_call.get("execution_preview") if isinstance(tool_call.get("execution_preview"), dict) else None,
+            browser_execution_spec=tool_call.get("browser_execution_spec")
+            if isinstance(tool_call.get("browser_execution_spec"), dict)
+            else None,
+            browser_execution_preview=tool_call.get("browser_execution_preview")
+            if isinstance(tool_call.get("browser_execution_preview"), dict)
+            else None,
         )
         if not packet:
             continue
@@ -453,19 +522,31 @@ def _access_request_execution_binding(
     selected = normalize_access_acquire_proposal(selected_access_proposal)
     if not selected:
         return "", {}
-    if str(selected.get("path_kind") or "").strip().lower() != "create_new":
-        return "", {}
-    if str(selected.get("mode") or "").strip().lower() != "operator_create_workspace":
-        return "", {}
     access_hints = dict(hints or {})
     access_hints["selected_access_proposal"] = selected
-    return (
-        "create_workspace_access",
-        {
-            "workspace_name": str(selected.get("workspace_name") or "").strip(),
-            "access_hints": access_hints,
-        },
-    )
+    path_kind = str(selected.get("path_kind") or "").strip().lower()
+    mode = str(selected.get("mode") or "").strip().lower()
+    if path_kind == "create_new" and mode == "operator_create_workspace":
+        return (
+            "create_workspace_access",
+            {
+                "workspace_name": str(selected.get("workspace_name") or "").strip(),
+                "access_hints": access_hints,
+            },
+        )
+    if path_kind == "acquire_existing" and mode == "operator_attach_repo_root":
+        repo_root = str(access_hints.get("workspace_root") or "").strip()
+        if not repo_root:
+            return "", {}
+        access_hints["workspace_root_kind"] = "attached_repo_root"
+        return (
+            "attach_repo_root_access",
+            {
+                "repo_root": repo_root,
+                "access_hints": access_hints,
+            },
+        )
+    return "", {}
 
 
 def _access_request_trace_entry(
@@ -545,6 +626,8 @@ def _apply_access_request_resolution(
                 "session_recovery_mode",
                 "retry_after_s",
                 "cooldown_scope",
+                "workspace_root",
+                "workspace_root_kind",
                 "missing_access",
                 "requestable_access",
                 "constraints",
@@ -696,9 +779,25 @@ def _apply_access_request_resolution(
 def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
     data = values if isinstance(values, dict) else {}
     reconsolidation_snapshot = _dict_or_empty(data.get("reconsolidation_snapshot"))
+    digital_body = resolve_digital_body_state(
+        digital_body_state=_dict_or_empty(data.get("digital_body_state")),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
     action_packets = resolve_action_packets(
         action_packets=data.get("action_packets"),
         reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    pending_approval = resolve_pending_action_proposal(
+        pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    negotiation = resolve_access_negotiation_context(
+        data,
+        pending_action_proposal=pending_approval,
+        action_packets=action_packets,
+        reconsolidation_snapshot=reconsolidation_snapshot,
+        digital_body_state=digital_body,
     )
     return {
         "intent": resolve_autonomy_intent(
@@ -709,10 +808,10 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
             autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
         ),
         "action_packets": action_packets,
-        "pending_approval": resolve_pending_action_proposal(
-            pending_action_proposal=_dict_or_empty(data.get("pending_action_proposal")),
-            action_packets=action_packets,
-            reconsolidation_snapshot=reconsolidation_snapshot,
+        "pending_approval": attach_assist_request_to_pending_approval(
+            pending_approval,
+            assist_request=negotiation.get("assist_request") if isinstance(negotiation, dict) else None,
+            source_packet=negotiation.get("packet") if isinstance(negotiation, dict) else None,
         ),
         "execution_trace": resolve_action_trace(
             action_trace=data.get("action_trace"),
@@ -881,6 +980,22 @@ class BackendSession:
             fallback_thread_id=self.thread_id,
             fallback_user_id=self.user_id,
         )
+        current_values = self.get_state_values(config=cfg)
+        negotiation = resolve_access_negotiation_context(current_values)
+        if (
+            isinstance(negotiation, dict)
+            and str(negotiation.get("kind") or "").strip().lower() == "manual_takeover"
+            and looks_like_takeover_completion_signal(payload_user_text(payload))
+        ):
+            partial_update = _manual_takeover_resume_state_update(current_values)
+            if partial_update:
+                self.graph.update_state(cfg, partial_update, as_node="prepare_turn")
+                payload = {
+                    "event_override": build_access_resume_event_override(
+                        {**current_values, **partial_update},
+                        assist_request=dict(negotiation.get("assist_request") or {}),
+                    )
+                }
         last_values: dict[str, Any] | None = None
         buf = ""
         for mode, chunk in self.graph.stream(payload, config=cfg, stream_mode=["messages", "values"]):
@@ -928,8 +1043,28 @@ class BackendSession:
         pending_access = _approval_request_from_pending_access(current_values)
         if pending_access is not None and not _snapshot_has_pending_graph_interrupt(snapshot):
             decision = next((dict(item) for item in decisions if isinstance(item, dict)), {})
+            pending_packet = _pending_access_request_packet(current_values)
+            pending_proposal_id = str(pending_packet.get("proposal_id") or "").strip()
             resolved_values = _apply_access_request_resolution(current_values, decision)
             self.graph.update_state(cfg, resolved_values, as_node="prepare_turn")
+            resolved_packet = next(
+                (
+                    packet
+                    for packet in normalize_action_packets(resolved_values.get("action_packets"))
+                    if str(packet.get("proposal_id") or "").strip() == pending_proposal_id
+                ),
+                {},
+            )
+            if str(resolved_packet.get("status") or "").strip().lower() == "completed":
+                assist_request = derive_assist_request(current_values)
+                if assist_request:
+                    continued = self.invoke_stream(
+                        {"event_override": build_access_resume_event_override(resolved_values, assist_request=assist_request)},
+                        config=cfg,
+                        on_text=on_text,
+                    )
+                    if continued.values or continued.streamed_text or continued.approval_request is not None:
+                        return continued
             return StreamInvocationResult(
                 values=resolved_values,
                 streamed_text="",
@@ -947,10 +1082,17 @@ class BackendSession:
         *,
         streamed_text: str = "",
     ) -> str:
+        assist_request = derive_assist_request(values)
+        if assist_request:
+            return str(assist_request.get("message") or "").strip()
+        resume_ack = derive_access_resume_ack(values)
         final_text = _state_final_text(values)
-        if final_text:
-            return final_text
-        return str(streamed_text or "").strip()
+        text = final_text or str(streamed_text or "").strip()
+        if resume_ack and text:
+            return f"{resume_ack}\n{text}".strip()
+        if resume_ack:
+            return resume_ack
+        return text
 
     def invoke_event_round(
         self,

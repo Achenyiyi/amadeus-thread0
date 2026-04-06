@@ -1,0 +1,48 @@
+{
+  "run_id": "ap-attach-repo-git-1",
+  "runner_kind": "docker_isolated_runner",
+  "isolation_level": "docker_local_isolated",
+  "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+  "network_policy": "none",
+  "workspace_root_kind": "attached_repo_root",
+  "spec": {
+    "executor": "git",
+    "profile": "git_readonly",
+    "argv": [
+      "git",
+      "rev-parse",
+      "--show-toplevel"
+    ],
+    "cwd": "E:\\桌面\\amadeus-thread0",
+    "allowed_roots": [
+      "E:\\桌面\\amadeus-thread0"
+    ],
+    "timeout_s": 90,
+    "writes_expected": false,
+    "expected_artifacts": [],
+    "runner_kind": "docker_isolated_runner",
+    "isolation_level": "docker_local_isolated",
+    "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+    "network_policy": "none",
+    "workspace_root_kind": "attached_repo_root"
+  },
+  "runtime": {
+    "container_name": "amadeus-sbox-ap-attach-repo-git-1",
+    "container_id": "ebe423104cae6ca358714170d49d95061e85e47bf900b60e14be6c0e701502fe",
+    "container_workdir": "/workspace",
+    "translated_argv": [
+      "git",
+      "rev-parse",
+      "--show-toplevel"
+    ]
+  },
+  "result": {
+    "status": "blocked",
+    "exit_code": 125,
+    "duration_ms": 83,
+    "stdout_log_ref": "E:\\桌面\\amadeus-thread0\\.amadeus\\sandbox-runs\\ap-attach-repo-git-1\\stdout.txt",
+    "stderr_log_ref": "E:\\桌面\\amadeus-thread0\\.amadeus\\sandbox-runs\\ap-attach-repo-git-1\\stderr.txt",
+    "produced_artifacts": [],
+    "error_summary": "process exited with code 125"
+  }
+}

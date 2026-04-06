@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from .action_packets import compact_artifact_identity, normalize_action_packets
+from .browser_runtime import (
+    browser_runtime_state_has_signal,
+    normalize_browser_runtime_state,
+)
 from .skill_runtime import normalize_skill_effects
 
 _OWN_RHYTHM_EVENT_KINDS = {
@@ -622,6 +626,15 @@ def derive_sandbox_surface_state(
         last_status = "gated"
     runner_kind = _clean_state_label(existing.get("runner_kind"))
     isolation_level = _clean_state_label(existing.get("isolation_level"))
+    image_ref = _clean_text(existing.get("image_ref"), limit=160)
+    network_policy = _clean_state_label(existing.get("network_policy"))
+    if not network_policy and runner_kind == "docker_isolated_runner":
+        network_policy = "none"
+    elif not network_policy and runner_kind == "local_restricted_runner":
+        network_policy = "host"
+    workspace_root_kind = _clean_state_label(existing.get("workspace_root_kind"))
+    if workspace_root and workspace_root_kind not in {"runtime_owned", "attached_repo_root"}:
+        workspace_root_kind = "runtime_owned"
     last_command_profile = _clean_state_label(existing.get("last_command_profile"))
     last_exit_code = _clean_nonnegative_int(existing.get("last_exit_code"), limit=999999)
     last_run_id = _clean_text(existing.get("last_run_id"), limit=128)
@@ -632,10 +645,41 @@ def derive_sandbox_surface_state(
         "last_status": last_status,
         "runner_kind": runner_kind,
         "isolation_level": isolation_level,
+        "image_ref": image_ref,
+        "network_policy": network_policy,
+        "workspace_root_kind": workspace_root_kind,
         "last_command_profile": last_command_profile,
         "last_exit_code": last_exit_code,
         "last_run_id": last_run_id,
         "arbitrary_execution": False,
+    }
+
+
+def derive_browser_runtime_surface_state(
+    *,
+    browser_runtime_state: Any = None,
+    browser_session: Any = None,
+) -> dict[str, Any]:
+    existing = _dict_or_empty(browser_runtime_state)
+    normalized = normalize_browser_runtime_state(existing)
+    availability = _clean_state_label(normalized.get("availability"))
+    if not availability and _clean_state_label(browser_session) in _SESSION_PRESENT_STATES:
+        availability = "available"
+    context_status = _clean_state_label(normalized.get("context_status"))
+    if not context_status and bool(normalized.get("manual_takeover_required", False)):
+        context_status = "manual_takeover"
+    return {
+        "availability": availability,
+        "profile_root": _clean_text(normalized.get("profile_root"), limit=320),
+        "context_status": context_status,
+        "active_page_id": _clean_text(normalized.get("active_page_id"), limit=64),
+        "active_tab_count": _clean_nonnegative_int(normalized.get("active_tab_count"), limit=999),
+        "downloads_dir": _clean_text(normalized.get("downloads_dir"), limit=320),
+        "last_action_status": _clean_state_label(normalized.get("last_action_status"), limit=64),
+        "last_run_id": _clean_text(normalized.get("last_run_id"), limit=128),
+        "manual_takeover_required": bool(normalized.get("manual_takeover_required", False)),
+        "runner_kind": _clean_state_label(normalized.get("runner_kind"), limit=80),
+        "isolation_level": _clean_state_label(normalized.get("isolation_level"), limit=80),
     }
 
 
@@ -719,6 +763,9 @@ def _sandbox_surface_state_has_signal(value: Any) -> bool:
             _clean_state_label(row.get("last_status") or row.get("last_known_status")),
             _clean_state_label(row.get("runner_kind")),
             _clean_state_label(row.get("isolation_level")),
+            _clean_text(row.get("image_ref"), limit=160),
+            _clean_state_label(row.get("network_policy")),
+            _clean_state_label(row.get("workspace_root_kind")),
             _clean_state_label(row.get("last_command_profile")),
             _clean_text(row.get("last_run_id"), limit=128),
             _clean_nonnegative_int(row.get("last_exit_code"), limit=999999) > 0,
@@ -726,6 +773,10 @@ def _sandbox_surface_state_has_signal(value: Any) -> bool:
             bool(row.get("arbitrary_execution", False)),
         )
     )
+
+
+def _browser_runtime_surface_state_has_signal(value: Any) -> bool:
+    return browser_runtime_state_has_signal(value)
 
 
 def prune_resolved_access_hints(hints: dict[str, Any] | None) -> dict[str, Any]:
@@ -1108,9 +1159,15 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         sandbox_mode=row.get("sandbox_mode"),
         workspace_root=workspace_root,
     )
+    browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=row.get("browser_runtime_state"),
+        browser_session=row.get("browser_session"),
+    )
     sandbox_mode = _clean_state_label(
         row.get("sandbox_mode") or sandbox_state.get("availability")
     )
+    if not browser_session and _browser_runtime_surface_state_has_signal(browser_runtime_state):
+        browser_session = "present"
     network_access = _clean_state_label(row.get("network_access"))
     world_surfaces = _merge_unique_lists(
         row.get("world_surfaces"),
@@ -1130,6 +1187,14 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     sandbox_exit_code = _coerce_int(row.get("sandbox_exit_code"), 0)
     sandbox_duration_ms = max(0, _coerce_int(row.get("sandbox_duration_ms"), 0))
     sandbox_produced_artifacts = _clean_text_list(row.get("sandbox_produced_artifacts"), limit=8, item_limit=320)
+    browser_run_id = _clean_text(row.get("browser_run_id"), limit=128)
+    browser_profile_id = _clean_text(row.get("browser_profile_id"), limit=120)
+    browser_page_id = _clean_text(row.get("browser_page_id"), limit=64)
+    browser_tab_id = _clean_text(row.get("browser_tab_id"), limit=64)
+    browser_url = _clean_text(row.get("browser_url"), limit=1200)
+    browser_title = _clean_text(row.get("browser_title"), limit=220)
+    browser_last_action_kind = _clean_state_label(row.get("browser_last_action_kind"), limit=64)
+    browser_last_exit_status = _clean_state_label(row.get("browser_last_exit_status"), limit=64)
     requested_help = bool(row.get("requested_help", False))
     environmental_friction = bool(row.get("environmental_friction", False))
     procedural_growth = bool(row.get("procedural_growth", False))
@@ -1220,6 +1285,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         else {}
     )
     sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
+    browser_runtime_state = browser_runtime_state if _browser_runtime_surface_state_has_signal(browser_runtime_state) else {}
     skill_effects = normalize_skill_effects(row.get("skill_effects"))
 
     kind = _clean_state_label(row.get("kind"))
@@ -1291,6 +1357,25 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "sandbox_exit_code": sandbox_exit_code,
         "sandbox_duration_ms": sandbox_duration_ms,
         "sandbox_produced_artifacts": sandbox_produced_artifacts,
+        "sandbox_runner_kind": _clean_state_label(row.get("sandbox_runner_kind") or sandbox_state.get("runner_kind")),
+        "sandbox_isolation_level": _clean_state_label(
+            row.get("sandbox_isolation_level") or sandbox_state.get("isolation_level")
+        ),
+        "sandbox_image_ref": _clean_text(row.get("sandbox_image_ref") or sandbox_state.get("image_ref"), limit=160),
+        "sandbox_network_policy": _clean_state_label(
+            row.get("sandbox_network_policy") or sandbox_state.get("network_policy")
+        ),
+        "workspace_root_kind": _clean_state_label(
+            row.get("workspace_root_kind") or sandbox_state.get("workspace_root_kind")
+        ),
+        "browser_run_id": browser_run_id,
+        "browser_profile_id": browser_profile_id,
+        "browser_page_id": browser_page_id,
+        "browser_tab_id": browser_tab_id,
+        "browser_url": browser_url,
+        "browser_title": browser_title,
+        "browser_last_action_kind": browser_last_action_kind,
+        "browser_last_exit_status": browser_last_exit_status,
         "procedural_growth": procedural_growth,
         "environmental_friction": environmental_friction,
         "requested_help": requested_help,
@@ -1304,6 +1389,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "quota_state_detail": quota_state_detail,
         "permission_state": permission_state,
         "sandbox_state": sandbox_state,
+        "browser_runtime_state": browser_runtime_state,
         "skill_effects": skill_effects,
     }
     if not any(
@@ -1359,6 +1445,19 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["sandbox_exit_code"] != 0,
             normalized["sandbox_duration_ms"] > 0,
             normalized["sandbox_produced_artifacts"],
+            normalized["sandbox_runner_kind"],
+            normalized["sandbox_isolation_level"],
+            normalized["sandbox_image_ref"],
+            normalized["sandbox_network_policy"],
+            normalized["workspace_root_kind"],
+            normalized["browser_run_id"],
+            normalized["browser_profile_id"],
+            normalized["browser_page_id"],
+            normalized["browser_tab_id"],
+            normalized["browser_url"],
+            normalized["browser_title"],
+            normalized["browser_last_action_kind"],
+            normalized["browser_last_exit_status"],
             normalized["world_surfaces"],
             normalized["missing_access"],
             normalized["requested_access"],
@@ -1375,6 +1474,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["quota_state_detail"],
             normalized["permission_state"],
             normalized["sandbox_state"],
+            normalized["browser_runtime_state"],
             normalized["skill_effects"],
         )
     ):
@@ -1530,9 +1630,15 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
         sandbox_mode=access_state.get("sandbox_mode"),
         workspace_root=workspace_root,
     )
+    browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=access_state.get("browser_runtime_state"),
+        browser_session=browser_session,
+    )
     sandbox_mode = _clean_state_label(
         access_state.get("sandbox_mode") or sandbox_state.get("availability")
     )
+    if not browser_session and _browser_runtime_surface_state_has_signal(browser_runtime_state):
+        browser_session = "present"
     permission_progress_hints = {
         "browser_session": browser_session,
         "account_state": account_state,
@@ -1570,6 +1676,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
         else {}
     )
     sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
+    browser_runtime_state = browser_runtime_state if _browser_runtime_surface_state_has_signal(browser_runtime_state) else {}
     artifact = derive_artifact_continuity(
         artifact_continuity=resource_state.get("artifact_continuity"),
         active_artifact_kind=resource_state.get("active_artifact_kind"),
@@ -1630,6 +1737,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "quota_state_detail": quota_state_detail,
             "permission_state": permission_state,
             "sandbox_state": sandbox_state,
+            "browser_runtime_state": browser_runtime_state,
         },
         "resource_state": {
             "behavior_queue_depth": max(0, int(resource_state.get("behavior_queue_depth") or 0)),
@@ -1655,6 +1763,8 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "artifact_source_title": str(artifact_identity.get("artifact_source_title") or "").strip(),
             "artifact_source_tool_name": str(artifact_identity.get("artifact_source_tool_name") or "").strip(),
             "workspace_root": workspace_root,
+            "browser_profile_id": _clean_text(resource_state.get("browser_profile_id"), limit=120),
+            "browser_tab_id": _clean_text(resource_state.get("browser_tab_id"), limit=64),
         },
         "body_constraints": list(dict.fromkeys(_unique_clean_list(*_list_or_empty(row.get("body_constraints")))))[:12],
     }
@@ -1722,6 +1832,12 @@ def derive_digital_body_state(
         artifact_source_title=carried_embodied.get("artifact_source_title"),
         artifact_source_tool_name=carried_embodied.get("artifact_source_tool_name"),
     )
+    carried_browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=carried_embodied.get("browser_runtime_state"),
+        browser_session=carried_embodied.get("browser_session"),
+    )
+    carried_browser_profile_id = _clean_text(carried_embodied.get("browser_profile_id"), limit=120)
+    carried_browser_tab_id = _clean_text(carried_embodied.get("browser_tab_id"), limit=64)
 
     perception_channels = _unique_clean_list(
         perception.get("channel"),
@@ -1855,9 +1971,15 @@ def derive_digital_body_state(
         sandbox_mode=hints.get("sandbox_mode"),
         workspace_root=hints.get("workspace_root") or carried_embodied.get("workspace_root"),
     )
+    hinted_browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=hints.get("browser_runtime_state") or carried_browser_runtime_state,
+        browser_session=browser_session,
+    )
     sandbox_mode = _clean_state_label(
         hints.get("sandbox_mode") or hinted_sandbox_state.get("availability")
     )
+    if not browser_session and _browser_runtime_surface_state_has_signal(hinted_browser_runtime_state):
+        browser_session = "present"
     network_access = _clean_state_label(hints.get("network_access"))
     artifact = derive_artifact_continuity(
         artifact_continuity=hints.get("artifact_continuity") or carried_artifact.get("artifact_continuity"),
@@ -1896,6 +2018,14 @@ def derive_digital_body_state(
     artifact_source_query = _clean_text(artifact_identity.get("artifact_source_query"), limit=220)
     artifact_source_title = _clean_text(artifact_identity.get("artifact_source_title"), limit=160)
     artifact_source_tool_name = _clean_state_label(artifact_identity.get("artifact_source_tool_name"))
+    browser_profile_id = _clean_text(
+        hints.get("browser_profile_id") or carried_browser_profile_id,
+        limit=120,
+    )
+    browser_tab_id = _clean_text(
+        hints.get("browser_tab_id") or carried_browser_tab_id,
+        limit=64,
+    )
     workspace_root = _clean_text(
         hints.get("workspace_root") or carried_embodied.get("workspace_root"),
         limit=320,
@@ -1931,6 +2061,8 @@ def derive_digital_body_state(
         conditions.append("artifact_reacquisition_available")
     if blocked_packet_count > 0 or block_reason:
         conditions.append("blocked_action_present")
+    if bool(hinted_browser_runtime_state.get("manual_takeover_required", False)):
+        conditions.append("manual_browser_takeover_required")
     explicit_surfaces: list[str] = []
     if browser_session or account_state or cookie_state or api_key_state or quota_state:
         explicit_surfaces.append("browser")
@@ -1941,6 +2073,8 @@ def derive_digital_body_state(
     if network_access or api_key_state or quota_state:
         explicit_surfaces.append("network")
     if active_artifact_kind in _ARTIFACT_BROWSER_KINDS:
+        explicit_surfaces.append("browser")
+    if _browser_runtime_surface_state_has_signal(hinted_browser_runtime_state):
         explicit_surfaces.append("browser")
     if active_artifact_kind in _ARTIFACT_FILESYSTEM_KINDS:
         explicit_surfaces.append("filesystem")
@@ -2050,6 +2184,8 @@ def derive_digital_body_state(
         requestable_access = _merge_unique_lists(requestable_access, ["human_approval"], limit=12)
     if carried_requested_help:
         requestable_access = _merge_unique_lists(requestable_access, ["human_approval"], limit=12)
+    if bool(hinted_browser_runtime_state.get("manual_takeover_required", False)):
+        requestable_access = _merge_unique_lists(requestable_access, ["human_approval"], limit=12)
     conditions = _merge_unique_lists(hints.get("constraints"), conditions, limit=12)
     has_completed_selected_access = any(
         _clean_text(packet.get("status")).lower() == "completed"
@@ -2115,6 +2251,10 @@ def derive_digital_body_state(
         sandbox_mode=sandbox_mode,
         workspace_root=workspace_root,
     )
+    browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=hints.get("browser_runtime_state") or carried_browser_runtime_state,
+        browser_session=browser_session,
+    )
 
     action_channels = ["language"]
     if queue_depth > 0:
@@ -2178,6 +2318,7 @@ def derive_digital_body_state(
                 "quota_state_detail": quota_state_detail,
                 "permission_state": permission_state,
                 "sandbox_state": sandbox_state,
+                "browser_runtime_state": browser_runtime_state,
             },
             "resource_state": {
                 "behavior_queue_depth": queue_depth,
@@ -2203,6 +2344,8 @@ def derive_digital_body_state(
                 "artifact_source_title": artifact_source_title,
                 "artifact_source_tool_name": artifact_source_tool_name,
                 "workspace_root": workspace_root,
+                "browser_profile_id": browser_profile_id,
+                "browser_tab_id": browser_tab_id,
             },
             "body_constraints": conditions,
         }

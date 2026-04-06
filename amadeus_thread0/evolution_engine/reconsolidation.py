@@ -11,11 +11,18 @@ from ..graph_parts.action_packets import (
     normalize_action_packet,
     normalize_action_packets,
     normalize_artifact_context,
+    normalize_execution_preview,
 )
 from ..graph_parts.autonomy_runtime import normalize_autonomy_intent
+from ..graph_parts.browser_runtime import (
+    normalize_browser_execution_preview,
+    normalize_browser_execution_result,
+    normalize_browser_execution_spec,
+)
 from ..graph_parts.digital_body_runtime import (
     derive_account_surface_state,
     derive_artifact_identity,
+    derive_browser_runtime_surface_state,
     derive_permission_surface_state,
     derive_quota_surface_state,
     derive_sandbox_surface_state,
@@ -59,6 +66,24 @@ _ARTIFACT_REACQUISITION_INTENTS = {
     "artifact:reopen_page",
     "artifact:restore_page",
     "artifact:rerun_search",
+}
+
+_BROWSER_NAVIGATION_TOOL_NAMES = {
+    "browser_open_url",
+    "browser_follow_link",
+    "browser_list_tabs",
+    "browser_select_tab",
+    "browser_go_back",
+    "browser_go_forward",
+    "browser_reload",
+    "browser_snapshot",
+    "browser_capture_page_to_source_ref",
+}
+
+_BROWSER_INTERACTION_TOOL_NAMES = {
+    "browser_click",
+    "browser_fill",
+    "browser_press_key",
 }
 
 
@@ -336,6 +361,55 @@ def _compact_action_packets_snapshot(action_packets: Any) -> list[dict[str, Any]
             }
         else:
             compact_artifact_context = {}
+        browser_execution_spec = normalize_browser_execution_spec(packet.get("browser_execution_spec"))
+        compact_browser_execution_spec = {
+            "operation": str(browser_execution_spec.get("operation") or "").strip(),
+            "profile_id": str(browser_execution_spec.get("profile_id") or "").strip(),
+            "page_ref": str(browser_execution_spec.get("page_ref") or "").strip(),
+            "navigation_url": str(browser_execution_spec.get("navigation_url") or "").strip(),
+            "target_ref": str(browser_execution_spec.get("target_ref") or "").strip(),
+            "upload_source": str(browser_execution_spec.get("upload_source") or "").strip(),
+            "download_target": str(browser_execution_spec.get("download_target") or "").strip(),
+            "allowed_roots": list(browser_execution_spec.get("allowed_roots") or [])[:6],
+            "timeout_s": max(0, int(browser_execution_spec.get("timeout_s") or 0)),
+            "wait_until": str(browser_execution_spec.get("wait_until") or "").strip(),
+        } if browser_execution_spec else {}
+        browser_execution_preview = normalize_browser_execution_preview(packet.get("browser_execution_preview"))
+        compact_browser_execution_preview = {
+            "operation": str(browser_execution_preview.get("operation") or "").strip(),
+            "profile_id": str(browser_execution_preview.get("profile_id") or "").strip(),
+            "page_ref": str(browser_execution_preview.get("page_ref") or "").strip(),
+            "page_url": str(browser_execution_preview.get("page_url") or "").strip(),
+            "page_title": str(browser_execution_preview.get("page_title") or "").strip(),
+            "target_ref": str(browser_execution_preview.get("target_ref") or "").strip(),
+            "target_label": str(browser_execution_preview.get("target_label") or "").strip(),
+            "input_payload_schema": str(browser_execution_preview.get("input_payload_schema") or "").strip(),
+            "download_target": str(browser_execution_preview.get("download_target") or "").strip(),
+            "upload_source": str(browser_execution_preview.get("upload_source") or "").strip(),
+            "allowed_roots": list(browser_execution_preview.get("allowed_roots") or [])[:6],
+            "timeout_s": max(0, int(browser_execution_preview.get("timeout_s") or 0)),
+            "verification_summary": str(browser_execution_preview.get("verification_summary") or "").strip(),
+            "requires_manual_takeover": bool(browser_execution_preview.get("requires_manual_takeover", False)),
+        } if browser_execution_preview else {}
+        browser_execution_result = normalize_browser_execution_result(packet.get("browser_execution_result"))
+        compact_browser_execution_result = {
+            "run_id": str(browser_execution_result.get("run_id") or "").strip(),
+            "status": str(browser_execution_result.get("status") or "").strip(),
+            "profile_id": str(browser_execution_result.get("profile_id") or "").strip(),
+            "page_id": str(browser_execution_result.get("page_id") or "").strip(),
+            "tab_id": str(browser_execution_result.get("tab_id") or "").strip(),
+            "url": str(browser_execution_result.get("url") or "").strip(),
+            "title": str(browser_execution_result.get("title") or "").strip(),
+            "action_kind": str(browser_execution_result.get("action_kind") or "").strip(),
+            "target_ref": str(browser_execution_result.get("target_ref") or "").strip(),
+            "duration_ms": max(0, int(browser_execution_result.get("duration_ms") or 0)),
+            "active_tab_count": max(0, int(browser_execution_result.get("active_tab_count") or 0)),
+            "last_action_status": str(browser_execution_result.get("last_action_status") or "").strip(),
+            "download_path": str(browser_execution_result.get("download_path") or "").strip(),
+            "upload_source": str(browser_execution_result.get("upload_source") or "").strip(),
+            "error_summary": str(browser_execution_result.get("error_summary") or "").strip(),
+            "manual_takeover_required": bool(browser_execution_result.get("manual_takeover_required", False)),
+        } if browser_execution_result else {}
         out.append(
             {
                 "proposal_id": str(packet.get("proposal_id") or "").strip(),
@@ -363,6 +437,9 @@ def _compact_action_packets_snapshot(action_packets: Any) -> list[dict[str, Any]
                 "tool_name": str(packet.get("tool_name") or "").strip(),
                 "block_reason": str(packet.get("block_reason") or "").strip()[:220],
                 "artifact_context": compact_artifact_context,
+                "browser_execution_spec": compact_browser_execution_spec,
+                "browser_execution_preview": compact_browser_execution_preview,
+                "browser_execution_result": compact_browser_execution_result,
             }
         )
     return out
@@ -840,6 +917,7 @@ def derive_digital_body_consequence(
     ).strip()
     primary_skill_version = str(primary_skill_effect.get("version") or "").strip()
     primary_execution_spec = dict(primary_packet.get("execution_spec") or {}) if isinstance(primary_packet.get("execution_spec"), dict) else {}
+    primary_execution_preview = normalize_execution_preview(primary_packet.get("execution_preview"))
     primary_execution_result = dict(primary_packet.get("execution_result") or {}) if isinstance(primary_packet.get("execution_result"), dict) else {}
     primary_artifact_context = normalize_artifact_context(primary_packet.get("artifact_context"))
     primary_artifact_identity = compact_artifact_identity(primary_packet.get("artifact_context"))
@@ -919,6 +997,10 @@ def derive_digital_body_consequence(
         sandbox_mode=sandbox_mode,
         workspace_root=workspace_root,
     )
+    browser_runtime_state = derive_browser_runtime_surface_state(
+        browser_runtime_state=access_state.get("browser_runtime_state"),
+        browser_session=browser_session,
+    )
 
     selected_access_target = str(selected_access_proposal.get("target") or "").strip().lower()
     selected_access_mode = str(selected_access_proposal.get("mode") or "").strip().lower()
@@ -946,6 +1028,88 @@ def derive_digital_body_consequence(
         for item in (primary_execution_result.get("produced_artifacts") if isinstance(primary_execution_result.get("produced_artifacts"), list) else [])
         if str(item or "").strip()
     ][:8]
+    sandbox_runner_kind = str(
+        primary_execution_preview.get("runner_kind")
+        or primary_execution_spec.get("runner_kind")
+        or sandbox_state.get("runner_kind")
+        or ""
+    ).strip().lower()[:80]
+    sandbox_isolation_level = str(
+        primary_execution_preview.get("isolation_level")
+        or primary_execution_spec.get("isolation_level")
+        or sandbox_state.get("isolation_level")
+        or ""
+    ).strip().lower()[:80]
+    sandbox_image_ref = str(
+        primary_execution_preview.get("image_ref")
+        or primary_execution_spec.get("image_ref")
+        or sandbox_state.get("image_ref")
+        or ""
+    ).strip()[:160]
+    sandbox_network_policy = str(
+        primary_execution_preview.get("network_policy")
+        or primary_execution_spec.get("network_policy")
+        or sandbox_state.get("network_policy")
+        or ""
+    ).strip().lower()[:32]
+    workspace_root_kind = str(
+        primary_execution_preview.get("workspace_root_kind")
+        or primary_execution_spec.get("workspace_root_kind")
+        or sandbox_state.get("workspace_root_kind")
+        or ""
+    ).strip().lower()[:64]
+    primary_browser_execution_spec = normalize_browser_execution_spec(primary_packet.get("browser_execution_spec"))
+    primary_browser_execution_preview = normalize_browser_execution_preview(primary_packet.get("browser_execution_preview"))
+    primary_browser_execution_result = normalize_browser_execution_result(primary_packet.get("browser_execution_result"))
+    browser_run_id = str(
+        primary_browser_execution_result.get("run_id")
+        or browser_runtime_state.get("last_run_id")
+        or ""
+    ).strip()[:128]
+    browser_profile_id = str(
+        resource_state.get("browser_profile_id")
+        or primary_browser_execution_result.get("profile_id")
+        or primary_browser_execution_preview.get("profile_id")
+        or primary_browser_execution_spec.get("profile_id")
+        or ""
+    ).strip()[:120]
+    browser_page_id = str(
+        primary_browser_execution_result.get("page_id")
+        or browser_runtime_state.get("active_page_id")
+        or ""
+    ).strip()[:64]
+    browser_tab_id = str(
+        resource_state.get("browser_tab_id")
+        or primary_browser_execution_result.get("tab_id")
+        or ""
+    ).strip()[:64]
+    browser_url = str(
+        primary_browser_execution_result.get("url")
+        or resolved_artifact_identity.get("artifact_source_url")
+        or primary_browser_execution_preview.get("page_url")
+        or primary_browser_execution_spec.get("navigation_url")
+        or ""
+    ).strip()[:1200]
+    browser_title = str(
+        primary_browser_execution_result.get("title")
+        or active_artifact_label
+        or primary_browser_execution_preview.get("page_title")
+        or ""
+    ).strip()[:220]
+    browser_last_action_kind = str(
+        primary_browser_execution_result.get("action_kind")
+        or primary_browser_execution_preview.get("operation")
+        or primary_browser_execution_spec.get("operation")
+        or primary_tool_name.removeprefix("browser_")
+        if primary_tool_name.startswith("browser_")
+        else ""
+    ).strip().lower()[:64]
+    browser_last_exit_status = str(
+        primary_browser_execution_result.get("status")
+        or primary_browser_execution_result.get("last_action_status")
+        or browser_runtime_state.get("last_action_status")
+        or ""
+    ).strip().lower()[:64]
     access_resolution_signal = bool(primary_intent == "access:request_help" and primary_status == "completed")
     workspace_resolution_signal = bool(
         access_resolution_signal
@@ -955,6 +1119,15 @@ def derive_digital_body_consequence(
             or selected_access_mode == "operator_create_workspace"
             or (selected_access_target == "filesystem" and selected_access_path_kind == "create_new")
         )
+    )
+    workspace_attach_signal = bool(
+        primary_status == "completed"
+        and (
+            primary_tool_name == "attach_repo_root_access"
+            or selected_access_mode == "operator_attach_repo_root"
+        )
+        and workspace_root
+        and active_artifact_kind == "workspace"
     )
     file_mutation_signal = bool(
         primary_status == "completed"
@@ -1023,6 +1196,38 @@ def derive_digital_body_consequence(
             )
         )
     )
+    browser_tool_signal = bool(primary_tool_name.startswith("browser_") or primary_intent.startswith("browser:"))
+    browser_takeover_requested_signal = bool(
+        browser_tool_signal
+        and (
+            primary_tool_name == "browser_begin_manual_takeover"
+            or bool(primary_browser_execution_result.get("manual_takeover_required", False))
+            or bool(primary_browser_execution_preview.get("requires_manual_takeover", False))
+            or bool(browser_runtime_state.get("manual_takeover_required", False))
+        )
+        and primary_status in {"completed", "blocked"}
+    )
+    browser_download_signal = bool(
+        primary_tool_name == "browser_download_click"
+        and primary_status == "completed"
+    )
+    browser_upload_signal = bool(
+        primary_tool_name == "browser_upload_file"
+        and primary_status == "completed"
+    )
+    browser_interaction_signal = bool(
+        primary_tool_name in _BROWSER_INTERACTION_TOOL_NAMES
+        and primary_status == "completed"
+    )
+    browser_navigation_signal = bool(
+        primary_tool_name in _BROWSER_NAVIGATION_TOOL_NAMES
+        and primary_status == "completed"
+    )
+    browser_action_blocked_signal = bool(
+        browser_tool_signal
+        and primary_status == "blocked"
+        and not browser_takeover_requested_signal
+    )
     growth_signal = bool(
         completed_packet_count > 0
         and not workspace_inspection_signal
@@ -1047,6 +1252,18 @@ def derive_digital_body_consequence(
     )
     artifact_friction = artifact_continuity in {"missing", "detached"}
     cooldown_active = retry_after_s > 0
+    access_friction = bool(
+        access_mode == "blocked"
+        or (
+            access_mode == "limited"
+            and (
+                bool(missing_access)
+                or blocked_packet_count > 0
+                or bool(block_reason)
+                or pending_approval_count > 0
+            )
+        )
+    )
     friction_signal = bool(
         cooldown_active
         or
@@ -1054,7 +1271,7 @@ def derive_digital_body_consequence(
         or
         artifact_friction
         or
-        access_mode in {"blocked", "limited"}
+        access_friction
         or blocked_packet_count > 0
         or bool(block_reason)
         or bool(missing_access)
@@ -1112,6 +1329,17 @@ def derive_digital_body_consequence(
                 "presence_style": "技能激活态一旦切换，后续匹配和执行策略会顺着新状态继续，不会停在过时的候选层。",
                 "boundary_style": "启用、停用和 pin 这些能力生态变更只有在真正完成后，才会进入后续连续性。",
             }
+    elif workspace_attach_signal and not approval_signal:
+        kind = "workspace_root_attached"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            repo_label = active_artifact_label or workspace_root or "当前仓库根目录"
+            summary = f"{repo_label} 已经被正式挂接成当前 workspace，后续代码与研究动作会沿这条真实 repo 根目录继续。"
+        category_summaries = {
+            "agency_style": "她会把已经正式挂接好的仓库根目录记成真实可续接的工作面，而不是继续把它留在待审批或待接线的候选层。",
+            "presence_style": "repo root 一旦挂接完成，后续的代码、测试和排查都会顺着这块真实工作面继续，不会回到抽象说明。",
+            "boundary_style": "只有 operator 明确批准并真正接上的仓库根目录，才会进入她的数字身体；提案和待批状态不会被冒充成已拥有能力。",
+        }
     elif sandbox_execution_signal and primary_status == "completed" and not approval_signal:
         kind = "sandbox_execution_completed"
         summary = str(primary_packet.get("result_summary") or "").strip()[:220]
@@ -1131,6 +1359,75 @@ def derive_digital_body_consequence(
             "agency_style": "她会把被阻断的执行记成一次失败的尝试，而不是冒充成已经完成的工作。",
             "presence_style": "即使执行没跑通，失败日志和退出状态也会留在当前工作面里，方便下一轮继续排查。",
             "boundary_style": "审批通过不等于动作已经完成；执行真正失败时，她会老实保留失败事实而不是跳过它。",
+        }
+    elif browser_takeover_requested_signal:
+        kind = "browser_takeover_requested"
+        summary = str(primary_packet.get("result_summary") or primary_browser_execution_result.get("error_summary") or "").strip()[:220]
+        if not summary:
+            page_label = browser_title or active_artifact_label or browser_url or active_artifact_ref or "当前页面"
+            summary = f"{page_label} 这一步已经转成交由人工接管的浏览器动作，后续会沿同一个持久 profile 继续。"
+        category_summaries = {
+            "agency_style": "遇到敏感凭据或明确要求人工接手的网页步骤时，她会把动作推进到接管节点，再把最后一步交回给人，而不是硬闯过去。",
+            "presence_style": "人工接管不是丢失上下文；她会把当前页面、profile 和动作节点留住，方便后续顺着同一条浏览器连续性继续。",
+            "boundary_style": "账号密码、OTP、验证码和 passkey 这类敏感步骤不会被她偷偷执行；会被如实转成交由人工接管。",
+        }
+    elif browser_download_signal:
+        kind = "browser_download_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            download_label = active_artifact_label or active_artifact_ref or primary_browser_execution_result.get("download_path") or "下载文件"
+            summary = f"{download_label} 已经通过当前浏览器运行面真实落到受控目录里，后续可以顺着这个产物继续。"
+        category_summaries = {
+            "agency_style": "她会把真实下载完成的文件记成发生过的外部动作，而不是把下载仍停在待执行的点击计划里。",
+            "presence_style": "下载一旦完成，注意力就会顺着新落地的文件和当前页面继续，而不是回到抽象网页说明。",
+            "boundary_style": "只有真的落到受控目录里的下载才会被写成事实；审批、点击意图或失败尝试都不会提前算作完成。",
+        }
+    elif browser_upload_signal:
+        kind = "browser_upload_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            upload_label = primary_browser_execution_result.get("upload_source") or primary_browser_execution_spec.get("upload_source") or "受控文件"
+            summary = f"{upload_label} 已经通过当前浏览器运行面真实提交到页面里，后续可以沿这次上传继续。"
+        category_summaries = {
+            "agency_style": "她会把真实完成的上传记成已经发生过的网页动作，而不是把它继续停在待审批或待执行的计划层。",
+            "presence_style": "上传一旦完成，后续动作会沿当前页面和这份已提交文件继续，而不是回到空白的网页想象。",
+            "boundary_style": "只有来自受控 workspace/allowed roots 的真实上传才会进入连续性；越界路径或未批准动作不会被混写成已完成。",
+        }
+    elif browser_action_blocked_signal:
+        kind = "browser_action_blocked"
+        summary = str(primary_packet.get("result_summary") or primary_browser_execution_result.get("error_summary") or block_reason or "").strip()[:220]
+        if not summary:
+            page_label = browser_title or active_artifact_label or browser_url or active_artifact_ref or "当前页面"
+            summary = f"{page_label} 上这一步浏览器动作没有真正跑通，当前只留下被阻断的网页操作痕迹。"
+        category_summaries = {
+            "agency_style": "她会把被阻断的网页动作记成失败或被挡住的一步，而不是把提案、审批或半途状态冒充成已经完成。",
+            "presence_style": "即使网页动作没跑通，当前页面、run 记录和阻断原因也会被保留下来，方便后续接着处理。",
+            "boundary_style": "审批没过、目标无效、路径越界或站点限制时，她会把这条动作停在边界上，而不是用描述把动作伪装成已经做完。",
+        }
+    elif browser_interaction_signal:
+        kind = "browser_interaction_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            page_label = browser_title or active_artifact_label or browser_url or active_artifact_ref or "当前页面"
+            summary = f"{page_label} 上这一步网页交互已经真实完成，后续可以顺着同一个 live page 连续性继续。"
+        category_summaries = {
+            "agency_style": "她会把已经真实执行过的网页交互记成发生过的动作，而不是把它继续停留在按钮或表单的候选描述里。",
+            "presence_style": "交互一旦完成，后续判断会沿当前 live page、tab 和 run 记录继续，不会回到脱离页面的抽象计划。",
+            "boundary_style": "只有真正执行成功的网页交互才会写成事实；审批通过本身不等于动作已经发生。",
+        }
+    elif browser_navigation_signal:
+        kind = "browser_navigation_completed"
+        summary = str(primary_packet.get("result_summary") or "").strip()[:220]
+        if not summary:
+            page_label = browser_title or active_artifact_label or browser_url or active_artifact_ref or "当前页面"
+            if primary_tool_name == "browser_capture_page_to_source_ref":
+                summary = f"{page_label} 已经被显式保存进 source_ref，同时 live browser 页面连续性仍然保留着。"
+            else:
+                summary = f"{page_label} 已经通过当前浏览器运行面真实打开或更新，后续可以顺着同一个 live page 连续性继续。"
+        category_summaries = {
+            "agency_style": "她会把真实打开、切换或刷新过的页面记成已经发生过的浏览器动作，而不是把网页只当成抽象引用。",
+            "presence_style": "页面一旦真的在持久 profile 里打开或更新，后续注意力会顺着同一个 page/tab 继续，而不是退回保存材料的替代面。",
+            "boundary_style": "她不会把还没真正打开的页面冒充成当前现实表面；但一旦真实导航完成，也不会再把它压回成旧的 source_ref 替身。",
         }
     elif access_resolution_signal:
         summary = str(primary_packet.get("result_summary") or "").strip()[:220]
@@ -1431,6 +1728,19 @@ def derive_digital_body_consequence(
         "sandbox_exit_code": sandbox_exit_code,
         "sandbox_duration_ms": sandbox_duration_ms,
         "sandbox_produced_artifacts": sandbox_produced_artifacts,
+        "sandbox_runner_kind": sandbox_runner_kind,
+        "sandbox_isolation_level": sandbox_isolation_level,
+        "sandbox_image_ref": sandbox_image_ref,
+        "sandbox_network_policy": sandbox_network_policy,
+        "workspace_root_kind": workspace_root_kind,
+        "browser_run_id": browser_run_id,
+        "browser_profile_id": browser_profile_id,
+        "browser_page_id": browser_page_id,
+        "browser_tab_id": browser_tab_id,
+        "browser_url": browser_url,
+        "browser_title": browser_title,
+        "browser_last_action_kind": browser_last_action_kind,
+        "browser_last_exit_status": browser_last_exit_status,
         "procedural_growth": growth_signal,
         "environmental_friction": approval_signal or friction_signal,
         "requested_help": approval_signal,
@@ -1441,6 +1751,7 @@ def derive_digital_body_consequence(
         "quota_state_detail": quota_state_detail,
         "permission_state": permission_state,
         "sandbox_state": sandbox_state,
+        "browser_runtime_state": browser_runtime_state,
         "skill_effects": skill_effects,
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,

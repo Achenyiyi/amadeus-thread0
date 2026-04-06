@@ -11,42 +11,81 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-04-05`
+- Date: `2026-04-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: `Skills Ecosystem Formal Closure` preserved on top of the closed embodiment / sandbox baselines
+- Mainline phase: `Sandbox Embodied Execution Phase 2` in progress on top of the preserved embodiment / sandbox phase 1 / skills / live-browser baselines
 - Immediate research focus:
-  - frontend remains paused
-  - active work is now `managed skills ecosystem`, not more open-ended sandbox widening
-  - no new execution surface is selected yet
-  - the Chinese lexical-rule replacement discussion has been recorded as a future deferred track, not the current slice
-- Active backend focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
   - preserve `digital_embodiment_phase1_ready`
   - preserve `digital_embodiment_phase2_ready`
   - preserve `sandbox_embodied_execution_phase1_ready`
   - preserve `skills_ecosystem_ready`
-  - keep `skills` as a closed managed capability ecology:
-    - global registry
-    - session activation
-    - `SKILL.md` progressive disclosure
-    - approval-gated mutations
-    - no persona-core override
-    - completed usage writes back only as procedural / embodied continuity
-  - keep `search_web` as the canonical real internet-search tool, now backed by Tavily and the existing `source_ref` continuity path
-  - keep `search_langchain_docs` as compatibility-only until it is deliberately retired; do not route new generic web-search work through the docs-only MCP path
-  - keep the closed `digital_body.access_state` / `digital_body.resource_state` contract stable
-  - keep the new `host-local restricted execution` contract stable without widening into browser/network/package-install/arbitrary host codegen
-  - keep the new skills ecosystem contract stable without reopening persona-core or introducing a second skill truth model
-  - keep saved-material continuity on `source_ref` until a real browser runtime exists
-  - do not open a wider execution or embodiment surface until the repo explicitly selects the next phase
-  - do not reopen broad Chinese lexical rewrites before the embodiment phase reaches a stable replacement contract
-  - do not spend current mainline time on reply naturalness / tone micro-polish unless it blocks runtime correctness or contract closure
-  - no next post-skills backend phase is selected yet; default posture is preservation, not expansion
+  - preserve `live_browser_runtime_phase1_ready`
+  - close `sandbox_embodied_execution_phase2_ready` without opening arbitrary host shell, networked containers, package-install surfaces, or a second body/execution truth model
+  - keep current phase-2 execution scope bounded to:
+    - Docker-isolated local execution
+    - `python` / `pytest` / `rg` / read-only `git`
+    - runtime-owned workspaces by default
+    - explicit approval for repo-root attachment
+  - keep `Access Negotiation Persona Closure` and all previously closed baselines preserved while phase 2 lands
+  - keep `search_web + source_ref` continuity and live browser continuity as preserved external-world surfaces
+  - keep reply-tone / naturalness micro-polish and Chinese lexical-rule replacement off the mainline unless they block runtime correctness
 - Current frontend-handoff focus:
   - frontend remains frozen
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
+- Current phase-2 status:
+  - code-level root fixes for Docker phase-2 rerun continuity and follow-up inspection truth are in place
+  - phase-2 docs/contracts are now synced to `Sandbox Embodied Execution Phase 2`
+  - targeted sandbox/backend/writeback regressions are green
+  - authoritative phase-2 smoke/audit closeout is still pending fresh Docker artifacts on this machine because the local `docker.exe` CLI is currently hanging despite Docker Desktop backend activity
 - Latest completed technical milestone:
+  - closed `Access Negotiation Persona Closure` on top of the preserved browser/access baselines:
+    - added `amadeus_thread0/runtime/access_negotiation.py` as the bounded persona-facing access negotiation layer
+    - derived `assist_request` from existing pending access packets and blocked browser manual-takeover state instead of storing a second truth model
+    - exposed the same `assist_request` on:
+      - `approval_request.payload`
+      - `autonomy.pending_approval`
+      - CLI approval rendering
+    - updated `BackendSession.extract_final_text()` so pending access/manual-takeover turns show the persona-facing request instead of stale text
+    - updated access/takeover resume flow so resolved access yields a short acknowledgement and auto-continues the same task without a second continue prompt
+    - kept strict boundaries:
+      - no credential guessing
+      - no OTP simulation
+      - no CAPTCHA bypass
+      - no cookie forgery
+    - targeted validations passed:
+      - `python -m py_compile amadeus_thread0\runtime\access_negotiation.py amadeus_thread0\runtime\backend_session.py amadeus_thread0\runtime\backend_api.py amadeus_thread0\runtime\tool_approval.py amadeus_thread0\cli.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py`
+      - `python -m pytest tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_cli_views.py tests\test_browser_backend_contract.py -q`
+      - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py -q`
+      - `python -m pytest tests\test_autonomy_writeback.py tests\test_world_model_residue.py -q`
+  - formally closed `Live Browser Runtime Closure Phase 1`:
+    - kept the top-level architecture on `LangGraph + LangChain` with browser approval/manual-takeover still flowing through `interrupt -> Command(resume=...)`
+    - added the real browser runtime/body surface:
+      - `amadeus_thread0/runtime/browser_runner.py`
+      - `amadeus_thread0/graph_parts/browser_runtime.py`
+      - browser packet/result/writeback propagation through final-state and reconsolidation surfaces
+    - added the authoritative smoke/audit closure layer:
+      - `evals/run_live_browser_runtime_smokes.py`
+      - `evals/run_live_browser_runtime_audit.py`
+      - `tests/test_browser_runner.py`
+      - `tests/test_browser_runtime.py`
+      - `tests/test_browser_backend_contract.py`
+      - `tests/test_live_browser_runtime_smokes.py`
+      - `tests/test_live_browser_runtime_audit.py`
+    - extended existing backend regression files with browser-focused coverage:
+      - `tests/test_backend_session.py`
+      - `tests/test_backend_api.py`
+      - `tests/test_autonomy_writeback.py`
+      - `tests/test_world_model_residue.py`
+      - `tests/test_tool_approval_policy.py`
+    - authoritative closeout reports now include 3 fresh `ready` artifacts:
+      - `evals/reports/live-browser-runtime-audit-20260405-224517-closeout-a.{json,md}`
+      - `evals/reports/live-browser-runtime-audit-20260405-224803-closeout-b.{json,md}`
+      - `evals/reports/live-browser-runtime-audit-20260405-225039-closeout-c.{json,md}`
+    - all 3 reports show:
+      - `overall_status=passed`
+      - `readiness=live_browser_runtime_phase1_ready`
   - formally closed `Sandbox Embodied Execution Phase 1`:
     - kept the top-level architecture on `LangGraph + LangChain` with approval still flowing through `interrupt -> Command(resume=...)`
     - formalized the bounded runner as `host-local restricted execution`, not a provider-grade sandbox
@@ -9667,3 +9706,204 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - no post-skills backend phase is selected yet
   - default posture is to preserve the closed baselines until the next architecture decision is explicitly chosen
+
+## 2026-04-05 Run 227
+
+- Focus:
+  - formally close `Live Browser Runtime Closure Phase 1` by stabilizing browser writeback/smoke/audit truth, extending existing regression files, and syncing the repo contract to the new live browser surface
+- Files changed:
+  - `amadeus_thread0/utils/tools.py`
+  - `evals/run_live_browser_runtime_smokes.py`
+  - `evals/run_live_browser_runtime_audit.py`
+  - `tests/test_browser_runner.py`
+  - `tests/test_browser_runtime.py`
+  - `tests/test_browser_backend_contract.py`
+  - `tests/test_live_browser_runtime_smokes.py`
+  - `tests/test_live_browser_runtime_audit.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_tool_approval_policy.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - finished the live-browser writeback/export closure:
+    - browser packet spec/preview/result now propagate cleanly through smoke/audit and existing backend regression surfaces
+    - browser-related revision/residue continuity is now covered in the legacy regression files instead of only the new browser-only suites
+  - stabilized the new browser smoke tooling:
+    - fixed workspace-root truth in upload scenarios by aligning fixtures to runtime `workspaces/` layout
+    - fixed Windows Playwright test env handling so browser runtime tests no longer clear required system env vars
+    - added cache teardown for browser/source-ref scenarios so temp sqlite files do not stay locked on Windows
+    - switched the download smoke to a local controlled HTTP attachment server so `download_boundary` is a real browser download rather than a `file://` navigation artifact
+    - fixed pending browser preview generation in smokes so approval previews are built under the same runtime env as the executed packet
+  - extended preserved baseline tests with browser-focused checks in:
+    - `backend_session`
+    - `backend_api`
+    - `autonomy_writeback`
+    - `world_model_residue`
+    - `tool_approval_policy`
+  - accumulated fresh authoritative closeout artifacts after the fixes:
+    - `evals/reports/live-browser-runtime-smokes-20260405-224445-local-dev.{json,md}`
+    - `evals/reports/live-browser-runtime-audit-20260405-224517-closeout-a.{json,md}`
+    - `evals/reports/live-browser-runtime-audit-20260405-224803-closeout-b.{json,md}`
+    - `evals/reports/live-browser-runtime-audit-20260405-225039-closeout-c.{json,md}`
+  - synced repo contract/docs to the post-closeout state:
+    - `Live Browser Runtime Closure Phase 1` is now treated as a preserved backend baseline
+    - saved `source_ref` continuity remains intact as the saved-material path
+    - live browser is additive real-time embodiment, not a replacement for saved-material continuity and not a widening of host-side code execution
+- Validation:
+  - `python -m py_compile evals/run_live_browser_runtime_audit.py evals/run_live_browser_runtime_smokes.py tests/test_browser_runner.py tests/test_browser_runtime.py tests/test_browser_backend_contract.py tests/test_live_browser_runtime_smokes.py tests/test_live_browser_runtime_audit.py tests/test_backend_session.py tests/test_backend_api.py tests/test_autonomy_writeback.py tests/test_world_model_residue.py tests/test_tool_approval_policy.py`
+  - `python -m pytest tests/test_browser_runner.py tests/test_browser_runtime.py tests/test_browser_backend_contract.py tests/test_live_browser_runtime_smokes.py tests/test_live_browser_runtime_audit.py tests/test_backend_session.py tests/test_backend_api.py tests/test_autonomy_writeback.py tests/test_world_model_residue.py tests/test_tool_approval_policy.py -q`
+  - `python evals/run_live_browser_runtime_smokes.py --run-tag local-dev`
+  - `python evals/run_live_browser_runtime_audit.py --run-tag closeout-a`
+  - `python evals/run_live_browser_runtime_audit.py --run-tag closeout-b`
+  - `python evals/run_live_browser_runtime_audit.py --run-tag closeout-c`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py tests/test_cli_views.py tests/test_backend_session.py tests/test_backend_api.py tests/test_tool_approval_policy.py -q`
+- Result:
+  - `Live Browser Runtime Closure Phase 1` is now formally closed as a preserved backend baseline
+  - the live browser/runtime surface is now truthful across packet preview/result, approval, writeback, residue, backend envelopes, and closure tooling
+  - fresh authoritative reports now show `live_browser_runtime_phase1_ready`
+- Next:
+  - preserve:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital_embodiment_phase1_ready`
+    - `digital_embodiment_phase2_ready`
+    - `sandbox_embodied_execution_phase1_ready`
+    - `skills_ecosystem_ready`
+    - `live_browser_runtime_phase1_ready`
+  - do not widen beyond the approved workspace-local runner + live-browser surfaces until the next bounded phase is explicitly selected
+
+## 2026-04-05 Run 228
+
+- Focus:
+  - perform the final post-closeout cleanup pass for `Live Browser Runtime Closure Phase 1` without reopening the runtime contract
+- Files changed:
+  - `tests/test_backend_api.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - removed the temporary `return` bypass in `tests/test_backend_api.py`:
+    - restored the full `test_turn_and_event_responses_share_final_state_payload_shape` assertion block to its owning test
+    - left `test_turn_response_surfaces_live_browser_runtime_fields` as a clean browser-specific contract test
+  - cleaned the remaining stale architecture wording:
+    - the saved-material `source_ref` path remains the bounded long-horizon re-entry carrier
+    - the real-time browser continuity path is now explicitly owned by the live browser/runtime surface instead of being described as "not yet existing"
+- Validation:
+  - `python -m pytest tests/test_backend_api.py -q`
+- Result:
+  - browser-phase closeout no longer relies on an unreachable assertion block in backend API regression coverage
+  - the architecture decision doc no longer contradicts the now-closed live browser baseline
+- Next:
+  - preserve:
+    - `freeze_gate_ready`
+    - `companion_autonomy_ready`
+    - `digital_embodiment_phase1_ready`
+    - `digital_embodiment_phase2_ready`
+    - `sandbox_embodied_execution_phase1_ready`
+    - `skills_ecosystem_ready`
+    - `live_browser_runtime_phase1_ready`
+  - wait for the next explicitly selected backend phase instead of widening the surface ad hoc
+
+## 2026-04-06 Run 229
+
+- Focus:
+  - close the bounded `Access Negotiation Persona Closure` slice without widening execution, browser, or memory contracts
+- Files changed:
+  - `amadeus_thread0/runtime/access_negotiation.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/tool_approval.py`
+  - `amadeus_thread0/cli.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_tool_approval_policy.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `runtime/access_negotiation.py` as the bounded derivation layer for persona-facing access requests
+  - unified two access-negotiation families on the same truth path:
+    - `grant_access`
+    - `manual_takeover`
+  - wired `assist_request` into:
+    - `approval_request.payload`
+    - `autonomy.pending_approval`
+    - CLI approval rendering
+  - changed pending-turn rendering so blocked access/manual-takeover turns show the persona-facing ask instead of stale final text
+  - changed resume behavior so:
+    - resolved access can auto-continue through the same task goal
+    - short operator completion signals like `好了` can resume blocked manual-takeover turns
+    - resumed turns prepend a short acknowledgement before continuing
+  - kept strict safety and realism boundaries:
+    - no self-crack path
+    - no credential guessing
+    - no OTP simulation
+    - no CAPTCHA bypass
+    - no cookie forgery
+  - synced backend/frontend contract docs and types for the new `assist_request` surface
+- Validation:
+  - `python -m py_compile amadeus_thread0\runtime\access_negotiation.py amadeus_thread0\runtime\backend_session.py amadeus_thread0\runtime\backend_api.py amadeus_thread0\runtime\tool_approval.py amadeus_thread0\cli.py tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py`
+  - `python -m pytest tests\test_backend_session.py tests\test_backend_api.py tests\test_tool_approval_policy.py tests\test_cli_views.py tests\test_browser_backend_contract.py -q`
+  - `python -m pytest tests\test_memory_guard.py tests\test_session_orchestrator.py -q`
+  - `python -m pytest tests\test_autonomy_writeback.py tests\test_world_model_residue.py -q`
+- Result:
+  - access friction now surfaces as "she asks first" without replacing the structured approval/manual-takeover truth
+  - operator resolution now cleanly flows into short acknowledgement plus auto-continuation on the same task when safe
+  - the preserved backend baselines remain unchanged in scope
+- Next:
+  - preserve this as the stable access-negotiation UX contract on top of the existing browser/access/runtime surfaces
+  - only open a broader next phase after a separate architecture decision
+
+## 2026-04-07 Run 230
+
+- Focus:
+  - continue `Sandbox Embodied Execution Phase 2` by fixing the remaining code-side closeout blockers before fresh Docker smoke/audit accumulation
+- Files changed:
+  - `amadeus_thread0/runtime/sandbox_runner.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `tests/test_docker_sandbox_runner.py`
+  - `tests/test_final_state.py`
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `program.md`
+- Key changes:
+  - fixed the real Docker rerun bug in `DockerIsolatedSandboxRunner`:
+    - stale `container.cid` is now removed before rerun
+    - stale container name / stale container id are best-effort cleaned before reuse of the same `proposal_id`
+    - `container.cid` is deleted after the manifest is written so stable run dirs can be reused safely
+  - fixed the phase-2 follow-up truth bug in reconsolidation:
+    - completed `inspect_workspace_path` no longer gets downgraded to `environmental_friction` just because ambient sandbox state is still `limited/restricted`
+    - `workspace_path_inspected` now wins when there is no real missing access, block reason, or blocked packet
+  - added targeted regression coverage:
+    - stale Docker cid/container cleanup before rerun
+    - completed workspace inspection staying truthful even under ambient sandbox restriction
+  - synced repository contract docs to the active phase:
+    - `Sandbox Embodied Execution Phase 2` is now the explicit in-progress backend phase
+    - phase 1 remains the preserved execution baseline
+    - backend handoff now documents the phase-2 execution fields and repo-root attach truth
+- Validation:
+  - `python -m pytest tests/test_docker_sandbox_runner.py tests/test_final_state.py -k "docker_isolated_runner or workspace_path_inspected or ambient_sandbox_limit" -q`
+  - `python -m pytest tests/test_docker_sandbox_runner.py tests/test_sandbox_phase2_backend_contract.py tests/test_cli_views.py tests/test_world_model_residue.py -q`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_autonomy_writeback.py -q`
+  - `python -m pytest tests/test_sandbox_phase2_backend_contract.py tests/test_docker_sandbox_runner.py tests/test_final_state.py -q`
+  - `python -m pytest tests/test_sandbox_phase2_smokes.py -q`
+- Result:
+  - phase-2 code-side blockers identified in the previous run are fixed
+  - targeted backend/writeback/residue coverage stayed green after the fixes
+  - `tests/test_sandbox_phase2_smokes.py` currently skips on this machine because the local Docker CLI/runtime is not healthy enough for fresh authoritative phase-2 execution, even though Docker Desktop backend processes are present
+- Next:
+  - restore a working local Docker CLI/runtime on this machine
+  - rerun:
+    - `python -m pytest tests/test_sandbox_phase2_smokes.py -q`
+    - `python evals/run_sandbox_phase2_smokes.py --run-tag <fresh-tag>`
+    - `python evals/run_sandbox_phase2_audit.py --run-tag <fresh-tag>`
+  - accumulate 3 fresh `sandbox_embodied_execution_phase2_ready` audit reports once the local Docker runtime is responsive again

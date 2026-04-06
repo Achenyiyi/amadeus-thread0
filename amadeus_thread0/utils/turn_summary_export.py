@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..graph_parts.browser_runtime import normalize_browser_runtime_state
 from ..graph_parts.digital_body_runtime import normalize_digital_body_state, normalize_embodied_context
 from .embodied_preview import compact_event_residue_preview_line
 
@@ -161,6 +162,7 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
     normalized = normalize_embodied_context(state)
     if not normalized:
         return {}
+    browser_runtime_state = normalize_browser_runtime_state(normalized.get("browser_runtime_state"))
     summary = {
         "kind": str(normalized.get("kind") or "").strip(),
         "summary": str(normalized.get("summary") or "").strip(),
@@ -217,10 +219,33 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
         "primary_origin": str(normalized.get("primary_origin") or "").strip(),
         "primary_intent": str(normalized.get("primary_intent") or "").strip(),
         "primary_tool_name": str(normalized.get("primary_tool_name") or "").strip(),
+        "sandbox_run_id": str(normalized.get("sandbox_run_id") or "").strip(),
+        "sandbox_command_profile": str(normalized.get("sandbox_command_profile") or "").strip(),
+        "sandbox_stdout_log_ref": str(normalized.get("sandbox_stdout_log_ref") or "").strip(),
+        "sandbox_stderr_log_ref": str(normalized.get("sandbox_stderr_log_ref") or "").strip(),
+        "sandbox_error_summary": str(normalized.get("sandbox_error_summary") or "").strip(),
+        "sandbox_exit_code": _int_metric(normalized.get("sandbox_exit_code"), 0),
+        "sandbox_duration_ms": _int_metric(normalized.get("sandbox_duration_ms"), 0),
+        "sandbox_produced_artifacts": _clean_list(normalized.get("sandbox_produced_artifacts"), limit=8),
+        "sandbox_runner_kind": str(normalized.get("sandbox_runner_kind") or "").strip(),
+        "sandbox_isolation_level": str(normalized.get("sandbox_isolation_level") or "").strip(),
+        "sandbox_image_ref": str(normalized.get("sandbox_image_ref") or "").strip(),
+        "sandbox_network_policy": str(normalized.get("sandbox_network_policy") or "").strip(),
+        "workspace_root_kind": str(normalized.get("workspace_root_kind") or "").strip(),
+        "browser_run_id": str(normalized.get("browser_run_id") or "").strip(),
+        "browser_profile_id": str(normalized.get("browser_profile_id") or "").strip(),
+        "browser_page_id": str(normalized.get("browser_page_id") or "").strip(),
+        "browser_tab_id": str(normalized.get("browser_tab_id") or "").strip(),
+        "browser_url": str(normalized.get("browser_url") or "").strip(),
+        "browser_title": str(normalized.get("browser_title") or "").strip(),
+        "browser_last_action_kind": str(normalized.get("browser_last_action_kind") or "").strip(),
+        "browser_last_exit_status": str(normalized.get("browser_last_exit_status") or "").strip(),
         "procedural_growth": bool(normalized.get("procedural_growth", False)),
         "environmental_friction": bool(normalized.get("environmental_friction", False)),
         "requested_help": bool(normalized.get("requested_help", False)),
     }
+    if browser_runtime_state:
+        summary["browser_runtime_state"] = browser_runtime_state
     skill_effects = _clean_skill_effects(normalized.get("skill_effects"), limit=6)
     if skill_effects:
         summary["skill_effects"] = skill_effects
@@ -432,6 +457,7 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
         return {}
     access_state = _dict_or_empty(normalized.get("access_state"))
     resource_state = _dict_or_empty(normalized.get("resource_state"))
+    browser_runtime_state = normalize_browser_runtime_state(access_state.get("browser_runtime_state"))
     return {
         "active_surface": str(normalized.get("active_surface") or "").strip(),
         "perception_channels": _clean_list(normalized.get("perception_channels"), limit=8),
@@ -484,6 +510,7 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
             "sandbox_state": dict(access_state.get("sandbox_state"))
             if isinstance(access_state.get("sandbox_state"), dict)
             else {},
+            "browser_runtime_state": browser_runtime_state,
         },
         "resources": {
             "behavior_queue_depth": _int_metric(resource_state.get("behavior_queue_depth"), 0),
@@ -509,6 +536,8 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
             "artifact_source_query": str(resource_state.get("artifact_source_query") or "").strip(),
             "artifact_source_title": str(resource_state.get("artifact_source_title") or "").strip(),
             "artifact_source_tool_name": str(resource_state.get("artifact_source_tool_name") or "").strip(),
+            "browser_profile_id": str(resource_state.get("browser_profile_id") or "").strip(),
+            "browser_tab_id": str(resource_state.get("browser_tab_id") or "").strip(),
         },
         "constraints": _clean_list(normalized.get("body_constraints"), limit=8),
     }

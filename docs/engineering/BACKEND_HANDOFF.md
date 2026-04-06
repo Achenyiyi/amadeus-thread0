@@ -21,8 +21,11 @@ For handoff purposes, the current backend should already be treated as:
 - transport-neutral
 - stable enough for a thin frontend adapter
 - autonomy-contract-first
-- frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 1` closeout
-- explicit about current execution scope being `host-local restricted execution`, not a provider-grade sandbox
+- frontend-frozen while backend baselines are preserved during `Sandbox Embodied Execution Phase 2`
+- explicit about current execution scope being:
+  - preserved baseline: `host-local restricted execution`
+  - active closeout target: `docker-isolated local execution`
+- explicit about current live-environment scope being Playwright persistent-profile browser runtime, not the user's default browser profile
 
 ## Stable Backend Surfaces
 
@@ -31,6 +34,8 @@ For handoff purposes, the current backend should already be treated as:
 - turn/event/readback execution: `amadeus_thread0.runtime.backend_session`
 - final-state normalization: `amadeus_thread0.runtime.final_state`
 - restricted execution runner: `amadeus_thread0.runtime.sandbox_runner`
+- live browser runner: `amadeus_thread0.runtime.browser_runner`
+- access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 
 ## Autonomy Envelope
@@ -54,7 +59,55 @@ For sandbox execution packets, the stable contract additions are:
 - `autonomy.action_packets[*].execution_result`
 - `autonomy.pending_approval.execution_preview`
 
+For sandbox phase 2, frontend/CLI should also expect these stable execution fields when present:
+
+- `runner_kind`
+- `isolation_level`
+- `image_ref`
+- `network_policy`
+- `workspace_root_kind`
+
 Frontend/CLI may render these as preview/result surfaces, but they must not reinterpret them as permission to widen execution scope.
+For live browser packets, the stable contract additions are:
+
+- `autonomy.action_packets[*].browser_execution_spec`
+- `autonomy.action_packets[*].browser_execution_preview`
+- `autonomy.action_packets[*].browser_execution_result`
+- `autonomy.pending_approval.browser_execution_preview`
+
+Frontend/CLI may render these as preview/result surfaces, but they must not reinterpret them as permission to widen browser authority beyond the approved packet.
+For access negotiation and manual browser takeover, the stable contract additions are:
+
+- `autonomy.pending_approval.assist_request`
+- `approval_request.payload.assist_request`
+
+`assist_request` is a user-facing translation of the same authoritative truth already present in:
+
+- `approval_request`
+- `autonomy.pending_approval`
+- `digital_body.access_state`
+- the blocked/pending action packet family
+
+It is not a second truth model. Minimum stable fields are:
+
+- `kind`
+- `message`
+- `requested_access`
+- `missing_access`
+- `selected_access_proposal`
+- `requires_manual_takeover`
+- `resume_mode`
+- browser continuity refs when applicable:
+  - `proposal_id`
+  - `profile_id`
+  - `page_ref`
+  - `tab_id`
+
+Rendering rules:
+
+- CLI/frontend should show the persona-facing request first, then the structured approval or takeover summary
+- pending / blocked / rejected access still must not be rendered as owned capability
+- when `resume_mode=auto_continue`, frontend should not force a second "continue?" prompt after the operator resolves the access or manual takeover
 
 ## Skills Envelope
 
@@ -139,7 +192,12 @@ Interpretation rules:
 - current execution surface is `host-local restricted execution`:
   - workspace-local only
   - approval-gated for all sandbox execute packets
-  - not a claim of container, VM, or provider-side isolation
+  - phase 1 baseline remains available as compatibility fallback
+- active execution closeout target is `docker-isolated local execution`:
+  - canonical runner: `docker_isolated_runner`
+  - default network policy: `none`
+  - same packet family, approval path, and body surfaces
+  - still not a claim of provider-side remote infra
 - current sandbox execute family is:
   - `intent=sandbox:execute_workspace_command`
   - `risk=external_mutation`
@@ -151,6 +209,10 @@ Interpretation rules:
 - approval/resume must preserve the same:
   - `proposal_id`
   - `execution_spec`
+- approved repo-root attach remains the only phase-2 non-runtime-owned workspace expansion:
+  - proposal mode: `operator_attach_repo_root`
+  - completed attach writes `digital_body_consequence.kind=workspace_root_attached`
+  - pending/rejected attach must not be rendered as already-owned workspace capability
 - completed `artifact:*` packets may now also carry `artifact_context`, which is the bounded structured reacquisition result:
   - `carrier`
   - `artifact_kind`
@@ -187,10 +249,25 @@ Interpretation rules:
   - `last_status`
   - `runner_kind`
   - `isolation_level`
+  - `image_ref`
+  - `network_policy`
+  - `workspace_root_kind`
   - `last_command_profile`
   - `last_exit_code`
   - `last_run_id`
   - `arbitrary_execution`
+- `digital_body.access_state.browser_runtime_state` is the stable live-browser truth surface:
+  - `availability`
+  - `profile_root`
+  - `context_status`
+  - `active_page_id`
+  - `active_tab_count`
+  - `downloads_dir`
+  - `last_action_status`
+  - `last_run_id`
+  - `manual_takeover_required`
+  - `runner_kind`
+  - `isolation_level`
 - `digital_body.resource_state` is the only stable active-resource container:
   - `artifact_continuity`
   - `artifact_carrier`
@@ -201,6 +278,19 @@ Interpretation rules:
   - `artifact_source_ref_ids`
   - `preferred_source_ref_id`
   - `preferred_anchor_reason`
+- when the active carrier is a live page, frontend/CLI should also expect:
+  - `artifact_carrier=browser_page`
+  - `active_artifact_kind=page`
+  - `browser_profile_id`
+  - `browser_tab_id`
+  - `artifact_source_url`
+- `digital_body_consequence.kind` may now also truthfully use live-browser families:
+  - `browser_navigation_completed`
+  - `browser_interaction_completed`
+  - `browser_download_completed`
+  - `browser_upload_completed`
+  - `browser_takeover_requested`
+  - `browser_action_blocked`
 - `digital_body.access_state` may now also carry provider-side world conditions such as `api_key_state`, `quota_state`, reusable session lifecycle metadata like `session_continuity` / `session_expires_in_s` / `session_recovery_mode`, and time-bound retry metadata like `retry_after_s` / `cooldown_scope` when the runtime knows them.
 - `digital_body.access_state` may now also carry structured access-acquisition guidance:
   - `access_acquire_proposals`
@@ -219,6 +309,7 @@ Interpretation rules:
 - pending `access:request_help` packets are truthful external-entry requests:
   - they may bind `requested_help`, `requested_access`, and `primary_proposal_id` into `session_context.digital_body_hints`
   - they should surface through `autonomy.pending_approval` and `digital_body.access_state.mode=approval_pending`
+  - they may also carry `assist_request.kind=grant_access` so the user sees where she is blocked, what needs to be opened, and that she will continue automatically afterward
   - they must not be rendered as a completed external action
   - they represent missing operator-provided conditions such as:
     - browser/session entry
@@ -353,10 +444,14 @@ Skills closure is now treated as preserved backend contract, not an open buildou
     - completed read-side access verification may now freeze as a concrete stable-path fact when no friction remains:
       - `tool_name=refresh_access_state`
     - `digital_body_consequence.kind=access_state_refreshed`
-- external web material is still a saved-material carrier in the current phase:
-  - use `source_ref` continuity
-  - do not interpret current payloads as proof of live browser reopen / restored cookies / resumed real session
-      - this means the current access/session boundary was re-checked, not that login/cookies/browser mutation already happened
+- external web material now has two truthful paths:
+  - saved-material path:
+    - use `source_ref` continuity for long-horizon resurfacing and explicit saved references
+    - `source_ref` does not imply a live browser session, restored cookies, or resumed tab
+  - live-page path:
+    - use `artifact_carrier=browser_page` plus `browser_runtime_state` for the current live browser session
+    - this does not imply arbitrary host execution or automatic account creation
+  - when the current access/session boundary is only being re-checked, do not render it as if login/cookies/browser mutation already happened
   - when a proposal path has already been accepted but the real access update has not yet happened:
     - packet `status=approved` means `acquisition path accepted`
     - packet `status=completed` means `concrete access updates actually arrived`
