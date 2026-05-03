@@ -111,6 +111,16 @@ pip install -r requirements.txt
 
 ### 3. 启动 CLI
 
+### First Run Check
+
+在判断产品行为之前，先运行预检。`--doctor` 会检查 Python、依赖、模型密钥、Playwright、Docker phase-2 sandbox 和全局阻塞项；如果这里失败，先按 remediation 修复环境。
+
+```bash
+python -m amadeus_thread0.cli --doctor
+python -m amadeus_thread0.cli --doctor --json
+python -m amadeus_thread0.cli --fresh-thread --fresh-thread-prefix smoke
+```
+
 ```bash
 python -m amadeus_thread0.cli
 ```
