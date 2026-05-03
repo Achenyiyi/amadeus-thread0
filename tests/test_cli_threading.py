@@ -1,5 +1,8 @@
 import tempfile
 import unittest
+import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -135,6 +138,36 @@ class CliThreadingTests(unittest.TestCase):
                     shared_artifacts=["checkpoints.sqlite"],
                 )
         self.assertFalse(actual)
+
+    def test_cli_doctor_json_prints_valid_json(self):
+        completed = subprocess.run(
+            [sys.executable, "-m", "amadeus_thread0.cli", "--doctor", "--json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        report = json.loads(completed.stdout)
+        self.assertIn("overall_status", report)
+        self.assertIn("phase_readiness", report)
+        self.assertEqual(completed.stderr.strip(), "")
+
+    def test_cli_doctor_sandbox_phase_renders_phase_readiness(self):
+        completed = subprocess.run(
+            [sys.executable, "-m", "amadeus_thread0.cli", "--doctor", "--phase", "sandbox_phase2"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("[doctor:sandbox_phase2]", completed.stdout)
+        self.assertIn("docker", completed.stdout.lower())
+        self.assertIn("image_ref=", completed.stdout)
+        self.assertIn("network_policy=none", completed.stdout)
 
 
 if __name__ == "__main__":

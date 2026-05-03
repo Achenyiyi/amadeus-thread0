@@ -36,6 +36,22 @@ warnings.filterwarnings(
 )
 
 from dotenv import load_dotenv
+
+
+def _load_cli_dotenv() -> Path | None:
+    candidates = [
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+    ]
+    for path in candidates:
+        if path.exists():
+            load_dotenv(dotenv_path=path, override=False)
+            return path
+    return None
+
+
+_CLI_DOTENV_LOADED_PATH = _load_cli_dotenv()
+
 from .config import (
     AUTO_APPROVE_MEMORY_WRITES,
     HIDE_TOOL_APPROVAL_LOGS,
@@ -53,7 +69,6 @@ from .utils.cli_views import (
 )
 from .runtime.memory_admin import MemoryAdminError
 from .runtime.modeling import runtime_model_summary
-from .runtime.runtime_bundle import RuntimeBundle
 from .runtime.thread_runtime import (
     apply_worldline_runtime_paths as _apply_worldline_runtime_paths,
     has_explicit_runtime_path_overrides as _has_explicit_runtime_path_overrides,
@@ -74,7 +89,12 @@ from .utils.perception_events import (
     list_event_seed_rows,
     list_sense_rows,
 )
-from .utils.runtime_audit import render_runtime_audit_report
+from .utils.runtime_audit import (
+    build_graph_startup_preflight_report,
+    build_runtime_doctor_report,
+    render_runtime_audit_report,
+    render_runtime_doctor_report,
+)
 from .runtime.session_orchestrator import emotion_to_tts_profile, push_tts_segments
 from .runtime.settings import configure_runtime_environment, get_settings
 from .runtime.tts_io import create_dashscope_realtime_session, get_tts_config
@@ -175,6 +195,21 @@ def _build_startup_arg_parser() -> argparse.ArgumentParser:
         "--fresh-thread-prefix",
         default="thread",
         help="配合 --fresh-thread 使用的 thread_id 前缀，默认 thread。",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="运行首次启动/运行时预检，不导入图运行时。",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="配合 --doctor 输出纯 JSON。",
+    )
+    parser.add_argument(
+        "--phase",
+        choices=("graph", "live_browser", "sandbox_phase2"),
+        help="配合 --doctor 聚焦指定阶段。",
     )
     return parser
 def _speak_text_realtime(
@@ -348,22 +383,42 @@ def _cli_show_turn_summary_enabled() -> bool:
     return raw in {"1", "true", "yes", "y", "on"}
 
 
+def _graph_doctor_warning_lines(report: dict[str, object]) -> list[str]:
+    phase_readiness = report.get("phase_readiness") if isinstance(report.get("phase_readiness"), dict) else {}
+    if str(phase_readiness.get("graph") or "") != "blocked":
+        return []
+    lines = ["[doctor][warn] graph runtime preflight is blocked; run `python -m amadeus_thread0.cli --doctor` for the full report."]
+    remediation = report.get("remediation") if isinstance(report.get("remediation"), list) else []
+    for item in remediation:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "").strip()
+        if kind not in {"missing_package", "pip_check_failed", "missing_model_key"}:
+            continue
+        target = str(item.get("package") or item.get("env_var") or "").strip()
+        hint = str(item.get("install_hint") or "").strip()
+        line = "[doctor][warn] " + kind
+        if target:
+            line += ": " + target
+        if hint:
+            line += " | " + hint
+        lines.append(line)
+    return lines
+
+
 def main():
     args = _build_startup_arg_parser().parse_args()
+    if bool(args.doctor):
+        report = build_runtime_doctor_report(phase=args.phase, cwd=Path.cwd())
+        if bool(args.json):
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+        else:
+            print(render_runtime_doctor_report(report, phase=args.phase))
+        return
 
-    # 优先从当前工作目录加载 .env（你用 `python -m amadeus_thread0.cli` 运行时最符合直觉）
-    # 再回退到包根目录（避免以模块/安装形式运行时找不到配置）。
-    dotenv_candidates = [
-        Path.cwd() / ".env",
-        Path(__file__).resolve().parents[1] / ".env",
-    ]
-    loaded_path: Path | None = None
-    for p in dotenv_candidates:
-        if p.exists():
-            # Keep shell-exported env vars higher priority than .env defaults.
-            load_dotenv(dotenv_path=p, override=False)
-            loaded_path = p
-            break
+    # .env is loaded before importing config-backed modules so import-time flags
+    # reflect the same environment that normal runtime startup uses.
+    loaded_path = _CLI_DOTENV_LOADED_PATH
 
     configure_runtime_environment()
 
@@ -415,6 +470,10 @@ def main():
         isolated_worldline_dir = _apply_worldline_runtime_paths(base_data_dir, startup_thread_id)
         s = get_settings()
     shared_runtime_artifacts = _shared_runtime_artifacts(base_data_dir)
+    for line in _graph_doctor_warning_lines(build_graph_startup_preflight_report(cwd=Path.cwd())):
+        print(line)
+    from .runtime.runtime_bundle import RuntimeBundle
+
     runtime_bundle = RuntimeBundle.create(thread_id=startup_thread_id, settings=s)
     memory_admin = runtime_bundle.memory_admin
     backend_session = runtime_bundle.backend_session

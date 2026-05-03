@@ -9967,3 +9967,39 @@ This file is the live development ledger for `amadeus-thread0`.
   - the meta-audit ran successfully, but this worktree does not currently contain the underlying preserved baseline report set, so the generated summary reported `overall_status=failed` and `readiness=preserved_baselines_regressed`
 - Next:
   - run the meta-audit again in a worktree that has the authoritative baseline reports if a green aggregate status is needed
+
+## 2026-05-04 Run 233
+
+- Focus:
+  - Task 3 operator readiness and first-run UX
+  - add a phase-aware CLI doctor that runs before graph/runtime bundle startup
+- Files changed:
+  - `amadeus_thread0/cli.py`
+  - `amadeus_thread0/utils/runtime_audit.py`
+  - `README.md`
+  - `tests/test_runtime_audit.py`
+  - `tests/test_cli_threading.py`
+  - `tests/test_import_boundaries.py`
+  - `program.md`
+- Key changes:
+  - added `build_graph_startup_preflight_report()` for lightweight normal-startup warnings without shelling out
+  - added `build_runtime_doctor_report()` and `render_runtime_doctor_report()` for full preflight diagnostics without importing graph/session/runtime bundle modules
+  - doctor report now surfaces `overall_status`, `python`, `dependencies`, `pip_check`, `env`, `model_key`, `playwright`, `docker`, `phase_readiness`, and `remediation`
+  - added CLI support for:
+    - `python -m amadeus_thread0.cli --doctor`
+    - `python -m amadeus_thread0.cli --doctor --json`
+    - `python -m amadeus_thread0.cli --doctor --phase sandbox_phase2`
+  - kept `.env` loading ahead of config import so import-time flags see the same environment as runtime startup
+  - kept `RuntimeBundle` import inside normal CLI startup after the doctor branch returns
+  - added README First Run Check commands before product-behavior judgment
+- Validation:
+  - `python -m pytest tests/test_runtime_audit.py tests/test_cli_threading.py tests/test_import_boundaries.py -q`
+  - `python -m amadeus_thread0.cli --doctor --json`
+  - `python -m amadeus_thread0.cli --doctor`
+  - `python -m amadeus_thread0.cli --doctor --phase sandbox_phase2`
+- Result:
+  - `--doctor --json` prints pure JSON only
+  - full doctor output reports `overall_status=passed` and current phase readiness
+  - normal CLI startup keeps the runtime bundle import deferred while still surfacing a lightweight graph preflight warning path
+- Next:
+  - proceed to Task 4: body-state event perception
