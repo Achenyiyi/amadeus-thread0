@@ -11,12 +11,12 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Amadeus-K` remains a `digital persona system`, not a personal ops shell.
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
-- The latest closed execution target is `Live Browser Runtime Closure Phase 1`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, one managed capability ecology, and one truthful live browser/runtime surface that still stays outside persona-core.
-- The current active execution target is `Sandbox Embodied Execution Phase 2`: preserve the closed baselines while upgrading coding/research execution from host-local restricted runs to a Docker-isolated local backend.
+- The latest closed execution target is `Sandbox Embodied Execution Phase 2`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, one managed capability ecology, one truthful live browser/runtime surface, and one Docker-isolated local execution backend that still stays outside persona-core.
+- No new active backend expansion phase is selected in this document; preserve the closed baselines until a separate architecture decision opens the next bounded slice.
 
 ## Backend Status
 
-Status as of `2026-04-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-in-progress`
+Status as of `2026-05-04`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -36,11 +36,11 @@ For backend purposes, the structural decisions in this document are now split in
   - sandbox embodied execution phase 1 is formally closed on the same body contract
   - skills ecosystem formal closure is now also formally closed on the same body contract
   - live browser runtime closure phase 1 is now also formally closed on the same body contract
+  - sandbox embodied execution phase 2 is now also formally closed on the same body contract
   - `search_web + source_ref` continuity remains preserved as the saved-material path; live browser is additive, not a replacement
-  - current active backend expansion phase is `Sandbox Embodied Execution Phase 2`
   - current workspace execution posture is split into:
     - preserved baseline: `host-local restricted execution`
-    - active closeout target: `docker-isolated local execution`
+    - preserved baseline: `docker-isolated local execution`
   - current live browser posture remains Playwright persistent-profile runtime with approval-gated mutations and manual takeover for sensitive login steps
   - current access-negotiation posture is persona-first but truth-bound:
     - missing access or sensitive takeover should surface as a persona-facing request first
@@ -140,7 +140,7 @@ Sandbox Embodied Execution Phase 1 preserved contract:
     - `evals/reports/sandbox-embodied-execution-audit-20260404-232002-phase1-closeout-c.{json,md}`
     - `evals/reports/sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.{json,md}`
 
-Sandbox Embodied Execution Phase 2 active contract:
+Sandbox Embodied Execution Phase 2 preserved contract:
 
 - keep the same single body/runtime truth:
   - `digital_body.access_state`
@@ -151,7 +151,7 @@ Sandbox Embodied Execution Phase 2 active contract:
   - `isolation_level=docker_local_isolated`
   - explicit `image_ref`
   - default `network_policy=none`
-  - no privileged mode, Docker socket mount, or host secret passthrough
+  - no privileged mode, Docker socket mount, host secret passthrough, or package-install surface
 - allowed execution surface remains bounded to coding/research closure:
   - `python`
   - `pytest`
@@ -179,11 +179,15 @@ Sandbox Embodied Execution Phase 2 active contract:
   - `workspace_root`
   - artifact/log refs
   - isolated runner identity
-- current local implementation status:
-  - Docker rerun cleanup now removes stale `container.cid` and stale container names before reuse of the same `proposal_id`
-  - completed follow-up `inspect_workspace_path` now wins over ambient sandbox restriction when there is no real missing access/block reason
-  - targeted phase-2 backend/residue regressions are green
-  - authoritative phase-2 smoke/audit closeout is still pending fresh Docker reports on this machine because the local Docker CLI is currently hanging despite Docker Desktop backend activity
+- closeout evidence for this phase is:
+  - `python evals/run_sandbox_phase2_smokes.py`
+  - `python evals/run_sandbox_phase2_audit.py`
+  - latest authoritative ready reports:
+    - `evals/reports/sandbox-phase2-audit-20260503-203559-phase2-ready-a.{json,md}`
+    - `evals/reports/sandbox-phase2-audit-20260503-203721-phase2-ready-b.{json,md}`
+    - `evals/reports/sandbox-phase2-audit-20260503-203850-phase2-ready-c.{json,md}`
+  - latest phase-2 audit pass streak: `3`
+  - phase 2 is formally closed and should now be treated as a preserved backend baseline
 
 Skills Ecosystem Formal Closure preserved contract:
 
@@ -763,6 +767,6 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 8. `Sandbox Embodied Execution Phase 1` - `baseline-closed`
 9. `Skills Ecosystem Formal Closure` - `baseline-closed`
 10. `Live Browser Runtime Closure Phase 1` - `baseline-closed`
-11. `Sandbox Embodied Execution Phase 2` - `in progress`
+11. `Sandbox Embodied Execution Phase 2` - `baseline-closed`
 12. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
 13. later frontend / multimodal integration - `intentionally deferred`

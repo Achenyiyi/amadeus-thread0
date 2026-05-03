@@ -11,9 +11,9 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-04-07`
+- Date: `2026-05-04`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: `Sandbox Embodied Execution Phase 2` in progress on top of the preserved embodiment / sandbox phase 1 / skills / live-browser baselines
+- Mainline phase: preserved baseline maintenance after `Sandbox Embodied Execution Phase 2` closeout
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -22,23 +22,33 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `sandbox_embodied_execution_phase1_ready`
   - preserve `skills_ecosystem_ready`
   - preserve `live_browser_runtime_phase1_ready`
-  - close `sandbox_embodied_execution_phase2_ready` without opening arbitrary host shell, networked containers, package-install surfaces, or a second body/execution truth model
-  - keep current phase-2 execution scope bounded to:
+  - preserve `sandbox_embodied_execution_phase2_ready` without opening arbitrary host shell, networked containers, package-install surfaces, or a second body/execution truth model
+  - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
     - runtime-owned workspaces by default
     - explicit approval for repo-root attachment
-  - keep `Access Negotiation Persona Closure` and all previously closed baselines preserved while phase 2 lands
+  - keep `Access Negotiation Persona Closure` and all previously closed baselines preserved after phase 2 closeout
   - keep `search_web + source_ref` continuity and live browser continuity as preserved external-world surfaces
   - keep reply-tone / naturalness micro-polish and Chinese lexical-rule replacement off the mainline unless they block runtime correctness
 - Current frontend-handoff focus:
   - frontend remains frozen
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
 - Current phase-2 status:
-  - code-level root fixes for Docker phase-2 rerun continuity and follow-up inspection truth are in place
-  - phase-2 docs/contracts are now synced to `Sandbox Embodied Execution Phase 2`
-  - targeted sandbox/backend/writeback regressions are green
-  - authoritative phase-2 smoke/audit closeout is still pending fresh Docker artifacts on this machine because the local `docker.exe` CLI is currently hanging despite Docker Desktop backend activity
+  - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
+  - authoritative ready reports:
+    - `evals/reports/sandbox-phase2-audit-20260503-203559-phase2-ready-a.{json,md}`
+    - `evals/reports/sandbox-phase2-audit-20260503-203721-phase2-ready-b.{json,md}`
+    - `evals/reports/sandbox-phase2-audit-20260503-203850-phase2-ready-c.{json,md}`
+  - latest phase-2 audit pass streak: `3`
+  - preserved restrictions remain:
+    - `runner_kind=docker_isolated_runner`
+    - `isolation_level=docker_local_isolated`
+    - `network_policy=none`
+    - allowed commands: `python`, `pytest`, `rg`, read-only `git`
+    - blocked: package install, shell wrappers, git mutation, Docker socket mounting, privileged containers, host secret passthrough
+    - runtime-owned workspace by default
+    - `operator_attach_repo_root` requires explicit approval
 - Latest completed technical milestone:
   - closed `Access Negotiation Persona Closure` on top of the preserved browser/access baselines:
     - added `amadeus_thread0/runtime/access_negotiation.py` as the bounded persona-facing access negotiation layer
@@ -9907,3 +9917,35 @@ This file is the live development ledger for `amadeus-thread0`.
     - `python evals/run_sandbox_phase2_smokes.py --run-tag <fresh-tag>`
     - `python evals/run_sandbox_phase2_audit.py --run-tag <fresh-tag>`
   - accumulate 3 fresh `sandbox_embodied_execution_phase2_ready` audit reports once the local Docker runtime is responsive again
+
+## 2026-05-04 Run 231
+
+- Focus:
+  - Task 1 baseline truth synchronization for `codex/remaining-work-closure`
+  - make current-state docs treat `Sandbox Embodied Execution Phase 2` as closed/preserved
+- Files changed:
+  - `AGENTS.md`
+  - `program.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE_ALIGNMENT_MAP.md`
+- Key changes:
+  - synced current readiness language to `sandbox_embodied_execution_phase2_ready`
+  - recorded latest phase-2 ready reports:
+    - `sandbox-phase2-audit-20260503-203559-phase2-ready-a`
+    - `sandbox-phase2-audit-20260503-203721-phase2-ready-b`
+    - `sandbox-phase2-audit-20260503-203850-phase2-ready-c`
+  - kept phase-2 restrictions explicit:
+    - `docker_isolated_runner`
+    - `docker_local_isolated`
+    - `network_policy=none`
+    - `python` / `pytest` / `rg` / read-only `git`
+    - no package install, shell wrappers, git mutation, Docker socket mounting, privileged containers, or host secret passthrough
+    - runtime-owned workspace default and approval-required `operator_attach_repo_root`
+- Validation:
+  - `rg -n "sandbox_embodied_execution_phase2_in_progress|Sandbox Embodied Execution Phase 2.*in progress|active closeout target" AGENTS.md docs/engineering docs/ARCHITECTURE_ALIGNMENT_MAP.md program.md`
+- Result:
+  - current-state documentation now treats phase 2 as preserved/ready
+- Next:
+  - keep future backend work baseline-preserving unless a separate architecture decision opens the next bounded slice

@@ -21,10 +21,10 @@ For handoff purposes, the current backend should already be treated as:
 - transport-neutral
 - stable enough for a thin frontend adapter
 - autonomy-contract-first
-- frontend-frozen while backend baselines are preserved during `Sandbox Embodied Execution Phase 2`
+- frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
 - explicit about current execution scope being:
   - preserved baseline: `host-local restricted execution`
-  - active closeout target: `docker-isolated local execution`
+  - preserved baseline: `docker-isolated local execution`
 - explicit about current live-environment scope being Playwright persistent-profile browser runtime, not the user's default browser profile
 
 ## Stable Backend Surfaces
@@ -193,9 +193,14 @@ Interpretation rules:
   - workspace-local only
   - approval-gated for all sandbox execute packets
   - phase 1 baseline remains available as compatibility fallback
-- active execution closeout target is `docker-isolated local execution`:
+- preserved phase-2 execution baseline is `docker-isolated local execution`:
   - canonical runner: `docker_isolated_runner`
+  - isolation level: `docker_local_isolated`
   - default network policy: `none`
+  - allowed command families: `python`, `pytest`, `rg`, read-only `git`
+  - blocked surfaces: package install, shell wrappers, git mutation, Docker socket mounting, privileged containers, host secret passthrough
+  - runtime-owned workspace remains the default
+  - `operator_attach_repo_root` requires explicit approval
   - same packet family, approval path, and body surfaces
   - still not a claim of provider-side remote infra
 - current sandbox execute family is:
