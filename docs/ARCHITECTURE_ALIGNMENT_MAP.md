@@ -2,6 +2,8 @@
 
 Updated: 2026-03-27
 
+Status note, 2026-05-04: this document preserves earlier architecture framing. For readiness truth, prefer `program.md` and the latest audit reports; sandbox embodied execution phase 2 is now ready/preserved.
+
 This document originally mapped the current codebase to an intended three-layer architecture:
 
 - `Perception Layer`

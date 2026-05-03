@@ -48,15 +48,14 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 - `Sandbox Embodied Execution Phase 1` is now also closed and preserved as the current execution baseline.
 - `Skills Ecosystem Formal Closure` is now also closed and preserved as the current capability-ecology baseline.
 - `Live Browser Runtime Closure Phase 1` is now also closed and preserved as the current live-environment baseline.
-- Current active backend phase is `Sandbox Embodied Execution Phase 2`: add a Docker-isolated local execution backend for approved coding/research workspace commands without opening arbitrary host shell or a second body/memory truth model.
+- `Sandbox Embodied Execution Phase 2` is now also closed and preserved as the current Docker-isolated execution baseline.
 - Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, and `live_browser_runtime_phase1_ready` are preserved baselines.
-- `sandbox_embodied_execution_phase2_ready` is the active readiness target, not a preserved baseline yet.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, and `sandbox_embodied_execution_phase2_ready` are preserved baselines.
 - While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona
   - one unified memory substrate
-  - one digital body whose access/resource truth, workspace-local execution truth, skills capability ecology, and live browser/runtime truth all stay closed and must not regress
+  - one digital body whose access/resource truth, workspace-local execution truth, Docker-isolated execution truth, skills capability ecology, and live browser/runtime truth all stay closed and must not regress
 - The preserved skills contract layered onto that body contract is:
   - one global skills registry outside autobiographical memory
   - one session activation layer derived from auto-match plus manual override
@@ -68,7 +67,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - `host-local restricted execution`
   - `workspace-only execution`
   - `read auto / execute approval`
-  - in-progress `Docker-isolated local execution`:
+  - preserved `Docker-isolated local execution`:
     - runner kind: `docker_isolated_runner`
     - isolation level: `docker_local_isolated`
     - default network policy: `none`
@@ -91,7 +90,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   5. preserve `sandbox_embodied_execution_phase1_ready`
   6. preserve `skills_ecosystem_ready`
   7. preserve `live_browser_runtime_phase1_ready`
-  8. close `Sandbox Embodied Execution Phase 2` without widening beyond approved Docker-isolated workspace execution
+  8. preserve `sandbox_embodied_execution_phase2_ready` without widening beyond approved Docker-isolated workspace execution
 
 ## Backend Freeze Gate Baseline
 
@@ -271,6 +270,14 @@ Sandbox embodied execution is not considered closed until all of the following a
     - `followup_continue_from_last_run_log_or_artifact`
 
 ## Sandbox Embodied Execution Phase 2 Gate
+
+This gate is now satisfied and becomes a preserved backend baseline.
+Do not reopen it during ordinary maintenance unless one of the criteria below regresses.
+The authoritative ready reports are:
+
+- `evals/reports/sandbox-phase2-audit-20260503-203559-phase2-ready-a.{json,md}`
+- `evals/reports/sandbox-phase2-audit-20260503-203721-phase2-ready-b.{json,md}`
+- `evals/reports/sandbox-phase2-audit-20260503-203850-phase2-ready-c.{json,md}`
 
 Sandbox embodied execution phase 2 is not considered closed until all of the following are true:
 

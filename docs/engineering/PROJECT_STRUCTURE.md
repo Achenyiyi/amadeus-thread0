@@ -184,13 +184,18 @@ Rule:
 - builds the auto-continue resume event and short resume acknowledgements after access or browser takeover is resolved
 - keeps sensitive-login friction truthful: request help or manual takeover, never credential guessing / OTP simulation / cookie forgery
 
-`sandbox_runner.py` holds the bounded execution surface for `Sandbox Embodied Execution Phase 1`:
+`sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
 
 - `LocalRestrictedSandboxRunner`
 - structured `argv` validation and executor allowlist enforcement
 - `allowed_roots` / `cwd` boundary checks
 - scrubbed environment assembly
 - per-run trace artifact emission (`run.json`, `stdout.txt`, `stderr.txt`)
+- phase-2 Docker-isolated execution through `docker_isolated_runner` / `docker_local_isolated`
+- default `network_policy=none`
+- bounded command families only: `python`, `pytest`, `rg`, read-only `git`
+- blocked surfaces remain package install, shell wrappers, git mutation, Docker socket mounting, privileged containers, and host secret passthrough
+- runtime-owned workspace is the default; `operator_attach_repo_root` requires explicit approval
 
 `browser_runner.py` holds the live browser surface for `Live Browser Runtime Closure Phase 1`:
 
@@ -290,12 +295,14 @@ Rule:
   - `run_companion_autonomy_audit.py`
   - `run_digital_embodiment_audit.py`
   - `run_sandbox_embodied_execution_audit.py`
+  - `run_sandbox_phase2_audit.py`
   - `run_skills_ecosystem_audit.py`
 - manual smoke packs:
   - `run_freeze_gate_smokes.py`
   - `run_companion_autonomy_smokes.py`
   - `run_digital_embodiment_smokes.py`
   - `run_sandbox_embodied_execution_smokes.py`
+  - `run_sandbox_phase2_smokes.py`
   - `run_skills_ecosystem_smokes.py`
 - baseline helpers:
   - `print_latest_sandbox_baseline.py`
@@ -311,6 +318,8 @@ Current sandbox closure coverage lives in:
 - `tests/test_sandbox_backend_contract.py`
 - `tests/test_sandbox_embodied_execution_smokes.py`
 - `tests/test_sandbox_embodied_execution_audit.py`
+- `tests/test_sandbox_phase2_backend_contract.py`
+- `tests/test_sandbox_phase2_smokes.py`
 
 Current skills closure coverage lives in:
 
@@ -338,6 +347,10 @@ Current skills closure coverage lives in:
   `python evals/run_sandbox_embodied_execution_audit.py`
 - sandbox manual smokes:
   `python evals/run_sandbox_embodied_execution_smokes.py`
+- sandbox phase-2 audit:
+  `python evals/run_sandbox_phase2_audit.py`
+- sandbox phase-2 manual smokes:
+  `python evals/run_sandbox_phase2_smokes.py`
 - skills ecosystem audit:
   `python evals/run_skills_ecosystem_audit.py`
 - skills ecosystem manual smokes:
