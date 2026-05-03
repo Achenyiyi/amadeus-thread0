@@ -9949,3 +9949,21 @@ This file is the live development ledger for `amadeus-thread0`.
   - current-state documentation now treats phase 2 as preserved/ready
 - Next:
   - keep future backend work baseline-preserving unless a separate architecture decision opens the next bounded slice
+
+## 2026-05-04 Run 232
+
+- Focus:
+  - Task 2 preserved-baseline meta-audit
+  - add one quick entrypoint for checking the latest preserved baseline audit reports together
+- Files changed:
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `program.md`
+- Validation:
+  - `python -m pytest tests/test_preserved_baselines_audit.py -q`
+  - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+- Result:
+  - helper tests passed
+  - the meta-audit ran successfully, but this worktree does not currently contain the underlying preserved baseline report set, so the generated summary reported `overall_status=failed` and `readiness=preserved_baselines_regressed`
+- Next:
+  - run the meta-audit again in a worktree that has the authoritative baseline reports if a green aggregate status is needed
