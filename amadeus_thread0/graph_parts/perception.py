@@ -22,6 +22,12 @@ def _channel_from_source(source: str) -> str:
         return "voice"
     if normalized in {"vision", "camera", "image"}:
         return "vision"
+    if normalized in {"browser", "browser_runtime", "web_runtime"}:
+        return "browser"
+    if normalized in {"sandbox", "sandbox_runner", "workspace_runner"}:
+        return "sandbox"
+    if normalized in {"skill", "skills", "skill_runtime"}:
+        return "skill"
     if normalized in {"ambient", "environment"}:
         return "ambient"
     if normalized in {"system", "commitment_scheduler", "scheduler"}:
@@ -32,7 +38,17 @@ def _channel_from_source(source: str) -> str:
 def _modality_from_event(kind: str, source: str) -> str:
     normalized_kind = _clean_text(kind).lower()
     channel = _channel_from_source(source)
-    if channel in {"text", "voice", "vision", "ambient"}:
+    if normalized_kind in {"browser_runtime_observation", "body_resource_observation"}:
+        return "browser" if channel == "browser" else "body"
+    if normalized_kind == "sandbox_run_observation":
+        return "sandbox"
+    if normalized_kind == "skill_usage_observation":
+        return "skill"
+    if normalized_kind == "audio_observation":
+        return "audio"
+    if normalized_kind == "vision_observation":
+        return "vision"
+    if channel in {"text", "voice", "vision", "ambient", "browser", "sandbox", "skill"}:
         return channel
     if normalized_kind.startswith("self_"):
         return "internal"
@@ -48,6 +64,16 @@ def _source_role(kind: str, source: str) -> str:
         return "counterpart"
     if normalized_kind.startswith("self_"):
         return "self"
+    if normalized_kind == "skill_usage_observation" or normalized_source in {"skill", "skills", "skill_runtime"}:
+        return "capability"
+    if normalized_kind in {
+        "browser_runtime_observation",
+        "sandbox_run_observation",
+        "audio_observation",
+        "vision_observation",
+        "body_resource_observation",
+    } or normalized_source in {"browser", "browser_runtime", "web_runtime", "sandbox", "sandbox_runner", "workspace_runner"}:
+        return "environment"
     if normalized_source in {"system", "commitment_scheduler", "scheduler"}:
         return "system"
     return "external"
@@ -76,6 +102,10 @@ def _delivery_mode(kind: str, source: str) -> str:
         return "scheduled"
     if normalized_kind.startswith("self_"):
         return "self_initiated"
+    if normalized_kind in {"audio_observation", "vision_observation"}:
+        return "ambient"
+    if normalized_kind in {"browser_runtime_observation", "sandbox_run_observation", "skill_usage_observation", "body_resource_observation"}:
+        return "external"
     if normalized_source in {"ambient", "vision"}:
         return "ambient"
     return "external"
@@ -88,7 +118,16 @@ def _trust_tier(kind: str, source: str) -> str:
         return "high"
     if normalized_kind.startswith("self_") or normalized_source in {"system", "commitment_scheduler", "scheduler"}:
         return "high"
-    if normalized_source in {"vision", "ambient", "voice", "audio"}:
+    if normalized_kind in {
+        "browser_runtime_observation",
+        "sandbox_run_observation",
+        "skill_usage_observation",
+        "audio_observation",
+        "vision_observation",
+        "body_resource_observation",
+    }:
+        return "medium"
+    if normalized_source in {"vision", "ambient", "voice", "audio", "browser", "sandbox", "skill"}:
         return "medium"
     return "medium" if normalized_kind else "low"
 

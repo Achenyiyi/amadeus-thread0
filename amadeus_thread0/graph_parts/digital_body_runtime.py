@@ -993,35 +993,49 @@ def _merged_hint_payload(
     session_context: dict[str, Any] | None,
     current_event: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    hints: dict[str, Any] = {}
     event = _dict_or_empty(current_event)
     perception = _dict_or_empty(event.get("perception"))
-    for source in (
+    return merge_digital_body_hints(
         _dict_or_empty(_dict_or_empty(session_context).get("digital_body_hints")),
-        _dict_or_empty(event.get("digital_body_hints")),
         _dict_or_empty(perception.get("digital_body_hints")),
-    ):
-        if not source:
-            continue
-        for key, value in source.items():
-            if key in {"world_surfaces", "missing_access", "requestable_access", "constraints"}:
-                hints[key] = _merge_unique_lists(hints.get(key), value, limit=16)
-            elif isinstance(value, dict):
-                prior = _dict_or_empty(hints.get(key))
-                merged = dict(prior)
-                merged.update(value)
-                hints[key] = merged
-            elif value not in (None, "", []):
-                hints[key] = value
-    return hints
+        _dict_or_empty(event.get("digital_body_hints")),
+    )
 
 
 def merge_digital_body_hints(
-    *,
+    *sources: dict[str, Any] | None,
     session_context: dict[str, Any] | None = None,
     current_event: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return _merged_hint_payload(session_context=session_context, current_event=current_event)
+    if session_context is not None or current_event is not None:
+        event = _dict_or_empty(current_event)
+        perception = _dict_or_empty(event.get("perception"))
+        sources = (
+            _dict_or_empty(_dict_or_empty(session_context).get("digital_body_hints")),
+            _dict_or_empty(perception.get("digital_body_hints")),
+            _dict_or_empty(event.get("digital_body_hints")),
+        )
+
+    merged: dict[str, Any] = {}
+    for source in sources:
+        if not isinstance(source, dict) or not source:
+            continue
+        for key, value in source.items():
+            if key in {"world_surfaces", "missing_access", "requestable_access", "constraints"}:
+                merged[key] = _merge_unique_lists(merged.get(key), value, limit=16)
+            elif isinstance(value, dict):
+                prior = _dict_or_empty(merged.get(key))
+                nested = dict(prior)
+                for nested_key, nested_value in value.items():
+                    if nested_value in (None, "", []):
+                        continue
+                    if nested_key not in nested or nested.get(nested_key) in (None, "", []):
+                        nested[nested_key] = nested_value
+                if nested:
+                    merged[key] = nested
+            elif value not in (None, "", []) and key not in merged:
+                merged[key] = value
+    return merged
 
 
 def digital_body_state_has_signal(state: Any) -> bool:

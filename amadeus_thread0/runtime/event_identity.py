@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..graph_parts.digital_body_runtime import merge_digital_body_hints
+
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -37,6 +39,7 @@ def resolve_readback_current_event(
     current_event = _dict_or_empty(data.get("current_event"))
     if not current_event:
         return {}
+    event_projection = dict(current_event)
     perception = current_event.get("perception") if isinstance(current_event.get("perception"), dict) else {}
     context = session_context if isinstance(session_context, dict) else {}
     session_thread_id = (
@@ -44,13 +47,13 @@ def resolve_readback_current_event(
         or str(perception.get("thread_id") or "").strip()
         or str(thread_id or "").strip()
     )
-    created_at = int(current_event.get("created_at") or 0)
-    kind = str(current_event.get("kind") or "external_event").strip() or "external_event"
-    source = str(current_event.get("source") or "external").strip() or "external"
-    current_event["kind"] = kind
-    current_event["source"] = source
-    if created_at > 0 or "created_at" in current_event:
-        current_event["created_at"] = created_at
+    created_at = int(event_projection.get("created_at") or 0)
+    kind = str(event_projection.get("kind") or "external_event").strip() or "external_event"
+    source = str(event_projection.get("source") or "external").strip() or "external"
+    event_projection["kind"] = kind
+    event_projection["source"] = source
+    if created_at > 0 or "created_at" in event_projection:
+        event_projection["created_at"] = created_at
     turn_id = str(perception.get("turn_id") or "").strip() or str(context.get("turn_id") or "").strip() or (
         f"{session_thread_id}:{created_at}" if session_thread_id and created_at else ""
     )
@@ -69,7 +72,10 @@ def resolve_readback_current_event(
         "delivery_mode",
         "is_proactive",
     )
-    current_event["perception"] = {
+    perception_hints = perception.get("digital_body_hints") if isinstance(perception.get("digital_body_hints"), dict) else {}
+    top_level_hints = current_event.get("digital_body_hints") if isinstance(current_event.get("digital_body_hints"), dict) else {}
+    digital_body_hints = merge_digital_body_hints(perception_hints, top_level_hints)
+    projection_perception = {
         **perception,
         "thread_id": session_thread_id,
         "turn_id": turn_id,
@@ -82,7 +88,12 @@ def resolve_readback_current_event(
             or key in context
         },
     }
-    return current_event
+    if digital_body_hints:
+        projection_perception["digital_body_hints"] = dict(digital_body_hints)
+    event_projection["perception"] = projection_perception
+    if digital_body_hints:
+        event_projection["digital_body_hints"] = dict(digital_body_hints)
+    return event_projection
 
 
 def resolve_readback_session_context(
