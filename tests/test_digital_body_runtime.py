@@ -647,6 +647,43 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(sandbox_state["execution_policy"], "approval_required")
         self.assertFalse(sandbox_state["arbitrary_execution"])
 
+    def test_derive_digital_body_state_uses_event_hints_only_to_fill_missing_session_truth(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "sandbox_run_observation",
+                "digital_body_hints": {
+                    "workspace_root": "E:/runtime/workspaces/from-event",
+                    "sandbox_state": {
+                        "runner_kind": "local_restricted_runner",
+                        "last_exit_code": 1,
+                    },
+                },
+                "perception": {
+                    "channel": "sandbox",
+                    "modality": "sandbox",
+                    "source_role": "environment",
+                },
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={
+                "thread_id": "thread-event-hints",
+                "digital_body_hints": {
+                    "workspace_root": "E:/runtime/workspaces/completed",
+                    "sandbox_state": {
+                        "runner_kind": "docker_isolated_runner",
+                    },
+                },
+            },
+        )
+
+        sandbox_state = body["access_state"]["sandbox_state"]
+        self.assertEqual(body["resource_state"]["workspace_root"], "E:/runtime/workspaces/completed")
+        self.assertEqual(sandbox_state["runner_kind"], "docker_isolated_runner")
+        self.assertEqual(sandbox_state["last_exit_code"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
+from .digital_body_runtime import merge_digital_body_hints
 
 from .state import SessionContextPayload, ThreadState
 
@@ -27,6 +28,20 @@ def _legacy_thread_id_from_state(state: ThreadState | dict[str, Any] | None) -> 
     if not isinstance(perception, dict):
         return ""
     return _clean_text(perception.get("thread_id"))
+
+
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _event_digital_body_hints(state: ThreadState | dict[str, Any] | None) -> dict[str, Any]:
+    data = state if isinstance(state, dict) else {}
+    event = _dict_or_empty(data.get("current_event"))
+    perception = _dict_or_empty(event.get("perception"))
+    return merge_digital_body_hints(
+        _dict_or_empty(perception.get("digital_body_hints")),
+        _dict_or_empty(event.get("digital_body_hints")),
+    )
 
 
 def resolve_session_context(
@@ -63,11 +78,12 @@ def resolve_session_context(
         resolved["user_id"] = user_id
     if checkpoint_id:
         resolved["checkpoint_id"] = checkpoint_id
-    hint_payload = configurable.get("digital_body_hints")
-    if not isinstance(hint_payload, dict):
-        hint_payload = state_context.get("digital_body_hints")
-    if isinstance(hint_payload, dict) and hint_payload:
-        resolved["digital_body_hints"] = dict(hint_payload)
+    state_hints = _dict_or_empty(state_context.get("digital_body_hints"))
+    config_hints = _dict_or_empty(configurable.get("digital_body_hints"))
+    event_hints = _event_digital_body_hints(data)
+    hint_payload = merge_digital_body_hints(config_hints, state_hints, event_hints)
+    if hint_payload:
+        resolved["digital_body_hints"] = hint_payload
     return resolved
 
 

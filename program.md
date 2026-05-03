@@ -10003,3 +10003,33 @@ This file is the live development ledger for `amadeus-thread0`.
   - normal CLI startup keeps the runtime bundle import deferred while still surfacing a lightweight graph preflight warning path
 - Next:
   - proceed to Task 4: body-state event perception
+
+## 2026-05-04 Run 234
+
+- Focus:
+  - Task 4 body-state event perception
+  - promote browser/session/sandbox/skill/workspace observations into first-class perception context without overwriting completed body truth
+- Files changed:
+  - `amadeus_thread0/graph_parts/perception.py`
+  - `amadeus_thread0/graph_parts/session_context.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/event_identity.py`
+  - `tests/test_perception_event_contract.py`
+  - `tests/test_session_context.py`
+  - `tests/test_digital_body_runtime.py`
+  - `program.md`
+- Key changes:
+  - extended perception normalization for browser, sandbox, skill, audio, and vision observations
+  - kept environment observations on `source_role=environment` and skill usage on `source_role=capability`
+  - kept runtime/body observation trust at `medium` unless the event is an explicit high-trust system/self signal
+  - preserved event perception `digital_body_hints` into session context and readback while keeping session/config truth authoritative when hints conflict
+  - surfaced `current_event.digital_body_hints` on readback so browser/session/sandbox/skill context remains inspectable
+  - consolidated body-hint merging on `merge_digital_body_hints()` so session context, digital body derivation, and readback share one fill-only contract
+  - changed readback to return a clean projection instead of mutating the source event, with richer perception hints winning over stale top-level copies
+- Validation:
+  - `python -m pytest tests/test_perception_event_contract.py tests/test_session_context.py tests/test_digital_body_runtime.py -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py -q`
+- Result:
+  - task 4 contract is green after review fixes
+- Next:
+  - preserve the new perception/session readback shape unless a later phase deliberately changes body-state semantics
