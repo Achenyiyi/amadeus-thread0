@@ -33,6 +33,11 @@ class EventPayload(TypedDict, total=False):
     carryover_mode: str
     carryover_strength: float
     relationship_weather: str
+    presence_family: str
+    interaction_mode_hint: str
+    timing_window_min: int
+    silence_allowed: bool
+    allow_interrupt: bool
     presence_residue: float
     ambient_resonance: float
     self_activity_momentum: float
@@ -70,6 +75,7 @@ class SessionContextPayload(TypedDict, total=False):
 class BehaviorActionPayload(TypedDict, total=False):
     channel: str
     interaction_mode: str
+    presence_family: str
     approach_style: str
     engagement_level: float
     initiative_level: float
@@ -77,6 +83,8 @@ class BehaviorActionPayload(TypedDict, total=False):
     task_focus: str
     affect_surface: str
     silence_ok: bool
+    silence_allowed: bool
+    allow_interrupt: bool
     proactive_checkin_readiness: float
     primary_motive: str
     motive_tension: str
@@ -127,6 +135,10 @@ class BehaviorPlanPayload(TypedDict, total=False):
     target: str
     scheduled_after_min: int
     trigger_family: str
+    presence_family: str
+    interaction_mode: str
+    timing_window_min: int
+    silence_allowed: bool
     allow_interrupt: bool
     primary_motive: str
     motive_tension: str
@@ -152,6 +164,10 @@ class BehaviorAgendaEntryPayload(TypedDict, total=False):
     base_priority: float
     priority: float
     trigger_family: str
+    presence_family: str
+    interaction_mode: str
+    timing_window_min: int
+    silence_allowed: bool
     allow_interrupt: bool
     primary_motive: str
     motive_tension: str

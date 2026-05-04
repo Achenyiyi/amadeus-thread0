@@ -2057,6 +2057,7 @@ def _behavior_action_from_state(
         "relationship_weather": effective_relationship_weather,
         "window_profile": behavior_window_profile,
     }
+    action_payload.update(_behavior_presence_fields(action_payload))
     if embodied_context_has_signal(embodied_context):
         action_payload["embodied_context"] = embodied_context
     return action_payload
@@ -2225,6 +2226,61 @@ def _behavior_plan_carryover_snapshot(
         snapshot["embodied_context"] = embodied_context
     return snapshot
 
+def _presence_family_from_action(action: dict[str, Any]) -> str:
+    if not isinstance(action, dict):
+        return ""
+    explicit = str(action.get("presence_family") or "").strip().lower()
+    if explicit:
+        return explicit
+    action_target = str(action.get("action_target") or "").strip()
+    interaction_mode = str(action.get("interaction_mode") or "").strip()
+    deferred_family = str(action.get("deferred_action_family") or "").strip()
+    if action_target == "hold_own_rhythm" or interaction_mode == "self_activity_hold":
+        return "self_activity_continue"
+    if action_target == "wait_and_recheck":
+        return "deferred_return"
+    if action_target == "confirm_presence" or interaction_mode == "brief_presence":
+        return "quiet_presence"
+    if action_target == "ambient_checkin" or deferred_family == "ambient_presence":
+        return "ambient_echo"
+    if action_target == "protect_relationship_boundary" or deferred_family == "boundary":
+        return "boundary_hold"
+    if action_target == "low_pressure_hold" or deferred_family == "care_opportunity":
+        return "repair_probe"
+    if action_target == "light_work_nudge" or deferred_family == "deadline_window":
+        return "shared_work_nudge"
+    return ""
+
+
+def _behavior_presence_fields(action: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(action, dict):
+        return {}
+    fields: dict[str, Any] = {}
+    presence_family = _presence_family_from_action(action)
+    if presence_family:
+        fields["presence_family"] = presence_family
+    interaction_mode = str(action.get("interaction_mode") or "").strip()
+    action_target = str(action.get("action_target") or "").strip()
+    channel = str(action.get("channel") or "").strip()
+    if interaction_mode:
+        fields["interaction_mode"] = interaction_mode
+    attention_target = str(action.get("attention_target") or "").strip()
+    if attention_target:
+        fields["attention_target"] = attention_target
+    nonverbal_signal = str(action.get("nonverbal_signal") or "").strip()
+    if nonverbal_signal:
+        fields["nonverbal_signal"] = nonverbal_signal
+    fields["timing_window_min"] = int(max(0, int(action.get("timing_window_min") or 0)))
+    default_silence_allowed = bool(
+        action.get("silence_ok", False)
+        or channel == "silence"
+        or action_target in {"wait_and_recheck", "hold_own_rhythm"}
+    )
+    default_allow_interrupt = not (action_target == "hold_own_rhythm" or interaction_mode == "self_activity_hold")
+    fields["silence_allowed"] = bool(action.get("silence_allowed", default_silence_allowed))
+    fields["allow_interrupt"] = bool(action.get("allow_interrupt", default_allow_interrupt))
+    return fields
+
 def _behavior_plan_from_action(
     current_event: dict[str, Any],
     action: dict[str, Any],
@@ -2244,6 +2300,7 @@ def _behavior_plan_from_action(
     timing_window_min = int(max(0, int(action.get("timing_window_min") or 0)))
     channel = str(action.get("channel") or "").strip()
     carryover_snapshot = _behavior_plan_carryover_snapshot(action, world_model_state=world_model_state)
+    presence_fields = _behavior_presence_fields(action)
     motive_fields = {
         "primary_motive": str(action.get("primary_motive") or "").strip(),
         "motive_tension": str(action.get("motive_tension") or "").strip(),
@@ -2259,6 +2316,7 @@ def _behavior_plan_from_action(
                 "trigger_family": "light_checkin",
                 "allow_interrupt": True,
                 "note": "空闲时间已足够，允许轻量主动开口。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "hold_own_rhythm":
@@ -2267,8 +2325,9 @@ def _behavior_plan_from_action(
                 "target": "self",
                 "scheduled_after_min": timing_window_min if timing_window_min > 0 else 18,
                 "trigger_family": deferred_family or "self_activity",
-                "allow_interrupt": True,
+                "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
                 "note": "没有新的接近理由时，她会先回到自己的节奏里，之后再决定是否重新抬头。",
+                **presence_fields,
                 **motive_fields,
                 **carryover_snapshot,
             }
@@ -2281,6 +2340,7 @@ def _behavior_plan_from_action(
                     "trigger_family": "none",
                     "allow_interrupt": True,
                     "note": "这段低压接近理由已经自然过期，不再继续挂起。",
+                    **presence_fields,
                     **motive_fields,
                 }
             return {
@@ -2288,8 +2348,9 @@ def _behavior_plan_from_action(
                 "target": "counterpart",
                 "scheduled_after_min": timing_window_min,
                 "trigger_family": deferred_family or "observe",
-                "allow_interrupt": True,
+                "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
                 "note": "先继续观察，稍后再决定是否轻量 check-in。",
+                **presence_fields,
                 **motive_fields,
                 **carryover_snapshot,
             }
@@ -2302,6 +2363,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "shared_activity",
                 "allow_interrupt": True,
                 "note": "之前那点还能再靠近一点的空当现在刚好，可以自然把这次小邀约带出来。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "light_work_nudge":
@@ -2312,6 +2374,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "deadline_window",
                 "allow_interrupt": True,
                 "note": "之前压后的生活节点现在成熟了，可以轻轻把眼前的事再拎一下。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "light_life_nudge":
@@ -2322,6 +2385,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
                 "note": "之前留着的那点生活上的惦记又被想起来了，可以顺手问一句近况或提醒一个小细节。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "reach_out_now":
@@ -2332,6 +2396,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "light_checkin",
                 "allow_interrupt": True,
                 "note": "先前延后的 check-in 现在成熟了，可以轻轻开口。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "wait_and_recheck":
@@ -2341,8 +2406,9 @@ def _behavior_plan_from_action(
                 "target": "counterpart",
                 "scheduled_after_min": delay,
                 "trigger_family": deferred_family or "observe",
-                "allow_interrupt": True,
+                "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
                 "note": "即使到了先前约好的时候，这次也先继续观察，稍后再决定是否冒头。",
+                **presence_fields,
                 **motive_fields,
                 **carryover_snapshot,
             }
@@ -2355,6 +2421,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "shared_activity_window",
                 "allow_interrupt": True,
                 "note": "刚好有个能一起做点什么的空当，可以自然地留给对方。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "light_work_nudge":
@@ -2365,6 +2432,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "deadline_window",
                 "allow_interrupt": True,
                 "note": "记得眼前这件事到了节点，先轻轻拎一下，不接管节奏。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "light_life_nudge":
@@ -2375,6 +2443,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "life_window",
                 "allow_interrupt": True,
                 "note": "又想起一点生活上的小事，顺手碰一下对方眼前状态就够，不把它说成待办。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "wait_and_recheck":
@@ -2384,8 +2453,9 @@ def _behavior_plan_from_action(
                 "target": "counterpart",
                 "scheduled_after_min": delay,
                 "trigger_family": deferred_family or "life_window",
-                "allow_interrupt": True,
+                "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
                 "note": "这点生活上的惦记先记着，但此刻先不打断，稍后再看。",
+                **presence_fields,
                 **motive_fields,
                 **carryover_snapshot,
             }
@@ -2398,6 +2468,7 @@ def _behavior_plan_from_action(
                 "trigger_family": deferred_family or "self_activity",
                 "allow_interrupt": True,
                 "note": "她从自己的节奏里抬起头，顺手给对方留了一个小开口。",
+                **presence_fields,
                 **motive_fields,
             }
         if action_target == "hold_own_rhythm":
@@ -2406,8 +2477,9 @@ def _behavior_plan_from_action(
                 "target": "self",
                 "scheduled_after_min": timing_window_min if timing_window_min > 0 else 18,
                 "trigger_family": deferred_family or "self_activity",
-                "allow_interrupt": True,
+                "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
                 "note": "她这轮先维持自己的节奏，稍后再决定是否重新靠近。",
+                **presence_fields,
                 **motive_fields,
                 **carryover_snapshot,
             }
@@ -2419,6 +2491,7 @@ def _behavior_plan_from_action(
             "trigger_family": "presence_ping",
             "allow_interrupt": True,
             "note": "优先确认在场感，不必展开。",
+            **presence_fields,
             **motive_fields,
         }
     if action_target == "ambient_checkin":
@@ -2429,6 +2502,7 @@ def _behavior_plan_from_action(
             "trigger_family": "ambient_presence",
             "allow_interrupt": True,
             "note": "环境变化足以触发一句安静确认。",
+            **presence_fields,
             **motive_fields,
         }
     if action_target == "low_pressure_hold":
@@ -2439,6 +2513,7 @@ def _behavior_plan_from_action(
             "trigger_family": "care_opportunity",
             "allow_interrupt": True,
             "note": "先低负担接住，不接管对方节奏。",
+            **presence_fields,
             **motive_fields,
         }
     if channel == "silence":
@@ -2447,8 +2522,9 @@ def _behavior_plan_from_action(
             "target": "counterpart",
             "scheduled_after_min": timing_window_min,
             "trigger_family": deferred_family or "observe",
-            "allow_interrupt": True,
+            "allow_interrupt": bool(presence_fields.get("allow_interrupt", True)),
             "note": "当前更适合保持安静，继续观察。",
+            **presence_fields,
             **motive_fields,
         }
     return {
@@ -2458,5 +2534,6 @@ def _behavior_plan_from_action(
         "trigger_family": deferred_family or "none",
         "allow_interrupt": True,
         "note": "当前回合以即时回应为主。",
+        **presence_fields,
         **motive_fields,
     }

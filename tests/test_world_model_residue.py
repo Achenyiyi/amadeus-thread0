@@ -5698,6 +5698,10 @@ class WorldModelResidueTests(unittest.TestCase):
             },
         )
         self.assertEqual(str(plan.get("kind") or ""), "self_activity_continue")
+        self.assertEqual(str(plan.get("presence_family") or ""), "self_activity_continue")
+        self.assertEqual(str(plan.get("interaction_mode") or ""), "brief_presence")
+        self.assertEqual(int(plan.get("timing_window_min") or 0), 18)
+        self.assertTrue(bool(plan.get("silence_allowed", False)))
         self.assertEqual(str(plan.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(plan.get("carryover_strength") or 0.0), 0.74, places=3)
         self.assertEqual(str(plan.get("relationship_weather") or ""), "guarded_residue")
@@ -5720,7 +5724,11 @@ class WorldModelResidueTests(unittest.TestCase):
             "target": "self",
             "scheduled_after_min": 18,
             "trigger_family": "none",
-            "allow_interrupt": True,
+            "presence_family": "self_activity_continue",
+            "interaction_mode": "self_activity_hold",
+            "timing_window_min": 18,
+            "silence_allowed": True,
+            "allow_interrupt": False,
             "primary_motive": "preserve_self_rhythm",
             "motive_tension": "self_rhythm_vs_contact",
             "goal_frame": "先维持自己的节奏，不急着把全部注意力交出去。",
@@ -5746,6 +5754,11 @@ class WorldModelResidueTests(unittest.TestCase):
         normalized = _normalize_behavior_agenda([entry])
         self.assertEqual(len(normalized), 1)
         agenda_entry = normalized[0]
+        self.assertEqual(str(agenda_entry.get("presence_family") or ""), "self_activity_continue")
+        self.assertEqual(str(agenda_entry.get("interaction_mode") or ""), "self_activity_hold")
+        self.assertEqual(int(agenda_entry.get("timing_window_min") or 0), 18)
+        self.assertTrue(bool(agenda_entry.get("silence_allowed", False)))
+        self.assertFalse(bool(agenda_entry.get("allow_interrupt", True)))
         self.assertEqual(str(agenda_entry.get("carryover_mode") or ""), "own_rhythm")
         self.assertAlmostEqual(float(agenda_entry.get("carryover_strength") or 0.0), 0.74, places=3)
         self.assertEqual(str(agenda_entry.get("relationship_weather") or ""), "guarded_residue")
@@ -5768,6 +5781,11 @@ class WorldModelResidueTests(unittest.TestCase):
                 "kind": "self_activity_continue",
                 "scheduled_after_min": 18,
                 "trigger_family": "none",
+                "presence_family": "self_activity_continue",
+                "interaction_mode": "self_activity_hold",
+                "timing_window_min": 18,
+                "silence_allowed": True,
+                "allow_interrupt": False,
                 "primary_motive": "preserve_self_rhythm",
                 "motive_tension": "self_rhythm_vs_contact",
                 "goal_frame": "先维持自己的节奏，不急着把全部注意力交出去。",
@@ -5790,6 +5808,11 @@ class WorldModelResidueTests(unittest.TestCase):
             },
         )
         self.assertEqual(str(promoted.get("kind") or ""), "self_activity_state")
+        self.assertEqual(str(promoted.get("presence_family") or ""), "self_activity_continue")
+        self.assertEqual(str(promoted.get("interaction_mode_hint") or ""), "self_activity_hold")
+        self.assertEqual(int(promoted.get("timing_window_min") or 0), 18)
+        self.assertTrue(bool(promoted.get("silence_allowed", False)))
+        self.assertFalse(bool(promoted.get("allow_interrupt", True)))
         self.assertIn("self_activity", promoted.get("tags") or [])
         self.assertIn("deep_focus", promoted.get("tags") or [])
         self.assertIn("own_task", promoted.get("tags") or [])
@@ -5805,6 +5828,11 @@ class WorldModelResidueTests(unittest.TestCase):
         self.assertIn("自己的节奏", str(normalized.get("goal_frame") or ""))
         self.assertEqual(str(normalized.get("attention_target_hint") or ""), "self_then_counterpart")
         self.assertEqual(str(normalized.get("nonverbal_signal_hint") or ""), "resume_task")
+        self.assertEqual(str(normalized.get("presence_family") or ""), "self_activity_continue")
+        self.assertEqual(str(normalized.get("interaction_mode_hint") or ""), "self_activity_hold")
+        self.assertEqual(int(normalized.get("timing_window_min") or 0), 18)
+        self.assertTrue(bool(normalized.get("silence_allowed", False)))
+        self.assertFalse(bool(normalized.get("allow_interrupt", True)))
         self.assertAlmostEqual(float(normalized.get("presence_residue") or 0.0), 0.34, places=3)
         self.assertAlmostEqual(float(normalized.get("ambient_resonance") or 0.0), 0.28, places=3)
         self.assertAlmostEqual(float(normalized.get("self_activity_momentum") or 0.0), 0.74, places=3)

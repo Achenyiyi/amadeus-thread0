@@ -34,6 +34,7 @@ def behavior_action_has_signal(action: dict[str, Any] | None) -> bool:
         return False
     for key in (
         "interaction_mode",
+        "presence_family",
         "action_target",
         "channel",
         "approach_style",
@@ -60,6 +61,10 @@ def behavior_action_has_signal(action: dict[str, Any] | None) -> bool:
             return True
     if bool(action.get("silence_ok", False)):
         return True
+    if bool(action.get("silence_allowed", False)):
+        return True
+    if "allow_interrupt" in action and isinstance(action.get("allow_interrupt"), bool):
+        return True
     window_profile = action.get("window_profile")
     if isinstance(window_profile, dict) and bool(window_profile):
         return True
@@ -72,6 +77,8 @@ def behavior_action_has_plan_signal(action: dict[str, Any] | None) -> bool:
         return False
     for key in (
         "action_target",
+        "presence_family",
+        "interaction_mode",
         "primary_motive",
         "motive_tension",
         "goal_frame",
@@ -94,6 +101,8 @@ def behavior_plan_has_signal(plan: dict[str, Any] | None) -> bool:
         "kind",
         "target",
         "trigger_family",
+        "presence_family",
+        "interaction_mode",
         "primary_motive",
         "motive_tension",
         "goal_frame",
@@ -118,6 +127,8 @@ def behavior_plan_has_signal(plan: dict[str, Any] | None) -> bool:
         if isinstance(value, (int, float)) and float(value) != 0.0:
             return True
     if "allow_interrupt" in plan and isinstance(plan.get("allow_interrupt"), bool):
+        return True
+    if "silence_allowed" in plan and isinstance(plan.get("silence_allowed"), bool):
         return True
     embodied_context = _normalize_digital_body_consequence(_dict_or_empty(plan.get("embodied_context")))
     return digital_body_consequence_has_signal(embodied_context)
@@ -256,6 +267,10 @@ def _normalized_behavior_action(action: dict[str, Any] | None) -> dict[str, Any]
     if not row:
         return {}
     normalized = dict(row)
+    if "silence_allowed" not in normalized and "silence_ok" in normalized:
+        normalized["silence_allowed"] = bool(normalized.get("silence_ok", False))
+    if "allow_interrupt" in normalized:
+        normalized["allow_interrupt"] = bool(normalized.get("allow_interrupt", True))
     embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
     if digital_body_consequence_has_signal(embodied_context):
         normalized["embodied_context"] = embodied_context
@@ -269,6 +284,10 @@ def _normalized_behavior_plan(plan: dict[str, Any] | None) -> dict[str, Any]:
     if not row:
         return {}
     normalized = dict(row)
+    if "silence_allowed" not in normalized and "silence_ok" in normalized:
+        normalized["silence_allowed"] = bool(normalized.get("silence_ok", False))
+    if "allow_interrupt" in normalized:
+        normalized["allow_interrupt"] = bool(normalized.get("allow_interrupt", True))
     embodied_context = _normalize_digital_body_consequence(_dict_or_empty(row.get("embodied_context")))
     if digital_body_consequence_has_signal(embodied_context):
         normalized["embodied_context"] = embodied_context
@@ -463,8 +482,41 @@ def resolve_behavior_payloads(
     frozen_plan = _reconsolidation_behavior_plan(reconsolidation_snapshot)
     action = frozen_action if behavior_action_has_signal(frozen_action) else live_action
     plan = frozen_plan if behavior_plan_has_signal(frozen_plan) else live_plan
+    if action and live_action:
+        merged_action = dict(action)
+        for key in (
+            "presence_family",
+            "final_text",
+            "silence_allowed",
+            "allow_interrupt",
+            "attention_target",
+            "nonverbal_signal",
+            "timing_window_min",
+            "embodied_context",
+        ):
+            if key not in merged_action or merged_action.get(key) in ("", None, {}):
+                if key in live_action:
+                    merged_action[key] = live_action.get(key)
+        action = merged_action
+    if plan and live_plan:
+        merged_plan = dict(plan)
+        for key in (
+            "presence_family",
+            "final_text",
+            "interaction_mode",
+            "silence_allowed",
+            "allow_interrupt",
+            "attention_target",
+            "nonverbal_signal",
+            "timing_window_min",
+            "embodied_context",
+        ):
+            if key not in merged_plan or merged_plan.get(key) in ("", None, {}):
+                if key in live_plan:
+                    merged_plan[key] = live_plan.get(key)
+        plan = merged_plan
     if behavior_plan_has_signal(frozen_plan):
-        return action, frozen_plan
+        return action, plan
     # Once final action is frozen, derive the plan from that same action before
     # considering any live intermediate plan. Otherwise we can leak a stale plan
     # alongside the frozen final action.

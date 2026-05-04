@@ -1,10 +1,201 @@
 import unittest
 
+from amadeus_thread0.evolution_engine.reconsolidation import build_reconsolidation_snapshot
 from amadeus_thread0.graph_parts.appraisal import _finalize_turn_appraisal_payload
-from amadeus_thread0.graph_parts.behavior_runtime import _behavior_action_from_state
+from amadeus_thread0.graph_parts.behavior_runtime import _behavior_action_from_state, _behavior_plan_from_action
+from amadeus_thread0.runtime.final_state import resolve_behavior_payloads
+
+
+REQUIRED_PRESENCE_FAMILIES = (
+    "quiet_presence",
+    "ambient_echo",
+    "deferred_return",
+    "boundary_hold",
+    "repair_probe",
+    "shared_work_nudge",
+    "self_activity_continue",
+)
 
 
 class BehaviorRuntimeAlignmentTests(unittest.TestCase):
+    def test_presence_family_semantics_survive_final_readback(self):
+        final_text = "我会按这个节奏来，不把中间状态说成另一回事。"
+        family_specs = {
+            "quiet_presence": {
+                "event": {"kind": "gesture_signal", "tags": ["presence"]},
+                "action": {
+                    "interaction_mode": "brief_presence",
+                    "action_target": "confirm_presence",
+                    "channel": "speech",
+                    "primary_motive": "confirm_presence",
+                    "deferred_action_family": "presence_ping",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_glance",
+                    "timing_window_min": 0,
+                    "silence_ok": True,
+                    "silence_allowed": True,
+                    "allow_interrupt": True,
+                },
+            },
+            "ambient_echo": {
+                "event": {"kind": "ambient_shift", "tags": ["ambient_echo"]},
+                "action": {
+                    "interaction_mode": "companion_reply",
+                    "action_target": "ambient_checkin",
+                    "channel": "speech",
+                    "primary_motive": "confirm_presence",
+                    "deferred_action_family": "ambient_presence",
+                    "attention_target": "ambient_cue",
+                    "nonverbal_signal": "small_notice",
+                    "timing_window_min": 0,
+                    "silence_allowed": False,
+                    "allow_interrupt": True,
+                },
+            },
+            "deferred_return": {
+                "event": {"kind": "time_idle", "idle_minutes": 20, "tags": ["quiet_presence"]},
+                "action": {
+                    "interaction_mode": "deferred_watch",
+                    "action_target": "wait_and_recheck",
+                    "channel": "silence",
+                    "primary_motive": "gentle_recontact",
+                    "deferred_action_family": "light_checkin",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "hold_back",
+                    "timing_window_min": 24,
+                    "silence_ok": True,
+                    "silence_allowed": True,
+                    "allow_interrupt": True,
+                },
+            },
+            "boundary_hold": {
+                "event": {"kind": "user_utterance", "tags": ["relationship", "boundary"]},
+                "action": {
+                    "interaction_mode": "relationship_sensitive",
+                    "action_target": "protect_relationship_boundary",
+                    "channel": "speech",
+                    "primary_motive": "protect_boundary",
+                    "deferred_action_family": "boundary",
+                    "attention_target": "relationship_boundary",
+                    "nonverbal_signal": "measured_pause",
+                    "timing_window_min": 0,
+                    "silence_allowed": False,
+                    "allow_interrupt": True,
+                },
+            },
+            "repair_probe": {
+                "event": {"kind": "scene_observation", "tags": ["repair", "care_opportunity"]},
+                "action": {
+                    "interaction_mode": "low_pressure_support",
+                    "action_target": "low_pressure_hold",
+                    "channel": "speech",
+                    "primary_motive": "support_without_pressure",
+                    "deferred_action_family": "care_opportunity",
+                    "attention_target": "counterpart_state",
+                    "nonverbal_signal": "quiet_notice",
+                    "timing_window_min": 0,
+                    "silence_ok": True,
+                    "silence_allowed": True,
+                    "allow_interrupt": True,
+                },
+            },
+            "shared_work_nudge": {
+                "event": {"kind": "scheduled_life_due", "tags": ["deadline_window", "shared_task"]},
+                "action": {
+                    "interaction_mode": "scheduled_life_nudge",
+                    "action_target": "light_work_nudge",
+                    "channel": "speech",
+                    "primary_motive": "honor_continuity",
+                    "deferred_action_family": "deadline_window",
+                    "attention_target": "shared_task",
+                    "nonverbal_signal": "focus_glance",
+                    "timing_window_min": 0,
+                    "silence_allowed": False,
+                    "allow_interrupt": True,
+                },
+            },
+            "self_activity_continue": {
+                "event": {"kind": "self_activity_state", "tags": ["self_activity"]},
+                "action": {
+                    "interaction_mode": "self_activity_hold",
+                    "action_target": "hold_own_rhythm",
+                    "channel": "silence",
+                    "primary_motive": "preserve_self_rhythm",
+                    "deferred_action_family": "self_activity",
+                    "attention_target": "own_task",
+                    "nonverbal_signal": "inward_focus",
+                    "timing_window_min": 18,
+                    "silence_ok": True,
+                    "silence_allowed": True,
+                    "allow_interrupt": False,
+                    "embodied_context": {
+                        "kind": "access_request_pending",
+                        "primary_status": "awaiting_approval",
+                        "requested_access": ["workspace_write"],
+                        "requested_help": True,
+                    },
+                },
+            },
+        }
+
+        for family in REQUIRED_PRESENCE_FAMILIES:
+            with self.subTest(family=family):
+                spec = family_specs[family]
+                action = {**spec["action"], "presence_family": family, "final_text": final_text}
+                plan = _behavior_plan_from_action(
+                    spec["event"],
+                    action,
+                    world_model_state={
+                        "presence_residue": 0.42,
+                        "ambient_resonance": 0.36,
+                        "self_activity_momentum": 0.62,
+                    },
+                )
+                reconsolidation = build_reconsolidation_snapshot(
+                    current_event={**spec["event"], "final_text": final_text},
+                    appraisal={},
+                    world_model_state={},
+                    semantic_narrative_profile={},
+                    latent_state={},
+                    emotion_state={},
+                    bond_state={},
+                    counterpart_assessment={},
+                    behavior_action=action,
+                    behavior_plan=plan,
+                    interaction_carryover={},
+                    agenda_lifecycle_residue={},
+                    digital_body_state={},
+                    session_skill_state={},
+                )
+                resolved_action, resolved_plan = resolve_behavior_payloads(
+                    behavior_action=action,
+                    behavior_plan=plan,
+                    reconsolidation_snapshot=reconsolidation,
+                    current_event=spec["event"],
+                    world_model_state={},
+                )
+
+                self.assertEqual(resolved_action.get("presence_family"), family)
+                self.assertEqual(resolved_plan.get("presence_family"), family)
+                self.assertEqual(reconsolidation["behavior_action"].get("presence_family"), family)
+                self.assertEqual(reconsolidation["behavior_plan"].get("presence_family"), family)
+                self.assertEqual(resolved_plan.get("interaction_mode"), resolved_action.get("interaction_mode"))
+                self.assertEqual(resolved_plan.get("attention_target"), resolved_action.get("attention_target"))
+                self.assertEqual(resolved_plan.get("nonverbal_signal"), resolved_action.get("nonverbal_signal"))
+                self.assertEqual(resolved_plan.get("timing_window_min"), resolved_action.get("timing_window_min"))
+                self.assertEqual(resolved_action.get("silence_allowed"), action.get("silence_allowed"))
+                self.assertEqual(resolved_plan.get("silence_allowed"), action.get("silence_allowed"))
+                self.assertEqual(resolved_action.get("allow_interrupt"), action.get("allow_interrupt"))
+                self.assertEqual(resolved_plan.get("allow_interrupt"), action.get("allow_interrupt"))
+                self.assertEqual(reconsolidation.get("final_text"), final_text)
+                self.assertEqual(reconsolidation["behavior_action"].get("final_text"), final_text)
+                self.assertEqual(reconsolidation["behavior_plan"].get("final_text"), final_text)
+                if family == "self_activity_continue":
+                    self.assertEqual(
+                        resolved_plan.get("embodied_context", {}).get("kind"),
+                        "access_request_pending",
+                    )
+
     def test_boundary_promotion_realigns_interaction_mode(self):
         action = _behavior_action_from_state(
             current_event={

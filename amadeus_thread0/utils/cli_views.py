@@ -958,6 +958,7 @@ def build_evolution_cli_summary(
             "counterpart_reliability_read": _metric((frozen_counterpart or counterpart).get("reliability_read"), 0.5),
             "counterpart_profile": _counterpart_assessment_profile(frozen_counterpart or counterpart),
             "behavior_mode": str(behavior.get("interaction_mode") or "").strip(),
+            "presence_family": str(behavior.get("presence_family") or "").strip(),
             "action_target": str(behavior.get("action_target") or "").strip(),
             "channel": str(behavior.get("channel") or "").strip(),
             "approach_style": str(behavior.get("approach_style") or "").strip(),
@@ -967,6 +968,8 @@ def build_evolution_cli_summary(
             "task_focus": str(behavior.get("task_focus") or "").strip(),
             "affect_surface": str(behavior.get("affect_surface") or "").strip(),
             "silence_ok": bool(behavior.get("silence_ok", False)),
+            "silence_allowed": bool(behavior.get("silence_allowed", behavior.get("silence_ok", False))),
+            "allow_interrupt": bool(behavior.get("allow_interrupt", True)),
             "proactive_checkin_readiness": _metric(behavior.get("proactive_checkin_readiness"), 0.0),
             "deferred_action_family": str(behavior.get("deferred_action_family") or "").strip(),
             "attention_target": str(behavior.get("attention_target") or "").strip(),
@@ -1141,7 +1144,11 @@ def build_evolution_cli_summary(
             "kind": str(behavior_plan.get("kind") or "").strip(),
             "target": str(behavior_plan.get("target") or "").strip(),
             "trigger_family": str(behavior_plan.get("trigger_family") or "").strip(),
+            "presence_family": str(behavior_plan.get("presence_family") or "").strip(),
+            "interaction_mode": str(behavior_plan.get("interaction_mode") or "").strip(),
             "scheduled_after_min": _int_metric(behavior_plan.get("scheduled_after_min"), 0),
+            "timing_window_min": _int_metric(behavior_plan.get("timing_window_min"), 0),
+            "silence_allowed": bool(behavior_plan.get("silence_allowed", False)),
             "allow_interrupt": bool(behavior_plan.get("allow_interrupt", True)),
             "primary_motive": str(behavior_plan.get("primary_motive") or "").strip(),
             "motive_tension": str(behavior_plan.get("motive_tension") or "").strip(),
@@ -1215,6 +1222,9 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     mode = str(current_turn.get("behavior_mode") or "").strip()
     if mode:
         parts.append(f"mode={mode}")
+    presence_family = str(current_turn.get("presence_family") or behavior_plan.get("presence_family") or "").strip()
+    if presence_family:
+        parts.append(f"presence={presence_family}")
     motive = str(current_turn.get("primary_motive") or "").strip()
     if motive:
         parts.append(f"motive={motive}")

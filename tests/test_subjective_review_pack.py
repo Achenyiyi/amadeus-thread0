@@ -191,11 +191,13 @@ class SubjectiveReviewPackTests(unittest.TestCase):
                 },
                 "behavior_action": {
                     "interaction_mode": "brief_presence",
+                    "presence_family": "quiet_presence",
                     "action_target": "confirm_presence",
                     "relationship_weather": "guarded_residue",
                 },
                 "behavior_plan": {
                     "kind": "deferred_checkin",
+                    "presence_family": "quiet_presence",
                     "trigger_family": "light_checkin",
                     "carryover_mode": "quiet_recontact",
                     "carryover_strength": 0.33,
@@ -213,6 +215,49 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertEqual(trace.get("carryover_relationship_weather"), "guarded_residue")
         self.assertEqual(trace.get("behavior_relationship_weather"), "guarded_residue")
         self.assertEqual(trace.get("plan_relationship_weather"), "guarded_residue")
+        self.assertEqual(trace.get("behavior_presence_family"), "quiet_presence")
+        self.assertEqual(trace.get("plan_presence_family"), "quiet_presence")
+
+    def test_snapshot_distinguishes_quiet_presence_from_shared_work_nudge(self):
+        quiet = _snapshot(
+            {
+                "behavior_action": {
+                    "interaction_mode": "brief_presence",
+                    "presence_family": "quiet_presence",
+                    "action_target": "confirm_presence",
+                },
+                "behavior_plan": {
+                    "kind": "presence_confirmation",
+                    "presence_family": "quiet_presence",
+                    "trigger_family": "presence_ping",
+                },
+            }
+        )
+        work = _snapshot(
+            {
+                "behavior_action": {
+                    "interaction_mode": "scheduled_life_nudge",
+                    "presence_family": "shared_work_nudge",
+                    "action_target": "light_work_nudge",
+                },
+                "behavior_plan": {
+                    "kind": "work_nudge",
+                    "presence_family": "shared_work_nudge",
+                    "trigger_family": "deadline_window",
+                },
+            }
+        )
+        quiet_trace = quiet.get("relationship_weather_trace") if isinstance(quiet.get("relationship_weather_trace"), dict) else {}
+        work_trace = work.get("relationship_weather_trace") if isinstance(work.get("relationship_weather_trace"), dict) else {}
+
+        self.assertEqual(quiet_trace.get("behavior_presence_family"), "quiet_presence")
+        self.assertEqual(quiet_trace.get("plan_presence_family"), "quiet_presence")
+        self.assertEqual(work_trace.get("behavior_presence_family"), "shared_work_nudge")
+        self.assertEqual(work_trace.get("plan_presence_family"), "shared_work_nudge")
+        self.assertNotEqual(
+            quiet_trace.get("behavior_presence_family"),
+            work_trace.get("behavior_presence_family"),
+        )
 
     def test_run_case_subprocess_falls_back_to_inline_case_on_worker_error(self):
         case = {

@@ -10123,3 +10123,50 @@ This file is the live development ledger for `amadeus-thread0`.
     - sandbox phase-2 manual smokes failed `attach_repo_root_pytest_git_readonly` and `followup_continue_from_last_isolated_run`
 - Next:
   - commit Task 5 as the matrix closure slice, then decide whether Task 6 can start or whether preserved audit infrastructure should first be repaired/restored so the nested baseline gates can run green in this worktree
+
+## 2026-05-05 Run 236
+
+- Focus:
+  - Task 6 richer presence and proactive behavior families
+  - keep presence-family semantics singular through behavior action, behavior plan, reconsolidation snapshot, final readback, CLI summary, and subjective review traces
+- Files changed:
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/graph_parts/behavior_agenda.py`
+  - `amadeus_thread0/graph_parts/behavior_runtime.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/graph_parts/state.py`
+  - `amadeus_thread0/graph_parts/turn_events.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_subjective_review_pack.py`
+  - `tests/test_behavior_runtime_alignment.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_subjective_review_pack.py`
+  - `tests/test_world_model_residue.py`
+  - `program.md`
+- Key changes:
+  - added and preserved `presence_family` as additive behavior identity, not a replacement for `interaction_mode`
+  - kept `silence_allowed` first-class while preserving `silence_ok` as compatibility input
+  - carried `presence_family`, `interaction_mode`, `attention_target`, `nonverbal_signal`, `timing_window_min`, `silence_allowed`, `allow_interrupt`, `embodied_context`, and `final_text` through frozen reconsolidation and final-state readback
+  - extended behavior agenda normalization and due-promotion so queued self-rhythm / deferred behavior keeps the same presence-family and interruptibility semantics
+  - surfaced presence-family fields in CLI summaries and subjective review relationship-weather traces
+- Validation:
+  - `python -m pytest tests/test_behavior_runtime_alignment.py::BehaviorRuntimeAlignmentTests::test_presence_family_semantics_survive_final_readback -q`
+    - passed: `1 passed, 7 subtests passed`
+  - `python -m pytest tests/test_cli_views.py::CliViewsTests::test_build_evolution_cli_summary_surfaces_window_profile_and_event_residue -q`
+    - passed: `1 passed`
+  - `python -m pytest tests/test_behavior_runtime_alignment.py tests/test_subjective_review_pack.py tests/test_world_model_residue.py -k "presence or proactive or rhythm or boundary or repair" -q`
+    - passed: `49 passed, 141 deselected, 7 subtests passed`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_dialogue_mode_counterpart.py tests/test_generation_profile.py -q`
+    - passed: `561 passed, 35 subtests passed`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_generation_profile.py tests/test_dialogue_mode_counterpart.py tests/test_world_model_residue.py tests/test_subjective_review_pack.py tests/test_companion_autonomy_runtime.py tests/test_autonomy_writeback.py -q`
+    - passed: `809 passed, 35 subtests passed`
+  - `python -m pytest tests/test_cli_views.py -q`
+    - passed: `46 passed`
+- Result:
+  - Task 6 focused and broader graph/CLI regressions are green in this worktree
+  - no execution authority, browser boundary, sandbox command surface, or persona-core semantics were widened
+  - unrelated dirty sandbox run files and `debug.log` remain unmodified by this task and should not be staged
+- Next:
+  - commit Task 6 as `feat: expand presence behavior families`
+  - continue the remaining-work closure sequence with Task 7 procedural capability growth without persona drift

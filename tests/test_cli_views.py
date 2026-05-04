@@ -2096,6 +2096,7 @@ class CliViewsTests(unittest.TestCase):
             },
             behavior_action={
                 "interaction_mode": "scheduled_life_nudge",
+                "presence_family": "deferred_return",
                 "action_target": "wait_and_recheck",
                 "channel": "speech",
                 "approach_style": "guarded",
@@ -2105,6 +2106,8 @@ class CliViewsTests(unittest.TestCase):
                 "task_focus": "relationship",
                 "affect_surface": "gentle",
                 "silence_ok": True,
+                "silence_allowed": True,
+                "allow_interrupt": False,
                 "proactive_checkin_readiness": 0.36,
                 "deferred_action_family": "life_window",
                 "relationship_weather": "warm_residue",
@@ -2138,8 +2141,13 @@ class CliViewsTests(unittest.TestCase):
             behavior_plan={
                 "kind": "deferred_checkin",
                 "target": "counterpart",
+                "interaction_mode": "scheduled_life_nudge",
+                "presence_family": "deferred_return",
                 "trigger_family": "life_window",
                 "scheduled_after_min": 18,
+                "timing_window_min": 18,
+                "allow_interrupt": False,
+                "silence_allowed": True,
                 "primary_motive": "honor_continuity",
                 "motive_tension": "self_rhythm_vs_contact",
                 "goal_frame": "先把前面那点生活上的惦记轻轻接回来。",
@@ -2365,6 +2373,9 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(current_turn.get("task_focus"), "relationship")
         self.assertEqual(current_turn.get("affect_surface"), "gentle")
         self.assertTrue(current_turn.get("silence_ok"))
+        self.assertTrue(current_turn.get("silence_allowed"))
+        self.assertFalse(current_turn.get("allow_interrupt"))
+        self.assertEqual(current_turn.get("presence_family"), "deferred_return")
         self.assertEqual(current_turn.get("proactive_checkin_readiness"), 0.36)
         self.assertEqual(current_turn.get("deferred_action_family"), "life_window")
         self.assertEqual(current_turn.get("attention_target"), "counterpart_state")
@@ -2373,6 +2384,11 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(current_turn.get("disclosure_posture"), "measured")
         self.assertEqual(current_turn.get("behavior_note"), "先不把窗口推进太满。")
         self.assertEqual(current_turn.get("timing_window_min"), 18)
+        self.assertEqual(behavior_plan.get("presence_family"), "deferred_return")
+        self.assertEqual(behavior_plan.get("interaction_mode"), "scheduled_life_nudge")
+        self.assertEqual(behavior_plan.get("timing_window_min"), 18)
+        self.assertTrue(behavior_plan.get("silence_allowed"))
+        self.assertFalse(behavior_plan.get("allow_interrupt"))
         self.assertEqual(behavior_plan.get("relationship_weather"), "warm_residue")
         self.assertEqual(behavior_plan.get("attention_target"), "counterpart_state")
         self.assertEqual(behavior_plan.get("nonverbal_signal"), "quiet_glance")
