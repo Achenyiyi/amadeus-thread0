@@ -132,6 +132,8 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
         "kind": str(plan.get("kind") or "").strip().lower(),
         "target": str(plan.get("target") or "").strip().lower(),
         "trigger_family": str(plan.get("trigger_family") or "").strip().lower(),
+        "presence_family": str(plan.get("presence_family") or "").strip().lower(),
+        "interaction_mode": str(plan.get("interaction_mode") or "").strip().lower(),
         "carryover_mode": str(plan.get("carryover_mode") or "").strip().lower(),
         "relationship_weather": str(plan.get("relationship_weather") or "").strip().lower(),
         "attention_target": str(plan.get("attention_target") or "").strip().lower(),
@@ -141,6 +143,8 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
         "motive_tension": str(plan.get("motive_tension") or "").strip().lower(),
         "goal_frame": str(plan.get("goal_frame") or "").strip()[:220],
         "scheduled_after_min": max(0, int(plan.get("scheduled_after_min") or 0)),
+        "timing_window_min": max(0, int(plan.get("timing_window_min") or 0)),
+        "silence_allowed": bool(plan.get("silence_allowed", plan.get("silence_ok", False))),
         "allow_interrupt": bool(plan.get("allow_interrupt", True)),
         "carryover_strength": clamp01(plan.get("carryover_strength"), 0.0),
         "presence_residue": clamp01(plan.get("presence_residue"), 0.0),
@@ -152,6 +156,8 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
             snapshot["kind"],
             snapshot["target"],
             snapshot["trigger_family"],
+            snapshot["presence_family"],
+            snapshot["interaction_mode"],
             snapshot["carryover_mode"],
             snapshot["relationship_weather"],
             snapshot["attention_target"],
@@ -161,6 +167,8 @@ def _compact_behavior_plan_snapshot(behavior_plan: dict[str, Any] | None) -> dic
             snapshot["motive_tension"],
             snapshot["goal_frame"],
             snapshot["scheduled_after_min"] > 0,
+            snapshot["timing_window_min"] > 0,
+            snapshot["silence_allowed"],
             snapshot["carryover_strength"] > 0.0,
             snapshot["presence_residue"] > 0.0,
             snapshot["ambient_resonance"] > 0.0,
@@ -176,6 +184,7 @@ def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) ->
     window_profile = _compact_window_profile_snapshot(action.get("window_profile"))
     snapshot = {
         "interaction_mode": str(action.get("interaction_mode") or "").strip().lower(),
+        "presence_family": str(action.get("presence_family") or "").strip().lower(),
         "action_target": str(action.get("action_target") or "").strip().lower(),
         "channel": str(action.get("channel") or "").strip().lower(),
         "approach_style": str(action.get("approach_style") or "").strip().lower(),
@@ -185,6 +194,8 @@ def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) ->
         "task_focus": str(action.get("task_focus") or "").strip().lower(),
         "affect_surface": str(action.get("affect_surface") or "").strip().lower(),
         "silence_ok": bool(action.get("silence_ok", False)),
+        "silence_allowed": bool(action.get("silence_allowed", action.get("silence_ok", False))),
+        "allow_interrupt": bool(action.get("allow_interrupt", True)),
         "proactive_checkin_readiness": clamp01(action.get("proactive_checkin_readiness"), 0.0),
         "deferred_action_family": str(action.get("deferred_action_family") or "").strip().lower(),
         "relationship_weather": str(action.get("relationship_weather") or "").strip().lower(),
@@ -202,6 +213,7 @@ def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) ->
     if any(
         (
             snapshot["interaction_mode"],
+            snapshot["presence_family"],
             snapshot["action_target"],
             snapshot["channel"],
             snapshot["approach_style"],
@@ -211,6 +223,8 @@ def _compact_behavior_action_snapshot(behavior_action: dict[str, Any] | None) ->
             snapshot["task_focus"],
             snapshot["affect_surface"],
             snapshot["silence_ok"],
+            snapshot["silence_allowed"],
+            not snapshot["allow_interrupt"],
             snapshot["proactive_checkin_readiness"] > 0.0,
             snapshot["deferred_action_family"],
             snapshot["relationship_weather"],
@@ -1795,9 +1809,15 @@ def build_reconsolidation_snapshot(
     session_skill_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     event = current_event if isinstance(current_event, dict) else {}
+    final_text = str(event.get("final_text") or "").strip()
     behavior = behavior_action if isinstance(behavior_action, dict) else {}
     behavior_action_snapshot = _compact_behavior_action_snapshot(behavior)
     behavior_plan_snapshot = _compact_behavior_plan_snapshot(behavior_plan)
+    if final_text:
+        if behavior_action_snapshot:
+            behavior_action_snapshot["final_text"] = final_text
+        if behavior_plan_snapshot:
+            behavior_plan_snapshot["final_text"] = final_text
     carryover_snapshot = _compact_interaction_carryover_snapshot(interaction_carryover)
     behavior_consequence = derive_behavior_consequence(
         current_event=event,
@@ -1840,6 +1860,7 @@ def build_reconsolidation_snapshot(
         "primary_motive": str(behavior_action_snapshot.get("primary_motive") or ""),
         "motive_tension": str(behavior_action_snapshot.get("motive_tension") or ""),
         "goal_frame": str(behavior_action_snapshot.get("goal_frame") or "")[:220],
+        "final_text": final_text,
         "behavior_action": behavior_action_snapshot,
         "behavior_plan": behavior_plan_snapshot,
         "interaction_carryover": carryover_snapshot,

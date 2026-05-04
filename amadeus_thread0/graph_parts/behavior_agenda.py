@@ -242,6 +242,16 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
         return event
 
     trigger_family = str(prior_behavior_plan.get("trigger_family") or "light_checkin").strip() or "light_checkin"
+    presence_family = str(prior_behavior_plan.get("presence_family") or "").strip()
+    interaction_mode_hint = str(
+        prior_behavior_plan.get("interaction_mode") or prior_behavior_plan.get("interaction_mode_hint") or ""
+    ).strip()
+    try:
+        timing_window_min = max(0, int(prior_behavior_plan.get("timing_window_min") or due_after))
+    except Exception:
+        timing_window_min = due_after
+    silence_allowed = bool(prior_behavior_plan.get("silence_allowed", prior_behavior_plan.get("silence_ok", False)))
+    allow_interrupt = bool(prior_behavior_plan.get("allow_interrupt", True))
     tags = event.get("tags") if isinstance(event.get("tags"), list) else []
     note = str(prior_behavior_plan.get("note") or "").strip()
     carryover_mode = str(prior_behavior_plan.get("carryover_mode") or "").strip()
@@ -354,7 +364,12 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
                 "tags": merged_tags,
                 "derived_from_plan_kind": plan_kind,
                 "trigger_family": trigger_family or "self_activity",
+                "presence_family": presence_family,
+                "interaction_mode_hint": interaction_mode_hint,
                 "scheduled_after_min": due_after,
+                "timing_window_min": timing_window_min,
+                "silence_allowed": silence_allowed,
+                "allow_interrupt": allow_interrupt,
                 "carryover_mode": effective_carryover_mode,
                 "carryover_strength": round(max(effective_carryover_strength, effective_self_activity_momentum), 3),
                 "relationship_weather": relationship_weather,
@@ -449,7 +464,12 @@ def _promote_due_behavior_plan_event(event: EventPayload, prior_behavior_plan: A
             "tags": merged_tags,
             "derived_from_plan_kind": plan_kind,
             "trigger_family": trigger_family,
+            "presence_family": presence_family,
+            "interaction_mode_hint": interaction_mode_hint,
             "scheduled_after_min": due_after,
+            "timing_window_min": timing_window_min,
+            "silence_allowed": silence_allowed,
+            "allow_interrupt": allow_interrupt,
             "carryover_mode": effective_carryover_mode,
             "carryover_strength": round(max(carryover_strength, presence_residue, ambient_resonance), 3),
             "relationship_weather": relationship_weather,
@@ -599,6 +619,10 @@ def _normalize_behavior_agenda(raw: Any, *, limit: int = 8) -> list[BehaviorAgen
             "base_priority": max(0.0, min(1.0, base_priority)),
             "priority": max(0.0, min(1.0, priority)),
             "trigger_family": str(entry.get("trigger_family") or "none").strip() or "none",
+            "presence_family": str(entry.get("presence_family") or "").strip(),
+            "interaction_mode": str(entry.get("interaction_mode") or "").strip(),
+            "timing_window_min": max(0, int(entry.get("timing_window_min") or scheduled_after_min)),
+            "silence_allowed": bool(entry.get("silence_allowed", False)),
             "allow_interrupt": bool(entry.get("allow_interrupt", True)),
             "primary_motive": str(entry.get("primary_motive") or "").strip(),
             "motive_tension": str(entry.get("motive_tension") or "").strip(),
@@ -893,6 +917,10 @@ def _behavior_agenda_entry_from_plan(
         "base_priority": _behavior_agenda_priority_from_plan(current_event, plan),
         "priority": _behavior_agenda_priority_from_plan(current_event, plan),
         "trigger_family": str(plan.get("trigger_family") or "none").strip() or "none",
+        "presence_family": str(plan.get("presence_family") or "").strip(),
+        "interaction_mode": str(plan.get("interaction_mode") or "").strip(),
+        "timing_window_min": max(0, int(plan.get("timing_window_min") or plan.get("scheduled_after_min") or 0)),
+        "silence_allowed": bool(plan.get("silence_allowed", False)),
         "allow_interrupt": bool(plan.get("allow_interrupt", True)),
         "primary_motive": str(plan.get("primary_motive") or "").strip(),
         "motive_tension": str(plan.get("motive_tension") or "").strip(),

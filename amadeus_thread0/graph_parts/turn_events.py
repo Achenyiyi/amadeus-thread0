@@ -146,6 +146,11 @@ def _normalize_event_override(
         "trigger_family",
         "commitment_id",
         "derived_from_plan_kind",
+        "presence_family",
+        "interaction_mode_hint",
+        "timing_window_min",
+        "silence_allowed",
+        "allow_interrupt",
     ):
         value = raw.get(key)
         if isinstance(value, str) and value.strip():
@@ -213,6 +218,19 @@ def _normalize_event_override(
         payload["derived_from_plan_kind"] = str(raw.get("derived_from_plan_kind") or "").strip()
     if raw.get("trigger_family"):
         payload["trigger_family"] = str(raw.get("trigger_family") or "").strip()
+    if raw.get("presence_family"):
+        payload["presence_family"] = str(raw.get("presence_family") or "").strip()
+    if raw.get("interaction_mode_hint"):
+        payload["interaction_mode_hint"] = str(raw.get("interaction_mode_hint") or "").strip()
+    if "timing_window_min" in raw:
+        try:
+            payload["timing_window_min"] = max(0, int(raw.get("timing_window_min") or 0))
+        except Exception:
+            payload["timing_window_min"] = 0
+    if "silence_allowed" in raw:
+        payload["silence_allowed"] = bool(raw.get("silence_allowed", False))
+    if "allow_interrupt" in raw:
+        payload["allow_interrupt"] = bool(raw.get("allow_interrupt", True))
     top_level_hints = raw.get("digital_body_hints") if isinstance(raw.get("digital_body_hints"), dict) else {}
     perception_hints = (
         raw.get("perception", {}).get("digital_body_hints")
