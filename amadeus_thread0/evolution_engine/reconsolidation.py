@@ -1197,16 +1197,30 @@ def derive_digital_body_consequence(
         )
     )
     browser_tool_signal = bool(primary_tool_name.startswith("browser_") or primary_intent.startswith("browser:"))
+    browser_result_takeover_signal = bool(
+        primary_browser_execution_result.get("manual_takeover_required", False)
+        or str(primary_browser_execution_result.get("last_action_status") or "").strip().lower()
+        == "manual_takeover_required"
+    )
+    browser_preview_takeover_signal = bool(primary_browser_execution_preview.get("requires_manual_takeover", False))
+    browser_runtime_takeover_signal = bool(
+        bool(browser_runtime_state.get("manual_takeover_required", False))
+        or str(browser_runtime_state.get("last_action_status") or "").strip().lower()
+        == "manual_takeover_required"
+        or str(browser_runtime_state.get("context_status") or "").strip().lower() == "manual_takeover"
+    )
     browser_takeover_requested_signal = bool(
         browser_tool_signal
         and (
             primary_tool_name == "browser_begin_manual_takeover"
-            or bool(primary_browser_execution_result.get("manual_takeover_required", False))
-            or bool(primary_browser_execution_preview.get("requires_manual_takeover", False))
-            or bool(browser_runtime_state.get("manual_takeover_required", False))
+            or browser_result_takeover_signal
+            or browser_preview_takeover_signal
+            or (primary_status == "blocked" and browser_runtime_takeover_signal)
         )
         and primary_status in {"completed", "blocked"}
     )
+    primary_consequence_status = "blocked" if browser_takeover_requested_signal else primary_status
+    browser_consequence_exit_status = "blocked" if browser_takeover_requested_signal else browser_last_exit_status
     browser_download_signal = bool(
         primary_tool_name == "browser_download_click"
         and primary_status == "completed"
@@ -1250,6 +1264,7 @@ def derive_digital_body_consequence(
         or pending_approval_count > 0
         or "human_approval" in requested_access
     )
+    requested_help_signal = bool(approval_signal or browser_takeover_requested_signal)
     artifact_friction = artifact_continuity in {"missing", "detached"}
     cooldown_active = retry_after_s > 0
     access_friction = bool(
@@ -1716,7 +1731,7 @@ def derive_digital_body_consequence(
         "completed_packet_count": completed_packet_count,
         "external_tool_count": external_tool_count,
         "primary_proposal_id": primary_proposal_id,
-        "primary_status": primary_status,
+        "primary_status": primary_consequence_status,
         "primary_origin": primary_origin,
         "primary_intent": primary_intent,
         "primary_tool_name": primary_tool_name,
@@ -1740,10 +1755,10 @@ def derive_digital_body_consequence(
         "browser_url": browser_url,
         "browser_title": browser_title,
         "browser_last_action_kind": browser_last_action_kind,
-        "browser_last_exit_status": browser_last_exit_status,
+        "browser_last_exit_status": browser_consequence_exit_status,
         "procedural_growth": growth_signal,
-        "environmental_friction": approval_signal or friction_signal,
-        "requested_help": approval_signal,
+        "environmental_friction": approval_signal or friction_signal or browser_takeover_requested_signal,
+        "requested_help": requested_help_signal,
         "access_acquire_proposals": access_acquire_proposals,
         "selected_access_proposal": selected_access_proposal,
         "session_state": session_state,

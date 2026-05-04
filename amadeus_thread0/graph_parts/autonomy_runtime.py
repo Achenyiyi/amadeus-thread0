@@ -609,23 +609,49 @@ def _access_request_help_packet(
     event_targets = _access_help_targets(event_hints)
     if not event_targets:
         return {}
-    request_targets = _access_help_targets(hints)
+    proposal_hints = {
+        **hints,
+        **{
+            key: value
+            for key, value in event_hints.items()
+            if key
+            in {
+                "browser_session",
+                "account_state",
+                "cookie_state",
+                "api_key_state",
+                "quota_state",
+                "session_continuity",
+                "session_expires_in_s",
+                "session_recovery_mode",
+            }
+            and value not in (None, "", [])
+        },
+        "missing_access": _merge_labels(hints.get("missing_access"), event_hints.get("missing_access"), event_targets),
+        "requestable_access": _merge_labels(
+            hints.get("requestable_access"),
+            event_hints.get("requestable_access"),
+            event_targets,
+            ["human_approval"],
+        ),
+    }
+    request_targets = _access_help_targets(proposal_hints)
     if not request_targets:
         return {}
-    reason = _access_help_reason(hints, request_targets)
+    reason = _access_help_reason(proposal_hints, request_targets)
     target = " / ".join(request_targets) or "external_access"
     access_acquire_proposals = normalize_access_acquire_proposals(
         derive_access_acquire_proposals(
             hints={
-                **hints,
-                "missing_access": _merge_labels(hints.get("missing_access"), request_targets),
-                "requestable_access": _merge_labels(hints.get("requestable_access"), request_targets, ["human_approval"]),
+                **proposal_hints,
+                "missing_access": _merge_labels(proposal_hints.get("missing_access"), request_targets),
+                "requestable_access": _merge_labels(proposal_hints.get("requestable_access"), request_targets, ["human_approval"]),
             }
         )
     )
     selected_access_proposal = select_access_acquire_proposal(
         proposals=access_acquire_proposals,
-        preferred=hints.get("selected_access_proposal"),
+        preferred=proposal_hints.get("selected_access_proposal"),
     )
     return normalize_action_packet(
         {

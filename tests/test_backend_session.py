@@ -259,6 +259,16 @@ class BackendSessionTests(unittest.TestCase):
                 "preferred_anchor_reason",
                 "session_continuity",
                 "artifact_mutation_mode",
+                "browser_run_id",
+                "browser_profile_id",
+                "browser_page_id",
+                "browser_tab_id",
+                "browser_url",
+                "browser_title",
+                "browser_last_action_kind",
+                "browser_last_exit_status",
+                "requested_help",
+                "environmental_friction",
             ):
                 if field in expect:
                     self.assertEqual(digital_body_consequence.get(field), expect[field])
@@ -4572,6 +4582,196 @@ class BackendSessionTests(unittest.TestCase):
                 "procedural_growth": False,
             },
         )
+
+    def test_backend_session_surfaces_browser_matrix_consequence_families(self):
+        base_event = {
+            "kind": "user_utterance",
+            "perception": {"channel": "dialogue", "modality": "text"},
+        }
+
+        def _case(*, name, tool_name, proposal_id, status, action_kind, kind, result_summary="", manual=False, block_reason="", download_path="", upload_source=""):
+            return {
+                "name": name,
+                "values": {
+                    "current_event": dict(base_event),
+                    "digital_body_state": {
+                        "active_surface": "tooling",
+                        "perception_channels": ["dialogue", "browser"],
+                        "action_channels": ["language", "structured_action", "tooling"],
+                        "world_surfaces": ["browser", "filesystem"],
+                        "access_state": {
+                            "mode": "tool_enabled",
+                            "browser_session": "present",
+                            "filesystem_state": "writable",
+                            "browser_runtime_state": {
+                                "availability": "available",
+                                "profile_root": "E:/runtime/browser/profiles/thread-browser",
+                                "context_status": "manual_takeover" if manual else "active",
+                                "active_page_id": "page-1",
+                                "active_tab_count": 1,
+                                "downloads_dir": "E:/runtime/browser/downloads/thread-browser",
+                                "last_action_status": "manual_takeover_required" if manual else status,
+                                "last_run_id": proposal_id,
+                                "manual_takeover_required": manual,
+                                "runner_kind": "playwright_persistent_context",
+                                "isolation_level": "persistent_profile_runtime",
+                            },
+                        },
+                        "resource_state": {
+                            "completed_packet_count": 1 if status == "completed" else 0,
+                            "blocked_packet_count": 1 if status == "blocked" else 0,
+                            "artifact_continuity": "attached",
+                            "active_artifact_kind": "file" if download_path else "page",
+                            "active_artifact_ref": download_path or "page:page-1",
+                            "active_artifact_label": "payload.txt" if download_path else "Docs",
+                            "artifact_carrier": "filesystem" if download_path else "browser_page",
+                            "artifact_source_url": "https://example.com/docs",
+                            "artifact_source_title": "Docs",
+                            "artifact_source_tool_name": tool_name,
+                            "workspace_root": "E:/runtime/workspaces/browser-smoke",
+                            "browser_profile_id": "thread-browser",
+                            "browser_tab_id": "tab-1",
+                        },
+                    },
+                    "action_packets": [
+                        {
+                            "proposal_id": proposal_id,
+                            "origin": "motive_goal",
+                            "intent": f"browser:{tool_name.removeprefix('browser_')}",
+                            "status": status,
+                            "risk": "external_mutation",
+                            "requires_approval": True,
+                            "tool_name": tool_name,
+                            "result_summary": result_summary,
+                            "block_reason": block_reason,
+                            "writeback_ready": status == "completed",
+                            "browser_execution_spec": {
+                                "operation": action_kind,
+                                "profile_id": "thread-browser",
+                                "page_ref": "page:page-1",
+                                "target_ref": "e2",
+                                "upload_source": upload_source,
+                                "download_target": download_path,
+                                "allowed_roots": ["E:/runtime/workspaces/browser-smoke"],
+                                "browser_downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                                "timeout_s": 20,
+                            },
+                            "browser_execution_preview": {
+                                "runner_kind": "playwright_persistent_context",
+                                "isolation_level": "persistent_profile_runtime",
+                                "operation": action_kind,
+                                "profile_id": "thread-browser",
+                                "page_ref": "page:page-1",
+                                "page_url": "https://example.com/docs",
+                                "page_title": "Docs",
+                                "target_ref": "e2",
+                                "target_label": "Approve action",
+                                "download_target": download_path,
+                                "upload_source": upload_source,
+                                "allowed_roots": ["E:/runtime/workspaces/browser-smoke"],
+                                "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                                "timeout_s": 20,
+                                "requires_manual_takeover": manual,
+                            },
+                            "browser_execution_result": {
+                                "run_id": proposal_id,
+                                "status": status,
+                                "profile_id": "thread-browser",
+                                "page_id": "page-1",
+                                "tab_id": "tab-1",
+                                "url": "https://example.com/docs",
+                                "title": "Docs",
+                                "action_kind": action_kind,
+                                "target_ref": "e2",
+                                "duration_ms": 45,
+                                "active_tab_count": 1,
+                                "last_action_status": "manual_takeover_required" if manual else status,
+                                "download_path": download_path,
+                                "upload_source": upload_source,
+                                "error_summary": block_reason,
+                                "manual_takeover_required": manual,
+                            },
+                        }
+                    ],
+                },
+                "expect": {
+                    "kind": kind,
+                    "primary_tool_name": tool_name,
+                    "active_artifact_kind": "file" if download_path else "page",
+                    "active_artifact_label": "payload.txt" if download_path else "Docs",
+                    "artifact_carrier": "filesystem" if download_path else "browser_page",
+                    "workspace_root": "E:/runtime/workspaces/browser-smoke",
+                    "browser_run_id": proposal_id,
+                    "browser_profile_id": "thread-browser",
+                    "browser_page_id": "page-1",
+                    "browser_tab_id": "tab-1",
+                    "browser_url": "https://example.com/docs",
+                    "browser_title": "Docs",
+                    "browser_last_action_kind": action_kind,
+                    "browser_last_exit_status": status,
+                    "requested_help": manual,
+                    "environmental_friction": bool(manual or status == "blocked"),
+                    "procedural_growth": False,
+                },
+            }
+
+        cases = [
+            _case(
+                name="browser_interaction_completed",
+                tool_name="browser_click",
+                proposal_id="ap-browser-click-session",
+                status="completed",
+                action_kind="click",
+                kind="browser_interaction_completed",
+                result_summary="clicked Docs button",
+            ),
+            _case(
+                name="browser_download_completed",
+                tool_name="browser_download_click",
+                proposal_id="ap-browser-download-session",
+                status="completed",
+                action_kind="download_click",
+                kind="browser_download_completed",
+                result_summary="downloaded payload",
+                download_path="E:/runtime/workspaces/browser-smoke/downloads/payload.txt",
+            ),
+            _case(
+                name="browser_upload_completed",
+                tool_name="browser_upload_file",
+                proposal_id="ap-browser-upload-session",
+                status="completed",
+                action_kind="upload_file",
+                kind="browser_upload_completed",
+                result_summary="uploaded payload",
+                upload_source="E:/runtime/workspaces/browser-smoke/payload.txt",
+            ),
+            _case(
+                name="browser_takeover_requested",
+                tool_name="browser_fill",
+                proposal_id="ap-browser-takeover-session",
+                status="blocked",
+                action_kind="fill",
+                kind="browser_takeover_requested",
+                manual=True,
+                block_reason="sensitive credential entry requires manual browser takeover",
+            ),
+            _case(
+                name="browser_action_blocked",
+                tool_name="browser_click",
+                proposal_id="ap-browser-blocked-session",
+                status="blocked",
+                action_kind="click",
+                kind="browser_action_blocked",
+                block_reason="browser action timed out after 20s",
+            ),
+        ]
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                self._assert_backend_session_consequence_surface(
+                    values=case["values"],
+                    expect=case["expect"],
+                )
 
 
 if __name__ == "__main__":

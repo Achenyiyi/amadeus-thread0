@@ -10033,3 +10033,93 @@ This file is the live development ledger for `amadeus-thread0`.
   - task 4 contract is green after review fixes
 - Next:
   - preserve the new perception/session readback shape unless a later phase deliberately changes body-state semantics
+
+## 2026-05-04 Run 235
+
+- Focus:
+  - Task 5 unified embodied writeback matrix
+  - make workspace/source/sandbox/browser/skill consequences resurface through one continuity path
+- Files changed:
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `amadeus_thread0/graph_parts/retrieval.py`
+  - `evals/run_embodied_writeback_matrix_audit.py`
+  - `tests/test_embodied_writeback_matrix_audit.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_retrieval_continuity.py`
+  - `tests/test_sandbox_runner.py`
+  - `tests/test_world_model_residue.py`
+- Key changes:
+  - added the embodied writeback matrix audit for the 17 covered consequence families:
+    - workspace path/file
+    - source material inspect/compare
+    - artifact reacquisition
+    - access refresh and repo-root attach
+    - sandbox completed/blocked
+    - browser navigation/interaction/download/upload/takeover/blocked
+    - skill usage and blocked mutation
+  - extended retrieval and relational carryover so `workspace_root_attached` and live-browser consequence families preserve concrete trace identity:
+    - `workspace_root`
+    - `workspace_root_kind`
+    - browser run/profile/page/tab/url/title/action/status
+    - sandbox runner/image/network fields
+    - source-ref and skill-effect identity
+  - extended long-horizon digital-body writeback so browser runtime traces and repo-root attachment become resumable continuity without becoming a second capability truth model
+  - tightened browser manual takeover writeback:
+    - explicit `browser_begin_manual_takeover` may keep the original action packet status as `completed`
+    - `digital_body_consequence.kind` remains `browser_takeover_requested`
+    - consequence-level `primary_status` and `browser_last_exit_status` normalize to `blocked`
+    - `requested_help=true` and `environmental_friction=true`
+    - no sensitive browser step is written as a completed webpage action
+  - tightened the embodied matrix audit after review so it can no longer pass from static `CHECK_COVERAGE` declarations alone:
+    - added `FAMILY_TEST_NODES` for all 17 consequence families
+    - added one grouped blocking pytest node check that executes the declared family tests without repeatedly collecting the same large files
+    - locked audit self-tests so each family has executable pytest nodes wired into the audit command
+  - fixed two preserved-baseline-adjacent issues found during Task 5 validation:
+    - event-scoped access gaps now participate in access proposal derivation even when stale session hints still claim access is present
+    - the phase-1 `LocalRestrictedSandboxRunner` test now forces `LOCAL_RUNNER_KIND` instead of inheriting Docker phase-2 auto-selection in Docker-available environments
+- Validation:
+  - `python -m pytest tests/test_autonomy_writeback.py::AutonomyWritebackTests::test_reconsolidation_snapshot_distinguishes_browser_completed_blocked_and_takeover -q`
+  - `python -m pytest tests/test_browser_runtime.py::test_sensitive_fill_resolves_to_takeover_requested_not_completed_fact -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py -k "browser_takeover_requested or manual_takeover or embodied or sandbox or browser or skill or source or workspace" -q`
+  - `python -m pytest tests/test_autonomy_writeback.py tests/test_world_model_residue.py tests/test_retrieval_continuity.py tests/test_embodied_writeback_matrix_audit.py -k "embodied or sandbox or browser or skill or source or workspace" -q`
+  - `python -m pytest tests/test_embodied_writeback_matrix_audit.py -q`
+  - `python evals/run_embodied_writeback_matrix_audit.py --run-tag task5-after-takeover-fix`
+  - `python -m pytest tests/test_autonomy_writeback.py tests/test_world_model_residue.py tests/test_backend_session.py tests/test_backend_api.py tests/test_retrieval_continuity.py tests/test_embodied_writeback_matrix_audit.py -k "embodied or sandbox or browser or skill or source or workspace" -q`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py::CompanionAutonomyRuntimeTests::test_derive_autonomy_runtime_builds_access_request_help_packet_from_event_scoped_gap -q`
+  - `python -m pytest tests/test_sandbox_runner.py::test_local_restricted_sandbox_runner_executes_workspace_script_and_records_artifacts -q`
+  - `python -m pytest tests/test_embodied_writeback_matrix_audit.py -q`
+  - `python evals/run_embodied_writeback_matrix_audit.py`
+  - `python -m pytest tests/test_autonomy_writeback.py tests/test_world_model_residue.py -k "embodied or sandbox or browser or skill or source or workspace" -q`
+  - `python -m pytest tests/test_backend_session.py tests/test_backend_api.py -k "embodied or sandbox or browser or skill or source or workspace" -q`
+  - `python evals/run_digital_embodiment_audit.py`
+  - `python evals/run_sandbox_phase2_audit.py`
+- Result:
+  - focused matrix suite passed: `78 passed, 211 deselected, 14 subtests passed`
+  - latest focused core matrix subset passed: `40 passed, 138 deselected`
+  - latest backend matrix subset passed: `33 passed, 69 deselected, 14 subtests passed`
+  - matrix audit self-tests passed: `7 passed, 34 subtests passed`
+  - latest matrix audit passed with `readiness=embodied_writeback_matrix_ready`
+    - latest artifact: `evals/reports/embodied-writeback-matrix-audit-20260505-031904.{json,md}`
+  - spec review found and re-review confirmed fixed the browser takeover status leak
+  - follow-up audit review confirmed the static-coverage loophole is closed; the grouped node check reduced audit runtime from roughly 5 minutes to roughly 82 seconds in this worktree
+  - Task 5 did not widen execution authority; it only closes continuity/writeback gaps
+- Known unrelated validation issue:
+  - `python evals/run_digital_embodiment_audit.py` still failed outside the Task 5 matrix slice:
+    - latest artifact: `evals/reports/digital-embodiment-audit-20260505-032036-51680ef0.{json,md}`
+    - failure id: `baseline_companion_autonomy_gate`
+    - nested companion audit failed because `backend_freeze_gate_audit` failed on `freeze_gate_smokes`
+    - freeze gate smoke failed at model startup because `DEEPSEEK_API_KEY` is not set in this environment
+  - `python evals/run_sandbox_phase2_audit.py` still failed outside the Task 5 matrix slice:
+    - latest artifact: `evals/reports/sandbox-phase2-audit-20260505-032036-a7eddba3.{json,md}`
+    - passing now includes the phase-2 runtime contract and backend writeback/residue checks after the local-runner test lock
+    - remaining failure ids: `baseline_live_browser_gate`, `sandbox_phase2_manual_smokes`
+    - nested live-browser baseline failed through `baseline_skills_ecosystem_gate` and `live_browser_manual_smokes`
+    - nested skills audit currently reports `No sandbox embodied execution audit reports found.` in this worktree
+    - sandbox phase-2 manual smokes failed `attach_repo_root_pytest_git_readonly` and `followup_continue_from_last_isolated_run`
+- Next:
+  - commit Task 5 as the matrix closure slice, then decide whether Task 6 can start or whether preserved audit infrastructure should first be repaired/restored so the nested baseline gates can run green in this worktree

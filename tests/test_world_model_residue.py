@@ -8742,6 +8742,227 @@ class WorldModelResidueTests(unittest.TestCase):
             "approval_pending",
         )
 
+    def test_retrieved_digital_body_trace_bridge_preserves_browser_interaction_context(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "Docs 页面上的确认按钮已经点过，后续可以沿同一 tab 继续。",
+                            "body_consequence_kind": "browser_interaction_completed",
+                            "embodied_context": {
+                                "kind": "browser_interaction_completed",
+                                "artifact_carrier": "browser_page",
+                                "active_artifact_kind": "page",
+                                "active_artifact_ref": "page:page-1",
+                                "active_artifact_label": "Docs",
+                                "workspace_root": "E:/runtime/workspaces/browser-smoke",
+                                "browser_run_id": "ap-browser-click-1",
+                                "browser_profile_id": "thread-browser",
+                                "browser_page_id": "page-1",
+                                "browser_tab_id": "tab-1",
+                                "browser_url": "https://example.com/docs",
+                                "browser_title": "Docs",
+                                "browser_last_action_kind": "click",
+                                "browser_last_exit_status": "completed",
+                                "browser_runtime_state": {
+                                    "availability": "available",
+                                    "context_status": "active",
+                                    "active_page_id": "page-1",
+                                    "active_tab_count": 1,
+                                    "last_action_status": "completed",
+                                    "last_run_id": "ap-browser-click-1",
+                                    "manual_takeover_required": False,
+                                },
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "继续顺着刚才那个网页按钮之后的状态。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:browser_interaction_completed", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:browser_interaction_completed", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "browser_interaction_completed")
+        self.assertEqual(str(embodied_context.get("artifact_carrier") or ""), "browser_page")
+        self.assertEqual(str(embodied_context.get("browser_run_id") or ""), "ap-browser-click-1")
+        self.assertEqual(str(embodied_context.get("browser_profile_id") or ""), "thread-browser")
+        self.assertEqual(str(embodied_context.get("browser_page_id") or ""), "page-1")
+        self.assertEqual(str(embodied_context.get("browser_tab_id") or ""), "tab-1")
+        self.assertEqual(str(embodied_context.get("browser_last_action_kind") or ""), "click")
+        self.assertEqual(str(embodied_context.get("browser_last_exit_status") or ""), "completed")
+        self.assertFalse(bool(embodied_context.get("requested_help", False)))
+
+    def test_retrieved_digital_body_trace_bridge_preserves_browser_takeover_without_completion_claim(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "登录页的密码步骤已经转给人工接管，不能写成她自己完成了凭据输入。",
+                            "body_consequence_kind": "browser_takeover_requested",
+                            "embodied_context": {
+                                "kind": "browser_takeover_requested",
+                                "artifact_carrier": "browser_page",
+                                "active_artifact_kind": "page",
+                                "active_artifact_ref": "page:page-login",
+                                "active_artifact_label": "Login",
+                                "browser_run_id": "ap-browser-fill-1",
+                                "browser_profile_id": "thread-browser",
+                                "browser_page_id": "page-login",
+                                "browser_tab_id": "tab-login",
+                                "browser_url": "https://example.com/login",
+                                "browser_title": "Login",
+                                "browser_last_action_kind": "fill",
+                                "browser_last_exit_status": "blocked",
+                                "requested_access": ["human_approval"],
+                                "requested_help": True,
+                                "environmental_friction": True,
+                                "block_reason": "sensitive credential entry requires manual browser takeover",
+                                "browser_runtime_state": {
+                                    "availability": "available",
+                                    "context_status": "manual_takeover",
+                                    "active_page_id": "page-login",
+                                    "active_tab_count": 1,
+                                    "last_action_status": "manual_takeover_required",
+                                    "last_run_id": "ap-browser-fill-1",
+                                    "manual_takeover_required": True,
+                                },
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "登录页接管完以后继续。"},
+            interaction_carryover={},
+        )
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("body_consequence_kind:browser_takeover_requested", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:browser_takeover_requested", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:requested_help", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(str(embodied_context.get("kind") or ""), "browser_takeover_requested")
+        self.assertEqual(str(embodied_context.get("browser_last_exit_status") or ""), "blocked")
+        self.assertTrue(bool(embodied_context.get("browser_runtime_state", {}).get("manual_takeover_required", False)))
+        self.assertTrue(bool(embodied_context.get("requested_help", False)))
+        self.assertNotEqual(str(embodied_context.get("kind") or ""), "browser_interaction_completed")
+
+    def test_record_digital_body_consequence_long_horizon_memory_records_workspace_root_attach_and_browser(self):
+        from amadeus_thread0.graph_parts.memory_evolution import (
+            _record_digital_body_consequence_long_horizon_memory,
+        )
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                attach_written = _record_digital_body_consequence_long_horizon_memory(
+                    store,
+                    consequence={
+                        "kind": "workspace_root_attached",
+                        "summary": "amadeus-thread0 已经被正式挂接成当前 repo root。",
+                        "workspace_root": "E:/repo/amadeus-thread0",
+                        "workspace_root_kind": "attached_repo_root",
+                        "artifact_carrier": "filesystem",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/repo/amadeus-thread0",
+                        "active_artifact_label": "amadeus-thread0",
+                        "primary_status": "completed",
+                        "primary_tool_name": "attach_repo_root_access",
+                        "selected_access_proposal": {
+                            "target": "filesystem",
+                            "mode": "operator_attach_repo_root",
+                            "resolved_grants": ["filesystem", "workspace_read"],
+                            "pending_grants": [],
+                            "completion_ratio": 1.0,
+                        },
+                    },
+                    confidence=0.88,
+                )
+                browser_written = _record_digital_body_consequence_long_horizon_memory(
+                    store,
+                    consequence={
+                        "kind": "browser_interaction_completed",
+                        "summary": "Docs 页面上的确认按钮已经点过，后续可以沿同一 tab 继续。",
+                        "artifact_carrier": "browser_page",
+                        "active_artifact_kind": "page",
+                        "active_artifact_ref": "page:page-1",
+                        "active_artifact_label": "Docs",
+                        "browser_run_id": "ap-browser-click-1",
+                        "browser_profile_id": "thread-browser",
+                        "browser_page_id": "page-1",
+                        "browser_tab_id": "tab-1",
+                        "browser_url": "https://example.com/docs",
+                        "browser_title": "Docs",
+                        "browser_last_action_kind": "click",
+                        "browser_last_exit_status": "completed",
+                    },
+                    confidence=0.88,
+                )
+
+                self.assertTrue(attach_written)
+                self.assertTrue(browser_written)
+                events = store.list_worldline_events(limit=8)
+                categories = {
+                    str((item.get("content") or {}).get("category") or item.get("category") or "")
+                    for item in events
+                }
+                self.assertIn("workspace_root_attached", categories)
+                self.assertIn("browser_runtime", categories)
+                summaries = " ".join(
+                    str((item.get("content") or {}).get("summary") or item.get("summary") or "")
+                    for item in events
+                )
+                self.assertIn("repo root", summaries)
+                self.assertIn("thread-browser", summaries)
+            finally:
+                store.close()
+
+    def test_record_digital_body_consequence_long_horizon_memory_accepts_browser_runtime_state_identity(self):
+        from amadeus_thread0.graph_parts.memory_evolution import (
+            _record_digital_body_consequence_long_horizon_memory,
+        )
+
+        with TemporaryDirectory() as td:
+            store = MemoryStore(Path(td) / "memory.json")
+            try:
+                written = _record_digital_body_consequence_long_horizon_memory(
+                    store,
+                    consequence={
+                        "kind": "browser_navigation_completed",
+                        "summary": "live browser 页面已经接上。",
+                        "artifact_carrier": "browser_page",
+                        "active_artifact_kind": "page",
+                        "active_artifact_ref": "page:page-runtime",
+                        "active_artifact_label": "Runtime Docs",
+                        "browser_runtime_state": {
+                            "availability": "available",
+                            "context_status": "active",
+                            "active_page_id": "page-runtime",
+                            "active_tab_count": 1,
+                            "last_action_status": "completed",
+                            "last_run_id": "ap-browser-runtime-only",
+                            "manual_takeover_required": False,
+                        },
+                    },
+                    confidence=0.88,
+                )
+
+                self.assertTrue(written)
+                events = store.list_worldline_events(limit=4)
+                summaries = " ".join(
+                    str((item.get("content") or {}).get("summary") or item.get("summary") or "")
+                    for item in events
+                )
+                self.assertIn("Runtime Docs", summaries)
+                self.assertIn("page-runtime", summaries)
+            finally:
+                store.close()
+
     def test_apply_agenda_lifecycle_residue_to_runtime_state_biases_world_and_counterpart(self):
         world, assessment = _apply_agenda_lifecycle_residue_to_runtime_state(
             agenda_lifecycle_residue={

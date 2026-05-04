@@ -18,6 +18,26 @@ from ..memory_store import MemoryStore
 from .common import _clamp01, _norm_text, _now_ts
 from .digital_body_runtime import normalize_embodied_trace_context
 
+_WORKSPACE_SURFACE_KINDS = {"workspace_path_inspected", "workspace_file_updated"}
+_SOURCE_SURFACE_KINDS = {"source_material_compared", "source_material_inspected"}
+_ACCESS_STATE_KINDS = {"workspace_access_resolved", "access_state_refreshed"}
+_WORKSPACE_ATTACH_KINDS = {"workspace_root_attached"}
+_SANDBOX_SURFACE_KINDS = {"sandbox_execution_completed", "sandbox_execution_blocked"}
+_BROWSER_SURFACE_KINDS = {
+    "browser_navigation_completed",
+    "browser_interaction_completed",
+    "browser_download_completed",
+    "browser_upload_completed",
+    "browser_takeover_requested",
+    "browser_action_blocked",
+}
+_SKILL_SURFACE_KINDS = {
+    "skill_install_completed",
+    "skill_activation_changed",
+    "skill_usage_completed",
+    "skill_mutation_blocked",
+}
+
 
 def _text_units(text: str) -> set[str]:
     raw = _norm_text(text)
@@ -72,6 +92,34 @@ def _digital_body_trace_identity(item: dict[str, Any]) -> dict[str, Any]:
         "artifact_source_ref_ids": list(embodied.get("artifact_source_ref_ids") or []),
         "artifact_source_title": str(embodied.get("artifact_source_title") or _record_value(item, "artifact_source_title", "") or "").strip(),
         "artifact_source_query": str(embodied.get("artifact_source_query") or _record_value(item, "artifact_source_query", "") or "").strip(),
+        "workspace_root": str(embodied.get("workspace_root") or _record_value(item, "workspace_root", "") or "").strip(),
+        "workspace_root_kind": str(embodied.get("workspace_root_kind") or _record_value(item, "workspace_root_kind", "") or "").strip().lower(),
+        "active_artifact_kind": str(embodied.get("active_artifact_kind") or _record_value(item, "active_artifact_kind", "") or "").strip().lower(),
+        "active_artifact_ref": str(embodied.get("active_artifact_ref") or _record_value(item, "active_artifact_ref", "") or "").strip(),
+        "active_artifact_label": str(embodied.get("active_artifact_label") or _record_value(item, "active_artifact_label", "") or "").strip(),
+        "artifact_reacquisition_mode": str(embodied.get("artifact_reacquisition_mode") or _record_value(item, "artifact_reacquisition_mode", "") or "").strip().lower(),
+        "artifact_mutation_mode": str(embodied.get("artifact_mutation_mode") or _record_value(item, "artifact_mutation_mode", "") or "").strip().lower(),
+        "session_continuity": str(embodied.get("session_continuity") or _record_value(item, "session_continuity", "") or "").strip().lower(),
+        "session_recovery_mode": str(embodied.get("session_recovery_mode") or _record_value(item, "session_recovery_mode", "") or "").strip().lower(),
+        "sandbox_run_id": str(embodied.get("sandbox_run_id") or _record_value(item, "sandbox_run_id", "") or "").strip(),
+        "sandbox_command_profile": str(embodied.get("sandbox_command_profile") or _record_value(item, "sandbox_command_profile", "") or "").strip().lower(),
+        "sandbox_stdout_log_ref": str(embodied.get("sandbox_stdout_log_ref") or _record_value(item, "sandbox_stdout_log_ref", "") or "").strip(),
+        "sandbox_stderr_log_ref": str(embodied.get("sandbox_stderr_log_ref") or _record_value(item, "sandbox_stderr_log_ref", "") or "").strip(),
+        "sandbox_exit_code": int(embodied.get("sandbox_exit_code") or _record_value(item, "sandbox_exit_code", 0) or 0),
+        "sandbox_duration_ms": int(embodied.get("sandbox_duration_ms") or _record_value(item, "sandbox_duration_ms", 0) or 0),
+        "sandbox_produced_artifacts": list(embodied.get("sandbox_produced_artifacts") or []),
+        "sandbox_runner_kind": str(embodied.get("sandbox_runner_kind") or _record_value(item, "sandbox_runner_kind", "") or "").strip().lower(),
+        "sandbox_isolation_level": str(embodied.get("sandbox_isolation_level") or _record_value(item, "sandbox_isolation_level", "") or "").strip().lower(),
+        "sandbox_image_ref": str(embodied.get("sandbox_image_ref") or _record_value(item, "sandbox_image_ref", "") or "").strip(),
+        "sandbox_network_policy": str(embodied.get("sandbox_network_policy") or _record_value(item, "sandbox_network_policy", "") or "").strip().lower(),
+        "browser_run_id": str(embodied.get("browser_run_id") or _record_value(item, "browser_run_id", "") or "").strip(),
+        "browser_profile_id": str(embodied.get("browser_profile_id") or _record_value(item, "browser_profile_id", "") or "").strip(),
+        "browser_page_id": str(embodied.get("browser_page_id") or _record_value(item, "browser_page_id", "") or "").strip(),
+        "browser_tab_id": str(embodied.get("browser_tab_id") or _record_value(item, "browser_tab_id", "") or "").strip(),
+        "browser_url": str(embodied.get("browser_url") or _record_value(item, "browser_url", "") or "").strip(),
+        "browser_title": str(embodied.get("browser_title") or _record_value(item, "browser_title", "") or "").strip(),
+        "browser_last_action_kind": str(embodied.get("browser_last_action_kind") or _record_value(item, "browser_last_action_kind", "") or "").strip().lower(),
+        "browser_last_exit_status": str(embodied.get("browser_last_exit_status") or _record_value(item, "browser_last_exit_status", "") or "").strip().lower(),
         "skill_effects": [
             dict(effect)
             for effect in (embodied.get("skill_effects") if isinstance(embodied.get("skill_effects"), list) else [])
@@ -263,12 +311,38 @@ def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
     kind = str(identity.get("kind") or "").strip().lower()
     carrier = str(identity.get("artifact_carrier") or "").strip().lower()
     source_title = str(identity.get("artifact_source_title") or "").strip()
+    workspace_root = str(identity.get("workspace_root") or "").strip()
+    workspace_root_kind = str(identity.get("workspace_root_kind") or "").strip().lower()
+    active_artifact_kind = str(identity.get("active_artifact_kind") or "").strip().lower()
+    active_artifact_ref = str(identity.get("active_artifact_ref") or "").strip()
+    active_artifact_label = str(identity.get("active_artifact_label") or "").strip()
+    artifact_reacquisition_mode = str(identity.get("artifact_reacquisition_mode") or "").strip().lower()
+    artifact_mutation_mode = str(identity.get("artifact_mutation_mode") or "").strip().lower()
+    session_continuity = str(identity.get("session_continuity") or "").strip().lower()
+    session_recovery_mode = str(identity.get("session_recovery_mode") or "").strip().lower()
+    sandbox_run_id = str(identity.get("sandbox_run_id") or "").strip()
+    sandbox_stdout_log_ref = str(identity.get("sandbox_stdout_log_ref") or "").strip()
+    sandbox_stderr_log_ref = str(identity.get("sandbox_stderr_log_ref") or "").strip()
+    sandbox_exit_code = int(identity.get("sandbox_exit_code") or 0)
+    sandbox_duration_ms = int(identity.get("sandbox_duration_ms") or 0)
+    sandbox_runner_kind = str(identity.get("sandbox_runner_kind") or "").strip().lower()
+    sandbox_isolation_level = str(identity.get("sandbox_isolation_level") or "").strip().lower()
+    sandbox_image_ref = str(identity.get("sandbox_image_ref") or "").strip()
+    sandbox_network_policy = str(identity.get("sandbox_network_policy") or "").strip().lower()
+    browser_run_id = str(identity.get("browser_run_id") or "").strip()
+    browser_profile_id = str(identity.get("browser_profile_id") or "").strip()
+    browser_page_id = str(identity.get("browser_page_id") or "").strip()
+    browser_tab_id = str(identity.get("browser_tab_id") or "").strip()
+    browser_url = str(identity.get("browser_url") or "").strip()
+    browser_title = str(identity.get("browser_title") or "").strip()
+    browser_last_action_kind = str(identity.get("browser_last_action_kind") or "").strip().lower()
+    browser_last_exit_status = str(identity.get("browser_last_exit_status") or "").strip().lower()
     skill_effects = [dict(effect) for effect in (identity.get("skill_effects") or []) if isinstance(effect, dict)]
     try:
         source_ref_count = len(identity.get("artifact_source_ref_ids") or [])
     except Exception:
         source_ref_count = 0
-    if kind in {"skill_install_completed", "skill_activation_changed", "skill_usage_completed", "skill_mutation_blocked"}:
+    if kind in _SKILL_SURFACE_KINDS:
         primary = dict(skill_effects[0]) if skill_effects else {}
         operation = str(primary.get("operation") or "").strip().lower()
         use_kind = str(primary.get("use_kind") or "").strip().lower()
@@ -279,12 +353,77 @@ def _digital_body_consequence_priority(item: dict[str, Any]) -> float:
             + (0.06 if use_kind in {"source_ref_continuity", "workspace_workflow"} else 0.0),
             0.0,
         )
-    if kind == "source_material_compared":
+    if kind in _WORKSPACE_SURFACE_KINDS:
+        return _clamp01(
+            0.28
+            + (0.12 if carrier == "filesystem" else 0.0)
+            + (0.08 if active_artifact_kind in {"file", "workspace"} else 0.0)
+            + (0.08 if workspace_root else 0.0)
+            + (0.04 if active_artifact_label else 0.0),
+            0.0,
+        )
+    if kind in _SOURCE_SURFACE_KINDS:
         return _clamp01(
             0.34
             + (0.16 if carrier == "source_ref" else 0.0)
             + 0.08 * min(2, max(0, source_ref_count - 1))
             + (0.06 if source_title else 0.0),
+            0.0,
+        )
+    if kind == "artifact_reacquired":
+        return _clamp01(
+            0.24
+            + (0.10 if carrier == "source_ref" else 0.0)
+            + (0.08 if carrier == "filesystem" or active_artifact_kind in {"file", "workspace"} or workspace_root else 0.0)
+            + (0.04 if active_artifact_label else 0.0),
+            0.0,
+        )
+    if kind in _ACCESS_STATE_KINDS:
+        return _clamp01(
+            0.24
+            + (0.08 if session_continuity else 0.0)
+            + (0.06 if session_recovery_mode else 0.0)
+            + (0.08 if workspace_root else 0.0),
+            0.0,
+        )
+    if kind == "workspace_root_attached":
+        return _clamp01(
+            0.34
+            + (0.10 if workspace_root else 0.0)
+            + (0.08 if workspace_root_kind == "attached_repo_root" else 0.0)
+            + (0.06 if carrier == "filesystem" else 0.0)
+            + (0.08 if active_artifact_kind == "workspace" else 0.0)
+            + (0.04 if active_artifact_ref else 0.0),
+            0.0,
+        )
+    if kind in _SANDBOX_SURFACE_KINDS:
+        return _clamp01(
+            0.30
+            + (0.10 if sandbox_run_id else 0.0)
+            + (0.06 if sandbox_stdout_log_ref or sandbox_stderr_log_ref else 0.0)
+            + (0.06 if workspace_root else 0.0)
+            + (0.04 if sandbox_runner_kind == "docker_isolated_runner" else 0.0)
+            + (0.04 if sandbox_isolation_level == "docker_local_isolated" else 0.0)
+            + (0.03 if sandbox_image_ref else 0.0)
+            + (0.03 if sandbox_network_policy == "none" else 0.0)
+            + (0.04 if sandbox_exit_code == 0 else 0.0 if kind == "sandbox_execution_completed" else 0.0),
+            0.0,
+        )
+    if kind in _BROWSER_SURFACE_KINDS:
+        return _clamp01(
+            0.30
+            + (0.10 if browser_run_id else 0.0)
+            + (0.06 if browser_profile_id else 0.0)
+            + (0.05 if browser_page_id else 0.0)
+            + (0.05 if browser_tab_id else 0.0)
+            + (0.05 if browser_url else 0.0)
+            + (0.04 if browser_title else 0.0)
+            + (0.04 if browser_last_action_kind else 0.0)
+            + (0.04 if browser_last_exit_status else 0.0)
+            + (0.04 if active_artifact_label else 0.0)
+            + (0.04 if active_artifact_ref else 0.0)
+            + (0.04 if artifact_reacquisition_mode else 0.0)
+            + (0.03 if artifact_mutation_mode else 0.0),
             0.0,
         )
     if kind in {"source_material_inspected", "artifact_reacquired"} and carrier == "source_ref":
@@ -302,6 +441,9 @@ def _digital_body_consequence_trace_line(item: dict[str, Any]) -> str:
     kind = str(identity.get("kind") or "").strip().lower()
     source_title = str(identity.get("artifact_source_title") or "").strip()
     source_query = str(identity.get("artifact_source_query") or "").strip()
+    browser_title = str(identity.get("browser_title") or "").strip()
+    workspace_root = str(identity.get("workspace_root") or "").strip()
+    active_artifact_label = str(identity.get("active_artifact_label") or "").strip()
     skill_effects = [dict(effect) for effect in (identity.get("skill_effects") or []) if isinstance(effect, dict)]
     skill_label = ""
     if skill_effects:
@@ -312,7 +454,7 @@ def _digital_body_consequence_trace_line(item: dict[str, Any]) -> str:
         skill_label = "/".join(part for part in (skill_name, skill_operation or skill_use_kind) if part)
     if not kind:
         return f"{skill_label}: {summary}" if skill_label else summary
-    label = source_title or source_query
+    label = source_title or source_query or browser_title or active_artifact_label or workspace_root
     if label:
         norm_summary = _norm_text(summary)
         norm_label = _norm_text(label)

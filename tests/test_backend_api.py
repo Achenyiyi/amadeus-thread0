@@ -3127,6 +3127,163 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(consequence["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
             self.assertEqual(turn_response.payload["skills"]["active"][0]["skill_id"], "source-ref-anchor-review")
 
+    def test_turn_response_surfaces_browser_matrix_consequence_families(self):
+        def _state(*, tool_name, proposal_id, status, action_kind, result_summary="", manual=False, block_reason="", download_path="", upload_source=""):
+            return {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "browser"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["browser", "filesystem"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "browser_session": "present",
+                        "filesystem_state": "writable",
+                        "browser_runtime_state": {
+                            "availability": "available",
+                            "profile_root": "E:/runtime/browser/profiles/thread-browser",
+                            "context_status": "manual_takeover" if manual else "active",
+                            "active_page_id": "page-1",
+                            "active_tab_count": 1,
+                            "downloads_dir": "E:/runtime/browser/downloads/thread-browser",
+                            "last_action_status": "manual_takeover_required" if manual else status,
+                            "last_run_id": proposal_id,
+                            "manual_takeover_required": manual,
+                            "runner_kind": "playwright_persistent_context",
+                            "isolation_level": "persistent_profile_runtime",
+                        },
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1 if status == "completed" else 0,
+                        "blocked_packet_count": 1 if status == "blocked" else 0,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "file" if download_path else "page",
+                        "active_artifact_ref": download_path or "page:page-1",
+                        "active_artifact_label": "payload.txt" if download_path else "Docs",
+                        "artifact_carrier": "filesystem" if download_path else "browser_page",
+                        "artifact_source_url": "https://example.com/docs",
+                        "artifact_source_title": "Docs",
+                        "artifact_source_tool_name": tool_name,
+                        "workspace_root": "E:/runtime/workspaces/browser-smoke",
+                        "browser_profile_id": "thread-browser",
+                        "browser_tab_id": "tab-1",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": proposal_id,
+                        "origin": "motive_goal",
+                        "intent": f"browser:{tool_name.removeprefix('browser_')}",
+                        "status": status,
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": tool_name,
+                        "result_summary": result_summary,
+                        "block_reason": block_reason,
+                        "writeback_ready": status == "completed",
+                        "browser_execution_spec": {
+                            "operation": action_kind,
+                            "profile_id": "thread-browser",
+                            "page_ref": "page:page-1",
+                            "target_ref": "e2",
+                            "upload_source": upload_source,
+                            "download_target": download_path,
+                            "allowed_roots": ["E:/runtime/workspaces/browser-smoke"],
+                            "browser_downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                            "timeout_s": 20,
+                        },
+                        "browser_execution_preview": {
+                            "runner_kind": "playwright_persistent_context",
+                            "isolation_level": "persistent_profile_runtime",
+                            "operation": action_kind,
+                            "profile_id": "thread-browser",
+                            "page_ref": "page:page-1",
+                            "page_url": "https://example.com/docs",
+                            "page_title": "Docs",
+                            "target_ref": "e2",
+                            "target_label": "Approve action",
+                            "download_target": download_path,
+                            "upload_source": upload_source,
+                            "allowed_roots": ["E:/runtime/workspaces/browser-smoke"],
+                            "downloads_root": "E:/runtime/browser/downloads/thread-browser",
+                            "timeout_s": 20,
+                            "requires_manual_takeover": manual,
+                        },
+                        "browser_execution_result": {
+                            "run_id": proposal_id,
+                            "status": status,
+                            "profile_id": "thread-browser",
+                            "page_id": "page-1",
+                            "tab_id": "tab-1",
+                            "url": "https://example.com/docs",
+                            "title": "Docs",
+                            "action_kind": action_kind,
+                            "target_ref": "e2",
+                            "duration_ms": 45,
+                            "active_tab_count": 1,
+                            "last_action_status": "manual_takeover_required" if manual else status,
+                            "download_path": download_path,
+                            "upload_source": upload_source,
+                            "error_summary": block_reason,
+                            "manual_takeover_required": manual,
+                        },
+                    }
+                ],
+            }
+
+        cases = [
+            ("browser_click", "ap-browser-click-api", "completed", "click", "browser_interaction_completed", "clicked Docs button", False, "", "", ""),
+            ("browser_download_click", "ap-browser-download-api", "completed", "download_click", "browser_download_completed", "downloaded payload", False, "", "E:/runtime/workspaces/browser-smoke/downloads/payload.txt", ""),
+            ("browser_upload_file", "ap-browser-upload-api", "completed", "upload_file", "browser_upload_completed", "uploaded payload", False, "", "", "E:/runtime/workspaces/browser-smoke/payload.txt"),
+            ("browser_fill", "ap-browser-takeover-api", "blocked", "fill", "browser_takeover_requested", "", True, "sensitive credential entry requires manual browser takeover", "", ""),
+            ("browser_click", "ap-browser-blocked-api", "blocked", "click", "browser_action_blocked", "", False, "browser action timed out after 20s", "", ""),
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+
+            for tool_name, proposal_id, status, action_kind, expected_kind, summary, manual, block_reason, download_path, upload_source in cases:
+                with self.subTest(kind=expected_kind):
+                    payload = api.build_turn_response(
+                        state_values=_state(
+                            tool_name=tool_name,
+                            proposal_id=proposal_id,
+                            status=status,
+                            action_kind=action_kind,
+                            result_summary=summary,
+                            manual=manual,
+                            block_reason=block_reason,
+                            download_path=download_path,
+                            upload_source=upload_source,
+                        ),
+                        streamed_text="ignored",
+                    ).payload
+
+                    packet = payload["autonomy"]["action_packets"][0]
+                    consequence = payload["digital_body_consequence"]
+                    self.assertEqual(packet["proposal_id"], proposal_id)
+                    self.assertEqual(packet["status"], status)
+                    self.assertEqual(packet["browser_execution_result"]["run_id"], proposal_id)
+                    self.assertEqual(consequence["kind"], expected_kind)
+                    self.assertEqual(consequence["browser_run_id"], proposal_id)
+                    self.assertEqual(consequence["browser_profile_id"], "thread-browser")
+                    self.assertEqual(consequence["browser_page_id"], "page-1")
+                    self.assertEqual(consequence["browser_tab_id"], "tab-1")
+                    self.assertEqual(consequence["browser_last_action_kind"], action_kind)
+                    self.assertEqual(consequence["browser_last_exit_status"], status)
+                    self.assertEqual(bool(consequence["requested_help"]), manual)
+                    if expected_kind in {"browser_takeover_requested", "browser_action_blocked"}:
+                        self.assertTrue(bool(consequence["environmental_friction"]))
+                    if expected_kind == "browser_takeover_requested":
+                        self.assertTrue(consequence["browser_runtime_state"]["manual_takeover_required"])
+                    if expected_kind == "browser_download_completed":
+                        self.assertEqual(consequence["active_artifact_ref"], download_path)
+                    if expected_kind == "browser_upload_completed":
+                        self.assertEqual(packet["browser_execution_result"]["upload_source"], upload_source)
+
     def test_turn_response_surfaces_sandbox_phase2_docker_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

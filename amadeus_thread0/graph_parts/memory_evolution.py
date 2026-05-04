@@ -4699,6 +4699,20 @@ def _record_digital_body_consequence_long_horizon_memory(
     active_artifact_kind = str(item.get("active_artifact_kind") or "").strip().lower()
     active_artifact_label = str(item.get("active_artifact_label") or item.get("active_artifact_ref") or "").strip()
     artifact_reacquisition_mode = str(item.get("artifact_reacquisition_mode") or "").strip().lower()
+    workspace_root = str(item.get("workspace_root") or "").strip()
+    workspace_root_kind = str(item.get("workspace_root_kind") or "").strip().lower()
+    browser_run_id = str(item.get("browser_run_id") or "").strip()
+    browser_profile_id = str(item.get("browser_profile_id") or "").strip()
+    browser_page_id = str(item.get("browser_page_id") or "").strip()
+    browser_tab_id = str(item.get("browser_tab_id") or "").strip()
+    browser_url = str(item.get("browser_url") or "").strip()
+    browser_title = str(item.get("browser_title") or "").strip()
+    browser_last_action_kind = str(item.get("browser_last_action_kind") or "").strip().lower()
+    browser_last_exit_status = str(item.get("browser_last_exit_status") or "").strip().lower()
+    browser_runtime_state = item.get("browser_runtime_state") if isinstance(item.get("browser_runtime_state"), dict) else {}
+    browser_runtime_run_id = str(browser_runtime_state.get("last_run_id") or "").strip()
+    browser_runtime_page_id = str(browser_runtime_state.get("active_page_id") or "").strip()
+    browser_runtime_status = str(browser_runtime_state.get("last_action_status") or "").strip().lower()
     skill_effects = [
         dict(effect)
         for effect in (item.get("skill_effects") if isinstance(item.get("skill_effects"), list) else [])
@@ -4715,7 +4729,73 @@ def _record_digital_body_consequence_long_horizon_memory(
     worldline_tags = ["digital_body", kind]
     importance = 0.0
 
-    if kind == "skill_install_completed" and skill_effects:
+    browser_surface_kinds = {
+        "browser_navigation_completed",
+        "browser_interaction_completed",
+        "browser_download_completed",
+        "browser_upload_completed",
+        "browser_takeover_requested",
+        "browser_action_blocked",
+    }
+
+    if kind == "workspace_root_attached" and workspace_root:
+        worldline_category = "workspace_root_attached"
+        repo_label = active_artifact_label or workspace_root
+        kind_phrase = "attached repo root" if workspace_root_kind == "attached_repo_root" else "workspace root"
+        worldline_summary = f"{repo_label} 已经作为 {kind_phrase} 真实接入当前数字身体，后续代码和研究动作会沿 {workspace_root} 继续。"
+        importance = _clamp01(0.62 + (0.08 if workspace_root_kind == "attached_repo_root" else 0.0))
+        worldline_tags.extend(["workspace_root", workspace_root_kind, active_artifact_kind])
+    elif kind in browser_surface_kinds and any(
+        (
+            browser_run_id,
+            browser_runtime_run_id,
+            browser_profile_id,
+            browser_page_id,
+            browser_runtime_page_id,
+            browser_tab_id,
+            browser_url,
+            browser_title,
+        )
+    ):
+        worldline_category = "browser_runtime"
+        page_label = browser_title or active_artifact_label or browser_url or "当前 live browser 页面"
+        profile_phrase = browser_profile_id or "当前 profile"
+        tab_phrase = browser_tab_id or browser_page_id or browser_runtime_page_id or "当前 tab"
+        run_phrase = browser_run_id or browser_runtime_run_id or "记录"
+        if kind == "browser_takeover_requested":
+            worldline_summary = f"{page_label} 的浏览器步骤已经转成人工接管，后续要沿 {profile_phrase}/{tab_phrase} 继续，不能写成她已完成敏感凭据动作。"
+            importance = 0.54
+            worldline_tags.extend(["browser_takeover", "manual_takeover"])
+        elif kind == "browser_action_blocked":
+            reason_phrase = f"：{block_reason[:100]}" if block_reason else ""
+            worldline_summary = f"{page_label} 的浏览器动作没有真正跑通{reason_phrase}，后续只能沿 {profile_phrase}/{tab_phrase} 和阻断痕迹继续。"
+            importance = 0.50
+            worldline_tags.extend(["browser_blocked", browser_last_exit_status])
+        elif kind == "browser_download_completed":
+            worldline_summary = f"{page_label} 的浏览器下载已经真实完成，后续可以沿 {profile_phrase}/{tab_phrase} 和受控下载产物继续。"
+            importance = 0.58
+            worldline_tags.extend(["browser_download", browser_last_action_kind])
+        elif kind == "browser_upload_completed":
+            worldline_summary = f"{page_label} 的浏览器上传已经真实完成，后续可以沿 {profile_phrase}/{tab_phrase} 和已提交文件继续。"
+            importance = 0.58
+            worldline_tags.extend(["browser_upload", browser_last_action_kind])
+        elif kind == "browser_interaction_completed":
+            worldline_summary = f"{page_label} 上的浏览器交互已经真实完成，后续可以沿 {profile_phrase}/{tab_phrase} 和 run {run_phrase} 继续。"
+            importance = 0.58
+            worldline_tags.extend(["browser_interaction", browser_last_action_kind])
+        else:
+            worldline_summary = f"{page_label} 已经在 live browser 里真实打开或更新，后续可以沿 {profile_phrase}/{tab_phrase} 继续。"
+            importance = 0.56
+            worldline_tags.extend(["browser_navigation", browser_last_action_kind])
+        if browser_runtime_run_id:
+            worldline_tags.append(browser_runtime_run_id)
+        if browser_runtime_page_id:
+            worldline_tags.append(browser_runtime_page_id)
+        if browser_profile_id:
+            worldline_tags.append(browser_profile_id)
+        if browser_last_exit_status or browser_runtime_status:
+            worldline_tags.append(browser_last_exit_status or browser_runtime_status)
+    elif kind == "skill_install_completed" and skill_effects:
         worldline_category = "skill_capability"
         version_phrase = f"@{skill_version}" if skill_version else ""
         worldline_summary = f"她把 {skill_label or '一条新 skill'}{version_phrase} 真正接进了能力生态里，之后遇到相关任务时可以按这条路径继续。"

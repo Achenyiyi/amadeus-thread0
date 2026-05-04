@@ -214,3 +214,103 @@ def test_retrieve_context_uses_nested_source_identity_for_legacy_digital_body_tr
     assert isinstance(working_items, list)
     assert any("Persistence v2" in str(item) for item in working_items)
     assert any("source_material_compared" in str(item) and "Persistence v2" in str(item) for item in working_items)
+
+
+def test_retrieve_context_surfaces_browser_digital_body_trace_identity() -> None:
+    with TemporaryDirectory() as td:
+        store = MemoryStore(Path(td) / "memories.sqlite")
+        try:
+            store.add_revision_trace(
+                namespace="digital_body_consequence",
+                target_id="browser_interaction_completed",
+                before_summary="",
+                after_summary="Docs 页面上的确认按钮已经点过，后续可以沿同一 tab 继续。",
+                reason="digital_body_consequence:browser_interaction_completed",
+                operator="system",
+                source="test",
+                metadata={
+                    "body_consequence_kind": "browser_interaction_completed",
+                    "embodied_context": {
+                        "kind": "browser_interaction_completed",
+                        "artifact_carrier": "browser_page",
+                        "active_artifact_kind": "page",
+                        "active_artifact_ref": "page:page-1",
+                        "active_artifact_label": "Docs",
+                        "workspace_root": "E:/runtime/workspaces/browser-smoke",
+                        "browser_run_id": "ap-browser-click-1",
+                        "browser_profile_id": "thread-browser",
+                        "browser_page_id": "page-1",
+                        "browser_tab_id": "tab-1",
+                        "browser_url": "https://example.com/docs",
+                        "browser_title": "Docs",
+                        "browser_last_action_kind": "click",
+                        "browser_last_exit_status": "completed",
+                    },
+                },
+            )
+            retrieved = _retrieve_context("继续刚才那个 Docs 页面", store)
+        finally:
+            store.close()
+
+    traces = retrieved.get("digital_body_consequence_traces")
+    assert isinstance(traces, list)
+    assert traces
+    embodied = traces[0].get("embodied_context") if isinstance(traces[0].get("embodied_context"), dict) else {}
+    assert embodied.get("kind") == "browser_interaction_completed"
+    assert embodied.get("browser_profile_id") == "thread-browser"
+    assert embodied.get("browser_tab_id") == "tab-1"
+    working_items = retrieved.get("working_items")
+    assert isinstance(working_items, list)
+    assert any("browser_interaction_completed" in str(item) and "Docs" in str(item) for item in working_items)
+
+
+def test_retrieve_context_surfaces_workspace_root_attach_trace_identity() -> None:
+    with TemporaryDirectory() as td:
+        store = MemoryStore(Path(td) / "memories.sqlite")
+        try:
+            store.add_revision_trace(
+                namespace="digital_body_consequence",
+                target_id="workspace_root_attached",
+                before_summary="",
+                after_summary="amadeus-thread0 已经被正式挂接成当前 repo root。",
+                reason="digital_body_consequence:workspace_root_attached",
+                operator="system",
+                source="test",
+                metadata={
+                    "body_consequence_kind": "workspace_root_attached",
+                    "embodied_context": {
+                        "kind": "workspace_root_attached",
+                        "access_mode": "tool_enabled",
+                        "artifact_carrier": "filesystem",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/repo/amadeus-thread0",
+                        "active_artifact_label": "amadeus-thread0",
+                        "workspace_root": "E:/repo/amadeus-thread0",
+                        "workspace_root_kind": "attached_repo_root",
+                        "primary_status": "completed",
+                        "primary_tool_name": "attach_repo_root_access",
+                        "selected_access_proposal": {
+                            "target": "filesystem",
+                            "mode": "operator_attach_repo_root",
+                            "grants": ["filesystem", "workspace_read"],
+                            "resolved_grants": ["filesystem", "workspace_read"],
+                            "pending_grants": [],
+                            "completion_ratio": 1.0,
+                        },
+                    },
+                },
+            )
+            retrieved = _retrieve_context("继续刚才 attach 的 repo root", store)
+        finally:
+            store.close()
+
+    traces = retrieved.get("digital_body_consequence_traces")
+    assert isinstance(traces, list)
+    assert traces
+    embodied = traces[0].get("embodied_context") if isinstance(traces[0].get("embodied_context"), dict) else {}
+    assert embodied.get("kind") == "workspace_root_attached"
+    assert embodied.get("workspace_root") == "E:/repo/amadeus-thread0"
+    assert embodied.get("workspace_root_kind") == "attached_repo_root"
+    working_items = retrieved.get("working_items")
+    assert isinstance(working_items, list)
+    assert any("workspace_root_attached" in str(item) and "amadeus-thread0" in str(item) for item in working_items)
