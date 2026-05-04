@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from amadeus_thread0.runtime.sandbox_runner import (
+    LOCAL_RUNNER_KIND,
     LocalRestrictedSandboxRunner,
     SandboxValidationError,
     build_sandbox_command_spec,
@@ -82,6 +83,7 @@ def test_local_restricted_sandbox_runner_executes_workspace_script_and_records_a
             timeout_s=10,
             writes_expected=True,
             expected_artifacts=["notes/generated.txt"],
+            runner_kind=LOCAL_RUNNER_KIND,
         )
         run_root = workspace / ".amadeus" / "sandbox-runs" / "ap-sandbox-1"
         runner = LocalRestrictedSandboxRunner()

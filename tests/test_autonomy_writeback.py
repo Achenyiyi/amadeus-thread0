@@ -300,6 +300,15 @@ class AutonomyWritebackTests(unittest.TestCase):
             manual_takeover_required=True,
             error_summary="sensitive credential entry requires manual browser takeover",
         )
+        explicit_takeover = _snapshot_for(
+            proposal_id="ap-browser-takeover-1",
+            tool_name="browser_begin_manual_takeover",
+            intent="browser:begin_manual_takeover",
+            status="completed",
+            action_kind="begin_manual_takeover",
+            manual_takeover_required=True,
+            error_summary="manual browser takeover requested",
+        )
 
         self.assertEqual(completed["digital_body_consequence"]["kind"], "browser_navigation_completed")
         self.assertEqual(completed["digital_body_consequence"]["browser_run_id"], "ap-browser-open-1")
@@ -307,6 +316,97 @@ class AutonomyWritebackTests(unittest.TestCase):
         self.assertEqual(blocked["digital_body_consequence"]["browser_last_exit_status"], "blocked")
         self.assertEqual(takeover["digital_body_consequence"]["kind"], "browser_takeover_requested")
         self.assertTrue(takeover["digital_body_consequence"]["browser_runtime_state"]["manual_takeover_required"])
+        self.assertEqual(explicit_takeover["digital_body_consequence"]["kind"], "browser_takeover_requested")
+        self.assertEqual(explicit_takeover["action_packets"][0]["status"], "completed")
+        self.assertEqual(explicit_takeover["digital_body_consequence"]["primary_status"], "blocked")
+        self.assertEqual(explicit_takeover["digital_body_consequence"]["browser_last_exit_status"], "blocked")
+        self.assertTrue(bool(explicit_takeover["digital_body_consequence"]["requested_help"]))
+        self.assertTrue(bool(explicit_takeover["digital_body_consequence"]["environmental_friction"]))
+
+    def test_reconsolidation_snapshot_does_not_let_stale_takeover_state_override_completed_browser_result(self):
+        stale_runtime_body = {
+            "active_surface": "tooling",
+            "perception_channels": ["dialogue", "browser"],
+            "action_channels": ["language", "structured_action", "tooling"],
+            "world_surfaces": ["browser", "filesystem"],
+            "access_state": {
+                "mode": "tool_enabled",
+                "browser_session": "present",
+                "filesystem_state": "writable",
+                "browser_runtime_state": {
+                    "availability": "available",
+                    "profile_root": "E:/runtime/browser/profiles/thread-browser",
+                    "context_status": "manual_takeover",
+                    "active_page_id": "page-1",
+                    "active_tab_count": 1,
+                    "downloads_dir": "E:/runtime/browser/downloads/thread-browser",
+                    "last_action_status": "manual_takeover_required",
+                    "last_run_id": "ap-browser-old-takeover",
+                    "manual_takeover_required": True,
+                    "runner_kind": "playwright_persistent_context",
+                    "isolation_level": "persistent_profile_runtime",
+                },
+            },
+            "resource_state": {
+                "artifact_continuity": "attached",
+                "active_artifact_kind": "page",
+                "active_artifact_ref": "page:page-1",
+                "active_artifact_label": "Docs",
+                "artifact_carrier": "browser_page",
+                "browser_profile_id": "thread-browser",
+                "browser_tab_id": "tab-1",
+            },
+        }
+        packet = build_tool_action_packet(
+            tool_name="browser_click",
+            proposal_id="ap-browser-click-after-takeover",
+            args={"target_ref": "button-submit"},
+            action="approve",
+            status="completed",
+            result_summary="clicked after manual takeover was resolved",
+            browser_execution_preview={
+                "operation": "click",
+                "profile_id": "thread-browser",
+                "page_ref": "page:page-1",
+                "page_url": "https://example.com/docs",
+                "page_title": "Docs",
+                "target_ref": "button-submit",
+                "requires_manual_takeover": False,
+            },
+            browser_execution_result={
+                "run_id": "ap-browser-click-after-takeover",
+                "status": "completed",
+                "profile_id": "thread-browser",
+                "page_id": "page-1",
+                "tab_id": "tab-1",
+                "url": "https://example.com/docs",
+                "title": "Docs",
+                "action_kind": "click",
+                "target_ref": "button-submit",
+                "duration_ms": 41,
+                "active_tab_count": 1,
+                "last_action_status": "completed",
+                "manual_takeover_required": False,
+            },
+        )
+        snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[packet],
+            digital_body_state=stale_runtime_body,
+        )
+
+        consequence = snapshot["digital_body_consequence"]
+        self.assertEqual(consequence["kind"], "browser_interaction_completed")
+        self.assertEqual(consequence["primary_status"], "completed")
+        self.assertEqual(consequence["browser_last_exit_status"], "completed")
+        self.assertFalse(bool(consequence["requested_help"]))
 
     def test_build_reconsolidation_snapshot_compacts_autonomy_payload(self):
         snapshot = build_reconsolidation_snapshot(

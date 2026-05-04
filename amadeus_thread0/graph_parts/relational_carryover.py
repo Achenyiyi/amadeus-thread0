@@ -467,6 +467,14 @@ def _build_retrieved_behavior_trace_bridge(
             source_surface_kinds = {"source_material_compared", "source_material_inspected"}
             access_state_kinds = {"workspace_access_resolved", "access_state_refreshed"}
             sandbox_surface_kinds = {"sandbox_execution_completed", "sandbox_execution_blocked"}
+            browser_surface_kinds = {
+                "browser_navigation_completed",
+                "browser_interaction_completed",
+                "browser_download_completed",
+                "browser_upload_completed",
+                "browser_takeover_requested",
+                "browser_action_blocked",
+            }
             if body_consequence_kind in source_surface_kinds:
                 if artifact_carrier != "source_ref":
                     continue
@@ -528,6 +536,21 @@ def _build_retrieved_behavior_trace_bridge(
                     )
                 ):
                     continue
+            elif body_consequence_kind in browser_surface_kinds:
+                if not any(
+                    (
+                        artifact_carrier == "browser_page",
+                        active_artifact_kind in {"page", "tab", "browser_page"},
+                        str(embodied_context.get("browser_run_id") or "").strip(),
+                        str(embodied_context.get("browser_profile_id") or "").strip(),
+                        str(embodied_context.get("browser_page_id") or "").strip(),
+                        str(embodied_context.get("browser_tab_id") or "").strip(),
+                        str(embodied_context.get("browser_url") or "").strip(),
+                        str(embodied_context.get("browser_title") or "").strip(),
+                        bool(embodied_context.get("browser_runtime_state")),
+                    )
+                ):
+                    continue
             elif body_consequence_kind in {
                 "skill_install_completed",
                 "skill_activation_changed",
@@ -561,6 +584,8 @@ def _build_retrieved_behavior_trace_bridge(
                 if body_consequence_kind in {"source_material_compared", "source_material_inspected"}
                 else "access_state"
                 if body_consequence_kind in {"workspace_access_resolved", "access_state_refreshed", "workspace_root_attached"}
+                else "browser_page"
+                if body_consequence_kind in browser_surface_kinds
                 else "source_anchor"
                 if skill_use_kind == "source_ref_continuity"
                 else "workspace_surface"
@@ -579,6 +604,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "artifact_reacquired": 0.28,
                     "sandbox_execution_completed": 0.34,
                     "sandbox_execution_blocked": 0.24,
+                    "browser_navigation_completed": 0.32,
+                    "browser_interaction_completed": 0.34,
+                    "browser_download_completed": 0.34,
+                    "browser_upload_completed": 0.34,
+                    "browser_takeover_requested": 0.26,
+                    "browser_action_blocked": 0.24,
                     "skill_install_completed": 0.28,
                     "skill_activation_changed": 0.22,
                     "skill_usage_completed": 0.30,
@@ -596,6 +627,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "artifact_reacquired": 0.10,
                     "sandbox_execution_completed": 0.10,
                     "sandbox_execution_blocked": 0.08,
+                    "browser_navigation_completed": 0.10,
+                    "browser_interaction_completed": 0.10,
+                    "browser_download_completed": 0.10,
+                    "browser_upload_completed": 0.10,
+                    "browser_takeover_requested": 0.08,
+                    "browser_action_blocked": 0.08,
                     "skill_install_completed": 0.10,
                     "skill_activation_changed": 0.08,
                     "skill_usage_completed": 0.10,
@@ -613,6 +650,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "artifact_reacquired": 0.10,
                     "sandbox_execution_completed": 0.10,
                     "sandbox_execution_blocked": 0.08,
+                    "browser_navigation_completed": 0.12,
+                    "browser_interaction_completed": 0.12,
+                    "browser_download_completed": 0.12,
+                    "browser_upload_completed": 0.12,
+                    "browser_takeover_requested": 0.08,
+                    "browser_action_blocked": 0.08,
                     "skill_install_completed": 0.08,
                     "skill_activation_changed": 0.06,
                     "skill_usage_completed": 0.10,
@@ -630,6 +673,12 @@ def _build_retrieved_behavior_trace_bridge(
                     "artifact_reacquired": "前面那块工作面已经重新接回当前上下文，后面的动作可以顺着它继续。",
                     "sandbox_execution_completed": "前面那次受限执行已经真实跑完，后面的排查和推进可以顺着它留下的日志或产物继续。",
                     "sandbox_execution_blocked": "前面那次受限执行没有真正跑通，后面的排查可以顺着它留下的错误日志和边界继续。",
+                    "browser_navigation_completed": "前面那个 live browser 页面已经真实打开或更新，后面的动作可以顺着同一个 profile 和 tab 继续。",
+                    "browser_interaction_completed": "前面那个 live browser 交互已经真实完成，后面的动作可以顺着同一个页面状态继续。",
+                    "browser_download_completed": "前面那个 live browser 下载已经真实落到受控目录，后面的动作可以顺着这个产物继续。",
+                    "browser_upload_completed": "前面那个 live browser 上传已经真实完成，后面的动作可以顺着当前页面和已提交文件继续。",
+                    "browser_takeover_requested": "前面那个 live browser 步骤已经转成人工接管，后面要沿同一个 profile 继续，而不是写成她已完成凭据动作。",
+                    "browser_action_blocked": "前面那个 live browser 动作没有真正跑通，后面的排查要顺着当前页面、run 记录和阻断原因继续。",
                     "skill_install_completed": "前面那条 skill 安装已经真的落地了，后面的匹配和执行会顺着这条能力生态继续。",
                     "skill_activation_changed": "前面那条 skill 的激活态已经切换完成，后面的决策会沿这次能力生态变化继续。",
                     "skill_usage_completed": "前面那条 skill 已经真正参与过一次动作了，后面的推进可以顺着它留下的工作面继续。",
