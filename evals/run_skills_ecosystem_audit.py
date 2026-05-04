@@ -23,6 +23,11 @@ SMOKE_JSON_RE = re.compile(r"^\[skills-ecosystem-smokes\]\s+json=(.+)$", re.MULT
 SMOKE_MD_RE = re.compile(r"^\[skills-ecosystem-smokes\]\s+md=(.+)$", re.MULTILINE)
 SMOKE_STATUS_RE = re.compile(r"^\[skills-ecosystem-smokes\]\s+overall_status=(.+)$", re.MULTILINE)
 
+SANDBOX_READY_STATUSES = {
+    "sandbox_embodied_execution_phase1_ready",
+    "sandbox_embodied_execution_phase2_ready",
+}
+
 
 def _python(*args: str) -> list[str]:
     return [sys.executable, *args]
@@ -150,10 +155,14 @@ def _history_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def _sandbox_baseline_ready(value: Any) -> bool:
+    return str(value or "").strip() in SANDBOX_READY_STATUSES
+
+
 def _finalize(report: dict[str, Any], previous: Sequence[dict[str, Any]], baseline: dict[str, Any]) -> dict[str, Any]:
     rows = [dict(item) for item in previous] + [{"run_id": str(report.get("run_id") or ""), "generated_at": str(report.get("generated_at") or ""), "overall_status": str(report.get("overall_status") or ""), "readiness_status": str(report.get("readiness_status") or "")}]
     streak = _pass_streak([str(row.get("overall_status") or "") for row in rows])
-    ready = str(report.get("overall_status") or "") == "passed" and str(baseline.get("freeze_gate_readiness") or "") == "freeze_gate_ready" and str(baseline.get("companion_readiness") or "") == "companion_autonomy_ready" and str(baseline.get("digital_embodiment_readiness") or "") == "digital_embodiment_phase2_ready" and str(baseline.get("sandbox_readiness") or "") == "sandbox_embodied_execution_phase1_ready" and streak >= 3
+    ready = str(report.get("overall_status") or "") == "passed" and str(baseline.get("freeze_gate_readiness") or "") == "freeze_gate_ready" and str(baseline.get("companion_readiness") or "") == "companion_autonomy_ready" and str(baseline.get("digital_embodiment_readiness") or "") == "digital_embodiment_phase2_ready" and _sandbox_baseline_ready(baseline.get("sandbox_readiness")) and streak >= 3
     report["readiness_status"] = "skills_ecosystem_ready" if ready else "skills_ecosystem_in_progress"
     report["freeze_gate_readiness"] = str(baseline.get("freeze_gate_readiness") or "")
     report["companion_readiness"] = str(baseline.get("companion_readiness") or "")

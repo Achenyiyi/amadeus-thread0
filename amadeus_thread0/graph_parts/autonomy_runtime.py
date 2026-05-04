@@ -24,6 +24,7 @@ from .digital_body_runtime import (
     select_access_acquire_proposal,
     selected_access_proposal_resolved,
 )
+from .skill_runtime import normalize_procedural_continuity
 
 _OWN_RHYTHM_EVENT_KINDS = {
     "self_activity_state",
@@ -76,6 +77,12 @@ _ARTIFACT_REACQUISITION_INTENTS = {
     "artifact:rerun_search",
 }
 
+_SANDBOX_PROCEDURAL_PATTERN_ALIASES = {
+    "pytest": ("pytest", "test", "tests", "测试", "检查"),
+    "git_status": ("git status", "状态"),
+    "git_diff": ("git diff", "diff", "差异"),
+}
+
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
@@ -101,6 +108,10 @@ def _clean_list(value: Any, *, limit: int = 3) -> list[str]:
 
 def _clean_text(value: Any, *, limit: int = 220) -> str:
     return str(value or "").strip()[:limit]
+
+
+def _path_key(value: Any) -> str:
+    return _clean_text(value, limit=320).replace("\\", "/").rstrip("/").lower()
 
 
 def _merge_labels(*values: Any, limit: int = 8) -> list[str]:
@@ -531,6 +542,162 @@ def _access_refresh_packet(hints: dict[str, Any]) -> dict[str, Any]:
             "expected_effect": reason,
             "result_summary": "",
             "writeback_ready": False,
+        }
+    )
+
+
+def _procedural_trace_matches_current_request(
+    *,
+    current_event: dict[str, Any],
+    procedural: dict[str, Any],
+) -> bool:
+    family = _clean_text(procedural.get("capability_family")).lower()
+    pattern = _clean_text(procedural.get("pattern"), limit=160).lower()
+    if not family or not pattern:
+        return False
+    event_text = " ".join(
+        _clean_text(current_event.get(key), limit=260).lower()
+        for key in ("text", "effective_text", "semantic_goal", "event_frame")
+        if _clean_text(current_event.get(key), limit=260)
+    )
+    if not event_text:
+        return False
+    if family == "sandbox":
+        aliases = _SANDBOX_PROCEDURAL_PATTERN_ALIASES.get(pattern, (pattern,))
+        return any(alias and alias in event_text for alias in aliases)
+    return pattern in event_text
+
+
+def _procedural_trace_stays_within_current_access(
+    *,
+    embodied: dict[str, Any],
+    access_hints: dict[str, Any],
+) -> bool:
+    trace_root = _path_key(embodied.get("workspace_root"))
+    current_root = _path_key(access_hints.get("workspace_root"))
+    if trace_root:
+        if not current_root:
+            return False
+        if trace_root != current_root:
+            return False
+    trace_network = _clean_text(embodied.get("sandbox_network_policy")).lower()
+    current_sandbox = _dict_or_empty(access_hints.get("sandbox_state"))
+    current_network = _clean_text(access_hints.get("sandbox_network_policy") or current_sandbox.get("network_policy")).lower()
+    if trace_network and current_network and trace_network != current_network:
+        return False
+    trace_runner = _clean_text(embodied.get("sandbox_runner_kind")).lower()
+    current_runner = _clean_text(access_hints.get("sandbox_runner_kind") or current_sandbox.get("runner_kind")).lower()
+    if trace_runner and current_runner and trace_runner != current_runner:
+        return False
+    trace_isolation = _clean_text(embodied.get("sandbox_isolation_level")).lower()
+    current_isolation = _clean_text(access_hints.get("sandbox_isolation_level") or current_sandbox.get("isolation_level")).lower()
+    if trace_isolation and current_isolation and trace_isolation != current_isolation:
+        return False
+    return True
+
+
+def _procedural_continuity_execution_packet(
+    *,
+    current_event: dict[str, Any],
+    embodied: dict[str, Any],
+    access_hints: dict[str, Any],
+    origin: str,
+) -> dict[str, Any]:
+    procedural = normalize_procedural_continuity(embodied.get("procedural_continuity"))
+    if not procedural:
+        return {}
+    family = _clean_text(procedural.get("capability_family")).lower()
+    pattern = _clean_text(procedural.get("pattern"), limit=160).lower()
+    if family != "sandbox":
+        return {}
+    if not _procedural_trace_matches_current_request(current_event=current_event, procedural=procedural):
+        return {}
+    if not _procedural_trace_stays_within_current_access(embodied=embodied, access_hints=access_hints):
+        return {}
+    workspace_root = _clean_text(access_hints.get("workspace_root") or embodied.get("workspace_root"), limit=320)
+    if not workspace_root:
+        return {}
+    current_sandbox = _dict_or_empty(access_hints.get("sandbox_state"))
+    runner_kind = (
+        _clean_text(access_hints.get("sandbox_runner_kind") or current_sandbox.get("runner_kind"), limit=80).lower()
+        or _clean_text(embodied.get("sandbox_runner_kind"), limit=80).lower()
+    )
+    isolation_level = (
+        _clean_text(access_hints.get("sandbox_isolation_level") or current_sandbox.get("isolation_level"), limit=80).lower()
+        or _clean_text(embodied.get("sandbox_isolation_level"), limit=80).lower()
+    )
+    image_ref = (
+        _clean_text(access_hints.get("sandbox_image_ref") or current_sandbox.get("image_ref"), limit=160)
+        or _clean_text(embodied.get("sandbox_image_ref"), limit=160)
+    )
+    network_policy = (
+        _clean_text(access_hints.get("sandbox_network_policy") or current_sandbox.get("network_policy"), limit=32).lower()
+        or _clean_text(embodied.get("sandbox_network_policy"), limit=32).lower()
+        or "none"
+    )
+    workspace_root_kind = (
+        _clean_text(access_hints.get("workspace_root_kind") or current_sandbox.get("workspace_root_kind"), limit=64).lower()
+        or _clean_text(embodied.get("workspace_root_kind"), limit=64).lower()
+    )
+    if pattern == "pytest":
+        executor = "pytest"
+        argv = ["pytest"]
+        reason = "沿用前面已经成功过的隔离 pytest 模式继续检查；这仍然要按当前执行审批走。"
+    elif pattern == "rg_search":
+        executor = "rg"
+        argv = ["rg", "."]
+        reason = "沿用前面已经成功过的受限检索模式继续确认；只读边界不变。"
+    elif pattern in {"git_status", "git_diff"}:
+        executor = "git"
+        argv = ["git", "status", "--short"] if pattern == "git_status" else ["git", "diff", "--stat"]
+        reason = "沿用前面已经成功过的只读 git 检查模式继续确认；写入和网络仍然不开放。"
+    else:
+        return {}
+    execution_spec = {
+        "executor": executor,
+        "profile": pattern,
+        "runner_kind": runner_kind,
+        "isolation_level": isolation_level,
+        "image_ref": image_ref,
+        "network_policy": network_policy,
+        "workspace_root_kind": workspace_root_kind,
+        "argv": argv,
+        "cwd": workspace_root,
+        "allowed_roots": [workspace_root],
+        "timeout_s": 60,
+        "writes_expected": False,
+        "expected_artifacts": [],
+    }
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("procedural", family, pattern, workspace_root, origin),
+            "origin": origin,
+            "intent": "sandbox:execute_workspace_command",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "tool_name": "execute_workspace_command",
+            "tool_args": {
+                "argv": argv,
+                "cwd": workspace_root,
+                "access_hints": access_hints,
+                "procedural_continuity": procedural,
+            },
+            "capability_steps": [
+                {
+                    "kind": "tool_call",
+                    "name": "execute_workspace_command",
+                    "target": workspace_root,
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+            "execution_spec": execution_spec,
+            "execution_preview": execution_spec,
         }
     )
 
@@ -1297,6 +1464,12 @@ def derive_autonomy_runtime(
     embodied_packet = _artifact_reacquisition_packet(artifact_runtime_embodied)
     source_ref_compare_packet = _source_ref_comparison_packet(artifact_runtime_embodied)
     source_ref_refresh_packet = _source_ref_inspection_packet(artifact_runtime_embodied)
+    procedural_packet = _procedural_continuity_execution_packet(
+        current_event=event,
+        embodied=carried_embodied,
+        access_hints=access_hints,
+        origin=primary_origin,
+    )
     access_arrival_packet = _access_arrival_packet(access_hints)
     access_partial_packet = _partial_access_arrival_packet(access_hints)
     access_help_packet = _access_request_help_packet(
@@ -1327,6 +1500,10 @@ def derive_autonomy_runtime(
         action_packets = [source_ref_refresh_packet]
         primary_packet = dict(source_ref_refresh_packet)
         primary_packet_source = "source_ref_refresh"
+    elif procedural_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [procedural_packet]
+        primary_packet = dict(procedural_packet)
+        primary_packet_source = "procedural_continuity"
     elif access_arrival_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
         action_packets = [access_arrival_packet]
         primary_packet = dict(access_arrival_packet)
@@ -1469,6 +1646,8 @@ def derive_autonomy_runtime(
                     if primary_packet_source == "source_ref_compare"
                     else "derived_from_source_ref_refresh"
                     if primary_packet_source == "source_ref_refresh"
+                    else "derived_from_procedural_continuity"
+                    if primary_packet_source == "procedural_continuity"
                     else "derived_from_access_arrival"
                     if primary_packet_source == "access_arrival"
                     else "derived_from_access_partial_arrival"

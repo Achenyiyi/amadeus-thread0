@@ -32,6 +32,7 @@ from .semantic_narrative import (
     _semantic_narrative_decay_multiplier,
     _semantic_narrative_decay_rate,
 )
+from .skill_runtime import normalize_procedural_continuity
 from .turn_events import _now_ts
 
 SELFHOOD_STYLE_MARKERS = (
@@ -4304,6 +4305,7 @@ def _record_digital_body_consequence(
         "primary_intent": str(consequence.get("primary_intent") or "").strip().lower(),
         "primary_tool_name": str(consequence.get("primary_tool_name") or "").strip().lower(),
         "procedural_growth": bool(consequence.get("procedural_growth", False)),
+        "procedural_continuity": normalize_procedural_continuity(consequence.get("procedural_continuity")),
         "environmental_friction": bool(consequence.get("environmental_friction", False)),
         "requested_help": bool(consequence.get("requested_help", False)),
         "access_acquire_proposals": [
@@ -4700,6 +4702,7 @@ def _record_digital_body_consequence_long_horizon_memory(
     block_reason = str(item.get("block_reason") or "").strip()
     access_mode = str(item.get("access_mode") or "").strip().lower()
     procedural_growth = bool(item.get("procedural_growth", False))
+    procedural_continuity = normalize_procedural_continuity(item.get("procedural_continuity"))
     requested_help = bool(item.get("requested_help", False))
     environmental_friction = bool(item.get("environmental_friction", False))
     external_tool_count = max(0, int(item.get("external_tool_count") or 0))
@@ -4745,6 +4748,14 @@ def _record_digital_body_consequence_long_horizon_memory(
         "browser_takeover_requested",
         "browser_action_blocked",
     }
+
+    if procedural_continuity:
+        family = str(procedural_continuity.get("capability_family") or "").strip().lower()
+        pattern = str(procedural_continuity.get("pattern") or "").strip().lower()
+        if family:
+            worldline_tags.append(f"procedural:{family}")
+        if pattern:
+            worldline_tags.append(f"procedure:{pattern}")
 
     if kind == "workspace_root_attached" and workspace_root:
         worldline_category = "workspace_root_attached"

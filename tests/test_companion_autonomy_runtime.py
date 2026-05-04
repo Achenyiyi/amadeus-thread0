@@ -445,6 +445,130 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["action_packets"][0]["tool_args"]["source_ref_id"], 21)
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_source_ref_refresh")
 
+    def test_derive_autonomy_runtime_uses_same_family_procedural_bias_without_expanding_approval_scope(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "text": "继续跑刚才那类 pytest 检查。",
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        "execution_policy": "approval_required",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                        "arbitrary_execution": False,
+                    },
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "kind": "sandbox_execution_completed",
+                    "primary_status": "completed",
+                    "primary_tool_name": "execute_workspace_command",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "sandbox_run_id": "ap-pytest",
+                    "sandbox_command_profile": "pytest",
+                    "sandbox_runner_kind": "docker_isolated_runner",
+                    "sandbox_isolation_level": "docker_local_isolated",
+                    "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                    "sandbox_network_policy": "none",
+                    "workspace_root_kind": "attached_repo_root",
+                    "procedural_continuity": {
+                        "capability_family": "sandbox",
+                        "pattern": "pytest",
+                        "confidence": 0.72,
+                        "evidence_count": 2,
+                        "last_success_ref": "ap-pytest",
+                        "identity_safe": True,
+                    },
+                },
+            },
+            session_context={
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "workspace_root_kind": "attached_repo_root",
+                }
+            },
+        )
+
+        packet = runtime["action_packets"][0]
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "approval_pending")
+        self.assertEqual(runtime["autonomy_intent"]["origin"], "counterpart_request")
+        self.assertTrue(runtime["autonomy_intent"]["requires_approval"])
+        self.assertEqual(packet["intent"], "sandbox:execute_workspace_command")
+        self.assertEqual(packet["tool_name"], "execute_workspace_command")
+        self.assertEqual(packet["status"], "awaiting_approval")
+        self.assertEqual(packet["risk"], "external_mutation")
+        self.assertTrue(packet["requires_approval"])
+        self.assertEqual(packet["execution_spec"]["executor"], "pytest")
+        self.assertEqual(packet["execution_spec"]["profile"], "pytest")
+        self.assertEqual(packet["execution_spec"]["runner_kind"], "docker_isolated_runner")
+        self.assertEqual(packet["execution_spec"]["network_policy"], "none")
+        self.assertEqual(packet["execution_spec"]["allowed_roots"], ["E:/repo/amadeus-thread0"])
+        self.assertEqual(runtime["pending_action_proposal"]["proposal_id"], packet["proposal_id"])
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_procedural_continuity")
+
+    def test_derive_autonomy_runtime_ignores_procedural_bias_when_access_claim_widens_current_body(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "text": "继续跑刚才那类 pytest 检查。",
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/runtime/workspaces/current",
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "kind": "sandbox_execution_completed",
+                    "primary_status": "completed",
+                    "primary_tool_name": "execute_workspace_command",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "sandbox_command_profile": "pytest",
+                    "procedural_continuity": {
+                        "capability_family": "sandbox",
+                        "pattern": "pytest",
+                        "confidence": 0.72,
+                        "evidence_count": 2,
+                        "last_success_ref": "ap-pytest",
+                        "identity_safe": True,
+                    },
+                },
+            },
+            session_context={
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/runtime/workspaces/current",
+                    "workspace_root_kind": "runtime_owned",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "refresh_access_state")
+        self.assertEqual(runtime["action_packets"][0]["intent"], "access:refresh_state")
+        self.assertNotEqual(runtime["action_packets"][0].get("tool_name"), "execute_workspace_command")
+        self.assertEqual(runtime["pending_action_proposal"], {})
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_refresh")
+
     def test_derive_autonomy_runtime_builds_access_refresh_packet_from_session_hints(self):
         runtime = derive_autonomy_runtime(
             current_event={"kind": "user_utterance"},

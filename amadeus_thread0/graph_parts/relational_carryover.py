@@ -7,6 +7,7 @@ from .behavior_agenda import _agenda_long_horizon_snapshot
 from .common import _clamp01, _now_ts
 from .digital_body_runtime import normalize_embodied_context, normalize_embodied_trace_context
 from .prompt_helpers import _compact_embodied_carryover_hint
+from .skill_runtime import normalize_procedural_continuity
 from .state import AgendaLifecycleResiduePayload, InteractionCarryoverPayload, ThreadState
 
 
@@ -463,6 +464,7 @@ def _build_retrieved_behavior_trace_bridge(
             ][:6]
             primary_skill = dict(skill_effects[0]) if skill_effects else {}
             skill_use_kind = str(primary_skill.get("use_kind") or "").strip().lower()
+            procedural_continuity = normalize_procedural_continuity(embodied_context.get("procedural_continuity"))
             work_surface_kinds = {"workspace_file_updated", "workspace_path_inspected"}
             source_surface_kinds = {"source_material_compared", "source_material_inspected"}
             access_state_kinds = {"workspace_access_resolved", "access_state_refreshed"}
@@ -729,6 +731,14 @@ def _build_retrieved_behavior_trace_bridge(
                 source_tags.append(f"skillop:{operation}")
             if use_kind:
                 source_tags.append(f"skilluse:{use_kind}")
+        procedural_continuity = normalize_procedural_continuity(embodied_context.get("procedural_continuity"))
+        if procedural_continuity:
+            family = str(procedural_continuity.get("capability_family") or "").strip().lower()
+            pattern = str(procedural_continuity.get("pattern") or "").strip().lower()
+            if family:
+                source_tags.append(f"procedural:{family}")
+            if pattern:
+                source_tags.append(f"procedure:{pattern}")
         if source_plan_kind and source_plan_kind != plan_kind:
             source_tags.append(f"source_plan_kind:{source_plan_kind}")
         relationship_effect = str(_trace_value(trace, "relationship_effect", "") or "").strip().lower()
@@ -745,6 +755,7 @@ def _build_retrieved_behavior_trace_bridge(
                     "bodyfx:requested_help" if bool(embodied_context.get("requested_help", False)) else "",
                     "bodyfx:friction" if bool(embodied_context.get("environmental_friction", False)) else "",
                     "bodyfx:growth" if bool(embodied_context.get("procedural_growth", False)) else "",
+                    "bodyfx:procedural_continuity" if procedural_continuity else "",
                 ]
             )
         )

@@ -29,6 +29,18 @@ class SkillsEcosystemAuditTests(unittest.TestCase):
 
         self.assertEqual(selected, ready)
 
+    def test_select_authoritative_report_prefers_phase2_ready_when_phase1_history_is_absent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            failed = root / "sandbox-phase2-audit-20260505-100000-failed.json"
+            ready = root / "sandbox-phase2-audit-20260505-090000-ready.json"
+            ready.write_text(json.dumps({"overall_status": "passed", "readiness_status": "sandbox_embodied_execution_phase2_ready"}, ensure_ascii=False), encoding="utf-8")
+            failed.write_text(json.dumps({"overall_status": "failed", "readiness_status": "sandbox_embodied_execution_phase2_in_progress"}, ensure_ascii=False), encoding="utf-8")
+
+            selected = _select_authoritative_report([ready, failed])
+
+        self.assertEqual(selected, ready)
+
     def test_parse_baseline_extracts_all_preserved_readiness_fields(self):
         with tempfile.TemporaryDirectory() as td:
             report_path = Path(td) / "sandbox.json"
@@ -100,6 +112,31 @@ class SkillsEcosystemAuditTests(unittest.TestCase):
                 "companion_readiness": "companion_autonomy_ready",
                 "digital_embodiment_readiness": "digital_embodiment_phase2_ready",
                 "sandbox_readiness": "sandbox_embodied_execution_phase1_ready",
+            },
+        )
+        self.assertEqual(finalized["readiness_status"], "skills_ecosystem_ready")
+        self.assertEqual(finalized["recent_audits"][-1]["readiness_status"], "skills_ecosystem_ready")
+        self.assertEqual(finalized["historical_pass_streak"], 3)
+
+    def test_finalize_accepts_phase2_sandbox_baseline_ready(self):
+        report = {
+            "run_id": "skills-3",
+            "generated_at": "2026-04-05 12:00:00",
+            "overall_status": "passed",
+            "readiness_status": "skills_ecosystem_in_progress",
+            "summary": {"total": 8, "passed": 8, "failed": 0},
+        }
+        finalized = _finalize(
+            report,
+            [
+                {"run_id": "skills-1", "generated_at": "2026-04-05 11:00:00", "overall_status": "passed", "readiness_status": "skills_ecosystem_in_progress"},
+                {"run_id": "skills-2", "generated_at": "2026-04-05 11:30:00", "overall_status": "passed", "readiness_status": "skills_ecosystem_in_progress"},
+            ],
+            {
+                "freeze_gate_readiness": "freeze_gate_ready",
+                "companion_readiness": "companion_autonomy_ready",
+                "digital_embodiment_readiness": "digital_embodiment_phase2_ready",
+                "sandbox_readiness": "sandbox_embodied_execution_phase2_ready",
             },
         )
         self.assertEqual(finalized["readiness_status"], "skills_ecosystem_ready")

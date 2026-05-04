@@ -17,6 +17,7 @@ from ..config import (
 from ..memory_store import MemoryStore
 from .common import _clamp01, _norm_text, _now_ts
 from .digital_body_runtime import normalize_embodied_trace_context
+from .skill_runtime import normalize_procedural_continuity
 
 _WORKSPACE_SURFACE_KINDS = {"workspace_path_inspected", "workspace_file_updated"}
 _SOURCE_SURFACE_KINDS = {"source_material_compared", "source_material_inspected"}
@@ -125,6 +126,9 @@ def _digital_body_trace_identity(item: dict[str, Any]) -> dict[str, Any]:
             for effect in (embodied.get("skill_effects") if isinstance(embodied.get("skill_effects"), list) else [])
             if isinstance(effect, dict)
         ][:6],
+        "procedural_continuity": normalize_procedural_continuity(
+            embodied.get("procedural_continuity") or _record_value(item, "procedural_continuity", {})
+        ),
     }
 
 def _commitment_priority(item: dict[str, Any]) -> float:

@@ -147,6 +147,45 @@ def normalize_skill_effects(value: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _clamp01(value: Any, default: float = 0.0) -> float:
+    try:
+        cast = float(value)
+    except Exception:
+        cast = float(default)
+    return max(0.0, min(1.0, cast))
+
+
+def _normalize_procedural_continuity(value: Any) -> dict[str, Any]:
+    row = _dict_or_empty(value)
+    if not row:
+        return {}
+    family = _clean_text(row.get("capability_family"), limit=80).lower()
+    pattern = _clean_text(row.get("pattern"), limit=160).lower()
+    if family not in {"skill", "sandbox", "browser", "workspace"}:
+        return {}
+    if not pattern:
+        return {}
+    identity_safe = bool(row.get("identity_safe", False))
+    if not identity_safe:
+        return {}
+    evidence_count = max(1, min(999, int(row.get("evidence_count") or 1)))
+    normalized = {
+        "capability_family": family,
+        "pattern": pattern,
+        "confidence": round(_clamp01(row.get("confidence"), 0.0), 3),
+        "evidence_count": evidence_count,
+        "last_success_ref": _clean_text(row.get("last_success_ref"), limit=180),
+        "identity_safe": True,
+    }
+    if normalized["confidence"] <= 0.0:
+        normalized["confidence"] = 0.1
+    return normalized
+
+
+def normalize_procedural_continuity(value: Any) -> dict[str, Any]:
+    return _normalize_procedural_continuity(value)
+
+
 def _tool_use_kind(tool_name: str) -> str:
     name = _clean_text(tool_name, limit=120).lower()
     if name in {"inspect_source_ref", "compare_source_refs"}:
@@ -163,6 +202,145 @@ def _tool_use_kind(tool_name: str) -> str:
     if name in {"search_web", "search_skills", "list_runtime_skills", "inspect_skill"}:
         return "research_workflow"
     return "tool_guidance" if name else ""
+
+
+def _completed_status(value: Any) -> bool:
+    return _clean_text(value, limit=80).lower() == "completed"
+
+
+def _procedural_family_from_consequence(kind: str, tool_name: str) -> str:
+    if kind == "skill_usage_completed":
+        return "skill"
+    if kind == "sandbox_execution_completed" or tool_name == "execute_workspace_command":
+        return "sandbox"
+    if kind in {
+        "browser_navigation_completed",
+        "browser_interaction_completed",
+        "browser_download_completed",
+        "browser_upload_completed",
+    } or tool_name.startswith("browser_"):
+        return "browser"
+    if kind in {
+        "workspace_file_updated",
+        "workspace_path_inspected",
+        "workspace_access_resolved",
+        "workspace_root_attached",
+        "artifact_reacquired",
+    } or tool_name in {
+        "inspect_workspace_path",
+        "write_workspace_file",
+        "append_workspace_file",
+        "replace_workspace_text",
+        "replace_workspace_lines",
+        "reacquire_artifact",
+    }:
+        return "workspace"
+    return ""
+
+
+def _procedural_pattern_from_consequence(row: dict[str, Any], family: str) -> str:
+    skill_effects = normalize_skill_effects(row.get("skill_effects"))
+    primary_skill = dict(skill_effects[0]) if skill_effects else {}
+    tool_name = _clean_text(row.get("primary_tool_name") or primary_skill.get("tool_name"), limit=120).lower()
+    if family == "skill":
+        artifact_carrier = _clean_text(row.get("artifact_carrier"), limit=80).lower()
+        source_ref_ids = _list_or_empty(row.get("artifact_source_ref_ids"))
+        if artifact_carrier == "source_ref" or source_ref_ids:
+            return "source_ref_continuity"
+        return (
+            _clean_text(primary_skill.get("use_kind"), limit=120).lower()
+            or _tool_use_kind(tool_name)
+            or _clean_text(primary_skill.get("operation"), limit=80).lower()
+            or "skill_usage"
+        )
+    if family == "sandbox":
+        return (
+            _clean_text(row.get("sandbox_command_profile"), limit=120).lower()
+            or _clean_text(row.get("execution_profile"), limit=120).lower()
+            or _clean_text(row.get("primary_intent"), limit=120).lower().replace("sandbox:", "")
+            or tool_name
+            or "workspace_command"
+        )
+    if family == "browser":
+        return (
+            _clean_text(row.get("browser_last_action_kind"), limit=120).lower()
+            or tool_name.removeprefix("browser_")
+            or "browser_action"
+        )
+    if family == "workspace":
+        mutation_mode = _clean_text(row.get("artifact_mutation_mode"), limit=80).lower()
+        if mutation_mode:
+            return mutation_mode
+        return {
+            "inspect_workspace_path": "inspect",
+            "write_workspace_file": "write",
+            "append_workspace_file": "append",
+            "replace_workspace_text": "replace",
+            "replace_workspace_lines": "replace",
+            "reacquire_artifact": "reacquire",
+        }.get(tool_name, _clean_text(row.get("active_artifact_kind"), limit=80).lower() or "workspace")
+    return ""
+
+
+def derive_procedural_continuity(consequence: Any) -> dict[str, Any]:
+    row = _dict_or_empty(consequence)
+    if not row:
+        return {}
+    kind = _clean_text(row.get("kind"), limit=120).lower()
+    primary_status = _clean_text(row.get("primary_status"), limit=80).lower()
+    primary_tool_name = _clean_text(row.get("primary_tool_name"), limit=120).lower()
+    skill_effects = normalize_skill_effects(row.get("skill_effects"))
+    if not _completed_status(primary_status):
+        return {}
+    if kind in {"skill_install_completed", "skill_activation_changed", "skill_mutation_blocked"}:
+        return {}
+    if kind in {
+        "sandbox_execution_blocked",
+        "browser_action_blocked",
+        "browser_takeover_requested",
+        "access_request_pending",
+        "environmental_friction",
+    }:
+        return {}
+    if bool(row.get("environmental_friction", False)) or bool(row.get("requested_help", False)):
+        return {}
+    if skill_effects and any(_clean_text(item.get("status"), limit=80).lower() != "completed" for item in skill_effects):
+        return {}
+
+    family = _procedural_family_from_consequence(kind, primary_tool_name)
+    if not family:
+        return {}
+    pattern = _procedural_pattern_from_consequence(row, family)
+    if not pattern:
+        return {}
+    last_success_ref = (
+        _clean_text(row.get("primary_proposal_id"), limit=180)
+        or _clean_text(row.get("sandbox_run_id"), limit=180)
+        or _clean_text(row.get("browser_run_id"), limit=180)
+        or _clean_text(row.get("active_artifact_ref"), limit=180)
+    )
+    evidence_count = max(1, len(skill_effects) if family == "skill" and skill_effects else 1)
+    confidence = 0.54
+    if family == "skill":
+        confidence += 0.08
+    if family == "sandbox" and _clean_text(row.get("sandbox_run_id"), limit=120):
+        confidence += 0.10
+    if family == "browser" and _clean_text(row.get("browser_run_id"), limit=120):
+        confidence += 0.10
+    if family == "workspace" and _clean_text(row.get("workspace_root"), limit=320):
+        confidence += 0.08
+    if _clean_text(row.get("active_artifact_ref"), limit=220):
+        confidence += 0.04
+    return normalize_procedural_continuity(
+        {
+            "capability_family": family,
+            "pattern": pattern,
+            "confidence": confidence,
+            "evidence_count": evidence_count,
+            "last_success_ref": last_success_ref,
+            "identity_safe": True,
+        }
+    )
 
 
 def derive_skill_effects(
@@ -376,8 +554,10 @@ def active_skill_prompt_block(value: Any) -> str:
 __all__ = [
     "active_skill_prompt_block",
     "backend_skill_envelope",
+    "derive_procedural_continuity",
     "derive_skill_effects",
     "derive_session_skill_state",
+    "normalize_procedural_continuity",
     "normalize_session_skill_state",
     "normalize_skill_effects",
     "pending_skill_proposal_from_state",

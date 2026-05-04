@@ -7,7 +7,7 @@ from .browser_runtime import (
     browser_runtime_state_has_signal,
     normalize_browser_runtime_state,
 )
-from .skill_runtime import normalize_skill_effects
+from .skill_runtime import normalize_procedural_continuity, normalize_skill_effects
 
 _OWN_RHYTHM_EVENT_KINDS = {
     "self_activity_state",
@@ -1212,6 +1212,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     requested_help = bool(row.get("requested_help", False))
     environmental_friction = bool(row.get("environmental_friction", False))
     procedural_growth = bool(row.get("procedural_growth", False))
+    procedural_continuity = normalize_procedural_continuity(row.get("procedural_continuity"))
     retry_after_s = _clean_nonnegative_int(
         row.get("retry_after_s")
         or quota_state_detail.get("retry_after_s")
@@ -1391,6 +1392,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "browser_last_action_kind": browser_last_action_kind,
         "browser_last_exit_status": browser_last_exit_status,
         "procedural_growth": procedural_growth,
+        "procedural_continuity": procedural_continuity,
         "environmental_friction": environmental_friction,
         "requested_help": requested_help,
         "external_mutation_pending": bool(
@@ -1478,6 +1480,7 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["granted_toolsets"],
             normalized["active_tools"],
             normalized["procedural_growth"],
+            normalized["procedural_continuity"],
             normalized["environmental_friction"],
             normalized["requested_help"],
             normalized["external_mutation_pending"],
