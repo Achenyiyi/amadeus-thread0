@@ -10170,3 +10170,54 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - commit Task 6 as `feat: expand presence behavior families`
   - continue the remaining-work closure sequence with Task 7 procedural capability growth without persona drift
+
+## 2026-05-05 Run 237
+
+- Focus:
+  - Task 7 procedural capability growth without persona drift
+  - let completed skill / sandbox / browser / workspace effects reconsolidate as identity-safe procedural continuity while preserving approval and current access scope
+- Files changed:
+  - `amadeus_thread0/graph_parts/skill_runtime.py`
+  - `amadeus_thread0/evolution_engine/reconsolidation.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/graph_parts/memory_evolution.py`
+  - `amadeus_thread0/graph_parts/retrieval.py`
+  - `amadeus_thread0/graph_parts/relational_carryover.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `evals/print_latest_sandbox_baseline.py`
+  - `evals/run_skills_ecosystem_audit.py`
+  - `tests/test_skill_runtime.py`
+  - `tests/test_autonomy_writeback.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_skills_ecosystem_audit.py`
+  - `program.md`
+- Key changes:
+  - completed capability effects can now derive normalized `procedural_continuity` traces with `identity_safe=true`
+  - skill registry truth still stays outside autobiographical memory; blocked / pending / rejected skill mutations remain unfinished intentions or boundary consequences rather than capability facts
+  - completed sandbox, browser, workspace, and skill traces can resurface through embodied carryover / retrieval as procedural continuity tags
+  - same-family sandbox procedural continuity can bias future action selection for bounded patterns such as `pytest`, `rg_search`, `git_status`, and `git_diff`
+  - procedural bias reuses current body runner / workspace / network / approval fields and rejects historical traces that would widen access beyond the current `digital_body`
+  - skills audit baseline selection now accepts the current phase-2 sandbox baseline while still falling back to the preserved phase-1 report family
+- Validation:
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k "procedural_bias" -q`
+    - passed: `2 passed, 56 deselected`
+  - `python -m pytest tests/test_skill_runtime.py tests/test_autonomy_writeback.py tests/test_world_model_residue.py -k "procedural or skill_effects or capability" -q`
+    - passed: `4 passed, 182 deselected`
+  - `python -m pytest tests/test_skill_registry.py tests/test_skill_runtime.py -q`
+    - passed: `11 passed`
+  - `python -m pytest tests/test_skills_ecosystem_audit.py -q`
+    - passed: `9 passed`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -q`
+    - passed: `58 passed`
+  - `python evals/run_skills_ecosystem_audit.py --run-tag task7-final-check`
+    - passed with `overall_status=passed` and `readiness=skills_ecosystem_ready`
+  - local ignored authoritative reports under `evals/reports/` were copied from the main workspace because reports are gitignored in this isolated worktree
+- Result:
+  - Task 7 is green in this worktree
+  - no execution authority, Docker/network policy, approval scope, browser boundary, skill registry truth, or persona-core semantics were widened
+  - unrelated dirty sandbox run files and `debug.log` remain unmodified by this task and should not be staged
+- Next:
+  - commit Task 7 as `feat: consolidate procedural capability traces`
+  - continue with Task 8 contract-only frontend handoff refresh

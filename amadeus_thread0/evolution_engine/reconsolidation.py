@@ -30,7 +30,7 @@ from ..graph_parts.digital_body_runtime import (
     normalize_digital_body_state,
     normalize_embodied_context,
 )
-from ..graph_parts.skill_runtime import derive_skill_effects
+from ..graph_parts.skill_runtime import derive_procedural_continuity, derive_skill_effects
 from ..utils.counterpart_profile import compact_counterpart_profile
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
@@ -1700,7 +1700,7 @@ def derive_digital_body_consequence(
         for key, value in category_summaries.items()
         if str(key or "").strip() and str(value or "").strip()
     }
-    return {
+    consequence = {
         "kind": kind,
         "summary": summary[:220],
         "access_mode": access_mode,
@@ -1785,6 +1785,10 @@ def derive_digital_body_consequence(
         "narrative_categories": list(category_summaries),
         "category_summaries": category_summaries,
     }
+    procedural_continuity = derive_procedural_continuity(consequence)
+    if procedural_continuity:
+        consequence["procedural_continuity"] = procedural_continuity
+    return consequence
 
 
 def build_reconsolidation_snapshot(

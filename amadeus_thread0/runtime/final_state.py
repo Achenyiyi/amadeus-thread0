@@ -370,6 +370,7 @@ def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> b
             str(consequence.get("kind") or "").strip(),
             str(consequence.get("summary") or "").strip(),
             bool(consequence.get("procedural_growth", False)),
+            isinstance(consequence.get("procedural_continuity"), dict) and bool(consequence.get("procedural_continuity")),
             bool(consequence.get("environmental_friction", False)),
             bool(consequence.get("requested_help", False)),
             isinstance(consequence.get("missing_access"), list) and bool(consequence.get("missing_access")),

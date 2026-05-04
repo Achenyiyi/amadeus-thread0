@@ -1034,11 +1034,22 @@ class AutonomyWritebackTests(unittest.TestCase):
 
         self.assertEqual(install_snapshot["digital_body_consequence"]["kind"], "skill_install_completed")
         self.assertEqual(install_snapshot["digital_body_consequence"]["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+        self.assertNotIn("procedural_continuity", install_snapshot["digital_body_consequence"])
         self.assertEqual(blocked_snapshot["digital_body_consequence"]["kind"], "skill_mutation_blocked")
         self.assertEqual(blocked_snapshot["digital_body_consequence"]["skill_effects"][0]["status"], "blocked")
+        self.assertNotIn("procedural_continuity", blocked_snapshot["digital_body_consequence"])
         self.assertEqual(usage_snapshot["digital_body_consequence"]["kind"], "skill_usage_completed")
         self.assertEqual(usage_snapshot["skill_effects"][0]["operation"], "use")
         self.assertEqual(usage_snapshot["digital_body_consequence"]["skill_effects"][0]["skill_id"], "source-ref-anchor-review")
+        self.assertEqual(
+            usage_snapshot["digital_body_consequence"]["procedural_continuity"]["capability_family"],
+            "skill",
+        )
+        self.assertEqual(
+            usage_snapshot["digital_body_consequence"]["procedural_continuity"]["pattern"],
+            "source_ref_continuity",
+        )
+        self.assertTrue(usage_snapshot["digital_body_consequence"]["procedural_continuity"]["identity_safe"])
 
     def test_reconsolidation_snapshot_preserves_sandbox_phase2_isolated_runner_identity(self):
         packet = build_tool_action_packet(
@@ -1133,6 +1144,132 @@ class AutonomyWritebackTests(unittest.TestCase):
         self.assertEqual(consequence["sandbox_runner_kind"], "docker_isolated_runner")
         self.assertEqual(consequence["sandbox_network_policy"], "none")
         self.assertEqual(consequence["workspace_root_kind"], "attached_repo_root")
+        self.assertEqual(consequence["procedural_continuity"]["capability_family"], "sandbox")
+        self.assertEqual(consequence["procedural_continuity"]["pattern"], "pytest")
+        self.assertTrue(consequence["procedural_continuity"]["identity_safe"])
+
+    def test_reconsolidation_snapshot_adds_browser_and_workspace_procedural_continuity(self):
+        browser_packet = build_tool_action_packet(
+            tool_name="browser_click",
+            proposal_id="ap-browser-click-procedural",
+            args={"target_ref": "button-run"},
+            status="completed",
+            result_summary="clicked run button",
+            browser_execution_preview={
+                "operation": "click",
+                "profile_id": "thread-browser",
+                "page_ref": "page:page-1",
+            },
+            browser_execution_result={
+                "run_id": "ap-browser-click-procedural",
+                "status": "completed",
+                "profile_id": "thread-browser",
+                "page_id": "page-1",
+                "tab_id": "tab-1",
+                "url": "https://example.com/tool",
+                "title": "Tool",
+                "action_kind": "click",
+                "last_action_status": "completed",
+                "manual_takeover_required": False,
+            },
+        )
+        browser_snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[browser_packet],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "browser"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["browser"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "browser_session": "present",
+                    "browser_runtime_state": {
+                        "availability": "available",
+                        "last_action_status": "completed",
+                        "last_run_id": "ap-browser-click-procedural",
+                    },
+                },
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "page",
+                    "active_artifact_ref": "page:page-1",
+                    "active_artifact_label": "Tool",
+                    "artifact_carrier": "browser_page",
+                    "browser_profile_id": "thread-browser",
+                    "browser_tab_id": "tab-1",
+                },
+            },
+        )
+
+        workspace_packet = {
+            **build_tool_action_packet(
+                tool_name="write_workspace_file",
+                proposal_id="ap-workspace-write-procedural",
+                args={"path": "notes/result.md"},
+                status="completed",
+                result_summary="wrote result file",
+            ),
+            "artifact_context": {
+                "carrier": "filesystem",
+                "artifact_kind": "file",
+                "artifact_ref": "E:/runtime/workspaces/lab-notes/notes/result.md",
+                "artifact_label": "result.md",
+                "workspace_root": "E:/runtime/workspaces/lab-notes",
+            },
+        }
+        workspace_snapshot = build_reconsolidation_snapshot(
+            current_event={"kind": "user_utterance"},
+            appraisal={"interaction_frame": "task"},
+            world_model_state={},
+            semantic_narrative_profile={},
+            latent_state={"self_coherence": 0.82},
+            emotion_state={"label": "focused"},
+            bond_state={"trust": 0.6},
+            behavior_action={"interaction_mode": "tooling"},
+            action_packets=[workspace_packet],
+            digital_body_state={
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "filesystem"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["filesystem"],
+                "access_state": {"mode": "tool_enabled", "filesystem_state": "writable"},
+                "resource_state": {
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "file",
+                    "active_artifact_ref": "E:/runtime/workspaces/lab-notes/notes/result.md",
+                    "active_artifact_label": "result.md",
+                    "artifact_carrier": "filesystem",
+                    "workspace_root": "E:/runtime/workspaces/lab-notes",
+                },
+            },
+        )
+
+        self.assertEqual(
+            browser_snapshot["digital_body_consequence"]["procedural_continuity"]["capability_family"],
+            "browser",
+        )
+        self.assertEqual(
+            browser_snapshot["digital_body_consequence"]["procedural_continuity"]["pattern"],
+            "click",
+        )
+        self.assertTrue(browser_snapshot["digital_body_consequence"]["procedural_continuity"]["identity_safe"])
+        self.assertEqual(
+            workspace_snapshot["digital_body_consequence"]["procedural_continuity"]["capability_family"],
+            "workspace",
+        )
+        self.assertEqual(
+            workspace_snapshot["digital_body_consequence"]["procedural_continuity"]["pattern"],
+            "write",
+        )
+        self.assertTrue(workspace_snapshot["digital_body_consequence"]["procedural_continuity"]["identity_safe"])
 
 
 if __name__ == "__main__":

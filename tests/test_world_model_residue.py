@@ -9369,6 +9369,56 @@ class WorldModelResidueTests(unittest.TestCase):
             finally:
                 store.close()
 
+    def test_procedural_continuity_resurfaces_as_body_capability_bias(self):
+        event, carryover = _apply_retrieved_behavior_trace_bridge(
+            retrieved={
+                "digital_body_consequence_traces": [
+                    {
+                        "namespace": "digital_body_consequence",
+                        "content": {
+                            "after_summary": "刚才那次隔离 pytest 已经跑完，后面可以沿同一类受限执行模式继续。",
+                            "body_consequence_kind": "sandbox_execution_completed",
+                            "embodied_context": {
+                                "kind": "sandbox_execution_completed",
+                                "primary_status": "completed",
+                                "primary_tool_name": "execute_workspace_command",
+                                "workspace_root": "E:/repo/amadeus-thread0",
+                                "artifact_carrier": "filesystem",
+                                "active_artifact_kind": "file",
+                                "active_artifact_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-pytest/stdout.txt",
+                                "active_artifact_label": "stdout.txt",
+                                "sandbox_run_id": "ap-pytest",
+                                "sandbox_command_profile": "pytest",
+                                "sandbox_stdout_log_ref": "E:/repo/amadeus-thread0/.amadeus/sandbox-runs/ap-pytest/stdout.txt",
+                                "sandbox_exit_code": 0,
+                                "procedural_continuity": {
+                                    "capability_family": "sandbox",
+                                    "pattern": "pytest",
+                                    "confidence": 0.72,
+                                    "evidence_count": 1,
+                                    "last_success_ref": "ap-pytest",
+                                    "identity_safe": True,
+                                },
+                            },
+                        },
+                    }
+                ]
+            },
+            current_event={"kind": "user_utterance", "text": "继续跑刚才那类 pytest 检查"},
+            interaction_carryover={},
+        )
+
+        self.assertEqual(str(event.get("carryover_mode") or ""), "task_window")
+        self.assertIn("procedural:sandbox", carryover.get("source_tags") or [])
+        self.assertIn("procedure:pytest", carryover.get("source_tags") or [])
+        self.assertIn("bodyfx:procedural_continuity", carryover.get("source_tags") or [])
+        embodied_context = carryover.get("embodied_context") if isinstance(carryover.get("embodied_context"), dict) else {}
+        self.assertEqual(
+            embodied_context["procedural_continuity"]["capability_family"],
+            "sandbox",
+        )
+        self.assertTrue(embodied_context["procedural_continuity"]["identity_safe"])
+
 
 if __name__ == "__main__":
     unittest.main()

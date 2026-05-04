@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from amadeus_thread0.graph_parts.skill_runtime import active_skill_prompt_block, backend_skill_envelope
+from amadeus_thread0.graph_parts.skill_runtime import (
+    active_skill_prompt_block,
+    backend_skill_envelope,
+    derive_procedural_continuity,
+)
 from amadeus_thread0.runtime.skill_registry import SkillRegistryManager
 from amadeus_thread0.utils.tools import add_skill, list_skills
 
@@ -129,6 +133,53 @@ class SkillRuntimeTests(unittest.TestCase):
 
             self.assertEqual(legacy[0]["name"], "legacy note")
             self.assertEqual(manager.runtime_catalog(), [])
+
+    def test_completed_skill_usage_derives_identity_safe_procedural_continuity(self):
+        continuity = derive_procedural_continuity(
+            {
+                "kind": "skill_usage_completed",
+                "primary_status": "completed",
+                "primary_tool_name": "inspect_source_ref",
+                "primary_proposal_id": "ap-skill-use-1",
+                "skill_effects": [
+                    {
+                        "skill_id": "source-ref-anchor-review",
+                        "operation": "use",
+                        "status": "completed",
+                        "use_kind": "source_ref_continuity",
+                        "tool_name": "inspect_source_ref",
+                    }
+                ],
+                "artifact_carrier": "source_ref",
+                "active_artifact_label": "LangGraph Persistence",
+            }
+        )
+
+        self.assertEqual(continuity["capability_family"], "skill")
+        self.assertEqual(continuity["pattern"], "source_ref_continuity")
+        self.assertEqual(continuity["last_success_ref"], "ap-skill-use-1")
+        self.assertTrue(continuity["identity_safe"])
+        self.assertGreater(continuity["confidence"], 0.0)
+
+    def test_blocked_skill_mutation_does_not_derive_procedural_continuity(self):
+        continuity = derive_procedural_continuity(
+            {
+                "kind": "skill_mutation_blocked",
+                "primary_status": "blocked",
+                "primary_tool_name": "install_skill",
+                "primary_proposal_id": "ap-skill-blocked-1",
+                "skill_effects": [
+                    {
+                        "skill_id": "blocked-anchor-pack",
+                        "operation": "install",
+                        "status": "blocked",
+                        "tool_name": "install_skill",
+                    }
+                ],
+            }
+        )
+
+        self.assertEqual(continuity, {})
 
 
 if __name__ == "__main__":
