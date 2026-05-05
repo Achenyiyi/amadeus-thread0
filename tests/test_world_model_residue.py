@@ -23,6 +23,7 @@ from amadeus_thread0.graph_parts.behavior_runtime import (
     _compact_behavior_action_hint,
 )
 from amadeus_thread0.graph_parts.dialogue_guidance import _subjective_runtime_state_hint
+from amadeus_thread0.graph_parts.digital_body_runtime import normalize_digital_body_state, normalize_embodied_context
 from amadeus_thread0.graph_parts.memory_evolution import (
     _passive_evolution_memory_update,
     _record_agenda_lifecycle_long_horizon_memory,
@@ -2734,6 +2735,48 @@ class WorldModelResidueTests(unittest.TestCase):
                 )
             finally:
                 store.close()
+
+    def test_tts_presence_timing_stays_inside_digital_body_and_consequence(self):
+        normalized_body = normalize_digital_body_state(
+            {
+                "access_state": {
+                    "tts_presence_state": {
+                        "availability": "available",
+                        "enabled": True,
+                        "backend": "dashscope_realtime",
+                        "voice_profile_id": "default",
+                        "queue_state": "idle",
+                        "last_status": "delivered",
+                        "last_run_id": "evt_tts_20260505_0001",
+                    }
+                },
+                "resource_state": {
+                    "tts_presence_timing": {
+                        "last_event_id": "evt_tts_20260505_0001",
+                        "last_delivery_mode": "spoken",
+                        "last_actual_start_delay_ms": 180,
+                        "last_duration_ms": 3120,
+                    }
+                },
+            }
+        )
+
+        normalized_consequence = normalize_embodied_context(
+            {
+                "kind": "tts_presence_delivered",
+                "summary": "TTS delivered the frozen final text.",
+                "tts_presence_timing": {
+                    "delivery_mode": "spoken",
+                    "actual_start_delay_ms": 180,
+                    "duration_ms": 3120,
+                },
+            }
+        )
+
+        assert normalized_body["access_state"]["tts_presence_state"]["last_status"] == "delivered"
+        assert normalized_body["resource_state"]["tts_presence_timing"]["last_delivery_mode"] == "spoken"
+        assert normalized_consequence["kind"] == "tts_presence_delivered"
+        assert normalized_consequence["tts_presence_timing"]["delivery_mode"] == "spoken"
 
     def test_counterpart_assessment_writeback_keeps_embodied_context_only_for_counterpart_origin(self):
         with TemporaryDirectory() as td:

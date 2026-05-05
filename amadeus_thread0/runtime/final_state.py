@@ -415,6 +415,8 @@ def digital_body_consequence_has_signal(consequence: dict[str, Any] | None) -> b
             isinstance(consequence.get("permission_state"), dict) and bool(consequence.get("permission_state")),
             isinstance(consequence.get("sandbox_state"), dict) and bool(consequence.get("sandbox_state")),
             isinstance(consequence.get("browser_runtime_state"), dict) and bool(consequence.get("browser_runtime_state")),
+            isinstance(consequence.get("tts_presence_state"), dict) and bool(consequence.get("tts_presence_state")),
+            isinstance(consequence.get("tts_presence_timing"), dict) and bool(consequence.get("tts_presence_timing")),
             isinstance(consequence.get("skill_effects"), list) and bool(consequence.get("skill_effects")),
         )
     )
@@ -761,6 +763,7 @@ def resolve_digital_body_consequence(
         "permission_state": access_state.get("permission_state"),
         "sandbox_state": access_state.get("sandbox_state"),
         "browser_runtime_state": access_state.get("browser_runtime_state"),
+        "tts_presence_state": access_state.get("tts_presence_state"),
         "artifact_continuity": resource_state.get("artifact_continuity"),
         "active_artifact_kind": resource_state.get("active_artifact_kind"),
         "active_artifact_ref": resource_state.get("active_artifact_ref"),
@@ -784,6 +787,7 @@ def resolve_digital_body_consequence(
         "browser_title": resource_state.get("active_artifact_label"),
         "browser_last_action_kind": "",
         "browser_last_exit_status": _dict_or_empty(access_state.get("browser_runtime_state")).get("last_action_status"),
+        "tts_presence_timing": resource_state.get("tts_presence_timing"),
         "blocked_packet_count": resource_state.get("blocked_packet_count"),
         "completed_packet_count": resource_state.get("completed_packet_count"),
         "external_tool_count": resource_state.get("external_tool_count"),
