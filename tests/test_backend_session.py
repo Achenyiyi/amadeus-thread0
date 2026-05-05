@@ -3717,6 +3717,83 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(digital_body_consequence.get("kind"), "access_request_pending")
         self.assertTrue(bool(digital_body_consequence.get("requested_help")))
 
+    def test_build_evolution_summary_surfaces_tts_presence_timing(self):
+        values = {
+            "current_event": {
+                "kind": "tts_presence_timing_observation",
+                "source": "tts",
+                "created_at": 1710000211,
+                "perception": {
+                    "channel": "voice",
+                    "modality": "TTS_presence_timing",
+                    "source_role": "runtime",
+                    "trust_tier": "high_runtime_telemetry",
+                    "delivery_mode": "spoken",
+                },
+            },
+            "digital_body_state": {
+                "active_surface": "voice",
+                "perception_channels": ["voice", "TTS_presence_timing"],
+                "action_channels": ["language", "voice"],
+                "world_surfaces": ["tts"],
+                "access_state": {
+                    "mode": "native_only",
+                    "tts_presence_state": {
+                        "availability": "available",
+                        "enabled": True,
+                        "backend": "dashscope_realtime",
+                        "voice_profile_id": "default",
+                        "queue_state": "idle",
+                        "last_status": "delivered",
+                        "last_run_id": "evt_tts_20260505_0001",
+                    },
+                },
+                "resource_state": {
+                    "tts_presence_timing": {
+                        "last_event_id": "evt_tts_20260505_0001",
+                        "last_delivery_mode": "spoken",
+                        "last_actual_start_delay_ms": 180,
+                        "last_duration_ms": 3120,
+                        "last_pause_profile": "direct",
+                    }
+                },
+            },
+            "reconsolidation_snapshot": {
+                "digital_body_consequence": {
+                    "kind": "tts_presence_delivered",
+                    "summary": "TTS delivered the frozen final text.",
+                    "tts_presence_timing": {
+                        "delivery_mode": "spoken",
+                        "actual_start_delay_ms": 180,
+                        "duration_ms": 3120,
+                        "pause_profile": "direct",
+                    },
+                }
+            },
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("access", {}).get("tts_presence_state", {}).get("last_status"), "delivered")
+        self.assertEqual(digital_body.get("resources", {}).get("tts_presence_timing", {}).get("last_delivery_mode"), "spoken")
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "tts_presence_delivered")
+        self.assertEqual(digital_body_consequence.get("tts_presence_timing", {}).get("delivery_mode"), "spoken")
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("tts_presence_status"), "delivered")
+        self.assertEqual(current_turn.get("tts_presence_delivery_mode"), "spoken")
+        self.assertEqual(current_turn.get("tts_presence_duration_ms"), 3120)
+        event_residue = summary.get("event_residue") if isinstance(summary.get("event_residue"), dict) else {}
+        self.assertEqual(event_residue.get("modality"), "TTS_presence_timing")
+        self.assertEqual(event_residue.get("digital_body_consequence", {}).get("tts_presence_timing", {}).get("duration_ms"), 3120)
+
     def test_build_evolution_summary_reuses_carried_embodied_context_for_digital_body(self):
         values = {
             "current_event": {

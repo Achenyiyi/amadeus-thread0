@@ -158,11 +158,104 @@ def _clean_skill_effects(values: Any, *, limit: int = 6) -> list[dict[str, Any]]
     return out
 
 
+def _clean_tts_presence_state(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    summary = {
+        "availability": str(value.get("availability") or "").strip(),
+        "enabled": bool(value.get("enabled", False)),
+        "backend": str(value.get("backend") or "").strip(),
+        "voice_profile_id": str(value.get("voice_profile_id") or "").strip(),
+        "voice_profile_state": str(value.get("voice_profile_state") or "").strip(),
+        "queue_state": str(value.get("queue_state") or "").strip(),
+        "last_status": str(value.get("last_status") or "").strip(),
+        "last_error_kind": str(value.get("last_error_kind") or "").strip(),
+        "last_run_id": str(value.get("last_run_id") or "").strip(),
+        "captures_user_audio": bool(value.get("captures_user_audio", False)),
+        "stores_generated_audio": bool(value.get("stores_generated_audio", False)),
+        "arbitrary_audio_capture": bool(value.get("arbitrary_audio_capture", False)),
+    }
+    return summary if any(
+        (
+            summary["availability"],
+            "enabled" in value,
+            summary["backend"],
+            summary["voice_profile_id"],
+            summary["voice_profile_state"],
+            summary["queue_state"],
+            summary["last_status"],
+            summary["last_error_kind"],
+            summary["last_run_id"],
+            summary["captures_user_audio"],
+            summary["stores_generated_audio"],
+            summary["arbitrary_audio_capture"],
+        )
+    ) else {}
+
+
+def _clean_tts_presence_timing(value: Any, *, resource_state: bool = False) -> dict[str, Any]:
+    if not isinstance(value, dict) or not value:
+        return {}
+    prefix = "last_" if resource_state else ""
+    summary = {
+        f"{prefix}event_id": str(value.get(f"{prefix}event_id") or value.get("event_id") or "").strip(),
+        f"{prefix}delivery_mode": str(value.get(f"{prefix}delivery_mode") or value.get("delivery_mode") or "").strip(),
+        f"{prefix}presence_family": str(value.get(f"{prefix}presence_family") or value.get("presence_family") or "").strip(),
+        f"{prefix}interaction_mode": str(value.get(f"{prefix}interaction_mode") or value.get("interaction_mode") or "").strip(),
+        f"{prefix}timing_window_min": _int_metric(
+            value.get(f"{prefix}timing_window_min") or value.get("timing_window_min"),
+            0,
+        ),
+        f"{prefix}planned_delay_ms": _int_metric(
+            value.get(f"{prefix}planned_delay_ms") or value.get("planned_delay_ms"),
+            0,
+        ),
+        f"{prefix}actual_start_delay_ms": _int_metric(
+            value.get(f"{prefix}actual_start_delay_ms") or value.get("actual_start_delay_ms"),
+            0,
+        ),
+        f"{prefix}duration_ms": _int_metric(
+            value.get(f"{prefix}duration_ms") or value.get("duration_ms"),
+            0,
+        ),
+        f"{prefix}silence_before_ms": _int_metric(
+            value.get(f"{prefix}silence_before_ms") or value.get("silence_before_ms"),
+            0,
+        ),
+        f"{prefix}silence_after_ms": _int_metric(
+            value.get(f"{prefix}silence_after_ms") or value.get("silence_after_ms"),
+            0,
+        ),
+        f"{prefix}pause_profile": str(value.get(f"{prefix}pause_profile") or value.get("pause_profile") or "").strip(),
+        f"{prefix}allow_interrupt": bool(value.get(f"{prefix}allow_interrupt", value.get("allow_interrupt", False))),
+        f"{prefix}interrupted": bool(value.get(f"{prefix}interrupted", value.get("interrupted", False))),
+    }
+    return summary if any(
+        (
+            summary[f"{prefix}event_id"],
+            summary[f"{prefix}delivery_mode"],
+            summary[f"{prefix}presence_family"],
+            summary[f"{prefix}interaction_mode"],
+            summary[f"{prefix}timing_window_min"] > 0,
+            summary[f"{prefix}planned_delay_ms"] > 0,
+            summary[f"{prefix}actual_start_delay_ms"] > 0,
+            summary[f"{prefix}duration_ms"] > 0,
+            summary[f"{prefix}silence_before_ms"] > 0,
+            summary[f"{prefix}silence_after_ms"] > 0,
+            summary[f"{prefix}pause_profile"],
+            summary[f"{prefix}allow_interrupt"],
+            summary[f"{prefix}interrupted"],
+        )
+    ) else {}
+
+
 def summarize_embodied_context(state: Any) -> dict[str, Any]:
     normalized = normalize_embodied_context(state)
     if not normalized:
         return {}
     browser_runtime_state = normalize_browser_runtime_state(normalized.get("browser_runtime_state"))
+    tts_presence_state = _clean_tts_presence_state(normalized.get("tts_presence_state"))
+    tts_presence_timing = _clean_tts_presence_timing(normalized.get("tts_presence_timing"))
     summary = {
         "kind": str(normalized.get("kind") or "").strip(),
         "summary": str(normalized.get("summary") or "").strip(),
@@ -240,6 +333,8 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
         "browser_title": str(normalized.get("browser_title") or "").strip(),
         "browser_last_action_kind": str(normalized.get("browser_last_action_kind") or "").strip(),
         "browser_last_exit_status": str(normalized.get("browser_last_exit_status") or "").strip(),
+        "tts_presence_state": tts_presence_state,
+        "tts_presence_timing": tts_presence_timing,
         "procedural_growth": bool(normalized.get("procedural_growth", False)),
         "environmental_friction": bool(normalized.get("environmental_friction", False)),
         "requested_help": bool(normalized.get("requested_help", False)),
@@ -458,6 +553,8 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
     access_state = _dict_or_empty(normalized.get("access_state"))
     resource_state = _dict_or_empty(normalized.get("resource_state"))
     browser_runtime_state = normalize_browser_runtime_state(access_state.get("browser_runtime_state"))
+    tts_presence_state = _clean_tts_presence_state(access_state.get("tts_presence_state"))
+    tts_presence_timing = _clean_tts_presence_timing(resource_state.get("tts_presence_timing"), resource_state=True)
     return {
         "active_surface": str(normalized.get("active_surface") or "").strip(),
         "perception_channels": _clean_list(normalized.get("perception_channels"), limit=8),
@@ -511,6 +608,7 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
             if isinstance(access_state.get("sandbox_state"), dict)
             else {},
             "browser_runtime_state": browser_runtime_state,
+            "tts_presence_state": tts_presence_state,
         },
         "resources": {
             "behavior_queue_depth": _int_metric(resource_state.get("behavior_queue_depth"), 0),
@@ -538,6 +636,7 @@ def summarize_digital_body(state: Any) -> dict[str, Any]:
             "artifact_source_tool_name": str(resource_state.get("artifact_source_tool_name") or "").strip(),
             "browser_profile_id": str(resource_state.get("browser_profile_id") or "").strip(),
             "browser_tab_id": str(resource_state.get("browser_tab_id") or "").strip(),
+            "tts_presence_timing": tts_presence_timing,
         },
         "constraints": _clean_list(normalized.get("body_constraints"), limit=8),
     }

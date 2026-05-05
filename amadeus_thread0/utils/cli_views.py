@@ -892,6 +892,23 @@ def build_evolution_cli_summary(
     behavior_consequence_summary = _behavior_consequence_summary(recon_consequence)
     behavior_action_embodied = _embodied_context_summary(behavior.get("embodied_context"))
     behavior_plan_embodied = _embodied_context_summary(behavior_plan.get("embodied_context"))
+    digital_body_access = digital_body.get("access") if isinstance(digital_body.get("access"), dict) else {}
+    digital_body_resources = digital_body.get("resources") if isinstance(digital_body.get("resources"), dict) else {}
+    tts_presence_state = (
+        digital_body_access.get("tts_presence_state")
+        if isinstance(digital_body_access.get("tts_presence_state"), dict)
+        else {}
+    )
+    tts_presence_timing = (
+        digital_body_resources.get("tts_presence_timing")
+        if isinstance(digital_body_resources.get("tts_presence_timing"), dict)
+        else {}
+    )
+    tts_consequence_timing = (
+        digital_body_consequence.get("tts_presence_timing")
+        if isinstance(digital_body_consequence.get("tts_presence_timing"), dict)
+        else {}
+    )
 
     return {
         "relationship": {
@@ -1134,6 +1151,22 @@ def build_evolution_cli_summary(
             "digital_body_procedural_growth": bool(digital_body_consequence.get("procedural_growth", False)),
             "digital_body_requested_help": bool(digital_body_consequence.get("requested_help", False)),
             "digital_body_environmental_friction": bool(digital_body_consequence.get("environmental_friction", False)),
+            "tts_presence_status": str(tts_presence_state.get("last_status") or "").strip(),
+            "tts_presence_delivery_mode": str(
+                tts_consequence_timing.get("delivery_mode")
+                or tts_presence_timing.get("last_delivery_mode")
+                or ""
+            ).strip(),
+            "tts_presence_pause_profile": str(
+                tts_consequence_timing.get("pause_profile")
+                or tts_presence_timing.get("last_pause_profile")
+                or ""
+            ).strip(),
+            "tts_presence_duration_ms": _int_metric(
+                tts_consequence_timing.get("duration_ms")
+                or tts_presence_timing.get("last_duration_ms"),
+                0,
+            ),
         },
         "event_residue": _event_residue_summary(current_event, digital_body_consequence=digital_body_consequence),
         "interaction_carryover": carryover_summary,
@@ -1201,6 +1234,7 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     behavior_consequence = summary.get("behavior_consequence") if isinstance(summary.get("behavior_consequence"), dict) else {}
     digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
     digital_body_resources = digital_body.get("resources") if isinstance(digital_body.get("resources"), dict) else {}
+    digital_body_access = digital_body.get("access") if isinstance(digital_body.get("access"), dict) else {}
     digital_body_consequence = (
         summary.get("digital_body_consequence")
         if isinstance(summary.get("digital_body_consequence"), dict)
@@ -1262,6 +1296,32 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     body_fx = str(current_turn.get("digital_body_consequence_kind") or "").strip()
     if body_fx:
         parts.append(f"bodyfx={body_fx}")
+    tts_presence_state = (
+        digital_body_access.get("tts_presence_state")
+        if isinstance(digital_body_access.get("tts_presence_state"), dict)
+        else {}
+    )
+    tts_presence_timing = (
+        digital_body_resources.get("tts_presence_timing")
+        if isinstance(digital_body_resources.get("tts_presence_timing"), dict)
+        else {}
+    )
+    tts_backend = str(tts_presence_state.get("backend") or "").strip()
+    tts_status = str(tts_presence_state.get("last_status") or "").strip()
+    tts_delivery_mode = str(tts_presence_timing.get("last_delivery_mode") or "").strip()
+    tts_start_delay = _int_metric(tts_presence_timing.get("last_actual_start_delay_ms"), 0)
+    tts_duration = _int_metric(tts_presence_timing.get("last_duration_ms"), 0)
+    if tts_status or tts_delivery_mode or tts_backend or tts_start_delay > 0 or tts_duration > 0:
+        tts_label = f"TTS: {tts_status or 'unknown'}"
+        if tts_backend:
+            tts_label += f" via {tts_backend}"
+        if tts_delivery_mode and not tts_status:
+            tts_label += f" ({tts_delivery_mode})"
+        if tts_start_delay > 0:
+            tts_label += f", start_delay={tts_start_delay}ms"
+        if tts_duration > 0:
+            tts_label += f", duration={tts_duration}ms"
+        parts.append(tts_label)
     source_anchor_context = digital_body_consequence or digital_body_resources
     source_anchor_fallback = str(current_turn.get("digital_body_active_artifact_label") or "").strip()
     parts.extend(

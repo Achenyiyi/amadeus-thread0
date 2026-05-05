@@ -1221,6 +1221,82 @@ class BackendApiTests(unittest.TestCase):
                 self.assertEqual(payload["digital_body_consequence"]["artifact_source_title"], "Persistence")
                 self.assertEqual(payload["digital_body_consequence"]["artifact_source_tool_name"], "search_web")
 
+    def test_turn_and_event_responses_preserve_tts_presence_timing_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, session = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "current_event": {
+                    "kind": "tts_presence_timing_observation",
+                    "source": "tts",
+                    "created_at": 1710000211,
+                    "perception": {
+                        "channel": "voice",
+                        "modality": "TTS_presence_timing",
+                        "source_role": "runtime",
+                        "trust_tier": "high_runtime_telemetry",
+                        "delivery_mode": "spoken",
+                    },
+                },
+                "digital_body_state": {
+                    "active_surface": "voice",
+                    "perception_channels": ["voice", "TTS_presence_timing"],
+                    "action_channels": ["language", "voice"],
+                    "world_surfaces": ["tts"],
+                    "access_state": {
+                        "mode": "native_only",
+                        "tts_presence_state": {
+                            "availability": "available",
+                            "enabled": True,
+                            "backend": "dashscope_realtime",
+                            "voice_profile_id": "default",
+                            "queue_state": "idle",
+                            "last_status": "delivered",
+                            "last_run_id": "evt_tts_20260505_0001",
+                        },
+                    },
+                    "resource_state": {
+                        "tts_presence_timing": {
+                            "last_event_id": "evt_tts_20260505_0001",
+                            "last_delivery_mode": "spoken",
+                            "last_actual_start_delay_ms": 180,
+                            "last_duration_ms": 3120,
+                            "last_pause_profile": "direct",
+                        }
+                    },
+                },
+                "reconsolidation_snapshot": {
+                    "digital_body_consequence": {
+                        "kind": "tts_presence_delivered",
+                        "summary": "TTS delivered the frozen final text.",
+                        "tts_presence_timing": {
+                            "delivery_mode": "spoken",
+                            "actual_start_delay_ms": 180,
+                            "duration_ms": 3120,
+                            "pause_profile": "direct",
+                        },
+                    }
+                },
+            }
+
+            event_response = api.build_event_round_response(state_values=state_values, final_text="收到了。")
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                self.assertEqual(payload["current_event"]["perception"]["modality"], "TTS_presence_timing")
+                self.assertEqual(payload["digital_body"]["access_state"]["tts_presence_state"]["last_status"], "delivered")
+                self.assertEqual(payload["digital_body"]["access_state"]["tts_presence_state"]["backend"], "dashscope_realtime")
+                self.assertEqual(payload["digital_body"]["resource_state"]["tts_presence_timing"]["last_delivery_mode"], "spoken")
+                self.assertEqual(payload["digital_body"]["resource_state"]["tts_presence_timing"]["last_duration_ms"], 3120)
+                self.assertEqual(payload["digital_body_consequence"]["kind"], "tts_presence_delivered")
+                self.assertEqual(payload["digital_body_consequence"]["tts_presence_timing"]["delivery_mode"], "spoken")
+                self.assertEqual(
+                    session.last_summary_state["digital_body_state"]["access_state"]["tts_presence_state"]["last_status"],
+                    "delivered",
+                )
+
     def test_turn_and_event_responses_surface_workspace_access_resolved_consequence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
