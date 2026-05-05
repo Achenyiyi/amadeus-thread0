@@ -10342,3 +10342,28 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - commit Task 9 as `test: add chinese surface de-scaffolding audit`
   - continue with Task 10 future multimodal/body expansion spec if the remaining-work plan should proceed
+
+## 2026-05-05 Run 240
+
+- Focus:
+  - sync the completed remaining-work closure branch back onto `main`
+  - complete Task 10 future multimodal/live-surface expansion as a spec-only slice directly on `main`
+- Files changed:
+  - `docs/engineering/MULTIMODAL_BODY_EXPANSION_SPEC.md`
+  - `program.md`
+- Key changes:
+  - confirmed the active plan worktree was `C:\Users\29920\.config\superpowers\worktrees\amadeus-thread0\remaining-work-closure`
+  - fast-forwarded `main` to the same `1142586a` commit as `codex/remaining-work-closure`; the pre-sync dirty workspace remains preserved in `stash@{0}` and was not reapplied because it conflicts with the synced closure commits
+  - selected exactly one next modality: `TTS_presence_timing`
+  - specified the timing-only voice-presence contract as digital-body telemetry around the already frozen `final_text`
+  - defined the event contract, trust tier, access/privacy boundary, digital-body fields, writeback policy, approval policy, backend/CLI envelope fields, evaluation pack, and future validation checklist
+  - deferred microphone, image, screen, and browser-capture expansion; no code implementation, frontend UI work, execution authority, sandbox command surface, browser boundary, skill registry truth, or persona-core semantics were widened
+- Validation:
+  - `git diff --check`
+    - passed with only the existing `program.md` LF-to-CRLF working-copy warning
+  - `python -m pytest tests/test_perception_event_contract.py tests/test_backend_api.py tests/test_world_model_residue.py -q`
+    - passed: `218 passed, 5 subtests passed`
+- Result:
+  - Task 10 spec is verified for the planned docs-only slice and ready to commit
+- Next:
+  - commit as `docs: specify next multimodal body slice`, then keep future implementation gated behind the spec validation checklist
