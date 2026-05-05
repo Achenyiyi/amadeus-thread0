@@ -101,12 +101,48 @@
         "behavior_action_embodied_context": {
           "kind": "access_request_pending",
           "requested_access": [
-            "workspace_write",
+            "workspace_execute",
             "human_approval"
           ],
           "requested_help": true,
           "summary": "She already moved this step to the approval gate.",
-          "primary_status": "awaiting_approval"
+          "primary_status": "awaiting_approval",
+          "sandbox_state": {
+            "availability": "restricted",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "execution_policy": "approval_required",
+            "last_status": "awaiting_approval",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "last_command_profile": "pytest",
+            "last_exit_code": 0,
+            "last_run_id": "ap-approve-1",
+            "arbitrary_execution": false
+          },
+          "browser_runtime_state": {
+            "availability": "available",
+            "profile_root": "E:/runtime/browser/profiles/thread-demo",
+            "context_status": "active",
+            "active_page_id": "page-contract-demo",
+            "active_tab_count": 1,
+            "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+            "last_action_status": "idle",
+            "last_run_id": "ap-browser-contract-demo",
+            "manual_takeover_required": false,
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime"
+          },
+          "workspace_root": "E:/runtime/workspaces/contract-demo",
+          "workspace_root_kind": "runtime_owned",
+          "sandbox_runner_kind": "docker_isolated_runner",
+          "sandbox_isolation_level": "docker_local_isolated",
+          "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "sandbox_network_policy": "none"
         },
         "behavior_consequence_embodied_context": {
           "kind": "environmental_friction",
@@ -118,7 +154,7 @@
         },
         "autonomy_mode": "proposal",
         "autonomy_origin": "counterpart_request",
-        "autonomy_reason": "A workspace write still needs approval before she can carry it through.",
+        "autonomy_reason": "A workspace command still needs approval before she can carry it through.",
         "autonomy_confidence": 0.74,
         "autonomy_requires_approval": true,
         "action_packet_count": 1,
@@ -130,7 +166,8 @@
         "digital_body_consequence_summary": "She already moved this step to the approval gate.",
         "digital_body_procedural_growth": false,
         "digital_body_requested_help": true,
-        "digital_body_environmental_friction": false
+        "digital_body_environmental_friction": false,
+        "digital_body_workspace_root": "E:/runtime/workspaces/contract-demo"
       },
       "event_residue": {
         "event_kind": "user_utterance",
@@ -146,12 +183,48 @@
         "digital_body_consequence": {
           "kind": "access_request_pending",
           "requested_access": [
-            "workspace_write",
+            "workspace_execute",
             "human_approval"
           ],
           "requested_help": true,
           "summary": "She already moved this step to the approval gate.",
-          "primary_status": "awaiting_approval"
+          "primary_status": "awaiting_approval",
+          "sandbox_state": {
+            "availability": "restricted",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "execution_policy": "approval_required",
+            "last_status": "awaiting_approval",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "last_command_profile": "pytest",
+            "last_exit_code": 0,
+            "last_run_id": "ap-approve-1",
+            "arbitrary_execution": false
+          },
+          "browser_runtime_state": {
+            "availability": "available",
+            "profile_root": "E:/runtime/browser/profiles/thread-demo",
+            "context_status": "active",
+            "active_page_id": "page-contract-demo",
+            "active_tab_count": 1,
+            "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+            "last_action_status": "idle",
+            "last_run_id": "ap-browser-contract-demo",
+            "manual_takeover_required": false,
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime"
+          },
+          "workspace_root": "E:/runtime/workspaces/contract-demo",
+          "workspace_root_kind": "runtime_owned",
+          "sandbox_runner_kind": "docker_isolated_runner",
+          "sandbox_isolation_level": "docker_local_isolated",
+          "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "sandbox_network_policy": "none"
         }
       },
       "agenda_lifecycle": {
@@ -229,12 +302,48 @@
         "embodied_context": {
           "kind": "access_request_pending",
           "requested_access": [
-            "workspace_write",
+            "workspace_execute",
             "human_approval"
           ],
           "requested_help": true,
           "summary": "She already moved this step to the approval gate.",
-          "primary_status": "awaiting_approval"
+          "primary_status": "awaiting_approval",
+          "sandbox_state": {
+            "availability": "restricted",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "execution_policy": "approval_required",
+            "last_status": "awaiting_approval",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "last_command_profile": "pytest",
+            "last_exit_code": 0,
+            "last_run_id": "ap-approve-1",
+            "arbitrary_execution": false
+          },
+          "browser_runtime_state": {
+            "availability": "available",
+            "profile_root": "E:/runtime/browser/profiles/thread-demo",
+            "context_status": "active",
+            "active_page_id": "page-contract-demo",
+            "active_tab_count": 1,
+            "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+            "last_action_status": "idle",
+            "last_run_id": "ap-browser-contract-demo",
+            "manual_takeover_required": false,
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime"
+          },
+          "workspace_root": "E:/runtime/workspaces/contract-demo",
+          "workspace_root_kind": "runtime_owned",
+          "sandbox_runner_kind": "docker_isolated_runner",
+          "sandbox_isolation_level": "docker_local_isolated",
+          "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "sandbox_network_policy": "none"
         }
       },
       "behavior_queue_preview": [
@@ -272,12 +381,48 @@
         "embodied_context": {
           "kind": "access_request_pending",
           "requested_access": [
-            "workspace_write",
+            "workspace_execute",
             "human_approval"
           ],
           "requested_help": true,
           "summary": "She already moved this step to the approval gate.",
-          "primary_status": "awaiting_approval"
+          "primary_status": "awaiting_approval",
+          "sandbox_state": {
+            "availability": "restricted",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "execution_policy": "approval_required",
+            "last_status": "awaiting_approval",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "last_command_profile": "pytest",
+            "last_exit_code": 0,
+            "last_run_id": "ap-approve-1",
+            "arbitrary_execution": false
+          },
+          "browser_runtime_state": {
+            "availability": "available",
+            "profile_root": "E:/runtime/browser/profiles/thread-demo",
+            "context_status": "active",
+            "active_page_id": "page-contract-demo",
+            "active_tab_count": 1,
+            "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+            "last_action_status": "idle",
+            "last_run_id": "ap-browser-contract-demo",
+            "manual_takeover_required": false,
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime"
+          },
+          "workspace_root": "E:/runtime/workspaces/contract-demo",
+          "workspace_root_kind": "runtime_owned",
+          "sandbox_runner_kind": "docker_isolated_runner",
+          "sandbox_isolation_level": "docker_local_isolated",
+          "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "sandbox_network_policy": "none"
         }
       },
       "behavior_consequence": {
@@ -296,7 +441,7 @@
         "block_reason": "waiting for human approval",
         "intent": {
           "confidence": 0.74,
-          "reason": "A workspace write still needs approval before she can carry it through.",
+          "reason": "A workspace command still needs approval before she can carry it through.",
           "primary_proposal_id": "ap-approve-1",
           "requires_approval": true,
           "own_rhythm_weight": 0.31,
@@ -309,26 +454,81 @@
             "writeback_ready": false,
             "origin": "counterpart_request",
             "risk": "external_mutation",
-            "expected_effect": "Leave a note in the workspace once approval is granted.",
+            "expected_effect": "Run the requested workspace regression inside the approved Docker sandbox.",
             "status": "awaiting_approval",
-            "intent": "write_workspace_note",
+            "intent": "sandbox:execute_workspace_command",
             "result_summary": "",
             "capability_steps": [
               {
-                "kind": "tool",
+                "kind": "sandbox",
                 "requires_approval": true,
-                "note": "Needs workspace write approval before execution.",
-                "name": "write_file"
+                "note": "Needs operator approval before Docker-isolated execution.",
+                "name": "execute_workspace_command"
               }
             ],
             "proposal_id": "ap-approve-1",
-            "requires_approval": true
+            "requires_approval": true,
+            "tool_name": "execute_workspace_command",
+            "execution_spec": {
+              "executor": "pytest",
+              "profile": "pytest",
+              "runner_kind": "docker_isolated_runner",
+              "isolation_level": "docker_local_isolated",
+              "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+              "network_policy": "none",
+              "workspace_root_kind": "runtime_owned",
+              "argv": [
+                "pytest",
+                "-q",
+                "tests/test_frontend_contract_sync.py"
+              ],
+              "cwd": "E:/runtime/workspaces/contract-demo",
+              "allowed_roots": [
+                "E:/runtime/workspaces/contract-demo"
+              ],
+              "timeout_s": 60,
+              "writes_expected": false,
+              "expected_artifacts": []
+            },
+            "execution_preview": {
+              "executor": "pytest",
+              "profile": "pytest",
+              "runner_kind": "docker_isolated_runner",
+              "isolation_level": "docker_local_isolated",
+              "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+              "network_policy": "none",
+              "workspace_root_kind": "runtime_owned",
+              "argv": [
+                "pytest",
+                "-q",
+                "tests/test_frontend_contract_sync.py"
+              ],
+              "cwd": "E:/runtime/workspaces/contract-demo",
+              "allowed_roots": [
+                "E:/runtime/workspaces/contract-demo"
+              ],
+              "timeout_s": 60,
+              "writes_expected": false,
+              "expected_artifacts": [],
+              "summary": "Run the contract sync tests in the Docker-isolated sandbox after approval.",
+              "requires_approval": true
+            },
+            "execution_result": {
+              "run_id": "",
+              "status": "not_started",
+              "exit_code": null,
+              "duration_ms": 0,
+              "stdout_log_ref": "",
+              "stderr_log_ref": "",
+              "produced_artifacts": [],
+              "error_summary": ""
+            }
           }
         ],
         "execution_trace": [
           {
             "event": "approval_requested",
-            "intent": "write_workspace_note",
+            "intent": "sandbox:execute_workspace_command",
             "status": "awaiting_approval",
             "requires_approval": true,
             "risk": "external_mutation",
@@ -337,17 +537,42 @@
           }
         ],
         "pending_approval": {
-          "intent": "write_workspace_note",
+          "intent": "sandbox:execute_workspace_command",
           "status": "awaiting_approval",
           "requires_approval": true,
           "risk": "external_mutation",
           "origin": "counterpart_request",
-          "proposal_id": "ap-approve-1"
+          "proposal_id": "ap-approve-1",
+          "tool_name": "execute_workspace_command",
+          "execution_preview": {
+            "executor": "pytest",
+            "profile": "pytest",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "argv": [
+              "pytest",
+              "-q",
+              "tests/test_frontend_contract_sync.py"
+            ],
+            "cwd": "E:/runtime/workspaces/contract-demo",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "timeout_s": 60,
+            "writes_expected": false,
+            "expected_artifacts": [],
+            "summary": "Run the contract sync tests in the Docker-isolated sandbox after approval.",
+            "requires_approval": true
+          }
         }
       },
       "digital_body": {
         "constraints": [
-          "human_approval_required"
+          "human_approval_required",
+          "network_policy_none"
         ],
         "action_channels": [
           "language",
@@ -355,20 +580,22 @@
           "tooling"
         ],
         "available_toolsets": [
-          "filesystem"
+          "filesystem",
+          "sandbox"
         ],
         "active_surface": "approval_gate",
         "access": {
-          "browser_session": "missing",
+          "browser_session": "present",
           "block_reason": "waiting for approval",
           "granted_toolsets": [
-            "filesystem"
+            "filesystem",
+            "sandbox"
           ],
           "requestable_access": [
-            "workspace_write",
+            "workspace_execute",
             "human_approval"
           ],
-          "filesystem_state": "read_only",
+          "filesystem_state": "workspace_available",
           "conditions": [
             "human_approval_required"
           ],
@@ -377,11 +604,92 @@
           "pending_approval_count": 1,
           "cookie_state": "missing",
           "missing_access": [
-            "workspace_write"
+            "workspace_execute"
           ],
-          "network_access": "restricted",
+          "network_access": "none",
           "account_state": "logged_out",
-          "external_mutation_pending": true
+          "api_key_state": "missing",
+          "quota_state": "unknown",
+          "external_mutation_pending": true,
+          "session_continuity": "stable",
+          "session_expires_in_s": 0,
+          "session_recovery_mode": "none",
+          "access_acquire_proposals": [],
+          "selected_access_proposal": {},
+          "session_state": {
+            "continuity": "stable",
+            "expires_in_s": 0,
+            "recovery_mode": "none",
+            "retry_after_s": 0,
+            "cooldown_scope": "",
+            "browser_session": "present",
+            "needs_recovery": false
+          },
+          "account_state_detail": {
+            "browser_session": "present",
+            "login_state": "logged_out",
+            "cookie_state": "missing",
+            "api_key_state": "missing",
+            "account_available": false,
+            "cookie_available": false,
+            "api_key_available": false
+          },
+          "quota_state_detail": {
+            "provider_state": "unknown",
+            "retry_after_s": 0,
+            "cooldown_scope": "",
+            "available": true,
+            "cooldown_active": false
+          },
+          "permission_state": {
+            "pending_approval_count": 1,
+            "external_mutation_pending": true,
+            "missing_access": [
+              "workspace_execute"
+            ],
+            "requestable_access": [
+              "workspace_execute",
+              "human_approval"
+            ],
+            "access_acquire_proposals": [],
+            "selected_access_proposal": {},
+            "resolved_grants": [],
+            "pending_grants": [
+              "workspace_execute"
+            ],
+            "completion_ratio": 0.0,
+            "approval_state": "pending"
+          },
+          "sandbox_state": {
+            "availability": "restricted",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "execution_policy": "approval_required",
+            "last_status": "awaiting_approval",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "last_command_profile": "pytest",
+            "last_exit_code": 0,
+            "last_run_id": "ap-approve-1",
+            "arbitrary_execution": false
+          },
+          "browser_runtime_state": {
+            "availability": "available",
+            "profile_root": "E:/runtime/browser/profiles/thread-demo",
+            "context_status": "active",
+            "active_page_id": "page-contract-demo",
+            "active_tab_count": 1,
+            "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+            "last_action_status": "idle",
+            "last_run_id": "ap-browser-contract-demo",
+            "manual_takeover_required": false,
+            "runner_kind": "playwright_persistent_context",
+            "isolation_level": "persistent_profile_runtime"
+          }
         },
         "perception_channels": [
           "dialogue",
@@ -389,10 +697,11 @@
         ],
         "world_surfaces": [
           "filesystem",
-          "network"
+          "sandbox",
+          "browser"
         ],
         "active_tools": [
-          "write_file"
+          "execute_workspace_command"
         ],
         "resources": {
           "external_tool_count": 1,
@@ -402,18 +711,71 @@
           "queued_packet_count": 0,
           "pending_approval_count": 1,
           "blocked_packet_count": 0,
-          "action_packet_count": 1
+          "action_packet_count": 1,
+          "artifact_continuity": "attached",
+          "active_artifact_kind": "workspace",
+          "active_artifact_ref": "E:/runtime/workspaces/contract-demo",
+          "active_artifact_label": "contract-demo",
+          "artifact_age_s": 0,
+          "artifact_reacquisition_mode": "reuse_workspace_root",
+          "artifact_carrier": "filesystem",
+          "artifact_source_ref_ids": [],
+          "preferred_source_ref_id": 0,
+          "preferred_anchor_reason": "",
+          "artifact_source_url": "",
+          "artifact_source_query": "",
+          "artifact_source_title": "",
+          "artifact_source_tool_name": "",
+          "workspace_root": "E:/runtime/workspaces/contract-demo",
+          "browser_profile_id": "thread-demo",
+          "browser_tab_id": "tab-contract-demo"
         }
       },
       "digital_body_consequence": {
         "kind": "access_request_pending",
         "requested_access": [
-          "workspace_write",
+          "workspace_execute",
           "human_approval"
         ],
         "requested_help": true,
         "summary": "She already moved this step to the approval gate.",
-        "primary_status": "awaiting_approval"
+        "primary_status": "awaiting_approval",
+        "sandbox_state": {
+          "availability": "restricted",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "execution_policy": "approval_required",
+          "last_status": "awaiting_approval",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "last_command_profile": "pytest",
+          "last_exit_code": 0,
+          "last_run_id": "ap-approve-1",
+          "arbitrary_execution": false
+        },
+        "browser_runtime_state": {
+          "availability": "available",
+          "profile_root": "E:/runtime/browser/profiles/thread-demo",
+          "context_status": "active",
+          "active_page_id": "page-contract-demo",
+          "active_tab_count": 1,
+          "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+          "last_action_status": "idle",
+          "last_run_id": "ap-browser-contract-demo",
+          "manual_takeover_required": false,
+          "runner_kind": "playwright_persistent_context",
+          "isolation_level": "persistent_profile_runtime"
+        },
+        "workspace_root": "E:/runtime/workspaces/contract-demo",
+        "workspace_root_kind": "runtime_owned",
+        "sandbox_runner_kind": "docker_isolated_runner",
+        "sandbox_isolation_level": "docker_local_isolated",
+        "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+        "sandbox_network_policy": "none"
       }
     },
     "persona_state": {
@@ -487,12 +849,48 @@
       "embodied_context": {
         "kind": "access_request_pending",
         "requested_access": [
-          "workspace_write",
+          "workspace_execute",
           "human_approval"
         ],
         "requested_help": true,
         "summary": "She already moved this step to the approval gate.",
-        "primary_status": "awaiting_approval"
+        "primary_status": "awaiting_approval",
+        "sandbox_state": {
+          "availability": "restricted",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "execution_policy": "approval_required",
+          "last_status": "awaiting_approval",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "last_command_profile": "pytest",
+          "last_exit_code": 0,
+          "last_run_id": "ap-approve-1",
+          "arbitrary_execution": false
+        },
+        "browser_runtime_state": {
+          "availability": "available",
+          "profile_root": "E:/runtime/browser/profiles/thread-demo",
+          "context_status": "active",
+          "active_page_id": "page-contract-demo",
+          "active_tab_count": 1,
+          "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+          "last_action_status": "idle",
+          "last_run_id": "ap-browser-contract-demo",
+          "manual_takeover_required": false,
+          "runner_kind": "playwright_persistent_context",
+          "isolation_level": "persistent_profile_runtime"
+        },
+        "workspace_root": "E:/runtime/workspaces/contract-demo",
+        "workspace_root_kind": "runtime_owned",
+        "sandbox_runner_kind": "docker_isolated_runner",
+        "sandbox_isolation_level": "docker_local_isolated",
+        "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+        "sandbox_network_policy": "none"
       }
     },
     "interaction_carryover": {
@@ -502,12 +900,48 @@
       "embodied_context": {
         "kind": "access_request_pending",
         "requested_access": [
-          "workspace_write",
+          "workspace_execute",
           "human_approval"
         ],
         "requested_help": true,
         "summary": "She already moved this step to the approval gate.",
-        "primary_status": "awaiting_approval"
+        "primary_status": "awaiting_approval",
+        "sandbox_state": {
+          "availability": "restricted",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "execution_policy": "approval_required",
+          "last_status": "awaiting_approval",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "last_command_profile": "pytest",
+          "last_exit_code": 0,
+          "last_run_id": "ap-approve-1",
+          "arbitrary_execution": false
+        },
+        "browser_runtime_state": {
+          "availability": "available",
+          "profile_root": "E:/runtime/browser/profiles/thread-demo",
+          "context_status": "active",
+          "active_page_id": "page-contract-demo",
+          "active_tab_count": 1,
+          "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+          "last_action_status": "idle",
+          "last_run_id": "ap-browser-contract-demo",
+          "manual_takeover_required": false,
+          "runner_kind": "playwright_persistent_context",
+          "isolation_level": "persistent_profile_runtime"
+        },
+        "workspace_root": "E:/runtime/workspaces/contract-demo",
+        "workspace_root_kind": "runtime_owned",
+        "sandbox_runner_kind": "docker_isolated_runner",
+        "sandbox_isolation_level": "docker_local_isolated",
+        "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+        "sandbox_network_policy": "none"
       }
     },
     "agenda_lifecycle_residue": {
@@ -530,12 +964,48 @@
       "embodied_context": {
         "kind": "access_request_pending",
         "requested_access": [
-          "workspace_write",
+          "workspace_execute",
           "human_approval"
         ],
         "requested_help": true,
         "summary": "She already moved this step to the approval gate.",
-        "primary_status": "awaiting_approval"
+        "primary_status": "awaiting_approval",
+        "sandbox_state": {
+          "availability": "restricted",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "execution_policy": "approval_required",
+          "last_status": "awaiting_approval",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "last_command_profile": "pytest",
+          "last_exit_code": 0,
+          "last_run_id": "ap-approve-1",
+          "arbitrary_execution": false
+        },
+        "browser_runtime_state": {
+          "availability": "available",
+          "profile_root": "E:/runtime/browser/profiles/thread-demo",
+          "context_status": "active",
+          "active_page_id": "page-contract-demo",
+          "active_tab_count": 1,
+          "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+          "last_action_status": "idle",
+          "last_run_id": "ap-browser-contract-demo",
+          "manual_takeover_required": false,
+          "runner_kind": "playwright_persistent_context",
+          "isolation_level": "persistent_profile_runtime"
+        },
+        "workspace_root": "E:/runtime/workspaces/contract-demo",
+        "workspace_root_kind": "runtime_owned",
+        "sandbox_runner_kind": "docker_isolated_runner",
+        "sandbox_isolation_level": "docker_local_isolated",
+        "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+        "sandbox_network_policy": "none"
       }
     },
     "behavior_queue": [
@@ -586,7 +1056,7 @@
       "block_reason": "waiting for human approval",
       "intent": {
         "confidence": 0.74,
-        "reason": "A workspace write still needs approval before she can carry it through.",
+        "reason": "A workspace command still needs approval before she can carry it through.",
         "primary_proposal_id": "ap-approve-1",
         "requires_approval": true,
         "own_rhythm_weight": 0.31,
@@ -599,26 +1069,81 @@
           "writeback_ready": false,
           "origin": "counterpart_request",
           "risk": "external_mutation",
-          "expected_effect": "Leave a note in the workspace once approval is granted.",
+          "expected_effect": "Run the requested workspace regression inside the approved Docker sandbox.",
           "status": "awaiting_approval",
-          "intent": "write_workspace_note",
+          "intent": "sandbox:execute_workspace_command",
           "result_summary": "",
           "capability_steps": [
             {
-              "kind": "tool",
+              "kind": "sandbox",
               "requires_approval": true,
-              "note": "Needs workspace write approval before execution.",
-              "name": "write_file"
+              "note": "Needs operator approval before Docker-isolated execution.",
+              "name": "execute_workspace_command"
             }
           ],
           "proposal_id": "ap-approve-1",
-          "requires_approval": true
+          "requires_approval": true,
+          "tool_name": "execute_workspace_command",
+          "execution_spec": {
+            "executor": "pytest",
+            "profile": "pytest",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "argv": [
+              "pytest",
+              "-q",
+              "tests/test_frontend_contract_sync.py"
+            ],
+            "cwd": "E:/runtime/workspaces/contract-demo",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "timeout_s": 60,
+            "writes_expected": false,
+            "expected_artifacts": []
+          },
+          "execution_preview": {
+            "executor": "pytest",
+            "profile": "pytest",
+            "runner_kind": "docker_isolated_runner",
+            "isolation_level": "docker_local_isolated",
+            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+            "network_policy": "none",
+            "workspace_root_kind": "runtime_owned",
+            "argv": [
+              "pytest",
+              "-q",
+              "tests/test_frontend_contract_sync.py"
+            ],
+            "cwd": "E:/runtime/workspaces/contract-demo",
+            "allowed_roots": [
+              "E:/runtime/workspaces/contract-demo"
+            ],
+            "timeout_s": 60,
+            "writes_expected": false,
+            "expected_artifacts": [],
+            "summary": "Run the contract sync tests in the Docker-isolated sandbox after approval.",
+            "requires_approval": true
+          },
+          "execution_result": {
+            "run_id": "",
+            "status": "not_started",
+            "exit_code": null,
+            "duration_ms": 0,
+            "stdout_log_ref": "",
+            "stderr_log_ref": "",
+            "produced_artifacts": [],
+            "error_summary": ""
+          }
         }
       ],
       "execution_trace": [
         {
           "event": "approval_requested",
-          "intent": "write_workspace_note",
+          "intent": "sandbox:execute_workspace_command",
           "status": "awaiting_approval",
           "requires_approval": true,
           "risk": "external_mutation",
@@ -627,17 +1152,42 @@
         }
       ],
       "pending_approval": {
-        "intent": "write_workspace_note",
+        "intent": "sandbox:execute_workspace_command",
         "status": "awaiting_approval",
         "requires_approval": true,
         "risk": "external_mutation",
         "origin": "counterpart_request",
-        "proposal_id": "ap-approve-1"
+        "proposal_id": "ap-approve-1",
+        "tool_name": "execute_workspace_command",
+        "execution_preview": {
+          "executor": "pytest",
+          "profile": "pytest",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "argv": [
+            "pytest",
+            "-q",
+            "tests/test_frontend_contract_sync.py"
+          ],
+          "cwd": "E:/runtime/workspaces/contract-demo",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "timeout_s": 60,
+          "writes_expected": false,
+          "expected_artifacts": [],
+          "summary": "Run the contract sync tests in the Docker-isolated sandbox after approval.",
+          "requires_approval": true
+        }
       }
     },
     "digital_body": {
       "constraints": [
-        "human_approval_required"
+        "human_approval_required",
+        "network_policy_none"
       ],
       "action_channels": [
         "language",
@@ -645,20 +1195,22 @@
         "tooling"
       ],
       "available_toolsets": [
-        "filesystem"
+        "filesystem",
+        "sandbox"
       ],
       "active_surface": "approval_gate",
-      "access": {
-        "browser_session": "missing",
+      "access_state": {
+        "browser_session": "present",
         "block_reason": "waiting for approval",
         "granted_toolsets": [
-          "filesystem"
+          "filesystem",
+          "sandbox"
         ],
         "requestable_access": [
-          "workspace_write",
+          "workspace_execute",
           "human_approval"
         ],
-        "filesystem_state": "read_only",
+        "filesystem_state": "workspace_available",
         "conditions": [
           "human_approval_required"
         ],
@@ -667,11 +1219,92 @@
         "pending_approval_count": 1,
         "cookie_state": "missing",
         "missing_access": [
-          "workspace_write"
+          "workspace_execute"
         ],
-        "network_access": "restricted",
+        "network_access": "none",
         "account_state": "logged_out",
-        "external_mutation_pending": true
+        "api_key_state": "missing",
+        "quota_state": "unknown",
+        "external_mutation_pending": true,
+        "session_continuity": "stable",
+        "session_expires_in_s": 0,
+        "session_recovery_mode": "none",
+        "access_acquire_proposals": [],
+        "selected_access_proposal": {},
+        "session_state": {
+          "continuity": "stable",
+          "expires_in_s": 0,
+          "recovery_mode": "none",
+          "retry_after_s": 0,
+          "cooldown_scope": "",
+          "browser_session": "present",
+          "needs_recovery": false
+        },
+        "account_state_detail": {
+          "browser_session": "present",
+          "login_state": "logged_out",
+          "cookie_state": "missing",
+          "api_key_state": "missing",
+          "account_available": false,
+          "cookie_available": false,
+          "api_key_available": false
+        },
+        "quota_state_detail": {
+          "provider_state": "unknown",
+          "retry_after_s": 0,
+          "cooldown_scope": "",
+          "available": true,
+          "cooldown_active": false
+        },
+        "permission_state": {
+          "pending_approval_count": 1,
+          "external_mutation_pending": true,
+          "missing_access": [
+            "workspace_execute"
+          ],
+          "requestable_access": [
+            "workspace_execute",
+            "human_approval"
+          ],
+          "access_acquire_proposals": [],
+          "selected_access_proposal": {},
+          "resolved_grants": [],
+          "pending_grants": [
+            "workspace_execute"
+          ],
+          "completion_ratio": 0.0,
+          "approval_state": "pending"
+        },
+        "sandbox_state": {
+          "availability": "restricted",
+          "allowed_roots": [
+            "E:/runtime/workspaces/contract-demo"
+          ],
+          "execution_policy": "approval_required",
+          "last_status": "awaiting_approval",
+          "runner_kind": "docker_isolated_runner",
+          "isolation_level": "docker_local_isolated",
+          "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+          "network_policy": "none",
+          "workspace_root_kind": "runtime_owned",
+          "last_command_profile": "pytest",
+          "last_exit_code": 0,
+          "last_run_id": "ap-approve-1",
+          "arbitrary_execution": false
+        },
+        "browser_runtime_state": {
+          "availability": "available",
+          "profile_root": "E:/runtime/browser/profiles/thread-demo",
+          "context_status": "active",
+          "active_page_id": "page-contract-demo",
+          "active_tab_count": 1,
+          "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+          "last_action_status": "idle",
+          "last_run_id": "ap-browser-contract-demo",
+          "manual_takeover_required": false,
+          "runner_kind": "playwright_persistent_context",
+          "isolation_level": "persistent_profile_runtime"
+        }
       },
       "perception_channels": [
         "dialogue",
@@ -679,12 +1312,13 @@
       ],
       "world_surfaces": [
         "filesystem",
-        "network"
+        "sandbox",
+        "browser"
       ],
       "active_tools": [
-        "write_file"
+        "execute_workspace_command"
       ],
-      "resources": {
+      "resource_state": {
         "external_tool_count": 1,
         "executing_packet_count": 0,
         "behavior_queue_depth": 1,
@@ -692,18 +1326,71 @@
         "queued_packet_count": 0,
         "pending_approval_count": 1,
         "blocked_packet_count": 0,
-        "action_packet_count": 1
+        "action_packet_count": 1,
+        "artifact_continuity": "attached",
+        "active_artifact_kind": "workspace",
+        "active_artifact_ref": "E:/runtime/workspaces/contract-demo",
+        "active_artifact_label": "contract-demo",
+        "artifact_age_s": 0,
+        "artifact_reacquisition_mode": "reuse_workspace_root",
+        "artifact_carrier": "filesystem",
+        "artifact_source_ref_ids": [],
+        "preferred_source_ref_id": 0,
+        "preferred_anchor_reason": "",
+        "artifact_source_url": "",
+        "artifact_source_query": "",
+        "artifact_source_title": "",
+        "artifact_source_tool_name": "",
+        "workspace_root": "E:/runtime/workspaces/contract-demo",
+        "browser_profile_id": "thread-demo",
+        "browser_tab_id": "tab-contract-demo"
       }
     },
     "digital_body_consequence": {
       "kind": "access_request_pending",
       "requested_access": [
-        "workspace_write",
+        "workspace_execute",
         "human_approval"
       ],
       "requested_help": true,
       "summary": "She already moved this step to the approval gate.",
-      "primary_status": "awaiting_approval"
+      "primary_status": "awaiting_approval",
+      "sandbox_state": {
+        "availability": "restricted",
+        "allowed_roots": [
+          "E:/runtime/workspaces/contract-demo"
+        ],
+        "execution_policy": "approval_required",
+        "last_status": "awaiting_approval",
+        "runner_kind": "docker_isolated_runner",
+        "isolation_level": "docker_local_isolated",
+        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+        "network_policy": "none",
+        "workspace_root_kind": "runtime_owned",
+        "last_command_profile": "pytest",
+        "last_exit_code": 0,
+        "last_run_id": "ap-approve-1",
+        "arbitrary_execution": false
+      },
+      "browser_runtime_state": {
+        "availability": "available",
+        "profile_root": "E:/runtime/browser/profiles/thread-demo",
+        "context_status": "active",
+        "active_page_id": "page-contract-demo",
+        "active_tab_count": 1,
+        "downloads_dir": "E:/runtime/browser/downloads/thread-demo",
+        "last_action_status": "idle",
+        "last_run_id": "ap-browser-contract-demo",
+        "manual_takeover_required": false,
+        "runner_kind": "playwright_persistent_context",
+        "isolation_level": "persistent_profile_runtime"
+      },
+      "workspace_root": "E:/runtime/workspaces/contract-demo",
+      "workspace_root_kind": "runtime_owned",
+      "sandbox_runner_kind": "docker_isolated_runner",
+      "sandbox_isolation_level": "docker_local_isolated",
+      "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+      "sandbox_network_policy": "none"
     }
   },
   "meta": {}

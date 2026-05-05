@@ -537,6 +537,9 @@ Skills closure is now treated as preserved backend contract, not an open buildou
   - [`worldline_view.json`](./frontend_contract/mocks/worldline_view.json)
   - [`bond_view.json`](./frontend_contract/mocks/bond_view.json)
 
+The frozen frontend shell also carries matching copies under `frontend/src/contracts/` and `frontend/src/mocks/`.
+Keep both copies synchronized and let `tests/test_frontend_contract_sync.py` enforce the contract.
+
 ## Validation Baseline
 
 Minimum contract checks:
