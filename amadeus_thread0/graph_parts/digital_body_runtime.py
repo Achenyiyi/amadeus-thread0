@@ -70,6 +70,33 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return bool(default)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+        return bool(default)
+    if isinstance(value, (int, float)):
+        return value != 0
+    return bool(value)
+
+
+def _first_present(row: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
 def _clean_ratio(value: Any) -> float:
     try:
         return max(0.0, min(1.0, float(value)))
@@ -683,6 +710,102 @@ def derive_browser_runtime_surface_state(
     }
 
 
+def derive_tts_presence_state(tts_presence_state: Any = None) -> dict[str, Any]:
+    existing = _dict_or_empty(tts_presence_state)
+    if not existing:
+        return {}
+    enabled_value = _first_present(existing, "enabled")
+    enabled = _coerce_bool(enabled_value, default=False)
+    availability = _clean_state_label(_first_present(existing, "availability", "state"))
+    if not availability and enabled:
+        availability = "available"
+    normalized = {
+        "availability": availability,
+        "enabled": enabled,
+        "backend": _clean_state_label(_first_present(existing, "backend", "tts_backend"), limit=120),
+        "voice_profile_id": _clean_text(_first_present(existing, "voice_profile_id"), limit=120),
+        "voice_profile_state": _clean_state_label(_first_present(existing, "voice_profile_state"), limit=80),
+        "queue_state": _clean_state_label(_first_present(existing, "queue_state"), limit=80),
+        "last_status": _clean_state_label(_first_present(existing, "last_status", "status"), limit=80),
+        "last_error_kind": _clean_state_label(_first_present(existing, "last_error_kind", "error_kind"), limit=80),
+        "last_run_id": _clean_text(_first_present(existing, "last_run_id", "run_id", "event_id"), limit=128),
+        "captures_user_audio": _coerce_bool(_first_present(existing, "captures_user_audio"), default=False),
+        "stores_generated_audio": _coerce_bool(_first_present(existing, "stores_generated_audio"), default=False),
+        "arbitrary_audio_capture": _coerce_bool(_first_present(existing, "arbitrary_audio_capture"), default=False),
+    }
+    return normalized if _tts_presence_state_has_signal(normalized) or "enabled" in existing else {}
+
+
+def normalize_tts_presence_timing(tts_presence_timing: Any = None) -> dict[str, Any]:
+    row = _dict_or_empty(tts_presence_timing)
+    if not row:
+        return {}
+    timing = _dict_or_empty(row.get("timing"))
+    normalized = {
+        "delivery_mode": _clean_state_label(_first_present(row, "delivery_mode", "last_delivery_mode"), limit=80),
+        "presence_family": _clean_state_label(_first_present(row, "presence_family", "last_presence_family"), limit=80),
+        "interaction_mode": _clean_state_label(_first_present(row, "interaction_mode", "last_interaction_mode"), limit=80),
+        "timing_window_min": _clean_nonnegative_int(
+            _first_present(row, "timing_window_min", "last_timing_window_min"),
+            limit=10080,
+        ),
+        "planned_delay_ms": _clean_nonnegative_int(
+            _first_present(row, "planned_delay_ms", "last_planned_delay_ms") or timing.get("planned_delay_ms"),
+            limit=86400000,
+        ),
+        "actual_start_delay_ms": _clean_nonnegative_int(
+            _first_present(row, "actual_start_delay_ms", "last_actual_start_delay_ms")
+            or timing.get("actual_start_delay_ms"),
+            limit=86400000,
+        ),
+        "duration_ms": _clean_nonnegative_int(
+            _first_present(row, "duration_ms", "last_duration_ms") or timing.get("duration_ms"),
+            limit=86400000,
+        ),
+        "silence_before_ms": _clean_nonnegative_int(
+            _first_present(row, "silence_before_ms", "last_silence_before_ms") or timing.get("silence_before_ms"),
+            limit=86400000,
+        ),
+        "silence_after_ms": _clean_nonnegative_int(
+            _first_present(row, "silence_after_ms", "last_silence_after_ms") or timing.get("silence_after_ms"),
+            limit=86400000,
+        ),
+        "pause_profile": _clean_state_label(_first_present(row, "pause_profile", "last_pause_profile"), limit=80),
+        "allow_interrupt": _coerce_bool(
+            _first_present(row, "allow_interrupt", "last_allow_interrupt"),
+            default=False,
+        ),
+        "interrupted": _coerce_bool(
+            _first_present(row, "interrupted", "last_interrupted") or timing.get("interrupted"),
+            default=False,
+        ),
+    }
+    return normalized if _tts_presence_timing_has_signal(normalized) else {}
+
+
+def derive_tts_presence_timing_state(tts_presence_timing: Any = None) -> dict[str, Any]:
+    row = _dict_or_empty(tts_presence_timing)
+    if not row:
+        return {}
+    normalized_timing = normalize_tts_presence_timing(row)
+    normalized = {
+        "last_event_id": _clean_text(_first_present(row, "last_event_id", "event_id", "last_run_id", "run_id"), limit=128),
+        "last_delivery_mode": normalized_timing.get("delivery_mode", ""),
+        "last_presence_family": normalized_timing.get("presence_family", ""),
+        "last_interaction_mode": normalized_timing.get("interaction_mode", ""),
+        "last_timing_window_min": normalized_timing.get("timing_window_min", 0),
+        "last_planned_delay_ms": normalized_timing.get("planned_delay_ms", 0),
+        "last_actual_start_delay_ms": normalized_timing.get("actual_start_delay_ms", 0),
+        "last_duration_ms": normalized_timing.get("duration_ms", 0),
+        "last_silence_before_ms": normalized_timing.get("silence_before_ms", 0),
+        "last_silence_after_ms": normalized_timing.get("silence_after_ms", 0),
+        "last_pause_profile": normalized_timing.get("pause_profile", ""),
+        "last_allow_interrupt": bool(normalized_timing.get("allow_interrupt", False)),
+        "last_interrupted": bool(normalized_timing.get("interrupted", False)),
+    }
+    return normalized if _tts_presence_timing_state_has_signal(normalized) else {}
+
+
 def _session_surface_state_has_signal(value: Any) -> bool:
     row = _dict_or_empty(value)
     if not row:
@@ -777,6 +900,72 @@ def _sandbox_surface_state_has_signal(value: Any) -> bool:
 
 def _browser_runtime_surface_state_has_signal(value: Any) -> bool:
     return browser_runtime_state_has_signal(value)
+
+
+def _tts_presence_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("availability")),
+            _clean_state_label(row.get("backend"), limit=120),
+            _clean_text(row.get("voice_profile_id"), limit=120),
+            _clean_state_label(row.get("voice_profile_state"), limit=80),
+            _clean_state_label(row.get("queue_state"), limit=80),
+            _clean_state_label(row.get("last_status"), limit=80),
+            _clean_state_label(row.get("last_error_kind"), limit=80),
+            _clean_text(row.get("last_run_id"), limit=128),
+            _coerce_bool(row.get("captures_user_audio"), default=False),
+            _coerce_bool(row.get("stores_generated_audio"), default=False),
+            _coerce_bool(row.get("arbitrary_audio_capture"), default=False),
+        )
+    )
+
+
+def _tts_presence_timing_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_state_label(row.get("delivery_mode"), limit=80),
+            _clean_state_label(row.get("presence_family"), limit=80),
+            _clean_state_label(row.get("interaction_mode"), limit=80),
+            _clean_nonnegative_int(row.get("timing_window_min"), limit=10080) > 0,
+            _clean_nonnegative_int(row.get("planned_delay_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("actual_start_delay_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("duration_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("silence_before_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("silence_after_ms"), limit=86400000) > 0,
+            _clean_state_label(row.get("pause_profile"), limit=80),
+            _coerce_bool(row.get("allow_interrupt"), default=False),
+            _coerce_bool(row.get("interrupted"), default=False),
+        )
+    )
+
+
+def _tts_presence_timing_state_has_signal(value: Any) -> bool:
+    row = _dict_or_empty(value)
+    if not row:
+        return False
+    return any(
+        (
+            _clean_text(row.get("last_event_id"), limit=128),
+            _clean_state_label(row.get("last_delivery_mode"), limit=80),
+            _clean_state_label(row.get("last_presence_family"), limit=80),
+            _clean_state_label(row.get("last_interaction_mode"), limit=80),
+            _clean_nonnegative_int(row.get("last_timing_window_min"), limit=10080) > 0,
+            _clean_nonnegative_int(row.get("last_planned_delay_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("last_actual_start_delay_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("last_duration_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("last_silence_before_ms"), limit=86400000) > 0,
+            _clean_nonnegative_int(row.get("last_silence_after_ms"), limit=86400000) > 0,
+            _clean_state_label(row.get("last_pause_profile"), limit=80),
+            _coerce_bool(row.get("last_allow_interrupt"), default=False),
+            _coerce_bool(row.get("last_interrupted"), default=False),
+        )
+    )
 
 
 def prune_resolved_access_hints(hints: dict[str, Any] | None) -> dict[str, Any]:
@@ -1052,6 +1241,7 @@ def digital_body_state_has_signal(state: Any) -> bool:
     quota_state_detail = _dict_or_empty(access_state.get("quota_state_detail"))
     permission_state = _dict_or_empty(access_state.get("permission_state"))
     sandbox_state = _dict_or_empty(access_state.get("sandbox_state"))
+    tts_presence_state = _dict_or_empty(access_state.get("tts_presence_state"))
     if any(
         (
             _clean_text(access_state.get("mode")),
@@ -1081,10 +1271,13 @@ def digital_body_state_has_signal(state: Any) -> bool:
             _quota_surface_state_has_signal(quota_state_detail),
             _permission_surface_state_has_signal(permission_state),
             _sandbox_surface_state_has_signal(sandbox_state),
+            _tts_presence_state_has_signal(tts_presence_state),
+            "enabled" in tts_presence_state,
         )
     ):
         return True
     resource_state = _dict_or_empty(state.get("resource_state"))
+    tts_presence_timing = _dict_or_empty(resource_state.get("tts_presence_timing"))
     if any(
         (
             int(resource_state.get("behavior_queue_depth") or 0) > 0,
@@ -1108,6 +1301,7 @@ def digital_body_state_has_signal(state: Any) -> bool:
             _clean_text(resource_state.get("artifact_source_title")),
             _clean_text(resource_state.get("artifact_source_tool_name")),
             _clean_text(resource_state.get("workspace_root")),
+            _tts_presence_timing_state_has_signal(tts_presence_timing),
         )
     ):
         return True
@@ -1209,6 +1403,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     browser_title = _clean_text(row.get("browser_title"), limit=220)
     browser_last_action_kind = _clean_state_label(row.get("browser_last_action_kind"), limit=64)
     browser_last_exit_status = _clean_state_label(row.get("browser_last_exit_status"), limit=64)
+    tts_presence_state = derive_tts_presence_state(row.get("tts_presence_state"))
+    tts_presence_timing = normalize_tts_presence_timing(row.get("tts_presence_timing"))
     requested_help = bool(row.get("requested_help", False))
     environmental_friction = bool(row.get("environmental_friction", False))
     procedural_growth = bool(row.get("procedural_growth", False))
@@ -1391,6 +1587,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "browser_title": browser_title,
         "browser_last_action_kind": browser_last_action_kind,
         "browser_last_exit_status": browser_last_exit_status,
+        "tts_presence_state": tts_presence_state,
+        "tts_presence_timing": tts_presence_timing,
         "procedural_growth": procedural_growth,
         "procedural_continuity": procedural_continuity,
         "environmental_friction": environmental_friction,
@@ -1474,6 +1672,8 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["browser_title"],
             normalized["browser_last_action_kind"],
             normalized["browser_last_exit_status"],
+            normalized["tts_presence_state"],
+            normalized["tts_presence_timing"],
             normalized["world_surfaces"],
             normalized["missing_access"],
             normalized["requested_access"],
@@ -1651,6 +1851,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
         browser_runtime_state=access_state.get("browser_runtime_state"),
         browser_session=browser_session,
     )
+    tts_presence_state = derive_tts_presence_state(access_state.get("tts_presence_state"))
     sandbox_mode = _clean_state_label(
         access_state.get("sandbox_mode") or sandbox_state.get("availability")
     )
@@ -1694,6 +1895,11 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
     )
     sandbox_state = sandbox_state if _sandbox_surface_state_has_signal(sandbox_state) else {}
     browser_runtime_state = browser_runtime_state if _browser_runtime_surface_state_has_signal(browser_runtime_state) else {}
+    tts_presence_state = (
+        tts_presence_state
+        if _tts_presence_state_has_signal(tts_presence_state) or "enabled" in _dict_or_empty(access_state.get("tts_presence_state"))
+        else {}
+    )
     artifact = derive_artifact_continuity(
         artifact_continuity=resource_state.get("artifact_continuity"),
         active_artifact_kind=resource_state.get("active_artifact_kind"),
@@ -1712,6 +1918,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
         artifact_source_title=resource_state.get("artifact_source_title"),
         artifact_source_tool_name=resource_state.get("artifact_source_tool_name"),
     )
+    tts_presence_timing = derive_tts_presence_timing_state(resource_state.get("tts_presence_timing"))
 
     normalized = {
         "active_surface": _clean_text(row.get("active_surface")).lower() or "dialogue",
@@ -1755,6 +1962,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "permission_state": permission_state,
             "sandbox_state": sandbox_state,
             "browser_runtime_state": browser_runtime_state,
+            "tts_presence_state": tts_presence_state,
         },
         "resource_state": {
             "behavior_queue_depth": max(0, int(resource_state.get("behavior_queue_depth") or 0)),
@@ -1782,6 +1990,7 @@ def normalize_digital_body_state(state: Any) -> dict[str, Any]:
             "workspace_root": workspace_root,
             "browser_profile_id": _clean_text(resource_state.get("browser_profile_id"), limit=120),
             "browser_tab_id": _clean_text(resource_state.get("browser_tab_id"), limit=64),
+            "tts_presence_timing": tts_presence_timing,
         },
         "body_constraints": list(dict.fromkeys(_unique_clean_list(*_list_or_empty(row.get("body_constraints")))))[:12],
     }
