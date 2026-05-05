@@ -10285,3 +10285,60 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - commit Task 8 as `docs: refresh frontend backend contract`
   - continue with Task 9 only if explicitly accepting the Chinese lexical de-scaffolding research track scope
+
+## 2026-05-05 Run 239
+
+- Focus:
+  - Task 9 Chinese lexical de-scaffolding research track
+  - add an offline residue-bank audit and semantic diagnostics without removing existing lexical guards or destabilizing runtime behavior
+- Files changed:
+  - `evals/chinese_surface_residue_bank.json`
+  - `evals/run_chinese_surface_de_scaffold_audit.py`
+  - `tests/test_chinese_surface_de_scaffold_audit.py`
+  - `amadeus_thread0/graph_parts/postprocess.py`
+  - `amadeus_thread0/graph_parts/rewrite.py`
+  - `tests/test_subjective_review_pack.py`
+  - `tests/test_dialogue_mode_counterpart.py`
+  - `program.md`
+- Key changes:
+  - froze an offline Chinese surface residue bank with required categories:
+    - `teacherly_scold`
+    - `meta_persona_proof`
+    - `generic_assistant_tone`
+    - `hardline_autonomy_overreach`
+    - `scene_script residue`
+    - `taskization_of_daily_chat`
+    - `repair_scorekeeping`
+    - `boundary_threat_excess`
+  - added `evals/run_chinese_surface_de_scaffold_audit.py` with pure helpers to load the bank, detect legacy / semantic surface families, count category coverage, fail missing required categories, and emit json/md reports under `evals/reports/`
+  - added `_semantic_chinese_surface_residue_families()` and `_semantic_chinese_surface_candidate_penalty()` as additive diagnostics in `postprocess.py`
+  - wired the semantic penalty into rewrite candidate scoring only; existing lexical issue detection and cleanup guards remain in place
+  - added regression coverage proving the new diagnostics can see residue samples while legacy dialogue surface detection still catches the teacherly scold family under real relationship-sensitive context
+- Validation:
+  - red first: `python -m pytest tests/test_chinese_surface_de_scaffold_audit.py -q`
+    - failed as expected with `ModuleNotFoundError: No module named 'evals.run_chinese_surface_de_scaffold_audit'`
+  - `python -m pytest tests/test_chinese_surface_de_scaffold_audit.py -q`
+    - passed: `5 passed`
+  - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag task9-check2`
+    - passed with `overall_status=passed` and `readiness=chinese_surface_de_scaffold_ready`
+  - `python -m pytest tests/test_subjective_review_pack.py tests/test_dialogue_mode_counterpart.py -q`
+    - passed: `78 passed, 1 warning`
+  - `python -m pytest tests/test_daily_surface_gating.py tests/test_subjective_review_pack.py tests/test_dialogue_mode_counterpart.py -q`
+    - passed: `559 passed, 1 warning, 33 subtests passed`
+  - `python -m py_compile evals/run_chinese_surface_de_scaffold_audit.py amadeus_thread0/graph_parts/postprocess.py amadeus_thread0/graph_parts/rewrite.py tests/test_chinese_surface_de_scaffold_audit.py`
+    - passed
+  - `git diff --check`
+    - passed
+  - `python evals/run_backend_freeze_gate_audit.py`
+    - failed on the live-model smoke pack because this worktree environment has no `DEEPSEEK_API_KEY`
+    - report: `evals/reports/backend-freeze-gate-audit-20260505-131936-88baae65.{json,md}`
+    - 9 of 10 checks passed, including py_compile, graph build, AGENTS graph subset, handoff baseline, core-loop chain, and capability/runtime pytest checks
+    - blocking failure was `freeze_gate_smokes` with `ChatDeepSeek` validation error: `DEEPSEEK_API_KEY must be set`
+- Result:
+  - Task 9 audit/research scaffolding is green for offline validation and focused graph-surface regressions
+  - no broad Chinese wording rewrite was attempted
+  - no persona-core semantics, execution authority, Docker/network policy, browser boundary, or skill registry truth was widened
+  - unrelated dirty sandbox run files and `debug.log` remain unmodified by this task and should not be staged
+- Next:
+  - commit Task 9 as `test: add chinese surface de-scaffolding audit`
+  - continue with Task 10 future multimodal/body expansion spec if the remaining-work plan should proceed

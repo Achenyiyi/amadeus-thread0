@@ -32,6 +32,7 @@ from .postprocess import (
     _line_is_near_duplicate,
     _light_dialog_drift_markers,
     _producer_surface_issues,
+    _semantic_chinese_surface_candidate_penalty,
     _sanitize_final_answer,
 )
 from .runtime_services import _invoke_model_with_retries, _model
@@ -956,6 +957,7 @@ def _rewrite_light_dialog_answer(
         score -= 0.90 * float("playful_memory_snapback" in issues)
         score -= 0.74 * float("dangling_ellipsis_ending" in issues)
         score -= 0.98 * float("connector_fragment" in issues)
+        score -= _semantic_chinese_surface_candidate_penalty(candidate)
         if soft_presence_instruction_scene and "播报" in candidate:
             score -= 0.58
         if re.search(r"[“”\"]", candidate):
@@ -1438,6 +1440,7 @@ def _rewrite_natural_dialog_answer(
         score -= 0.98 * float("lecture_list" in issues)
         score -= 0.88 * float("overexplained" in issues)
         score -= 0.98 * float("connector_fragment" in issues)
+        score -= _semantic_chinese_surface_candidate_penalty(candidate)
         if (
             {"shared_activity_window", "offer_window", "deadline_window", "work_nudge", "shared_task"} & event_tags
             and _has_window_technical_self_activity(candidate)
