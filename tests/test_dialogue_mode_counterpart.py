@@ -8,6 +8,7 @@ from amadeus_thread0.graph_parts.counterpart_dynamics import (
     _counterpart_assessment_next,
     _counterpart_window_profile,
 )
+from amadeus_thread0.graph_parts.postprocess import _dialogue_surface_issues, _semantic_chinese_surface_residue_families
 from amadeus_thread0.graph_parts.persona_runtime import (
     _canon_okabe_recontact_baseline,
     _prefer_explicit_state_dict,
@@ -3009,6 +3010,21 @@ class DialogueModeCounterpartTests(unittest.TestCase):
         self.assertLessEqual(float(counterpart_assessment.get("reciprocity") or 1.0), 0.5)
         self.assertGreaterEqual(float(counterpart_assessment.get("boundary_pressure") or 0.0), 0.4)
         self.assertLessEqual(float(counterpart_assessment.get("reliability_read") or 1.0), 0.54)
+
+    def test_teacherly_scold_surface_remains_detectable_by_legacy_and_semantic_diagnostics(self):
+        text = "你能意识到并特意回来说明，这点还算值得肯定。"
+        legacy_issues = _dialogue_surface_issues(
+            "你现在怎么看我们之间的关系？",
+            text,
+            response_style_hint="relationship",
+            science_mode=False,
+            current_event=self.relationship_event,
+            behavior_action={"interaction_mode": "relationship_sensitive"},
+        )
+        semantic_families = _semantic_chinese_surface_residue_families(text)
+
+        self.assertIn("generic_scold_template", legacy_issues)
+        self.assertIn("teacherly_scold", semantic_families)
 
 
 if __name__ == "__main__":

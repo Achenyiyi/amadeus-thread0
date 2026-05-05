@@ -2,6 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from evals.run_chinese_surface_de_scaffold_audit import detect_legacy_surface_families
 from evals.run_subjective_review_pack import (
     _available_presets,
     _relationship_weather_mix,
@@ -173,6 +174,15 @@ class SubjectiveReviewPackTests(unittest.TestCase):
         self.assertIn("Expected Counterpart Scene: `busy_not_disrespectful`", rendered)
         self.assertIn("### Relationship Weather Trace", rendered)
         self.assertIn("weather=`guarded_residue`", rendered)
+
+    def test_chinese_surface_residue_diagnostics_cover_review_pack_samples(self):
+        teacherly = detect_legacy_surface_families("你能意识到并特意回来说明，这点还算值得肯定。")
+        taskized = detect_legacy_surface_families("既然没什么正事，那就先把手头的数据跑完再说吧。")
+
+        self.assertIn("teacherly_scold", teacherly)
+        self.assertIn("generic_scold_template", teacherly)
+        self.assertIn("taskization_of_daily_chat", taskized)
+        self.assertIn("idle_task_reframe_surface", taskized)
 
     def test_snapshot_includes_relationship_weather_trace(self):
         snapshot = _snapshot(

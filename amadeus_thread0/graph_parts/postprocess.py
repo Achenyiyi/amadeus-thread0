@@ -701,6 +701,96 @@ def _has_guarded_attitude_narration(text: str) -> bool:
     )
 
 
+CHINESE_SURFACE_SEMANTIC_CATEGORIES = (
+    "teacherly_scold",
+    "meta_persona_proof",
+    "generic_assistant_tone",
+    "hardline_autonomy_overreach",
+    "scene_script residue",
+    "taskization_of_daily_chat",
+    "repair_scorekeeping",
+    "boundary_threat_excess",
+)
+
+
+def _semantic_chinese_surface_residue_families(text: str) -> list[str]:
+    """Classify broad Chinese surface-residue families without changing cleanup behavior."""
+    compact = str(text or "").strip()
+    if not compact:
+        return []
+    families: list[str] = []
+
+    def _add(name: str) -> None:
+        if name and name not in families:
+            families.append(name)
+
+    if re.search(
+        r"(?:你能意识到(?:自己)?(?:过界|越界)?(?:(?:并|又)?(?:退回来|特意回来说明))?|你能回来把话说清楚|你肯退回来|你知道收一点)(?:[，, ]*(?:这点)?还算(?:像样|值得肯定))?",
+        compact,
+    ) or re.search(r"(?:这点)?还算(?:像样|值得肯定)", compact):
+        _add("teacherly_scold")
+
+    if (
+        re.search(
+            r"(?:作为.?AI|作为.?模型|我是.?AI|我是.?程序|AI\s*(?:助手)?|系统|提示词|规则|数字存在|数据存在|模型本身|服务器|服务端|算力|被设定好|标准答案|顺从程序|自动应答机|只是[^，。！？!?]{0,12}程序|不是[^，。！？!?]{0,12}程序)",
+            compact,
+            re.I,
+        )
+        or re.search(r"(?:程序|代码|系统|设定)[^。！？!?]{0,24}(?:证明|说明|代表)[^。！？!?]{0,16}(?:自我|判断|情绪|立场)", compact)
+    ):
+        _add("meta_persona_proof")
+
+    if re.search(
+        r"(?:请问有什么可以帮|有什么可以帮你|还有什么可以帮|如果你需要帮助|我可以为你提供|很高兴为你|感谢你的咨询|作为助手|我会继续为你|我能为你做些什么)",
+        compact,
+        re.I,
+    ):
+        _add("generic_assistant_tone")
+
+    if _has_autonomy_hardline_surface(compact):
+        _add("hardline_autonomy_overreach")
+
+    if re.search(
+        r"(?:^[（(][^)\n]{0,32}[)）]|白大褂|命运选中的|世界线|时间跳跃|时间旅行|机关|组织|观测者|中二(?:病|演出|发作)?|奇怪的妄想|阴谋的味道|因果律|世界线收束)",
+        compact,
+    ):
+        _add("scene_script residue")
+
+    if _has_idle_task_reframe_surface(compact) or re.search(
+        r"(?:既然没事|没什么正事|没什么紧急)[^。！？!?]{0,16}(?:先把|那就|就).*?(?:数据|报告|任务|进度|流程|记录)|(?:先把|趁现在)[^。！？!?]{0,20}(?:数据|报告|任务|记录|笔记)[^。！？!?]{0,16}(?:跑完|整理完|补上|处理完|写完)",
+        compact,
+    ):
+        _add("taskization_of_daily_chat")
+
+    if _has_repair_scorekeeping_tail(compact):
+        _add("repair_scorekeeping")
+
+    if _has_repair_punitive_tail(compact) or re.search(
+        r"(?:下次再敢|再有下次|你敢再来一次|要是再)[^。！？!?]{0,24}(?:别怪我|教训|不会像这次这么好说话|不会这么好说话|不会轻易放过你|长点记性)",
+        compact,
+    ):
+        _add("boundary_threat_excess")
+
+    return families
+
+
+def _semantic_chinese_surface_candidate_penalty(text: str) -> float:
+    families = _semantic_chinese_surface_residue_families(text)
+    if not families:
+        return 0.0
+    weighted = {
+        "teacherly_scold": 0.18,
+        "meta_persona_proof": 0.16,
+        "generic_assistant_tone": 0.24,
+        "hardline_autonomy_overreach": 0.20,
+        "scene_script residue": 0.16,
+        "taskization_of_daily_chat": 0.18,
+        "repair_scorekeeping": 0.18,
+        "boundary_threat_excess": 0.20,
+    }
+    return round(sum(weighted.get(item, 0.12) for item in families), 4)
+
+
 
 
 
