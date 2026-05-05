@@ -238,8 +238,12 @@ export interface ActionPacket extends JsonRecord {
   assist_request?: AssistRequest | JsonRecord;
   access_acquire_proposals?: AccessAcquireProposal[];
   selected_access_proposal?: AccessAcquireProposal | JsonRecord;
+  execution_spec?: SandboxExecutionPayload | JsonRecord;
   execution_preview?: JsonRecord;
+  execution_result?: JsonRecord;
+  browser_execution_spec?: JsonRecord;
   browser_execution_preview?: JsonRecord;
+  browser_execution_result?: JsonRecord;
 }
 
 export interface AutonomyIntent extends JsonRecord {
@@ -274,6 +278,131 @@ export interface AutonomyEnvelope {
   block_reason: string;
 }
 
+export interface SandboxExecutionPayload extends JsonRecord {
+  runner_kind?: string;
+  isolation_level?: string;
+  image_ref?: string;
+  network_policy?: string;
+  workspace_root_kind?: string;
+  executor?: string;
+  profile?: string;
+  argv?: string[];
+  cwd?: string;
+  allowed_roots?: string[];
+  timeout_s?: number;
+  writes_expected?: boolean;
+  expected_artifacts?: string[];
+}
+
+export interface SkillCatalogEntry extends JsonRecord {
+  skill_id: string;
+  name?: string;
+  description?: string;
+  version?: string;
+  kind?: string;
+  source?: string;
+  status?: string;
+  trust_tier?: string;
+  required_surfaces?: string[];
+  allowed_tools?: string[];
+  sandbox_profiles?: string[];
+}
+
+export interface ActiveSkillEntry extends SkillCatalogEntry {
+  skill_excerpt?: string;
+}
+
+export interface SkillPendingApproval extends JsonRecord {
+  proposal_id?: string;
+  operation?: string;
+  skill_id?: string;
+  resolved_version?: string;
+  source?: string;
+  hash?: string;
+  requested_permissions?: string[];
+  sandbox_profiles?: string[];
+  verification_summary?: string;
+}
+
+export interface SkillsEnvelope {
+  installed: SkillCatalogEntry[];
+  matched: SkillCatalogEntry[];
+  active: ActiveSkillEntry[];
+  manual_overrides: JsonRecord;
+  pending_approval: SkillPendingApproval | JsonRecord;
+}
+
+export interface DigitalBodySessionStatePayload extends JsonRecord {
+  continuity?: string;
+  expires_in_s?: number;
+  recovery_mode?: string;
+  retry_after_s?: number;
+  cooldown_scope?: string;
+  browser_session?: string;
+  needs_recovery?: boolean;
+}
+
+export interface DigitalBodyAccountStateDetailPayload extends JsonRecord {
+  browser_session?: string;
+  login_state?: string;
+  cookie_state?: string;
+  api_key_state?: string;
+  account_available?: boolean;
+  cookie_available?: boolean;
+  api_key_available?: boolean;
+}
+
+export interface DigitalBodyQuotaStateDetailPayload extends JsonRecord {
+  provider_state?: string;
+  retry_after_s?: number;
+  cooldown_scope?: string;
+  available?: boolean;
+  cooldown_active?: boolean;
+}
+
+export interface DigitalBodyPermissionStatePayload extends JsonRecord {
+  pending_approval_count?: number;
+  external_mutation_pending?: boolean;
+  missing_access?: string[];
+  requestable_access?: string[];
+  access_acquire_proposals?: AccessAcquireProposal[];
+  selected_access_proposal?: AccessAcquireProposal | JsonRecord;
+  resolved_grants?: string[];
+  pending_grants?: string[];
+  completion_ratio?: number;
+  approval_state?: string;
+}
+
+export interface DigitalBodySandboxStatePayload extends JsonRecord {
+  availability?: string;
+  allowed_roots?: string[];
+  execution_policy?: string;
+  last_status?: string;
+  runner_kind?: string;
+  isolation_level?: string;
+  image_ref?: string;
+  network_policy?: string;
+  workspace_root_kind?: string;
+  last_command_profile?: string;
+  last_exit_code?: number;
+  last_run_id?: string;
+  arbitrary_execution?: boolean;
+}
+
+export interface DigitalBodyBrowserRuntimeStatePayload extends JsonRecord {
+  availability?: string;
+  profile_root?: string;
+  context_status?: string;
+  active_page_id?: string;
+  active_tab_count?: number;
+  downloads_dir?: string;
+  last_action_status?: string;
+  last_run_id?: string;
+  manual_takeover_required?: boolean;
+  runner_kind?: string;
+  isolation_level?: string;
+}
+
 export interface DigitalBodyAccessPayload extends JsonRecord {
   mode?: string;
   conditions?: string[];
@@ -298,6 +427,12 @@ export interface DigitalBodyAccessPayload extends JsonRecord {
   network_access?: string;
   access_acquire_proposals?: AccessAcquireProposal[];
   selected_access_proposal?: AccessAcquireProposal | JsonRecord;
+  session_state?: DigitalBodySessionStatePayload | JsonRecord;
+  account_state_detail?: DigitalBodyAccountStateDetailPayload | JsonRecord;
+  quota_state_detail?: DigitalBodyQuotaStateDetailPayload | JsonRecord;
+  permission_state?: DigitalBodyPermissionStatePayload | JsonRecord;
+  sandbox_state?: DigitalBodySandboxStatePayload | JsonRecord;
+  browser_runtime_state?: DigitalBodyBrowserRuntimeStatePayload | JsonRecord;
 }
 
 export interface DigitalBodyResourcePayload extends JsonRecord {
@@ -317,10 +452,15 @@ export interface DigitalBodyResourcePayload extends JsonRecord {
   artifact_reacquisition_mode?: string;
   artifact_carrier?: string;
   artifact_source_ref_ids?: number[];
+  preferred_source_ref_id?: number;
+  preferred_anchor_reason?: string;
   artifact_source_url?: string;
   artifact_source_query?: string;
   artifact_source_title?: string;
   artifact_source_tool_name?: string;
+  workspace_root?: string;
+  browser_profile_id?: string;
+  browser_tab_id?: string;
 }
 
 export interface DigitalBodyPayload extends JsonRecord {
@@ -359,6 +499,12 @@ export interface DigitalBodyAccessSummary extends JsonRecord {
   network_access: string;
   access_acquire_proposals: AccessAcquireProposal[];
   selected_access_proposal: AccessAcquireProposal | JsonRecord;
+  session_state: DigitalBodySessionStatePayload | JsonRecord;
+  account_state_detail: DigitalBodyAccountStateDetailPayload | JsonRecord;
+  quota_state_detail: DigitalBodyQuotaStateDetailPayload | JsonRecord;
+  permission_state: DigitalBodyPermissionStatePayload | JsonRecord;
+  sandbox_state: DigitalBodySandboxStatePayload | JsonRecord;
+  browser_runtime_state: DigitalBodyBrowserRuntimeStatePayload | JsonRecord;
 }
 
 export interface DigitalBodyResourceSummary extends JsonRecord {
@@ -378,10 +524,15 @@ export interface DigitalBodyResourceSummary extends JsonRecord {
   artifact_reacquisition_mode: string;
   artifact_carrier: string;
   artifact_source_ref_ids: number[];
+  preferred_source_ref_id: number;
+  preferred_anchor_reason: string;
   artifact_source_url: string;
   artifact_source_query: string;
   artifact_source_title: string;
   artifact_source_tool_name: string;
+  workspace_root: string;
+  browser_profile_id: string;
+  browser_tab_id: string;
 }
 
 export interface DigitalBodySummary extends JsonRecord {
@@ -434,6 +585,20 @@ export interface DigitalBodyConsequenceSummary extends JsonRecord {
   requested_help: boolean;
   access_acquire_proposals: AccessAcquireProposal[];
   selected_access_proposal: AccessAcquireProposal | JsonRecord;
+  session_state?: DigitalBodySessionStatePayload | JsonRecord;
+  account_state_detail?: DigitalBodyAccountStateDetailPayload | JsonRecord;
+  quota_state_detail?: DigitalBodyQuotaStateDetailPayload | JsonRecord;
+  permission_state?: DigitalBodyPermissionStatePayload | JsonRecord;
+  sandbox_state?: DigitalBodySandboxStatePayload | JsonRecord;
+  browser_runtime_state?: DigitalBodyBrowserRuntimeStatePayload | JsonRecord;
+  workspace_root?: string;
+  workspace_root_kind?: string;
+  sandbox_runner_kind?: string;
+  sandbox_isolation_level?: string;
+  sandbox_image_ref?: string;
+  sandbox_network_policy?: string;
+  skill_effects?: JsonRecord[];
+  procedural_continuity?: JsonRecord;
 }
 
 export interface EventResidueSummary {
@@ -787,6 +952,7 @@ export interface AssistantTurnPayload {
   reconsolidation_snapshot: JsonRecord;
   turn_appraisal: JsonRecord;
   autonomy: AutonomyEnvelope;
+  skills: SkillsEnvelope;
   digital_body: DigitalBodyPayload | JsonRecord;
   digital_body_consequence: DigitalBodyConsequenceSummary | JsonRecord;
   emotion_state?: JsonRecord;
@@ -814,6 +980,7 @@ export interface EventRoundPayload {
   current_event: JsonRecord;
   turn_appraisal: JsonRecord;
   autonomy: AutonomyEnvelope;
+  skills: SkillsEnvelope;
   digital_body: DigitalBodyPayload | JsonRecord;
   digital_body_consequence: DigitalBodyConsequenceSummary | JsonRecord;
   emotion_state?: JsonRecord;

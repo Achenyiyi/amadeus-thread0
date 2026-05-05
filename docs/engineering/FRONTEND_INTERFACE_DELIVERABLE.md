@@ -163,6 +163,7 @@ Authoritative fields:
 - `counterpart_assessment`
 - `agenda_lifecycle_residue`
 - `autonomy`
+- `skills`
 - `digital_body`
 - `digital_body_consequence`
 - `reconsolidation_snapshot`
@@ -182,6 +183,7 @@ Important provenance:
 - `claim_links` comes from current-turn claim attribution
 - `behavior_action`, `behavior_plan`, `counterpart_assessment`, and `agenda_lifecycle_residue` come from final-state resolution, not from raw live fields
 - `interaction_carryover` also comes from final-state resolution; when it contains `embodied_context`, that nested block is provenance-bound carryover memory rather than a frontend-recomputed body snapshot
+- `skills` is the session skill envelope for this turn; it exposes compact registry/session truth plus pending skill approval, not persona identity or autobiographical memory
 - `digital_body` is the resolved current runtime/body state
 - `digital_body_consequence` is the resolved embodied consequence of this turn; it should be treated as frozen final semantics, not recomputed in the frontend
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
@@ -226,8 +228,9 @@ Traceability note:
   - `current_event` for perception
   - `turn_appraisal` for appraisal
   - `emotion_state / bond_state / allostasis_state / semantic_narrative_profile / world_model_state / evolution_state` for internal state
-  - `behavior_action / behavior_plan` for motive-goal and behavior packet
-  - `interaction_carryover` for the currently active continuity residue, including optional provenance-bound `embodied_context`
+- `behavior_action / behavior_plan` for motive-goal and behavior packet
+- `interaction_carryover` for the currently active continuity residue, including optional provenance-bound `embodied_context`
+- `skills` for the current session skill envelope and pending skill approval
 - `digital_body / digital_body_consequence` for embodied runtime state plus frozen embodied consequence
 - `turn_summary.event_residue.digital_body_consequence` when the finished turn left a meaningful embodied consequence at the event-residue layer
   - `reconsolidation_snapshot` for frozen final semantics
@@ -402,6 +405,9 @@ These are non-negotiable frontend rules.
 - Treat `digital_body` as current body state and `digital_body_consequence` as frozen turn consequence; do not collapse them into one field.
 - If an approval or manual-takeover interrupt is active, render `assist_request.message` as the first user-visible line before any structured approval summary.
 - `digital_body.resource_state` and `digital_body_consequence` may both carry artifact continuity facts such as `artifact_continuity`, `active_artifact_kind`, `active_artifact_label`, and `artifact_reacquisition_mode`; these are backend-owned world-state traces and should be rendered as environment continuity, not as relationship stance.
+- Top-level turn/event/persona `payload.digital_body` uses the raw backend body shape: `access_state` and `resource_state`.
+- Summary blocks such as `payload.turn_summary.digital_body`, `payload.evolution_summary.digital_body`, and `payload.worldline_summary.digital_body` use the compact readback shape: `access` and `resources`.
+- Phase-2 sandbox fields are stable when a sandbox packet/body state is present: `runner_kind`, `isolation_level`, `image_ref`, `network_policy`, and `workspace_root_kind`.
 - Unknown additive keys must be ignored, not stripped by strict parsing.
 
 ## Turn Execution Contract

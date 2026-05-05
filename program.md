@@ -10221,3 +10221,67 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - commit Task 7 as `feat: consolidate procedural capability traces`
   - continue with Task 8 contract-only frontend handoff refresh
+
+## 2026-05-05 Run 238
+
+- Focus:
+  - Task 8 contract-only frontend handoff refresh
+  - keep frontend consumers aligned with current backend envelopes without resuming frontend UI implementation
+- Files changed:
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `docs/engineering/frontend_contract/mocks/assistant_turn.json`
+  - `docs/engineering/frontend_contract/mocks/event_round.json`
+  - `docs/engineering/frontend_contract/mocks/persona_view.json`
+  - `docs/engineering/frontend_contract/mocks/worldline_view.json`
+  - `docs/engineering/frontend_contract/mocks/bond_view.json`
+  - `frontend/src/contracts/backend.ts`
+  - `frontend/src/mocks/assistant_turn.json`
+  - `frontend/src/mocks/event_round.json`
+  - `frontend/src/mocks/persona_view.json`
+  - `frontend/src/mocks/worldline_view.json`
+  - `frontend/src/mocks/bond_view.json`
+  - `tests/test_frontend_contract_sync.py`
+  - `program.md`
+- Key changes:
+  - refreshed the static frontend contract to include the current `skills` envelope on `assistant_turn` / `event_round`
+  - expanded TypeScript contract coverage for phase-2 sandbox execution fields:
+    - `runner_kind`
+    - `isolation_level`
+    - `image_ref`
+    - `network_policy`
+    - `workspace_root_kind`
+  - documented the raw body vs summary-body distinction:
+    - top-level `payload.digital_body` uses `access_state` / `resource_state`
+    - summary blocks use compact `access` / `resources`
+  - refreshed all frontend contract mocks with current autonomy, skill, digital-body, browser-runtime, sandbox-state, interaction-carryover, and phase-2 approval packet examples
+  - synced frozen frontend shell copies under `frontend/src/contracts/` and `frontend/src/mocks/` with the docs contract assets
+  - tightened `tests/test_frontend_contract_sync.py` so future contract drift must preserve:
+    - `autonomy.intent`
+    - `autonomy.action_packets`
+    - `autonomy.pending_approval`
+    - `skills.active`
+    - `skills.pending_approval`
+    - `digital_body.access_state.sandbox_state`
+    - `digital_body.access_state.browser_runtime_state`
+    - `digital_body.resource_state`
+    - `digital_body_consequence`
+    - `interaction_carryover.embodied_context`
+    - phase-2 sandbox fields
+- Validation:
+  - `git status --short -- frontend`
+    - clean before Task 8 edits; no frontend restore/delete cleanup was needed
+  - `python -m pytest tests/test_frontend_contract_sync.py -q`
+    - red before contract refresh: docs/frontend type copy drift and missing sandbox-state fields
+    - green after refresh: `3 passed`
+  - `python -m pytest tests/test_frontend_contract_sync.py tests/test_backend_api.py tests/test_backend_session.py -q`
+    - passed: `105 passed, 17 subtests passed`
+- Result:
+  - Task 8 is green in this worktree
+  - frontend changes are limited to contract/type/mock copies; no UI, runtime client, component, style, or app implementation was resumed
+  - no execution authority, Docker/network policy, browser boundary, skill registry truth, or persona-core semantics were widened
+  - unrelated dirty sandbox run files and `debug.log` remain unmodified by this task and should not be staged
+- Next:
+  - commit Task 8 as `docs: refresh frontend backend contract`
+  - continue with Task 9 only if explicitly accepting the Chinese lexical de-scaffolding research track scope
