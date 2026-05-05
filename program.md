@@ -11,7 +11,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-05-04`
+- Date: `2026-05-05`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
 - Mainline phase: preserved baseline maintenance after `Sandbox Embodied Execution Phase 2` closeout
 - Immediate research focus:
@@ -10367,3 +10367,81 @@ This file is the live development ledger for `amadeus-thread0`.
   - Task 10 spec is verified for the planned docs-only slice and ready to commit
 - Next:
   - commit as `docs: specify next multimodal body slice`, then keep future implementation gated behind the spec validation checklist
+
+## 2026-05-05 Run 241
+
+- Focus:
+  - implement the spec-selected `TTS_presence_timing` body slice directly on `main`
+  - keep TTS as timing-only telemetry around frozen `final_text`, with no microphone, generated-audio persistence, frontend work, voice persona, or separate voice memory
+- Files changed:
+  - `docs/superpowers/plans/2026-05-05-tts-presence-timing-implementation.md`
+  - `amadeus_thread0/graph_parts/perception.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_tts_presence_timing_smokes.py`
+  - `evals/run_tts_presence_timing_audit.py`
+  - `tests/test_perception_event_contract.py`
+  - `tests/test_world_model_residue.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_tts_presence_timing_smokes.py`
+  - `tests/test_tts_presence_timing_audit.py`
+  - `program.md`
+- Key changes:
+  - added `tts_presence_timing_observation` perception normalization with `modality=TTS_presence_timing`, `channel=voice`, `source_role=runtime`, `trust_tier=high_runtime_telemetry`, and spoken delivery defaults
+  - added dedicated digital-body/writeback fields:
+    - `access_state.tts_presence_state`
+    - `resource_state.tts_presence_timing`
+    - `digital_body_consequence.tts_presence_timing`
+  - surfaced TTS timing through backend/API/session/CLI summaries:
+    - `current_turn.tts_presence_status`
+    - `current_turn.tts_presence_delivery_mode`
+    - `current_turn.tts_presence_pause_profile`
+    - `current_turn.tts_presence_duration_ms`
+    - compact CLI line such as `TTS: delivered via dashscope_realtime, start_delay=180ms, duration=3120ms`
+  - added offline deterministic smoke coverage for:
+    - `spoken_final_text_no_drift`
+    - `text_only_when_tts_disabled`
+    - `deliberate_silence_as_presence_timing`
+  - added `evals/run_tts_presence_timing_audit.py`, which emits `readiness=tts_presence_timing_ready`
+- Validation:
+  - TDD red checks:
+    - `python -m pytest tests/test_tts_presence_timing_smokes.py tests/test_tts_presence_timing_audit.py -q`
+    - failed as expected before runner creation with `ModuleNotFoundError` for both new eval modules
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -q`
+    - passed: `151 passed, 17 subtests passed`
+  - `python -m py_compile amadeus_thread0\utils\turn_summary_export.py amadeus_thread0\utils\cli_views.py tests\test_backend_api.py tests\test_backend_session.py tests\test_cli_views.py`
+    - passed
+  - `python -m pytest tests/test_perception_event_contract.py tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_world_model_residue.py -q`
+    - passed: `333 passed, 17 subtests passed`
+  - `python -m pytest tests/test_tts_presence_timing_smokes.py tests/test_tts_presence_timing_audit.py -q`
+    - passed: `10 passed, 3 subtests passed`
+  - `python evals/run_tts_presence_timing_smokes.py --run-tag final-check`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/tts-presence-timing-smokes-20260505-145131-final-check.{json,md}`
+  - `python evals/run_tts_presence_timing_audit.py --run-tag final-check`
+    - passed with `overall_status=passed` and `readiness=tts_presence_timing_ready`
+    - report: `evals/reports/tts-presence-timing-audit-20260505-145120-final-check.{json,md}`
+  - `python -m py_compile evals\run_tts_presence_timing_smokes.py evals\run_tts_presence_timing_audit.py tests\test_tts_presence_timing_smokes.py tests\test_tts_presence_timing_audit.py`
+    - passed
+  - `git diff --check -- evals/run_tts_presence_timing_smokes.py evals/run_tts_presence_timing_audit.py tests/test_tts_presence_timing_smokes.py tests/test_tts_presence_timing_audit.py`
+    - passed
+  - `python evals/run_digital_embodiment_audit.py --run-tag tts-presence-timing-final-check`
+    - outer tool call timed out at 10 minutes while the subprocess chain was still running
+    - the subprocess chain later completed and wrote `evals/reports/digital-embodiment-audit-20260505-145220-tts-presence-timing-final-check.{json,md}`
+    - report result: `overall_status=passed`, `readiness_status=digital_embodiment_phase2_ready`, `freeze_gate_readiness=freeze_gate_ready`, `companion_readiness=companion_autonomy_ready`, `historical_pass_streak=16`
+- Result:
+  - `TTS_presence_timing` is implemented as a bounded timing-only multimodal body slice
+  - text and TTS still share one frozen final utterance; no generated audio, microphone capture, ambient audio capture, emotion inference from timing, execution authority, browser boundary, skill registry truth, frontend UI, or persona-core semantics were widened
+  - generated eval reports remain under gitignored `evals/reports/`
+  - unrelated untracked paths remain unmodified and unstaged:
+    - `third_party/benchmarks/ESConv`
+    - `docs/superpowers/plans/2026-05-03-amadeus-k-product-core.md`
+    - `docs/superpowers/specs/`
+    - `tmp/`
+- Next:
+  - commit Task 4 as `test: add tts presence timing audit`
+  - next backend step should be a readiness decision: either run the new TTS audit two more fresh times for a three-run closure streak, or select the next spec-only body slice without reopening the preserved baselines
