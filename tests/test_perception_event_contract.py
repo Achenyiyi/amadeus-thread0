@@ -250,6 +250,63 @@ def test_readback_current_event_does_not_mutate_source_event():
     assert readback["perception"]["digital_body_hints"]["browser_runtime_state"]["profile_id"] == "profile-source"
 
 
+def test_tts_presence_timing_observation_keeps_runtime_voice_timing_hints():
+    event = attach_perception_context(
+        {
+            "kind": "tts_presence_timing_observation",
+            "source": "tts",
+            "text": "TTS delivered the frozen final text.",
+            "final_text_ref": "turn.final_text",
+            "digital_body_hints": {
+                "tts_presence_state": {
+                    "last_status": "delivered",
+                    "voice_profile_id": "default",
+                }
+            },
+        },
+        thread_id="thread-body",
+        turn_now_ts=1710000210,
+    )
+
+    perception = event["perception"]
+    assert perception["modality"] == "TTS_presence_timing"
+    assert perception["channel"] == "voice"
+    assert perception["source_role"] == "runtime"
+    assert perception["trust_tier"] == "high_runtime_telemetry"
+    assert perception["delivery_mode"] == "spoken"
+    assert event["digital_body_hints"]["tts_presence_state"]["last_status"] == "delivered"
+
+
+def test_readback_current_event_mirrors_tts_presence_timing_hints_into_perception():
+    readback = resolve_readback_current_event(
+        {
+            "current_event": {
+                "kind": "tts_presence_timing_observation",
+                "source": "tts",
+                "created_at": 1710000211,
+                "digital_body_hints": {
+                    "tts_presence_state": {
+                        "last_status": "delivered",
+                        "voice_profile_id": "default",
+                    }
+                },
+                "perception": {
+                    "thread_id": "thread-body",
+                    "turn_id": "thread-body:1710000211",
+                    "modality": "TTS_presence_timing",
+                    "source_role": "runtime",
+                },
+            }
+        },
+        thread_id="thread-body",
+        session_context={"thread_id": "thread-body", "turn_id": "thread-body:1710000211"},
+    )
+
+    assert readback["perception"]["modality"] == "TTS_presence_timing"
+    assert readback["perception"]["source_role"] == "runtime"
+    assert readback["perception"]["digital_body_hints"]["tts_presence_state"]["last_status"] == "delivered"
+
+
 def test_normalize_event_override_preserves_idle_defaults_and_attaches_perception():
     payload = _normalize_event_override(
         {
