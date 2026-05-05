@@ -764,6 +764,84 @@ class CliViewsTests(unittest.TestCase):
         self.assertEqual(current_turn.get("digital_body_preferred_anchor_reason"), "only_saved_source")
         self.assertEqual(current_turn.get("digital_body_artifact_reacquisition_mode"), "reopen_file")
 
+    def test_build_evolution_cli_summary_surfaces_tts_presence_timing(self):
+        summary = build_evolution_cli_summary(
+            current_event={
+                "kind": "tts_presence_timing_observation",
+                "source": "tts",
+                "perception": {
+                    "channel": "voice",
+                    "modality": "TTS_presence_timing",
+                    "source_role": "runtime",
+                    "trust_tier": "high_runtime_telemetry",
+                    "delivery_mode": "spoken",
+                },
+            },
+            digital_body_state={
+                "active_surface": "voice",
+                "perception_channels": ["voice", "TTS_presence_timing"],
+                "action_channels": ["language", "voice"],
+                "world_surfaces": ["tts"],
+                "access_state": {
+                    "mode": "native_only",
+                    "tts_presence_state": {
+                        "availability": "available",
+                        "enabled": True,
+                        "backend": "dashscope_realtime",
+                        "voice_profile_id": "default",
+                        "queue_state": "idle",
+                        "last_status": "delivered",
+                        "last_run_id": "evt_tts_20260505_0001",
+                    },
+                },
+                "resource_state": {
+                    "tts_presence_timing": {
+                        "last_event_id": "evt_tts_20260505_0001",
+                        "last_delivery_mode": "spoken",
+                        "last_actual_start_delay_ms": 180,
+                        "last_duration_ms": 3120,
+                        "last_pause_profile": "direct",
+                    }
+                },
+            },
+            digital_body_consequence={
+                "kind": "tts_presence_delivered",
+                "summary": "TTS delivered the frozen final text.",
+                "tts_presence_timing": {
+                    "delivery_mode": "spoken",
+                    "actual_start_delay_ms": 180,
+                    "duration_ms": 3120,
+                    "pause_profile": "direct",
+                },
+            },
+        )
+
+        digital_body = summary.get("digital_body") if isinstance(summary.get("digital_body"), dict) else {}
+        self.assertEqual(digital_body.get("access", {}).get("tts_presence_state", {}).get("last_status"), "delivered")
+        self.assertEqual(digital_body.get("access", {}).get("tts_presence_state", {}).get("backend"), "dashscope_realtime")
+        self.assertEqual(digital_body.get("resources", {}).get("tts_presence_timing", {}).get("last_delivery_mode"), "spoken")
+        self.assertEqual(
+            digital_body.get("resources", {}).get("tts_presence_timing", {}).get("last_actual_start_delay_ms"),
+            180,
+        )
+        digital_body_consequence = (
+            summary.get("digital_body_consequence")
+            if isinstance(summary.get("digital_body_consequence"), dict)
+            else {}
+        )
+        self.assertEqual(digital_body_consequence.get("kind"), "tts_presence_delivered")
+        self.assertEqual(digital_body_consequence.get("tts_presence_timing", {}).get("delivery_mode"), "spoken")
+        self.assertEqual(digital_body_consequence.get("tts_presence_timing", {}).get("duration_ms"), 3120)
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertEqual(current_turn.get("tts_presence_status"), "delivered")
+        self.assertEqual(current_turn.get("tts_presence_delivery_mode"), "spoken")
+        self.assertEqual(current_turn.get("tts_presence_pause_profile"), "direct")
+        self.assertEqual(current_turn.get("tts_presence_duration_ms"), 3120)
+        line = build_evolution_summary_line(summary)
+        self.assertIn("TTS: delivered via dashscope_realtime", line)
+        self.assertIn("start_delay=180ms", line)
+        self.assertIn("duration=3120ms", line)
+
     def test_build_evolution_cli_summary_surfaces_digital_body_cooldown(self):
         summary = build_evolution_cli_summary(
             digital_body_state={
