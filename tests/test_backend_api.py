@@ -4459,7 +4459,27 @@ class BackendApiTests(unittest.TestCase):
 
             self.assertEqual(payload["final_text"], "嗯，我在。你直接说吧，我会顺着这轮的语境接住。")
             self.assertEqual(payload["reconsolidation_snapshot"]["final_text"], payload["final_text"])
-            self.assertTrue(payload["embodied_interaction"]["chinese_semantic_surface"]["applied_floor"])
+            semantic = payload["embodied_interaction"]["chinese_semantic_surface"]
+            policy = semantic["runtime_policy"]
+            self.assertTrue(semantic["applied_floor"])
+            self.assertEqual(policy["readiness_status"], "chinese_semantic_descaffolding_phase2_ready")
+            self.assertEqual(policy["selected_policy"]["family"], "generic_assistant_tone")
+            self.assertEqual(policy["runtime_final_text"], payload["final_text"])
+            self.assertEqual(semantic["tts_text"], payload["final_text"])
+            self.assertFalse(semantic["text_tts_drift"])
+
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text="请问有什么可以帮你？",
+            ).payload
+            event_semantic = event_payload["embodied_interaction"]["chinese_semantic_surface"]
+            self.assertEqual(event_payload["final_text"], payload["final_text"])
+            self.assertEqual(event_payload["reconsolidation_snapshot"]["final_text"], event_payload["final_text"])
+            self.assertEqual(
+                event_semantic["runtime_policy"]["readiness_status"],
+                "chinese_semantic_descaffolding_phase2_ready",
+            )
+            self.assertFalse(event_semantic["text_tts_drift"])
 
 
 if __name__ == "__main__":
