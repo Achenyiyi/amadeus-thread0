@@ -363,6 +363,106 @@ class BackendApiTests(unittest.TestCase):
                 self.assertEqual(readback["backend_payload"]["status"], "ready")
                 self.assertEqual(readback["causality"]["status"], "ready")
 
+    def test_turn_and_event_responses_promote_realism_phase3_with_artifact_alignment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            final_text = "嗯，我看见这个登录状态断了。先把访问连续性恢复，再继续任务。"
+            state_values = {
+                "final_text": final_text,
+                "current_event": {
+                    "kind": "multimodal_observation",
+                    "text": "login.png",
+                    "perception": {"channel": "image"},
+                    "digital_body_hints": {
+                        "multimodal_sources": [
+                            {
+                                "source_id": "img-realism-align-1",
+                                "modality": "image",
+                                "path": "fixtures/login.png",
+                                "consent_scope": "single_turn",
+                                "capture_method": "operator_attached_file",
+                                "label": "login.png",
+                                "semantic_summary": "A login dialog with an expired session warning.",
+                                "semantic_label": "login_prompt",
+                            }
+                        ]
+                    },
+                },
+                "session_context": {"thread_id": "thread-a", "turn_started_at": 1_777_777_002},
+                "turn_appraisal": {
+                    "scene": "artifact_review",
+                    "interaction_frame": "task",
+                    "signals": {"task": True, "workspace": True},
+                },
+                "emotion_state": {"label": "hurt", "valence": -0.04, "arousal": 0.20},
+                "bond_state": {"trust": 0.60, "closeness": 0.58, "hurt": 0.14, "repair_confidence": 0.66},
+                "allostasis_state": {"autonomy_need": 0.38, "safety_need": 0.42, "cognitive_budget": 0.70},
+                "counterpart_assessment": {
+                    "stance": "watchful",
+                    "scene": "repair_attempt",
+                    "boundary_pressure": 0.18,
+                    "reliability_read": 0.62,
+                },
+                "semantic_narrative_profile": {
+                    "repair_residue": 0.76,
+                    "continuity_depth": 0.68,
+                    "commitment_carry": 0.62,
+                    "continuity_axes": [{"category": "repair_style", "score": 0.74}],
+                },
+                "behavior_action": {
+                    "interaction_mode": "low_pressure_support",
+                    "action_target": "low_pressure_hold",
+                    "primary_motive": "restore_access_continuity",
+                    "motive_tension": "task_continuity_vs_access_friction",
+                    "goal_frame": "先恢复访问连续性，再继续任务。",
+                },
+                "behavior_plan": {
+                    "kind": "low_pressure_support",
+                    "interaction_mode": "low_pressure_support",
+                    "primary_motive": "restore_access_continuity",
+                    "goal_frame": "先恢复访问连续性，再继续任务。",
+                },
+                "digital_body_consequence": {"kind": "access_state_refreshed"},
+                "reconsolidation_snapshot": {
+                    "behavior_action": {"primary_motive": "restore_access_continuity"},
+                    "behavior_plan": {"kind": "low_pressure_support", "primary_motive": "restore_access_continuity"},
+                    "digital_body_consequence": {"kind": "access_state_refreshed"},
+                    "final_text": final_text,
+                },
+                "writeback_trace": {
+                    "revision_traces": [{"namespace": "artifact_access", "target_id": "restore_access_continuity"}],
+                },
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text=final_text,
+            ).payload
+
+            for payload in (turn_payload, event_payload):
+                embodied = payload["embodied_interaction"]
+                self.assertEqual(
+                    embodied["artifact_behavior_alignment"]["alignment_items"][0]["alignment_status"],
+                    "causally_aligned",
+                )
+                realism = payload["living_loop_realism"]
+                self.assertEqual(
+                    realism["readiness_status"],
+                    "living_loop_runtime_realism_phase3_ready",
+                )
+                self.assertEqual(realism["backend_payload"]["status"], "ready")
+                self.assertEqual(realism["causality"]["status"], "ready")
+                self.assertTrue(realism["artifact_behavior_alignment"]["alignment_visible"])
+                self.assertEqual(
+                    realism["artifact_behavior_alignment"]["alignment_status"],
+                    "causally_aligned",
+                )
+                self.assertFalse(realism["artifact_behavior_alignment"]["behavior_mutation_applied"])
+
     def test_memory_snapshot_normalizes_revision_trace_exports(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
