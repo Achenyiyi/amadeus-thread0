@@ -22,6 +22,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Post-Unlock Roadmap` is now implemented as a bounded release gate: all seven lanes have phase specs, implementation slices, tests, smoke/audit runners, and ready reports, while each lane's blocked surfaces remain in force.
 - `Runtime Productization Phase 1` is now implemented as a readback/productization gate: backend API, backend session, transport adapter, CLI summary, and audit surfaces expose one operator readback without adding runtime authority.
 - `Runtime Productization Phase 2` is now implemented as an operator-console readback gate: `operator_readback.v2` adds console health, evidence summary, read-only route inventory, and next-action hints without adding runtime authority.
+- `Residual Living Loop Closure Phase 1` is now implemented as a north-star residual closure gate: post-unlock residuals are evaluated against one traceable loop from perception through self-narrative update, without opening live capture, automatic skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation.
 
 ## Backend Status
 
@@ -44,6 +45,7 @@ For backend purposes, the structural decisions in this document are now split in
 - preserved-baselines meta-gate: `python evals/run_preserved_baselines_audit.py`
 - post-unlock roadmap gate: `python evals/run_post_unlock_roadmap_audit.py`
 - runtime productization gate: `python evals/run_runtime_productization_audit.py`
+- residual living-loop gate: `python evals/run_residual_living_loop_audit.py`
 - current handoff posture:
   - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
@@ -89,6 +91,11 @@ For backend purposes, the structural decisions in this document are now split in
     - `BackendTransportAdapter` exposes `GET /api/runtime-productization`
     - CLI compact summaries may render `productization=runtime_productization_phase2_ready`, `console=ready`, and `next=monitor_runtime_readback`
     - the productization phases are readback-only and do not enable live capture, automatic skill registry writes, external harness execution, frontend-owned backend semantics, persona-core mutation, memory writes, or unapproved external mutation
+  - current residual living-loop posture is:
+    - `residual_living_loop_phase1_ready`: `amadeus_thread0.runtime.residual_living_loop` evaluates living-loop traceability and residual lane boundaries as one pure readback contract
+    - `evals/run_residual_living_loop_audit.py` emits deterministic json/md reports under `residual-living-loop-audit-*`
+    - optional operator readback can include the residual block, but productization readiness remains governed by the existing post-baseline/post-unlock/preserved-baseline inputs
+    - this phase is a closure/audit layer, not a capability widening layer
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias

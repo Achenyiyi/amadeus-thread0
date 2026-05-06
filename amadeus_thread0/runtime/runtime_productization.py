@@ -173,6 +173,7 @@ def build_runtime_productization_readback(
     preserved_baselines: dict[str, Any] | None,
     post_unlock_roadmap: dict[str, Any] | None,
     current_turn: dict[str, Any] | None = None,
+    residual_living_loop: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     inputs = {
         "post_baseline": _status_line(post_baseline_status),
@@ -190,6 +191,9 @@ def build_runtime_productization_readback(
         "evidence_summary": _evidence_summary(inputs),
         "operator_snapshot": snapshot,
     }
+    residual = _dict_or_empty(residual_living_loop)
+    if residual:
+        readback["residual_living_loop"] = residual
     contract = evaluate_runtime_productization_contract(readback)
     readback["console_summary"] = _console_summary(contract, snapshot)
     readback["overall_status"] = contract["overall_status"]
@@ -226,6 +230,10 @@ def compact_operator_readback_line(readback: dict[str, Any] | None) -> str:
     recovery = str(snapshot.get("procedural_recovery_kind") or "").strip()
     if recovery:
         parts.append(f"recovery={recovery}")
+    residual = data.get("residual_living_loop") if isinstance(data.get("residual_living_loop"), dict) else {}
+    residual_ready = str(residual.get("readiness_status") or "").strip()
+    if residual_ready:
+        parts.append(f"residual={residual_ready}")
     pending = _int_value(snapshot.get("pending_approval_count"), 0)
     if pending:
         parts.append(f"pending_approvals={pending}")
