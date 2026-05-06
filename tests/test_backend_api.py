@@ -4047,7 +4047,7 @@ class BackendApiTests(unittest.TestCase):
                 observation = readback["artifact_semantics"]["semantic_observations"][0]
                 self.assertEqual(
                     readback["readiness_status"],
-                    "embodied_interaction_runtime_phase3_ready",
+                    "embodied_interaction_runtime_phase4_ready",
                 )
                 self.assertEqual(
                     readback["artifact_semantics"]["readiness_status"],
@@ -4132,7 +4132,7 @@ class BackendApiTests(unittest.TestCase):
                 evidence = readback["artifact_appraisal"]["evidence_items"][0]
                 self.assertEqual(
                     readback["readiness_status"],
-                    "embodied_interaction_runtime_phase3_ready",
+                    "embodied_interaction_runtime_phase4_ready",
                 )
                 self.assertEqual(evidence["source_ref_id"], "img-backend-appraisal-1")
                 self.assertEqual(
@@ -4156,6 +4156,97 @@ class BackendApiTests(unittest.TestCase):
                     "img-backend-appraisal-1",
                 )
                 self.assertFalse(readback["artifact_appraisal"]["influence_summary"]["should_write_memory"])
+
+    def test_turn_and_event_responses_attach_artifact_motive_hints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "final_text": "嗯，我听见了。",
+                "current_event": {
+                    "kind": "multimodal_observation",
+                    "text": "login.png",
+                    "perception": {"channel": "image"},
+                    "digital_body_hints": {
+                        "multimodal_sources": [
+                            {
+                                "source_id": "img-backend-motive-1",
+                                "modality": "image",
+                                "path": "fixtures/login.png",
+                                "consent_scope": "single_turn",
+                                "capture_method": "operator_attached_file",
+                                "label": "login.png",
+                                "semantic_summary": "A login dialog with an expired session warning.",
+                                "semantic_label": "login_prompt",
+                            }
+                        ]
+                    },
+                },
+                "turn_appraisal": {"scene": "artifact_review"},
+                "behavior_plan": {"primary_motive": "continue_workspace_task"},
+                "digital_body_state": {
+                    "active_surface": "image",
+                    "perception_channels": ["image"],
+                    "action_channels": ["language"],
+                    "world_surfaces": [],
+                    "access_state": {"mode": "native_only"},
+                    "resource_state": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "image",
+                        "active_artifact_ref": "fixtures/login.png",
+                        "active_artifact_label": "login.png",
+                    },
+                },
+                "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+                "reconsolidation_snapshot": {"final_text": "嗯，我听见了。"},
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text="嗯，我听见了。",
+            ).payload
+
+            for payload in (turn_payload, event_payload):
+                readback = payload["embodied_interaction"]
+                hint = readback["artifact_motive"]["motive_hints"][0]
+                self.assertEqual(
+                    readback["readiness_status"],
+                    "embodied_interaction_runtime_phase4_ready",
+                )
+                self.assertEqual(hint["source_ref_id"], "img-backend-motive-1")
+                self.assertEqual(hint["primary_motive_hint"], "restore_access_continuity")
+                self.assertEqual(
+                    payload["current_event"]["perception"]["motive_hints"][0]["source_ref_id"],
+                    "img-backend-motive-1",
+                )
+                self.assertEqual(
+                    payload["turn_appraisal"]["motive_evidence"][0]["source_ref_id"],
+                    "img-backend-motive-1",
+                )
+                self.assertEqual(
+                    payload["turn_appraisal"]["perception_semantics"]["motive_hints"][0][
+                        "source_ref_id"
+                    ],
+                    "img-backend-motive-1",
+                )
+                self.assertEqual(
+                    payload["interaction_carryover"]["embodied_context"]["artifact_motive_hints"][0][
+                        "source_ref_id"
+                    ],
+                    "img-backend-motive-1",
+                )
+                self.assertEqual(payload["behavior_plan"]["primary_motive"], "continue_workspace_task")
+                self.assertEqual(
+                    payload["behavior_plan"]["artifact_motive_hints"][0]["primary_motive_hint"],
+                    "restore_access_continuity",
+                )
+                self.assertFalse(readback["artifact_motive"]["motive_summary"]["should_write_memory"])
+                self.assertFalse(
+                    readback["artifact_motive"]["motive_summary"]["should_mutate_behavior"]
+                )
 
     def test_turn_response_applies_chinese_semantic_floor_to_final_and_snapshot_text(self):
         with tempfile.TemporaryDirectory() as tmp:

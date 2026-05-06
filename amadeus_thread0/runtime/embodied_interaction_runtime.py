@@ -4,6 +4,7 @@ from typing import Any
 
 from ..graph_parts.chinese_semantic_surface import rewrite_semantic_surface_floor
 from .artifact_appraisal_bridge import build_artifact_appraisal_readback
+from .artifact_motive_bridge import build_artifact_motive_readback
 from .artifact_perception_semantics import build_artifact_semantics_readback
 from .multimodal_sources import normalize_multimodal_source
 
@@ -15,6 +16,8 @@ EMBODIED_INTERACTION_PHASE2_READINESS = "embodied_interaction_runtime_phase2_rea
 EMBODIED_INTERACTION_PHASE2_IN_PROGRESS = "embodied_interaction_runtime_phase2_in_progress"
 EMBODIED_INTERACTION_PHASE3_READINESS = "embodied_interaction_runtime_phase3_ready"
 EMBODIED_INTERACTION_PHASE3_IN_PROGRESS = "embodied_interaction_runtime_phase3_in_progress"
+EMBODIED_INTERACTION_PHASE4_READINESS = "embodied_interaction_runtime_phase4_ready"
+EMBODIED_INTERACTION_PHASE4_IN_PROGRESS = "embodied_interaction_runtime_phase4_in_progress"
 
 AUTHORITY_BOUNDARY = {
     "persona_core_mutation_allowed": False,
@@ -128,22 +131,34 @@ def _appraisal_evidence(artifact_appraisal: dict[str, Any]) -> list[dict[str, An
     ]
 
 
+def _motive_hints(artifact_motive: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in list(artifact_motive.get("motive_hints") or [])
+        if isinstance(item, dict)
+    ]
+
+
 def _current_event_patch(
     turn: dict[str, Any],
     sources: dict[str, Any],
     artifact_semantics: dict[str, Any],
     artifact_appraisal: dict[str, Any],
+    artifact_motive: dict[str, Any],
 ) -> dict[str, Any]:
     current_event = _dict_or_empty(turn.get("current_event"))
     patch: dict[str, Any] = {"perception_sources": list(sources.get("available_sources") or [])}
     observations = list(artifact_semantics.get("semantic_observations") or [])
     evidence = _appraisal_evidence(artifact_appraisal)
-    if observations or evidence:
+    motive_hints = _motive_hints(artifact_motive)
+    if observations or evidence or motive_hints:
         perception = _dict_or_empty(current_event.get("perception"))
         if observations:
             perception["semantic_observations"] = observations
         if evidence:
             perception["appraisal_evidence"] = evidence
+        if motive_hints:
+            perception["motive_hints"] = motive_hints
         patch["perception"] = perception
     return patch
 
@@ -152,10 +167,12 @@ def _turn_appraisal_patch(
     turn: dict[str, Any],
     artifact_semantics: dict[str, Any],
     artifact_appraisal: dict[str, Any],
+    artifact_motive: dict[str, Any],
 ) -> dict[str, Any]:
     turn_appraisal = _dict_or_empty(turn.get("turn_appraisal"))
     observations = list(artifact_semantics.get("semantic_observations") or [])
     evidence = _appraisal_evidence(artifact_appraisal)
+    motive_hints = _motive_hints(artifact_motive)
     if observations:
         turn_appraisal["perception_semantics"] = {
             "status": _clean(artifact_semantics.get("status")) or "empty",
@@ -178,7 +195,32 @@ def _turn_appraisal_patch(
         perception_semantics["appraisal_evidence"] = evidence
         turn_appraisal["perception_semantics"] = perception_semantics
         turn_appraisal["artifact_evidence"] = evidence
+    if motive_hints:
+        perception_semantics = _dict_or_empty(turn_appraisal.get("perception_semantics"))
+        perception_semantics.setdefault("status", _clean(artifact_semantics.get("status")) or "empty")
+        perception_semantics.setdefault("semantic_observations", observations)
+        perception_semantics.setdefault(
+            "model_api_called",
+            bool(artifact_semantics.get("model_api_called", False)),
+        )
+        perception_semantics.setdefault(
+            "writeback_ready_count",
+            int(artifact_semantics.get("writeback_ready_count") or 0),
+        )
+        if evidence:
+            perception_semantics.setdefault("appraisal_evidence", evidence)
+        perception_semantics["motive_hints"] = motive_hints
+        turn_appraisal["perception_semantics"] = perception_semantics
+        turn_appraisal["motive_evidence"] = motive_hints
     return turn_appraisal
+
+
+def _behavior_plan_patch(turn: dict[str, Any], artifact_motive: dict[str, Any]) -> dict[str, Any]:
+    behavior_plan = _dict_or_empty(turn.get("behavior_plan"))
+    motive_hints = _motive_hints(artifact_motive)
+    if motive_hints:
+        behavior_plan["artifact_motive_hints"] = motive_hints
+    return behavior_plan
 
 
 def _digital_body_patch(turn: dict[str, Any], sources: dict[str, Any]) -> dict[str, Any]:
@@ -202,6 +244,7 @@ def _carryover_patch(
     sources: dict[str, Any],
     artifact_semantics: dict[str, Any],
     artifact_appraisal: dict[str, Any],
+    artifact_motive: dict[str, Any],
 ) -> dict[str, Any]:
     carryover = _dict_or_empty(turn.get("interaction_carryover"))
     embodied = _dict_or_empty(carryover.get("embodied_context"))
@@ -220,6 +263,11 @@ def _carryover_patch(
     if evidence:
         embodied["artifact_appraisal_evidence"] = evidence
         embodied.setdefault("kind", "artifact_appraisal_evidence")
+        embodied.setdefault("artifact_continuity", "attached")
+    motive_hints = _motive_hints(artifact_motive)
+    if motive_hints:
+        embodied["artifact_motive_hints"] = motive_hints
+        embodied.setdefault("kind", "artifact_motive_hints")
         embodied.setdefault("artifact_continuity", "attached")
     carryover["embodied_context"] = embodied
     return carryover
@@ -244,13 +292,18 @@ def build_embodied_interaction_readback(turn: dict[str, Any] | None) -> dict[str
     sources = normalize_embodied_interaction_sources(data)
     artifact_semantics = build_artifact_semantics_readback(_candidate_sources(data))
     artifact_appraisal = build_artifact_appraisal_readback(artifact_semantics)
+    artifact_motive = build_artifact_motive_readback(artifact_appraisal)
     semantic = _semantic_runtime_floor(data)
     available = int(sources.get("available_count") or 0)
     blocked = int(sources.get("blocked_count") or 0)
     semantic_applied = bool(semantic.get("applied_floor", False))
     artifact_semantics_ready = _clean(artifact_semantics.get("status")) == "ready"
     artifact_appraisal_ready = _clean(artifact_appraisal.get("status")) == "ready"
-    if artifact_appraisal_ready:
+    artifact_motive_ready = _clean(artifact_motive.get("status")) == "ready"
+    if artifact_motive_ready:
+        overall = "passed"
+        readiness = EMBODIED_INTERACTION_PHASE4_READINESS
+    elif artifact_appraisal_ready:
         overall = "passed"
         readiness = EMBODIED_INTERACTION_PHASE3_READINESS
     elif artifact_semantics_ready:
@@ -278,19 +331,21 @@ def build_embodied_interaction_readback(turn: dict[str, Any] | None) -> dict[str
         reconsolidation_snapshot["final_text"] = runtime_text
 
     return {
-        "phase": "Embodied Interaction Runtime Phase 1",
+        "phase": "Embodied Interaction Runtime Phase 4",
         "schema": "embodied_interaction.runtime.v1",
         "overall_status": overall,
         "readiness_status": readiness,
         "final_text": runtime_text,
-        "current_event": _current_event_patch(data, sources, artifact_semantics, artifact_appraisal),
-        "turn_appraisal": _turn_appraisal_patch(data, artifact_semantics, artifact_appraisal),
+        "current_event": _current_event_patch(data, sources, artifact_semantics, artifact_appraisal, artifact_motive),
+        "turn_appraisal": _turn_appraisal_patch(data, artifact_semantics, artifact_appraisal, artifact_motive),
+        "behavior_plan": _behavior_plan_patch(data, artifact_motive),
         "digital_body": _digital_body_patch(data, sources),
-        "interaction_carryover": _carryover_patch(data, sources, artifact_semantics, artifact_appraisal),
+        "interaction_carryover": _carryover_patch(data, sources, artifact_semantics, artifact_appraisal, artifact_motive),
         "reconsolidation_snapshot": reconsolidation_snapshot,
         "source_status": sources,
         "artifact_semantics": artifact_semantics,
         "artifact_appraisal": artifact_appraisal,
+        "artifact_motive": artifact_motive,
         "chinese_semantic_surface": semantic,
         "authority_boundary": dict(AUTHORITY_BOUNDARY),
         "failure_reasons": [
@@ -319,6 +374,10 @@ def apply_embodied_interaction_readback_to_payload(payload: dict[str, Any] | Non
         turn_appraisal = _dict_or_empty(data.get("turn_appraisal"))
         turn_appraisal.update(readback["turn_appraisal"])
         data["turn_appraisal"] = turn_appraisal
+    if isinstance(readback.get("behavior_plan"), dict):
+        behavior_plan = _dict_or_empty(data.get("behavior_plan"))
+        behavior_plan.update(readback["behavior_plan"])
+        data["behavior_plan"] = behavior_plan
     if isinstance(readback.get("digital_body"), dict):
         data["digital_body"] = dict(readback["digital_body"])
     if isinstance(readback.get("interaction_carryover"), dict):
@@ -345,6 +404,7 @@ def compact_embodied_interaction_line(readback: dict[str, Any] | None) -> str:
         f"blocked={int(source_status.get('blocked_count') or 0)}",
         f"artifact_semantics={int(_dict_or_empty(data.get('artifact_semantics')).get('observation_count') or 0)}",
         f"artifact_appraisal={int(_dict_or_empty(data.get('artifact_appraisal')).get('evidence_count') or 0)}",
+        f"artifact_motive={int(_dict_or_empty(data.get('artifact_motive')).get('hint_count') or 0)}",
         f"semantic_floor={_clean(semantic.get('status')) or 'unknown'}",
         f"live_capture={str(live_capture).lower()}",
     ]
@@ -360,6 +420,8 @@ __all__ = [
     "EMBODIED_INTERACTION_PHASE2_READINESS",
     "EMBODIED_INTERACTION_PHASE3_IN_PROGRESS",
     "EMBODIED_INTERACTION_PHASE3_READINESS",
+    "EMBODIED_INTERACTION_PHASE4_IN_PROGRESS",
+    "EMBODIED_INTERACTION_PHASE4_READINESS",
     "apply_embodied_interaction_readback_to_payload",
     "build_embodied_interaction_readback",
     "compact_embodied_interaction_line",
