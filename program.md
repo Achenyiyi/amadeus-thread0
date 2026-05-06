@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Embodied Interaction Runtime Phase 4` approved artifact motive/goal advisory coupling after Embodied Interaction Runtime Phase 3
+- Mainline phase: `Embodied Interaction Runtime Phase 5` motive-to-behavior alignment readback after Embodied Interaction Runtime Phase 4
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -39,6 +39,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `embodied_interaction_runtime_phase2_ready`
   - preserve `embodied_interaction_runtime_phase3_ready`
   - preserve `embodied_interaction_runtime_phase4_ready`
+  - preserve `embodied_interaction_runtime_phase5_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -70,6 +71,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - approved artifact appraisal evidence surfaces through `embodied_interaction.artifact_appraisal.evidence_items`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
   - `embodied_interaction_runtime_phase4_ready` means approved appraisal evidence can become read-only motive/goal advisory hints without replacing actual behavior motives or writing memory facts
   - approved artifact motive/goal advisory hints surface through `embodied_interaction.artifact_motive.motive_hints`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
+  - `embodied_interaction_runtime_phase5_ready` means approved artifact motive hints can be compared against actual behavior action / behavior plan motives as read-only alignment evidence without mutating behavior or writing memory facts
+  - approved artifact behavior alignment surfaces through `embodied_interaction.artifact_behavior_alignment.alignment_items`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
   - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families
   - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, mutate behavior motives, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
@@ -12138,3 +12141,63 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=preserved_baselines_ready`
 - Next:
   - push `main` to `origin/main`, then select the next bounded runtime phase only after checking roadmap dependency order and preserved-baseline evidence
+
+## 2026-05-06 Run 267
+
+- Focus:
+  - implement `Embodied Interaction Runtime Phase 5` after Phase 4 approved artifact motive/goal advisory coupling
+  - add motive-to-behavior alignment readback so Phase 4 motive hints can be checked against actual behavior action / behavior plan motives
+  - preserve all prior embodied interaction boundaries: no behavior mutation, no memory write, no model API call, no live capture, no execution authority widening
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/artifact_behavior_alignment.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `evals/run_embodied_interaction_runtime_phase4_audit.py`
+  - `evals/run_embodied_interaction_runtime_phase5_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_artifact_behavior_alignment.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_embodied_interaction_runtime_phase5_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-amadeus-k-rolling-closure-roadmap.md`
+  - `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase5.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.artifact_behavior_alignment` as the bounded approved-motive behavior-alignment readback normalizer
+  - attached Phase 5 alignment through:
+    - `embodied_interaction.artifact_behavior_alignment.alignment_items`
+    - `current_event.perception.behavior_alignment`
+    - `turn_appraisal.behavior_alignment_evidence`
+    - `turn_appraisal.perception_semantics.behavior_alignment`
+    - `interaction_carryover.embodied_context.artifact_behavior_alignment`
+    - advisory `behavior_plan.artifact_behavior_alignment`
+  - alignment distinguishes `causally_aligned`, `advisory_not_reflected`, and `behavior_conflict_observed`
+  - kept existing `behavior_action.primary_motive` and `behavior_plan.primary_motive` intact; Phase 5 alignment is advisory/readback-only
+  - every alignment item stays derived from `artifact_motive_hint` with `model_api_called=false`, `memory_write_allowed=false`, `behavior_mutation_allowed=false`, `behavior_mutation_applied=false`, and `writeback_ready=false`
+  - added `evals/run_embodied_interaction_runtime_phase5_audit.py` reporting `embodied_interaction_runtime_phase5_ready`
+  - folded `embodied_interaction_runtime_phase5_ready` into preserved baselines under the `embodied_interaction` category
+  - updated Phase 4 audit compatibility so Phase 4 preserved-baseline checks assert the `artifact_motive_bridge_ready` sub-contract under Phase 5 top-level readiness
+- Validation so far:
+  - initial RED checks:
+    - `python -m pytest tests/test_artifact_behavior_alignment.py -q`
+      - failed because `amadeus_thread0.runtime.artifact_behavior_alignment` did not exist
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "artifact_behavior_alignment or artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction" -q`
+      - failed because `artifact_behavior_alignment` was not attached to embodied interaction readback
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase5_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_embodied_interaction_runtime_phase5_audit` and the preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_artifact_behavior_alignment.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_artifact_behavior_alignment.py tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "artifact_behavior_alignment or artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+      - passed: `20 passed, 47 deselected`
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase4_audit.py tests/test_embodied_interaction_runtime_phase5_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `11 passed`
+    - `python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag phase5-regression`
+      - passed with `readiness=embodied_interaction_runtime_phase4_ready`
+    - `python evals/run_embodied_interaction_runtime_phase5_audit.py --run-tag phase5-dev`
+      - passed with `readiness=embodied_interaction_runtime_phase5_ready`
+- Next:
+  - run full Phase 5 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Living Loop Runtime Realism Phase 3`
