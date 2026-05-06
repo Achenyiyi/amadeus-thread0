@@ -12002,7 +12002,7 @@ This file is the live development ledger for `amadeus-thread0`.
       - failed because backend payloads did not carry Phase 3 appraisal evidence
     - `python -m pytest tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_preserved_baselines_audit.py -q`
       - failed because `evals.run_embodied_interaction_runtime_phase3_audit` and the preserved-baseline row did not exist
-  - focused green checks so far:
+  - focused green checks:
     - `python -m pytest tests/test_artifact_appraisal_bridge.py -q`
       - passed: `3 passed`
     - `python -m pytest tests/test_artifact_appraisal_bridge.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py -q`
@@ -12013,8 +12013,29 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `9 passed`
     - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase3-dev`
       - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+  - pre-merge final verification:
+    - `python -m pytest tests/test_artifact_appraisal_bridge.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_phase2_audit.py tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_multimodal_sources.py -q`
+      - passed: `22 passed`
+    - `python -m pytest tests/test_backend_api.py -k "artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism or turn_and_event_responses_attach_operator_readback" -q`
+      - passed: `5 passed, 46 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `185 passed, 17 subtests passed`
+    - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+      - passed: `14 passed, 9 subtests passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/artifact_perception_semantics.py amadeus_thread0/runtime/artifact_appraisal_bridge.py amadeus_thread0/runtime/embodied_interaction_runtime.py amadeus_thread0/runtime/backend_api.py evals/run_embodied_interaction_runtime_phase2_audit.py evals/run_embodied_interaction_runtime_phase3_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_embodied_interaction_runtime_phase2_audit.py --run-tag phase3-regression-final`
+      - passed with `readiness=embodied_interaction_runtime_phase2_ready`
+    - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase3-final-rerun`
+      - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+    - `python evals/run_living_loop_realism_phase2_audit.py --run-tag embodied-phase3-regression-final`
+      - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+    - `git diff --check`
+      - passed
 - Result:
-  - `Embodied Interaction Runtime Phase 3` is implemented in branch `codex/embodied-interaction-runtime-phase3`
-  - final verification, merge to `main`, and push are still pending
+  - `Embodied Interaction Runtime Phase 3` is implemented and verified in branch `codex/embodied-interaction-runtime-phase3`
+  - all plan checkboxes through pre-merge verification are complete
 - Next:
-  - run final verification, commit docs, fast-forward merge to `main`, rerun post-merge audits, and push
+  - fast-forward merge to `main`, rerun post-merge audits, and push
