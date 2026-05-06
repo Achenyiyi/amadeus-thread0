@@ -84,6 +84,13 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - it attaches `living_loop_realism` to real `assistant_turn` and `event_round` backend payloads
   - it proves the Phase 1 causal loop readback can consume backend-style payloads with `turn_summary` and `writeback_trace`, not only deterministic fixtures
   - it does not change graph generation, persona core, memory-write authority, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, or external mutation authority
+- `Living Loop Runtime Realism Phase 3` is now closed as an artifact-alignment realism gate:
+  - `living_loop_runtime_realism_phase3_ready`
+  - it consumes existing Phase 5 `embodied_interaction.artifact_behavior_alignment` readback from real backend payloads
+  - it proves motive-to-behavior artifact alignment is visible to living-loop realism without recalculating alignment from raw artifacts
+  - `advisory_not_reflected` remains truthful visible evidence, not a failure and not fake causal adoption
+  - unsafe or mutating alignment evidence fails closed as Phase 3 `in_progress`
+  - it does not change graph generation, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, multimodal model API use, skill registry state, or external mutation authority
 - `Embodied Interaction Runtime Phase 1` is now closed as the first runtime integration gate over the unlocked multimodal and Chinese semantic lanes:
   - `embodied_interaction_runtime_phase1_ready`
   - it attaches `embodied_interaction` to real `assistant_turn` and `event_round` backend payloads
@@ -148,7 +155,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - Chinese semantic de-scaffolding now has deterministic replacement guidance and conservative runtime safe-surface floors, not broad prompt sprawl
   - capability growth remains advisory workflow continuity
   - long-horizon calibration remains offline deterministic evaluation
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `living_loop_runtime_realism_phase3_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona

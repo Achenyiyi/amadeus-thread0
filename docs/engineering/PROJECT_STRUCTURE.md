@@ -349,7 +349,10 @@ Rule:
 - checks appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final-semantics alignment
 - exposes `living_loop_runtime_realism_phase1_ready` as a deterministic audit/readback gate
 - exposes `living_loop_runtime_realism_phase2_ready` when real `assistant_turn` / `event_round` backend payloads carry the same causal readback through `living_loop_realism`
+- exposes `living_loop_runtime_realism_phase3_ready` when those backend payloads also carry Phase 5 `embodied_interaction.artifact_behavior_alignment` readback
+- preserves `advisory_not_reflected` as truthful visible evidence while failing closed on unsafe or mutating artifact-alignment claims
 - normalizes backend payload fields such as `turn_summary`, `writeback_trace`, final behavior payloads, internal state, and reconsolidation snapshots into one current-turn realism view
+- consumes existing artifact-alignment readback only; it does not recalculate alignment from raw artifacts
 - remains pure readback/audit logic with no execution, memory-write, browser, sandbox, skill-install, frontend, prompt-sprawl, or persona-core authority
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
@@ -519,6 +522,8 @@ Current skills closure coverage lives in:
   `python evals/run_post_baseline_closure_audit.py`
 - preserved-baselines meta-audit:
   `python evals/run_preserved_baselines_audit.py`
+- living-loop realism phase-3 audit:
+  `python evals/run_living_loop_realism_phase3_audit.py`
 - frontend dev shell:
   `cd frontend && npm run dev`
 - deployment config:

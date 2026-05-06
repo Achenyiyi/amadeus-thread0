@@ -11,9 +11,9 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-05-06`
+- Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Embodied Interaction Runtime Phase 5` motive-to-behavior alignment readback after Embodied Interaction Runtime Phase 4
+- Mainline phase: `Living Loop Runtime Realism Phase 3` artifact-alignment realism after Embodied Interaction Runtime Phase 5
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -35,6 +35,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
   - preserve `living_loop_runtime_realism_phase2_ready`
+  - preserve `living_loop_runtime_realism_phase3_ready`
   - preserve `embodied_interaction_runtime_phase1_ready`
   - preserve `embodied_interaction_runtime_phase2_ready`
   - preserve `embodied_interaction_runtime_phase3_ready`
@@ -61,7 +62,9 @@ This file is the live development ledger for `amadeus-thread0`.
   - Chinese semantic de-scaffolding now includes deterministic replacement guidance and conservative safe-surface floors, not broad prompt-sprawl rewrites
   - `living_loop_runtime_realism_phase1_ready` does not open live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
   - `living_loop_runtime_realism_phase2_ready` means real `assistant_turn` and `event_round` backend payloads now carry the same causal readback through `living_loop_realism`
-  - Phase 2 still does not change graph generation, persona core, memory-write authority, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, or external mutation authority
+  - `living_loop_runtime_realism_phase3_ready` means those backend payloads can also consume Phase 5 `embodied_interaction.artifact_behavior_alignment` readback without recalculating alignment from raw artifacts
+  - Phase 3 preserves `advisory_not_reflected` as truthful visible evidence, keeps payloads without artifact alignment at Phase 2 readiness, and fails closed on unsafe or mutating alignment claims
+  - Phase 3 still does not change graph generation, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, multimodal model API use, skill registry state, or external mutation authority
 - Current embodied interaction runtime focus:
   - `embodied_interaction_runtime_phase1_ready` means real `assistant_turn` and `event_round` backend payloads now carry `embodied_interaction`
   - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
@@ -12201,3 +12204,49 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=embodied_interaction_runtime_phase5_ready`
 - Next:
   - run full Phase 5 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Living Loop Runtime Realism Phase 3`
+
+## 2026-05-07 Run 268
+
+- Focus:
+  - implement `Living Loop Runtime Realism Phase 3` after Embodied Interaction Runtime Phase 5
+  - make `living_loop_realism` consume existing Phase 5 artifact motive-to-behavior alignment readback from real backend payloads
+  - preserve Phase 2 fallback for payloads without artifact alignment and fail closed on unsafe or mutating alignment evidence
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/living_loop_realism.py`
+  - `evals/run_living_loop_realism_phase3_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_living_loop_realism.py`
+  - `tests/test_living_loop_realism_phase3_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase3.md`
+  - `program.md`
+- Key changes:
+  - added `living_loop_runtime_realism_phase3_ready` and Phase 3 `in_progress` readiness constants
+  - normalized `embodied_interaction.artifact_behavior_alignment` into backend payload realism readback without recalculating alignment from raw artifacts
+  - promoted backend payloads with safe ready artifact alignment to Phase 3 readiness
+  - kept payloads without artifact alignment at `living_loop_runtime_realism_phase2_ready`
+  - preserved `advisory_not_reflected` as visible truthful evidence, not failure and not fake causal adoption
+  - blocked alignment evidence that claims model API calls, memory/writeback readiness, or behavior mutation
+  - added `evals/run_living_loop_realism_phase3_audit.py` reporting `living_loop_runtime_realism_phase3_ready`
+  - folded Phase 3 into `run_preserved_baselines_audit.py` under the `living_loop_realism` category
+- Validation so far:
+  - initial RED checks:
+    - `python -m pytest tests/test_living_loop_realism.py -k "artifact_behavior_alignment or backend_payload_readback_returns_phase2_ready" -q`
+      - failed before Phase 3 constants/readback existed
+    - `python -m pytest tests/test_backend_api.py -k "living_loop_realism and artifact_behavior_alignment" -q`
+      - failed before backend payload realism promoted to Phase 3
+    - `python -m pytest tests/test_living_loop_realism_phase3_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed before the Phase 3 audit and preserved-baseline row existed
+  - focused green checks:
+    - `python -m pytest tests/test_living_loop_realism.py tests/test_backend_api.py -k "living_loop_realism or artifact_behavior_alignment or embodied_interaction" -q`
+      - passed: `14 passed, 51 deselected`
+    - `python -m pytest tests/test_living_loop_realism_phase3_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_living_loop_realism_phase3_audit.py --run-tag phase3-dev`
+      - passed with `readiness=living_loop_runtime_realism_phase3_ready`
+- Next:
+  - run full Phase 3 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Chinese Semantic De-Scaffolding Phase 2`
