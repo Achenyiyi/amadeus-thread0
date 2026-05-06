@@ -3921,6 +3921,93 @@ class BackendApiTests(unittest.TestCase):
                     "inspect_failure_artifact",
                 )
 
+    def test_turn_and_event_responses_attach_embodied_interaction_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "final_text": "嗯，我听见了。",
+                "current_event": {
+                    "kind": "multimodal_observation",
+                    "text": "panel.png",
+                    "digital_body_hints": {
+                        "multimodal_sources": [
+                            {
+                                "source_id": "img-backend-1",
+                                "modality": "image",
+                                "path": "fixtures/panel.png",
+                                "consent_scope": "single_turn",
+                                "capture_method": "operator_attached_file",
+                                "label": "panel.png",
+                            }
+                        ]
+                    },
+                },
+                "digital_body_state": {
+                    "active_surface": "image",
+                    "perception_channels": ["image"],
+                    "action_channels": ["language"],
+                    "world_surfaces": [],
+                    "access_state": {"mode": "native_only"},
+                    "resource_state": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "image",
+                        "active_artifact_ref": "fixtures/panel.png",
+                        "active_artifact_label": "panel.png",
+                    },
+                },
+                "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+                "reconsolidation_snapshot": {"final_text": "嗯，我听见了。"},
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text="嗯，我听见了。",
+            ).payload
+
+            for payload in (turn_payload, event_payload):
+                readback = payload["embodied_interaction"]
+                self.assertEqual(readback["schema"], "embodied_interaction.runtime.v1")
+                self.assertEqual(
+                    readback["readiness_status"],
+                    "embodied_interaction_runtime_phase1_ready",
+                )
+                self.assertEqual(
+                    payload["current_event"]["perception_sources"][0]["source_ref_id"],
+                    "img-backend-1",
+                )
+                self.assertEqual(payload["current_event"]["perception_sources"][0]["source_kind"], "image_file")
+                self.assertEqual(
+                    payload["digital_body"]["resource_state"]["multimodal_source_refs"],
+                    ["img-backend-1"],
+                )
+                self.assertEqual(
+                    payload["interaction_carryover"]["embodied_context"]["multimodal_sources"][0][
+                        "source_ref_id"
+                    ],
+                    "img-backend-1",
+                )
+
+    def test_turn_response_applies_chinese_semantic_floor_to_final_and_snapshot_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "final_text": "请问有什么可以帮你？",
+                "reconsolidation_snapshot": {"final_text": "请问有什么可以帮你？"},
+            }
+
+            payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+
+            self.assertEqual(payload["final_text"], "嗯，我在。你直接说吧，我会顺着这轮的语境接住。")
+            self.assertEqual(payload["reconsolidation_snapshot"]["final_text"], payload["final_text"])
+            self.assertTrue(payload["embodied_interaction"]["chinese_semantic_surface"]["applied_floor"])
+
 
 if __name__ == "__main__":
     unittest.main()
