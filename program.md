@@ -11463,9 +11463,20 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with only Windows LF-to-CRLF warnings
     - placeholder scan over the touched Phase 2 plan/code/test/doc set
       - passed with no matches
+  - post-merge main verification:
+    - `python -m pytest tests/test_runtime_productization.py tests/test_runtime_productization_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `14 passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/runtime_productization.py evals/run_runtime_productization_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_runtime_productization_audit.py --reports-dir evals/reports`
+      - passed with `readiness=runtime_productization_phase2_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Result:
-  - `Runtime Productization Phase 2` is implemented and ready in branch `codex/runtime-productization-phase2`
+  - `Runtime Productization Phase 2` is implemented, merged to local `main`, and ready
   - all plan checkboxes in `docs/superpowers/plans/2026-05-06-runtime-productization-phase2.md` are marked complete
   - no persona-core mutation, memory write, tool/browser/sandbox execution, external executor harness enablement, automatic dynamic skill registry write, frontend-owned backend semantics, or live capture was introduced
 - Next:
-  - commit and fast-forward merge `codex/runtime-productization-phase2` to `main`
+  - push `main` to `origin/main`
