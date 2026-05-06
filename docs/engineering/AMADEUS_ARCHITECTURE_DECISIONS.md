@@ -19,10 +19,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Procedural Growth Phase 4` is now implemented as recovery-oriented procedural adaptation: failed, blocked, manual-takeover, stale, and unexecuted outcomes produce bounded recovery guidance without becoming new capability facts.
 - `Complete Closeout Unlock` is now active as the control-plane decision after procedural growth phase 4: formerly deferred or tracked lanes may enter bounded implementation phases as `unlocked_planned`, but no lane gains runtime authority until its own spec, tests, approval semantics, and audit gate close.
 - The unlocked lanes are multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth beyond phase 4, natural long-horizon calibration, external executor harness adapters, and a frontend runtime shell.
+- `Post-Unlock Roadmap` is now implemented as a bounded release gate: all seven lanes have phase specs, implementation slices, tests, smoke/audit runners, and ready reports, while each lane's blocked surfaces remain in force.
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -39,6 +40,7 @@ For backend purposes, the structural decisions in this document are now split in
 - procedural growth phase 3 gate: `python evals/run_procedural_growth_phase3_audit.py`
 - procedural growth phase 4 gate: `python evals/run_procedural_growth_phase4_audit.py`
 - preserved-baselines meta-gate: `python evals/run_preserved_baselines_audit.py`
+- post-unlock roadmap gate: `python evals/run_post_unlock_roadmap_audit.py`
 - current handoff posture:
   - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
@@ -68,6 +70,14 @@ For backend purposes, the structural decisions in this document are now split in
     - formerly deferred or tracked lanes are now `unlocked_planned`
     - `unlocked_planned` means the lane may begin a bounded implementation phase, not that the runtime already exposes the capability
     - blocked surfaces remain explicit for multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth, natural long-horizon calibration, external executor harnesses, and frontend runtime shell work
+  - current post-unlock roadmap posture is:
+    - `multimodal_capture_phase1_ready`: consent-bound source artifacts and read-only perception events are implemented; live microphone/camera/background screen/secret capture remains blocked
+    - `dynamic_skills_phase1_ready`: completed procedural traces may propose hash-verified skill candidates; install/enable/registry writes remain approval-gated and manual
+    - `external_executor_harness_phase1_ready`: external harness families are represented as disabled result-only metadata; only `sandbox_runner` is enabled
+    - `frontend_runtime_shell_phase1_ready`: the React/Vite shell builds against `backend.v1` fixtures and does not own backend semantics
+    - `chinese_semantic_descaffolding_phase1_ready`: semantic diagnostics exist before any broad runtime rewrite; legacy post-baseline tracking remains compatible
+    - `capability_growth_phase5_ready`: workflow candidates are advisory continuity over completed traces, not capability claims
+    - `natural_long_horizon_calibration_phase1_ready`: deterministic offline packs evaluate the lived-loop surface without scene scripts
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias
@@ -246,14 +256,14 @@ Post-Baseline Closure Pack preserved contract:
   - closeout report:
     - `evals/reports/executor-adapter-audit-20260506-015758-post-baseline-closure.{json,md}`
 - Complete closeout unlock lanes:
-  - multimodal input capture: `unlocked_planned`
-  - dynamic skill generation: `unlocked_planned`
-  - Chinese semantic de-scaffolding: `unlocked_planned`
-  - bounded capability growth: `unlocked_planned`
-  - natural long-horizon calibration: `unlocked_planned`
-  - external executor harness adapters: `unlocked_planned`
-  - frontend runtime shell: `unlocked_planned`
-  - these statuses unlock bounded implementation specs; they do not mark the runtime capability as available yet
+  - multimodal input capture: `multimodal_capture_phase1_ready`
+  - dynamic skill generation: `dynamic_skills_phase1_ready`
+  - Chinese semantic de-scaffolding: `chinese_semantic_descaffolding_phase1_ready`
+  - bounded capability growth: `capability_growth_phase5_ready`
+  - natural long-horizon calibration: `natural_long_horizon_calibration_phase1_ready`
+  - external executor harness adapters: `external_executor_harness_phase1_ready`
+  - frontend runtime shell: `frontend_runtime_shell_phase1_ready`
+  - these statuses close bounded implementation specs; they still do not widen beyond each lane's explicit runtime/approval boundary
 - Final closure evidence:
   - `evals/reports/post-baseline-closure-audit-20260506-020030-final.{json,md}`
   - `overall_status=passed`
@@ -975,10 +985,11 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 12. `Post-Baseline Closure Pack` - `baseline-closed`
 13. `Procedural Growth Phases 1-4` - `baseline-closed through recovery-oriented adaptation`
 14. `Complete Closeout Unlock` - `active control-plane status`
-15. `Multimodal Capture Phase 1` - `unlocked_planned`
-16. `Dynamic Skills Phase 1` - `unlocked_planned`
-17. `External Executor Harness Phase 1` - `unlocked_planned`
-18. `Frontend Runtime Shell` - `unlocked_planned`
-19. `Chinese semantic de-scaffolding` - `unlocked_planned`
-20. `Capability Growth Phase 5` - `unlocked_planned`
-21. `Natural Long-Horizon Calibration` - `unlocked_planned`
+15. `Multimodal Capture Phase 1` - `phase1-ready`
+16. `Dynamic Skills Phase 1` - `phase1-ready`
+17. `External Executor Harness Phase 1` - `phase1-ready`
+18. `Frontend Runtime Shell` - `phase1-ready`
+19. `Chinese semantic de-scaffolding` - `phase1-ready`
+20. `Capability Growth Phase 5` - `phase5-ready`
+21. `Natural Long-Horizon Calibration` - `phase1-ready`
+22. `Post-Unlock Roadmap Integration Gate` - `ready`

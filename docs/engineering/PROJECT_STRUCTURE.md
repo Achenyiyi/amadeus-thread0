@@ -84,6 +84,10 @@ amadeus_thread0/
   outcome-calibrated procedural learning helpers; derives final action-packet outcomes, adjusts procedural trace confidence, and keeps failed/blocked/manual/pending attempts from becoming capability facts.
 - `procedural_recovery.py`
   recovery-oriented procedural adaptation helpers; converts failed, blocked, manual-takeover, stale, and unexecuted outcomes into bounded advisory recovery guidance without opening new execution or mutation authority.
+- `capability_growth.py`
+  phase-5 workflow-candidate helpers over completed procedural evidence; advisory planning metadata only, with no new tool grant, skill install, or persona-core authority.
+- `chinese_semantic_surface.py`
+  semantic diagnostic helpers for Chinese surface de-scaffolding; classifies brittle surface families and candidate replacement semantics before any broad runtime rewrite.
 - `browser_runtime.py`
   live-browser state shaping, browser packet preview/result normalization, and body-surface continuity helpers.
 - `autonomy_runtime.py`
@@ -144,6 +148,9 @@ Rule:
 - `runtime_bundle.py`
 - `transport_adapter.py`
 - `executor_adapter.py`
+- `executor_harness_registry.py`
+- `dynamic_skill_candidates.py`
+- `multimodal_sources.py`
 - `post_baseline_closure.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
@@ -213,6 +220,24 @@ Rule:
 - documents Deep Agents, Codex, Claude, and OpenClaw harnesses as disabled future candidates
 - keeps executor results as result-only runtime facts; adapters do not own persona memory or writeback semantics
 
+`executor_harness_registry.py` holds the post-unlock external harness registry:
+
+- keeps Deep Agents, Codex, Claude, and OpenClaw harnesses disabled and result-only
+- preserves `sandbox_runner` as the only enabled executor harness
+- keeps external harness metadata outside persona memory/writeback ownership
+
+`dynamic_skill_candidates.py` holds proposal-only dynamic skill candidate helpers:
+
+- derives draft `SKILL.md` candidates only from completed procedural evidence
+- produces hash-verified approval payloads
+- does not install, enable, or mutate the managed skills registry automatically
+
+`multimodal_sources.py` holds phase-1 multimodal source artifact normalization:
+
+- supports consent-bound text, image, audio-file, screen-snapshot-file, and browser-capture-ref observations
+- blocks live microphone/camera/background screen/secret capture methods
+- emits read-only source artifacts and perception events with digital-body hints
+
 `sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
 
 - `LocalRestrictedSandboxRunner`
@@ -245,8 +270,9 @@ Rule:
 `post_baseline_closure.py` holds the post-baseline closure status policy:
 
 - marks callable transport, TTS presence timing, and executor adapter readiness
-- marks multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth, natural long-horizon calibration, external executor harnesses, and the frontend runtime shell as `unlocked_planned`
-- keeps each unlocked lane's blocked surfaces explicit so "unlocked" does not widen runtime authority before a lane-specific spec and audit close it
+- marks post-unlock roadmap lanes as `unlocked_planned` until their phase audits are ready
+- upgrades lane status from the post-unlock roadmap audit while keeping blocked surfaces explicit
+- keeps "ready" lane status separate from blanket runtime authority when a lane remains proposal-only, diagnostic-only, advisory-only, or fail-closed
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
@@ -334,6 +360,13 @@ Rule:
   - `run_skills_ecosystem_audit.py`
   - `run_post_baseline_closure_audit.py`
   - `run_preserved_baselines_audit.py`
+  - `run_post_unlock_roadmap_audit.py`
+  - `run_multimodal_capture_audit.py`
+  - `run_dynamic_skills_audit.py`
+  - `run_external_executor_harness_audit.py`
+  - `run_frontend_runtime_shell_audit.py`
+  - `run_capability_growth_phase5_audit.py`
+  - `run_natural_long_horizon_calibration_audit.py`
 - manual smoke packs:
   - `run_freeze_gate_smokes.py`
   - `run_companion_autonomy_smokes.py`
@@ -341,6 +374,10 @@ Rule:
   - `run_sandbox_embodied_execution_smokes.py`
   - `run_sandbox_phase2_smokes.py`
   - `run_skills_ecosystem_smokes.py`
+  - `run_multimodal_capture_smokes.py`
+  - `run_dynamic_skills_smokes.py`
+  - `run_capability_growth_phase5_smokes.py`
+  - `run_natural_long_horizon_calibration_smokes.py`
 - baseline helpers:
   - `print_latest_sandbox_baseline.py`
 - artifacts:

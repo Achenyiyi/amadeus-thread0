@@ -54,15 +54,23 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - formerly deferred or tracked lanes are unlocked as `unlocked_planned`
   - `unlocked_planned` means implementation may begin behind a fresh bounded spec, tests, approval semantics, and audit gate
   - it does not mean the runtime already exposes the capability
-- Newly unlocked planned lanes:
-  - multimodal input capture
-  - dynamic skill generation
-  - Chinese semantic de-scaffolding
-  - bounded capability growth beyond procedural phase 4
-  - natural long-horizon calibration
-  - external executor harness adapters
-  - frontend runtime shell
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, and `procedural_growth_phase4_ready` are preserved baselines.
+- Post-unlock roadmap lanes are now implemented behind phase-1/phase-5 audit gates:
+  - `multimodal_capture_phase1_ready`
+  - `dynamic_skills_phase1_ready`
+  - `external_executor_harness_phase1_ready`
+  - `frontend_runtime_shell_phase1_ready`
+  - `chinese_semantic_descaffolding_phase1_ready`
+  - `capability_growth_phase5_ready`
+  - `natural_long_horizon_calibration_phase1_ready`
+- These post-unlock ready statuses are bounded contracts, not blanket runtime authority:
+  - live microphone/camera/background screen capture remains blocked
+  - dynamic skills remain proposal/hash/approval-gated and do not write the registry automatically
+  - external harnesses remain fail-closed except the preserved sandbox runner
+  - frontend remains a `backend.v1` consumer
+  - Chinese semantic de-scaffolding is diagnostic first, not broad prompt sprawl
+  - capability growth remains advisory workflow continuity
+  - long-horizon calibration remains offline deterministic evaluation
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, and `post_unlock_roadmap_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona

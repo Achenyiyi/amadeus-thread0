@@ -4,6 +4,7 @@ from amadeus_thread0.runtime.post_baseline_closure import (
     POST_BASELINE_ITEMS,
     describe_post_baseline_item,
     evaluate_post_baseline_status,
+    post_unlock_overrides_from_roadmap,
 )
 
 
@@ -53,6 +54,60 @@ def test_evaluate_post_baseline_status_reports_ready_for_closed_mix():
     assert result["overall_status"] == "passed"
     assert result["readiness_status"] == "post_baseline_closure_ready"
     assert result["summary"]["unlocked_planned"] >= 5
+
+
+def test_post_unlock_roadmap_ready_lanes_upgrade_closure_items_without_widening_disabled_runtime():
+    roadmap = {
+        "lanes": {
+            "multimodal_capture_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "multimodal_capture_phase1_ready",
+            },
+            "dynamic_skills_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "dynamic_skills_phase1_ready",
+            },
+            "external_executor_harness_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "external_executor_harness_phase1_ready",
+            },
+            "frontend_runtime_shell_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "frontend_runtime_shell_phase1_ready",
+            },
+            "chinese_semantic_descaffolding_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "chinese_semantic_descaffolding_phase1_ready",
+            },
+            "capability_growth_phase5": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "capability_growth_phase5_ready",
+            },
+            "natural_long_horizon_calibration_phase1": {
+                "status": "ready",
+                "overall_status": "passed",
+                "readiness_status": "natural_long_horizon_calibration_phase1_ready",
+            },
+        }
+    }
+
+    overrides = post_unlock_overrides_from_roadmap(roadmap)
+    assert overrides["multimodal_input_capture"]["status"] == "implemented_ready"
+    assert overrides["external_executor_harnesses"]["status"] == "implemented_ready"
+    assert overrides["external_executor_harnesses"]["runtime_available"] is False
+    assert overrides["natural_long_horizon_calibration"]["runtime_available"] is False
+
+    result = evaluate_post_baseline_status(post_unlock_roadmap=roadmap)
+    assert result["items"]["multimodal_input_capture"]["status"] == "implemented_ready"
+    assert result["items"]["dynamic_skill_generation"]["status"] == "implemented_ready"
+    assert result["items"]["external_executor_harnesses"]["runtime_available"] is False
+    assert result["summary"]["implemented_ready"] >= 7
 
 
 def test_evaluate_post_baseline_status_fails_if_required_runtime_item_missing():

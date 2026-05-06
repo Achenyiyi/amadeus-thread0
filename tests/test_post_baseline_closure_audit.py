@@ -4,6 +4,7 @@ from evals.run_post_baseline_closure_audit import (
     _aggregate_report,
     _build_check_specs,
     _status_overrides_from_checks,
+    _status_overrides_from_roadmap_audit,
     render_markdown,
 )
 
@@ -49,6 +50,33 @@ class PostBaselineClosureAuditTests(unittest.TestCase):
         self.assertEqual(report["readiness_status"], "post_baseline_closure_ready")
         self.assertGreaterEqual(report["summary"]["unlocked_planned"], 5)
         self.assertEqual(report["closure_items"]["chinese_de_scaffolding"]["status"], "unlocked_planned")
+
+    def test_roadmap_audit_overrides_ready_unlocked_lanes(self):
+        overrides = _status_overrides_from_roadmap_audit(
+            {
+                "overall_status": "passed",
+                "readiness_status": "post_unlock_roadmap_ready",
+                "lanes": {
+                    "multimodal_capture_phase1": {"status": "ready", "readiness_status": "multimodal_capture_phase1_ready"},
+                    "dynamic_skills_phase1": {"status": "ready", "readiness_status": "dynamic_skills_phase1_ready"},
+                    "external_executor_harness_phase1": {"status": "ready", "readiness_status": "external_executor_harness_phase1_ready"},
+                    "frontend_runtime_shell_phase1": {"status": "ready", "readiness_status": "frontend_runtime_shell_phase1_ready"},
+                    "chinese_semantic_descaffolding_phase1": {
+                        "status": "ready",
+                        "readiness_status": "chinese_semantic_descaffolding_phase1_ready",
+                    },
+                    "capability_growth_phase5": {"status": "ready", "readiness_status": "capability_growth_phase5_ready"},
+                    "natural_long_horizon_calibration_phase1": {
+                        "status": "ready",
+                        "readiness_status": "natural_long_horizon_calibration_phase1_ready",
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(overrides["multimodal_input_capture"]["status"], "implemented_ready")
+        self.assertEqual(overrides["external_executor_harnesses"]["status"], "implemented_ready")
+        self.assertFalse(overrides["external_executor_harnesses"]["runtime_available"])
 
     def test_aggregate_report_fails_when_required_runtime_check_fails(self):
         report = _aggregate_report(

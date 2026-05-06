@@ -88,6 +88,12 @@ BASELINE_SPECS = [
         "expected_readiness": "procedural_growth_phase4_ready",
         "category": "procedural_growth",
     },
+    {
+        "id": "post_unlock_roadmap",
+        "prefix": "post-unlock-roadmap-audit-",
+        "expected_readiness": "post_unlock_roadmap_ready",
+        "category": "post_unlock",
+    },
 ]
 
 BASELINES = {str(spec["id"]): str(spec["prefix"]) for spec in BASELINE_SPECS}

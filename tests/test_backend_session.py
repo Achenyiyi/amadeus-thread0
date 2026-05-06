@@ -5043,7 +5043,7 @@ class BackendSessionTests(unittest.TestCase):
                     "browser_last_exit_status": status,
                     "requested_help": manual,
                     "environmental_friction": bool(manual or status == "blocked"),
-                    "procedural_growth": False,
+                    "procedural_growth": status == "completed",
                 },
             }
 

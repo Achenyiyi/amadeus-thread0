@@ -206,6 +206,36 @@ class DigitalBodyRuntimeTests(unittest.TestCase):
         self.assertEqual(body["resource_state"]["workspace_root"], "E:/runtime/workspaces/lab-notes")
         self.assertEqual(body["resource_state"]["artifact_continuity"], "attached")
 
+    def test_derive_digital_body_state_surfaces_multimodal_source_artifact(self):
+        body = derive_digital_body_state(
+            current_event={
+                "kind": "multimodal_observation",
+                "source": "multimodal_source",
+                "perception": {
+                    "channel": "image",
+                    "modality": "image",
+                    "digital_body_hints": {
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "image",
+                        "active_artifact_ref": "fixtures/panel.png",
+                        "active_artifact_label": "panel.png",
+                        "artifact_carrier": "multimodal_source",
+                        "multimodal_source": {"source_id": "img-1", "status": "available"},
+                    },
+                },
+            },
+            behavior_queue=[],
+            action_packets=[],
+            toolset_unlocks={},
+            autonomy_block_reason="",
+            session_context={"thread_id": "thread-mm"},
+        )
+
+        self.assertIn("image", body["perception_channels"])
+        self.assertEqual(body["resource_state"]["artifact_carrier"], "multimodal_source")
+        self.assertEqual(body["resource_state"]["active_artifact_kind"], "image")
+        self.assertEqual(body["resource_state"]["active_artifact_label"], "panel.png")
+
     def test_derive_digital_body_state_surfaces_access_request_help_packet(self):
         body = derive_digital_body_state(
             current_event={

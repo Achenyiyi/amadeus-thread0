@@ -3,6 +3,10 @@ from __future__ import annotations
 from amadeus_thread0.graph_parts.perception import attach_perception_context
 from amadeus_thread0.graph_parts.turn_events import _normalize_event_override
 from amadeus_thread0.runtime.event_identity import resolve_readback_current_event
+from amadeus_thread0.runtime.multimodal_sources import (
+    build_multimodal_perception_event,
+    normalize_multimodal_source,
+)
 
 
 def test_attach_perception_context_adds_runtime_surface_fields():
@@ -95,6 +99,28 @@ def test_skill_usage_observation_keeps_capability_perception_hints():
     assert event["perception"]["modality"] == "skill"
     assert event["perception"]["source_role"] == "capability"
     assert event["perception"]["digital_body_hints"]["skill_effects"]["skill_id"] == "workspace-regression-triage"
+
+
+def test_multimodal_observation_keeps_source_artifact_body_hints():
+    source = normalize_multimodal_source(
+        {
+            "source_id": "img-contract",
+            "modality": "image",
+            "path": "fixtures/panel.png",
+            "consent_scope": "single_turn",
+            "capture_method": "operator_attached_file",
+        }
+    )
+    event = attach_perception_context(
+        build_multimodal_perception_event(source),
+        thread_id="thread-body",
+        turn_now_ts=17100002025,
+    )
+
+    assert event["kind"] == "multimodal_observation"
+    assert event["perception"]["modality"] == "image"
+    assert event["perception"]["digital_body_hints"]["active_artifact_kind"] == "image"
+    assert event["perception"]["digital_body_hints"]["artifact_carrier"] == "multimodal_source"
 
 
 def test_audio_observation_keeps_voice_channel_and_medium_trust():
