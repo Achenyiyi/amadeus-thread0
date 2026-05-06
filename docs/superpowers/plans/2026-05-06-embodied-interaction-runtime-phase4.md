@@ -390,7 +390,7 @@ git commit -m "docs: close embodied interaction phase 4"
 **Files:**
 - No new implementation files. This task verifies and integrates all prior task slices.
 
-- [ ] **Step 1: Run focused regression**
+- [x] **Step 1: Run focused regression**
 
 Run:
 
@@ -400,7 +400,7 @@ python -m pytest tests/test_artifact_motive_bridge.py tests/test_artifact_apprai
 
 Expected: all pass.
 
-- [ ] **Step 2: Run backend payload regression**
+- [x] **Step 2: Run backend payload regression**
 
 Run:
 
@@ -412,7 +412,7 @@ python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -
 
 Expected: all pass.
 
-- [ ] **Step 3: Run compile and graph checks**
+- [x] **Step 3: Run compile and graph checks**
 
 Run:
 
@@ -423,7 +423,7 @@ python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"
 
 Expected: compile succeeds and graph check prints `CompiledStateGraph`.
 
-- [ ] **Step 4: Run audits**
+- [x] **Step 4: Run audits**
 
 Run:
 
@@ -436,7 +436,7 @@ git diff --check
 
 Expected: Phase 3 and Phase 4 audits pass; living-loop phase 2 remains ready; diff check passes.
 
-- [ ] **Step 5: Merge and push**
+- [x] **Step 5: Merge and push**
 
 Run from the original main worktree:
 
@@ -450,4 +450,3 @@ git push origin main
 ```
 
 Expected: post-merge verification passes and `main` pushes successfully.
-

@@ -12105,5 +12105,36 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=embodied_interaction_runtime_phase3_ready`
     - `python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag phase4-dev-fixed`
       - passed with `readiness=embodied_interaction_runtime_phase4_ready`
+- Pre-merge final verification:
+  - `python -m pytest tests/test_artifact_motive_bridge.py tests/test_artifact_appraisal_bridge.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_embodied_interaction_runtime_phase4_audit.py tests/test_multimodal_sources.py -q`
+    - passed: `27 passed`
+  - `python -m pytest tests/test_backend_api.py -k "artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+    - passed: `5 passed, 47 deselected`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+    - passed: `186 passed, 17 subtests passed`
+  - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+    - passed: `14 passed, 9 subtests passed`
+  - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/artifact_perception_semantics.py amadeus_thread0/runtime/artifact_appraisal_bridge.py amadeus_thread0/runtime/artifact_motive_bridge.py amadeus_thread0/runtime/embodied_interaction_runtime.py amadeus_thread0/runtime/backend_api.py evals/run_embodied_interaction_runtime_phase3_audit.py evals/run_embodied_interaction_runtime_phase4_audit.py evals/run_preserved_baselines_audit.py`
+    - passed
+  - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+    - printed `CompiledStateGraph`
+  - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase4-regression-final`
+    - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+  - `python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag phase4-final`
+    - passed with `readiness=embodied_interaction_runtime_phase4_ready`
+  - `python evals/run_living_loop_realism_phase2_audit.py --run-tag embodied-phase4-regression`
+    - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+  - `git diff --check`
+    - passed
+- Result:
+  - `Embodied Interaction Runtime Phase 4` is implemented and fast-forward merged to `main`
+  - all plan checkboxes are complete
+  - post-merge main verification:
+    - `python -m pytest tests/test_artifact_motive_bridge.py tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_phase4_audit.py tests/test_backend_api.py -k "artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+      - passed: `19 passed, 47 deselected`
+    - `python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag post-merge`
+      - passed with `readiness=embodied_interaction_runtime_phase4_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Next:
-  - run final pre-merge verification, merge Phase 4 to `main`, run post-merge preserved-baseline checks, and push `main`
+  - push `main` to `origin/main`, then select the next bounded runtime phase only after checking roadmap dependency order and preserved-baseline evidence
