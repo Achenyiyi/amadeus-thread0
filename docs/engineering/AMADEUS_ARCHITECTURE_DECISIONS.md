@@ -25,6 +25,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Residual Living Loop Closure Phase 1` is now implemented as a north-star residual closure gate: post-unlock residuals are evaluated against one traceable loop from perception through self-narrative update, without opening live capture, automatic skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation.
 - `Living Loop Runtime Realism Phase 1` is now implemented as a causal/north-star realism gate: visible loop stages must align across appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final semantics, while Chinese semantic de-scaffolding gains deterministic replacement guidance and conservative safe-surface floors without broad prompt rewrites.
 - `Living Loop Runtime Realism Phase 2` is now implemented as a backend-payload realism gate: `assistant_turn` and `event_round` payloads carry `living_loop_realism`, proving the same causal readback consumes backend-style `turn_summary` / `writeback_trace` payloads without changing generation or authority boundaries.
+- `Living Loop Runtime Realism Phase 3` is now implemented as an artifact-alignment realism gate: backend payloads carrying Phase 5 `embodied_interaction.artifact_behavior_alignment` are promoted to `living_loop_runtime_realism_phase3_ready`, while payloads without alignment remain Phase 2 ready and unsafe or mutating alignment evidence fails closed without memory writes, behavior mutation, persona-core mutation, model API calls, frontend semantics, or authority widening.
 - `Embodied Interaction Runtime Phase 1` is now implemented as the first runtime integration gate over the unlocked multimodal and Chinese semantic lanes: `assistant_turn` and `event_round` payloads carry `embodied_interaction`, consent-bound source artifacts enter current-turn/body/carryover surfaces, and deterministic Chinese semantic floors update final/snapshot text together without opening live capture, multimodal model API calls, persona-core mutation, memory writes, external execution, skill registry writes, frontend-owned semantics, or unapproved external mutation.
 - `Embodied Interaction Runtime Phase 2` is now implemented as approved artifact perception semantics: already-approved artifact metadata may enter perception/appraisal/carryover semantic observation surfaces while keeping live capture, multimodal model API calls, persona-core mutation, memory writes, execution authority, skill registry writes, frontend-owned semantics, and unapproved external mutation blocked.
 - `Embodied Interaction Runtime Phase 3` is now implemented as approved artifact appraisal evidence coupling: Phase 2 semantic observations may become read-only appraisal-facing evidence and influence hints while still avoiding memory facts, persona-core mutation, live capture, multimodal model API calls, execution authority changes, skill registry writes, frontend-owned semantics, and unapproved external mutation.
@@ -33,7 +34,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
+Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -55,6 +56,7 @@ For backend purposes, the structural decisions in this document are now split in
 - residual living-loop gate: `python evals/run_residual_living_loop_audit.py`
 - living-loop runtime realism gate: `python evals/run_living_loop_realism_audit.py`
 - living-loop runtime realism phase 2 gate: `python evals/run_living_loop_realism_phase2_audit.py`
+- living-loop runtime realism phase 3 gate: `python evals/run_living_loop_realism_phase3_audit.py`
 - embodied interaction runtime gate: `python evals/run_embodied_interaction_runtime_audit.py`
 - embodied interaction runtime phase 2 gate: `python evals/run_embodied_interaction_runtime_phase2_audit.py`
 - embodied interaction runtime phase 3 gate: `python evals/run_embodied_interaction_runtime_phase3_audit.py`
@@ -115,6 +117,9 @@ For backend purposes, the structural decisions in this document are now split in
     - `evals/run_living_loop_realism_audit.py` emits deterministic json/md reports under `living-loop-realism-audit-*`
     - `living_loop_runtime_realism_phase2_ready`: the same module normalizes real backend payloads and attaches `living_loop_realism` to `assistant_turn` / `event_round`
     - `evals/run_living_loop_realism_phase2_audit.py` emits backend-payload json/md reports under `living-loop-realism-phase2-audit-*`
+    - `living_loop_runtime_realism_phase3_ready`: the same module consumes existing Phase 5 `embodied_interaction.artifact_behavior_alignment` readback from backend payloads, proves alignment visibility, and keeps payloads without alignment at Phase 2 readiness
+    - `evals/run_living_loop_realism_phase3_audit.py` emits artifact-alignment json/md reports under `living-loop-realism-phase3-audit-*`
+    - Phase 3 preserves `advisory_not_reflected` as truthful readback, fails closed on unsafe or mutating alignment claims, and does not recalculate alignment from raw artifacts
     - `amadeus_thread0.graph_parts.chinese_semantic_surface` now returns replacement guidance and conservative safe-surface floors for brittle Chinese surface families
     - this phase is readback/guidance-only and does not enable prompt-sprawl rewrites, live capture, skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
   - current embodied interaction runtime posture is:
@@ -1056,8 +1061,9 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 24. `Residual Living Loop Closure Phase 1` - `baseline-closed`
 25. `Living Loop Runtime Realism Phase 1` - `baseline-closed`
 26. `Living Loop Runtime Realism Phase 2` - `baseline-closed`
-27. `Embodied Interaction Runtime Phase 1` - `baseline-closed`
-28. `Embodied Interaction Runtime Phase 2` - `baseline-closed`
-29. `Embodied Interaction Runtime Phase 3` - `baseline-closed`
-30. `Embodied Interaction Runtime Phase 4` - `baseline-closed`
-31. `Embodied Interaction Runtime Phase 5` - `baseline-closed`
+27. `Living Loop Runtime Realism Phase 3` - `baseline-closed`
+28. `Embodied Interaction Runtime Phase 1` - `baseline-closed`
+29. `Embodied Interaction Runtime Phase 2` - `baseline-closed`
+30. `Embodied Interaction Runtime Phase 3` - `baseline-closed`
+31. `Embodied Interaction Runtime Phase 4` - `baseline-closed`
+32. `Embodied Interaction Runtime Phase 5` - `baseline-closed`
