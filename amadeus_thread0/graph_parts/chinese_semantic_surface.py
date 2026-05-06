@@ -22,6 +22,24 @@ AUTHORITY_BOUNDARY = {
     "final_answer_rewrite_claimed": False,
 }
 
+CHINESE_SEMANTIC_PHASE2_READINESS = "chinese_semantic_descaffolding_phase2_ready"
+CHINESE_SEMANTIC_PHASE2_NOT_APPLICABLE = "chinese_semantic_descaffolding_phase2_not_applicable"
+CHINESE_SEMANTIC_PHASE2_IN_PROGRESS = "chinese_semantic_descaffolding_phase2_in_progress"
+
+RUNTIME_POLICY_AUTHORITY_BOUNDARY = {
+    "model_api_called": False,
+    "prompt_rewrite_applied": False,
+    "persona_core_mutation_allowed": False,
+    "relationship_core_mutation_allowed": False,
+    "self_narrative_core_mutation_allowed": False,
+    "memory_write_allowed": False,
+    "behavior_mutation_allowed": False,
+    "frontend_semantics_allowed": False,
+    "live_capture_enabled": False,
+    "skill_registry_write_allowed": False,
+    "external_mutation_allowed": False,
+}
+
 REPLACEMENT_GUIDANCE = {
     "teacherly_scold": {
         "replacement_semantic": "acknowledge repair without grading the counterpart",
@@ -189,6 +207,59 @@ def rewrite_semantic_surface_floor(
     }
 
 
+def _runtime_policy_row(row: dict[str, str]) -> dict[str, object]:
+    return {
+        "family": str(row.get("family") or ""),
+        "semantic_intent": str(row.get("replacement_semantic") or ""),
+        "target_behavior": str(row.get("target_behavior") or ""),
+        "replacement_strategy": "deterministic_safe_surface_floor",
+        "applied_floor": str(row.get("safe_surface_floor") or ""),
+        "source": "typed_semantic_family",
+        "authority_boundary": dict(RUNTIME_POLICY_AUTHORITY_BOUNDARY),
+    }
+
+
+def build_runtime_replacement_policy(
+    text: str,
+    *,
+    family_context: list[str] | None = None,
+) -> dict[str, object]:
+    original = str(text or "")
+    plan = build_semantic_replacement_plan(original, family_context=family_context)
+    rows = [row for row in list(plan.get("replacement_semantics") or []) if isinstance(row, dict)]
+    policies = [_runtime_policy_row(row) for row in rows if row.get("safe_surface_floor")]
+    missing = list(plan.get("missing_replacement_families") or [])
+    selected = policies[0] if policies else {}
+    runtime_text = str(selected.get("applied_floor") or original)
+    applied = bool(selected) and runtime_text != original
+
+    if policies and not missing:
+        status = "policy_ready"
+        readiness = CHINESE_SEMANTIC_PHASE2_READINESS
+    elif missing:
+        status = "policy_incomplete"
+        readiness = CHINESE_SEMANTIC_PHASE2_IN_PROGRESS
+    else:
+        status = "no_semantic_residue"
+        readiness = CHINESE_SEMANTIC_PHASE2_NOT_APPLICABLE
+        runtime_text = original
+        applied = False
+
+    return {
+        "schema": "chinese_semantic_replacement_policy.v1",
+        "status": status,
+        "readiness_status": readiness,
+        "original_text": original,
+        "runtime_final_text": runtime_text,
+        "families": list(plan.get("families") or []),
+        "policies": policies,
+        "selected_policy": selected,
+        "applied_floor": applied,
+        "authority_boundary": dict(RUNTIME_POLICY_AUTHORITY_BOUNDARY),
+        "failure_reasons": [f"missing_replacement_family:{family}" for family in missing],
+    }
+
+
 def compare_legacy_and_semantic_detection(text: str) -> dict[str, list[str]]:
     semantic = classify_chinese_surface_semantics(text)
     return {
@@ -201,8 +272,13 @@ def compare_legacy_and_semantic_detection(text: str) -> dict[str, list[str]]:
 
 __all__ = [
     "AUTHORITY_BOUNDARY",
+    "CHINESE_SEMANTIC_PHASE2_IN_PROGRESS",
+    "CHINESE_SEMANTIC_PHASE2_NOT_APPLICABLE",
+    "CHINESE_SEMANTIC_PHASE2_READINESS",
     "FAMILIES",
     "REPLACEMENT_GUIDANCE",
+    "RUNTIME_POLICY_AUTHORITY_BOUNDARY",
+    "build_runtime_replacement_policy",
     "build_semantic_replacement_plan",
     "candidate_replacement_semantics",
     "classify_chinese_surface_semantics",
