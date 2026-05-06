@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from amadeus_thread0.runtime.living_loop_realism import (
     LIVING_LOOP_REALISM_PHASE1_READINESS,
+    LIVING_LOOP_REALISM_PHASE2_READINESS,
+    build_backend_payload_realism_readback,
     build_living_loop_realism_readback,
+    compact_backend_payload_realism_line,
     compact_living_loop_realism_line,
     evaluate_behavior_causality,
+    normalize_backend_turn_payload_for_realism,
 )
 
 
@@ -112,4 +116,71 @@ def test_compact_line_names_causality_status():
     line = compact_living_loop_realism_line(build_living_loop_realism_readback(current_turn=_realistic_turn()))
 
     assert "realism=living_loop_runtime_realism_phase1_ready" in line
+    assert "causality=ready" in line
+
+
+def _backend_payload() -> dict:
+    turn = _realistic_turn()
+    return {
+        **turn,
+        "emotion_label": "hurt",
+        "session_context": {"thread_id": "thread-a", "turn_started_at": 1_777_777_001},
+        "turn_summary": {
+            "current_turn": {
+                "recon_event_kind": "user_utterance",
+                "counterpart_scene": "repair_attempt",
+                "behavior_consequence_kind": "relationship_repair_acknowledged",
+                "digital_body_consequence_kind": "relationship_repair_acknowledged",
+            },
+            "relationship": {"stage": "repairing"},
+            "digital_body_consequence": {"kind": "relationship_repair_acknowledged"},
+        },
+        "autonomy": {"intent": {"mode": "assist"}, "action_packets": []},
+        "skills": {"active_skill_ids": []},
+        "digital_body": {
+            "active_surface": "dialogue",
+            "access_state": {"mode": "dialogue_only"},
+            "resource_state": {"artifact_continuity": "none"},
+        },
+        "operator_readback": {"schema": "operator_readback.v2", "readiness_status": "runtime_productization_phase2_ready"},
+    }
+
+
+def test_normalize_backend_payload_preserves_realism_turn_fields():
+    normalized = normalize_backend_turn_payload_for_realism(_backend_payload())
+
+    assert normalized["final_text"] == "嗯。我听见了。边界还在，但这次我会先把话放轻一点。"
+    assert normalized["behavior_action"]["primary_motive"] == "support_without_pressure"
+    assert normalized["turn_appraisal"]["scene"] == "repair_attempt"
+    assert normalized["writeback_trace"]["revision_traces"][0]["target_id"] == "repair_style"
+
+
+def test_backend_payload_readback_returns_phase2_ready():
+    readback = build_backend_payload_realism_readback(_backend_payload())
+
+    assert readback["schema"] == "living_loop_realism.backend_payload.v1"
+    assert readback["readiness_status"] == LIVING_LOOP_REALISM_PHASE2_READINESS
+    assert readback["backend_payload"]["source"] == "backend_payload"
+    assert readback["backend_payload"]["status"] == "ready"
+    assert readback["causality"]["status"] == "ready"
+    assert readback["authority_boundary"]["persona_core_mutation_allowed"] is False
+
+
+def test_backend_payload_requires_backend_only_surfaces():
+    payload = _backend_payload()
+    payload.pop("turn_summary")
+
+    readback = build_backend_payload_realism_readback(payload)
+
+    assert readback["overall_status"] == "in_progress"
+    assert readback["backend_payload"]["status"] == "missing"
+    assert "turn_summary" in readback["backend_payload"]["missing_fields"]
+    assert readback["readiness_status"] == "living_loop_runtime_realism_phase2_in_progress"
+
+
+def test_backend_payload_compact_line_names_source_status():
+    line = compact_backend_payload_realism_line(build_backend_payload_realism_readback(_backend_payload()))
+
+    assert "backend_payload=ready" in line
+    assert "realism=living_loop_runtime_realism_phase2_ready" in line
     assert "causality=ready" in line

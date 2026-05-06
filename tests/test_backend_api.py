@@ -152,7 +152,8 @@ class FakeBackendSession:
 
     def extract_final_text(self, values, *, streamed_text=""):
         self.last_extract_args = (values, streamed_text)
-        return "final from session"
+        data = values if isinstance(values, dict) else {}
+        return str(data.get("final_text") or "final from session")
 
 
 class FakeMemoryAdmin:
@@ -286,6 +287,81 @@ class BackendApiTests(unittest.TestCase):
                 "sandbox_execution_completed",
             )
             self.assertEqual(event_payload["operator_readback"]["readiness_status"], "runtime_productization_phase2_ready")
+
+    def test_turn_and_event_responses_attach_living_loop_realism_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            final_text = "嗯。我听见了。边界还在，但这次我会先把话放轻一点。"
+            state_values = {
+                "final_text": final_text,
+                "current_event": {
+                    "kind": "user_utterance",
+                    "text": "之前那件事我一直记着，我们能慢慢聊吗？",
+                    "tags": ["repair", "relationship"],
+                    "created_at": 1_777_777_001,
+                },
+                "session_context": {"thread_id": "thread-a", "turn_started_at": 1_777_777_001},
+                "turn_appraisal": {
+                    "scene": "repair_attempt",
+                    "interaction_frame": "relationship",
+                    "signals": {"repair": True, "care": True},
+                },
+                "emotion_state": {"label": "hurt", "valence": -0.08, "arousal": 0.22},
+                "bond_state": {"trust": 0.60, "closeness": 0.58, "hurt": 0.14, "repair_confidence": 0.66},
+                "allostasis_state": {"autonomy_need": 0.38, "safety_need": 0.42, "cognitive_budget": 0.70},
+                "counterpart_assessment": {
+                    "stance": "watchful",
+                    "scene": "repair_attempt",
+                    "boundary_pressure": 0.18,
+                    "reliability_read": 0.62,
+                },
+                "semantic_narrative_profile": {
+                    "repair_residue": 0.76,
+                    "continuity_depth": 0.68,
+                    "commitment_carry": 0.62,
+                    "continuity_axes": [{"category": "repair_style", "score": 0.74}],
+                },
+                "behavior_action": {
+                    "interaction_mode": "low_pressure_support",
+                    "action_target": "low_pressure_hold",
+                    "primary_motive": "support_without_pressure",
+                    "motive_tension": "boundary_vs_closeness",
+                    "goal_frame": "先低负担接住，不接管对方节奏。",
+                },
+                "behavior_plan": {
+                    "kind": "low_pressure_support",
+                    "interaction_mode": "low_pressure_support",
+                    "primary_motive": "support_without_pressure",
+                    "goal_frame": "先低负担接住，不接管对方节奏。",
+                },
+                "digital_body_consequence": {"kind": "relationship_repair_acknowledged"},
+                "reconsolidation_snapshot": {
+                    "behavior_action": {"primary_motive": "support_without_pressure"},
+                    "behavior_plan": {"kind": "low_pressure_support", "primary_motive": "support_without_pressure"},
+                    "digital_body_consequence": {"kind": "relationship_repair_acknowledged"},
+                    "final_text": final_text,
+                },
+                "writeback_trace": {
+                    "revision_traces": [{"namespace": "semantic_self_evidence", "target_id": "repair_style"}],
+                    "counterpart_assessment_history": [{"stance": "watchful", "scene": "repair_attempt"}],
+                },
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text=final_text,
+            ).payload
+
+            for payload in (turn_payload, event_payload):
+                readback = payload["living_loop_realism"]
+                self.assertEqual(readback["schema"], "living_loop_realism.backend_payload.v1")
+                self.assertEqual(readback["readiness_status"], "living_loop_runtime_realism_phase2_ready")
+                self.assertEqual(readback["backend_payload"]["status"], "ready")
+                self.assertEqual(readback["causality"]["status"], "ready")
 
     def test_memory_snapshot_normalizes_revision_trace_exports(self):
         with tempfile.TemporaryDirectory() as tmp:

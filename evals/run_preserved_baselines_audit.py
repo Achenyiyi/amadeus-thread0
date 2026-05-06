@@ -118,6 +118,12 @@ BASELINE_SPECS = [
         "expected_readiness": "living_loop_runtime_realism_phase1_ready",
         "category": "living_loop_realism",
     },
+    {
+        "id": "living_loop_runtime_realism_phase2",
+        "prefix": "living-loop-realism-phase2-audit-",
+        "expected_readiness": "living_loop_runtime_realism_phase2_ready",
+        "category": "living_loop_realism",
+    },
 ]
 
 BASELINES = {str(spec["id"]): str(spec["prefix"]) for spec in BASELINE_SPECS}

@@ -37,6 +37,7 @@ from .final_state import (
     resolve_interaction_carryover,
     resolve_pending_action_proposal,
 )
+from .living_loop_realism import build_backend_payload_realism_readback
 from .post_baseline_closure import evaluate_post_baseline_status
 from .runtime_productization import build_runtime_productization_readback
 from .thread_runtime import list_threads
@@ -357,6 +358,11 @@ def _writeback_trace_payload(backend_session: Any, values: dict[str, Any] | None
     data = values if isinstance(values, dict) else {}
     anchor_ts = _writeback_anchor_ts(data)
     store = getattr(backend_session, "memory_store", None)
+    explicit_trace = _dict_or_empty(data.get("writeback_trace"))
+    if explicit_trace and store is None:
+        trace = dict(explicit_trace)
+        trace.setdefault("turn_started_at", anchor_ts)
+        return trace
     if store is None or not all(hasattr(store, attr) for attr in ("list_revision_traces", "list_semantic_self_narratives")):
         return {
             "turn_started_at": anchor_ts,
@@ -664,6 +670,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("event_round", payload, meta=meta)
 
     def build_turn_response(
@@ -735,6 +742,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("assistant_turn", payload, meta=meta)
 
 
