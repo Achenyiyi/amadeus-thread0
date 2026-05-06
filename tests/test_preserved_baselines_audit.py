@@ -36,6 +36,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "residual_living_loop_phase1",
             "living_loop_runtime_realism_phase1",
             "living_loop_runtime_realism_phase2",
+            "embodied_interaction_runtime_phase1",
         }
 
         self.assertEqual(set(EXPECTED_READY), expected_ids)
@@ -153,6 +154,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 2)
         self.assertEqual(summary["summary"]["categories"]["residual_closure"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 2)
+        self.assertEqual(summary["summary"]["categories"]["embodied_interaction"]["passed"], 1)
 
     def test_load_statuses_marks_missing_reports_explicitly(self):
         with tempfile.TemporaryDirectory() as td:
