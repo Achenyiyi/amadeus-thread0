@@ -11664,7 +11664,16 @@ This file is the live development ledger for `amadeus-thread0`.
     - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
       - failed because this fresh worktree only had the newly generated living-loop realism report and lacked the historical baseline report artifacts
       - the new `living_loop_realism` row itself passed with `living_loop_runtime_realism_phase1_ready`; full report-backed meta-audit must be rerun after merge in the primary workspace report directory
+  - post-merge main verification:
+    - `python -m pytest tests/test_living_loop_realism.py tests/test_living_loop_realism_audit.py tests/test_chinese_semantic_surface_phase2.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `19 passed`
+    - `python evals/run_living_loop_realism_audit.py --run-tag post-merge`
+      - passed with `readiness=living_loop_runtime_realism_phase1_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Result:
-  - implementation is complete in branch `codex/living-loop-runtime-realism-phase1`; final verification, commit, main merge, and push remain
+  - `Living Loop Runtime Realism Phase 1` is implemented, merged to `main`, and pushed to `origin/main`
+  - commit: `d03325bc feat: add living loop runtime realism audit`
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase1.md` are marked complete
 - Next:
-  - run final verification pack, commit, fast-forward merge to `main`, run post-merge checks, and push
+  - select the next bounded phase only after checking whether any remaining roadmap item needs runtime work rather than another readback/audit layer
