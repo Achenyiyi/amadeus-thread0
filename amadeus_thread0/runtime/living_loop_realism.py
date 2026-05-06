@@ -7,6 +7,8 @@ LIVING_LOOP_REALISM_PHASE1_READINESS = "living_loop_runtime_realism_phase1_ready
 LIVING_LOOP_REALISM_IN_PROGRESS = "living_loop_runtime_realism_phase1_in_progress"
 LIVING_LOOP_REALISM_PHASE2_READINESS = "living_loop_runtime_realism_phase2_ready"
 LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS = "living_loop_runtime_realism_phase2_in_progress"
+LIVING_LOOP_REALISM_PHASE3_READINESS = "living_loop_runtime_realism_phase3_ready"
+LIVING_LOOP_REALISM_PHASE3_IN_PROGRESS = "living_loop_runtime_realism_phase3_in_progress"
 
 CAUSAL_LINKS = (
     "appraisal_to_motive",
@@ -23,6 +25,11 @@ BACKEND_PAYLOAD_REQUIRED_FIELDS = (
     "turn_summary",
     "writeback_trace",
     "reconsolidation_snapshot",
+)
+
+ARTIFACT_ALIGNMENT_ALLOWED_STATUSES = (
+    "causally_aligned",
+    "advisory_not_reflected",
 )
 
 AUTHORITY_BOUNDARY = {
@@ -49,7 +56,14 @@ _CONTINUITY_MOTIVES = {
     "open_shared_window",
     "support_without_pressure",
 }
-_TASK_MOTIVES = {"solve_task", "continue_workspace_task", "restore_workspace_continuity"}
+_TASK_MOTIVES = {
+    "solve_task",
+    "continue_workspace_task",
+    "restore_workspace_continuity",
+    "restore_access_continuity",
+    "request_access_help",
+    "resolve_access_before_task",
+}
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
@@ -435,6 +449,105 @@ def _backend_payload_status(payload: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _artifact_behavior_alignment_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    embodied = _dict_or_empty(payload.get("embodied_interaction"))
+    alignment = _dict_or_empty(embodied.get("artifact_behavior_alignment"))
+    if not alignment:
+        return {
+            "source": "embodied_interaction.artifact_behavior_alignment",
+            "status": "not_applicable",
+            "alignment_visible": False,
+            "alignment_status": "not_applicable",
+            "alignment_count": 0,
+            "causally_aligned_count": 0,
+            "advisory_not_reflected_count": 0,
+            "conflict_count": 0,
+            "model_api_called": False,
+            "writeback_ready_count": 0,
+            "should_write_memory": False,
+            "behavior_mutation_allowed": False,
+            "behavior_mutation_applied": False,
+            "failure_reasons": [],
+        }
+    items = [
+        dict(item)
+        for item in _list_or_empty(alignment.get("alignment_items"))
+        if isinstance(item, dict)
+    ]
+    summary = _dict_or_empty(alignment.get("alignment_summary"))
+    boundary = _dict_or_empty(alignment.get("authority_boundary"))
+    alignment_status = _clean(summary.get("alignment_status")) or _clean(
+        items[0].get("alignment_status") if items else ""
+    )
+    model_api_called = bool(alignment.get("model_api_called", False)) or bool(
+        boundary.get("multimodal_model_api_called", False)
+    ) or any(
+        bool(_dict_or_empty(item.get("authority")).get("model_api_called", False))
+        for item in items
+    )
+    writeback_ready_count = int(alignment.get("writeback_ready_count") or 0) + sum(
+        1 for item in items if bool(_dict_or_empty(item.get("authority")).get("writeback_ready", False))
+    )
+    should_write_memory = bool(summary.get("should_write_memory", False)) or bool(
+        boundary.get("memory_write_allowed", False)
+    ) or any(
+        bool(_dict_or_empty(item.get("authority")).get("memory_write_allowed", False))
+        for item in items
+    )
+    behavior_mutation_allowed = bool(summary.get("should_mutate_behavior", False)) or bool(
+        boundary.get("behavior_mutation_allowed", False)
+    ) or any(
+        bool(_dict_or_empty(item.get("authority")).get("behavior_mutation_allowed", False))
+        for item in items
+    )
+    behavior_mutation_applied = any(
+        bool(item.get("behavior_mutation_applied", False))
+        or bool(_dict_or_empty(item.get("authority")).get("behavior_mutation_applied", False))
+        for item in items
+    )
+    external_mutation_allowed = bool(boundary.get("external_mutation_allowed", False))
+    failure_reasons: list[str] = []
+    if _clean(alignment.get("status")) != "ready":
+        failure_reasons.append(f"artifact_alignment_status={_clean(alignment.get('status')) or 'missing'}")
+    if _clean(alignment.get("readiness_status")) != "artifact_behavior_alignment_ready":
+        failure_reasons.append(
+            f"artifact_alignment_readiness={_clean(alignment.get('readiness_status')) or 'missing'}"
+        )
+    if not items:
+        failure_reasons.append("artifact_alignment_missing_items")
+    if alignment_status not in ARTIFACT_ALIGNMENT_ALLOWED_STATUSES:
+        failure_reasons.append(f"artifact_alignment_status={alignment_status or 'missing'}")
+    if model_api_called:
+        failure_reasons.append("artifact_alignment_model_api_called")
+    if writeback_ready_count:
+        failure_reasons.append("artifact_alignment_writeback_ready")
+    if should_write_memory:
+        failure_reasons.append("artifact_alignment_memory_write")
+    if behavior_mutation_allowed:
+        failure_reasons.append("artifact_alignment_behavior_mutation_allowed")
+    if behavior_mutation_applied:
+        failure_reasons.append("artifact_alignment_behavior_mutation_applied")
+    if external_mutation_allowed:
+        failure_reasons.append("artifact_alignment_external_mutation_allowed")
+    ready = not failure_reasons
+    return {
+        "source": "embodied_interaction.artifact_behavior_alignment",
+        "status": "ready" if ready else "blocked",
+        "alignment_visible": ready,
+        "alignment_status": alignment_status,
+        "alignment_count": len(items),
+        "causally_aligned_count": int(summary.get("aligned_count") or 0),
+        "advisory_not_reflected_count": int(summary.get("advisory_not_reflected_count") or 0),
+        "conflict_count": int(summary.get("conflict_count") or 0),
+        "model_api_called": model_api_called,
+        "writeback_ready_count": writeback_ready_count,
+        "should_write_memory": should_write_memory,
+        "behavior_mutation_allowed": behavior_mutation_allowed,
+        "behavior_mutation_applied": behavior_mutation_applied,
+        "failure_reasons": failure_reasons,
+    }
+
+
 def normalize_backend_turn_payload_for_realism(payload: dict[str, Any] | None) -> dict[str, Any]:
     data = _dict_or_empty(payload)
     return {
@@ -451,27 +564,42 @@ def normalize_backend_turn_payload_for_realism(payload: dict[str, Any] | None) -
         "digital_body_consequence": _dict_or_empty(data.get("digital_body_consequence")),
         "reconsolidation_snapshot": _dict_or_empty(data.get("reconsolidation_snapshot")),
         "writeback_trace": _dict_or_empty(data.get("writeback_trace")),
+        "embodied_interaction": _dict_or_empty(data.get("embodied_interaction")),
     }
 
 
 def build_backend_payload_realism_readback(payload: dict[str, Any] | None) -> dict[str, Any]:
+    data = _dict_or_empty(payload)
     backend_payload = _backend_payload_status(payload)
     current_turn = normalize_backend_turn_payload_for_realism(payload)
     causality = evaluate_behavior_causality(current_turn)
-    ready = (
+    base_ready = (
         str(backend_payload.get("status") or "") == "ready"
         and str(causality.get("status") or "") == "ready"
     )
+    artifact_alignment = _artifact_behavior_alignment_from_payload(data)
+    alignment_present = str(artifact_alignment.get("status") or "") == "ready"
+    artifact_ready = str(artifact_alignment.get("status") or "") == "ready"
+    ready = bool(base_ready and (not alignment_present or artifact_ready))
     failure_reasons = list(causality.get("missing_links") or [])
     failure_reasons.extend(f"missing_backend_field:{field}" for field in backend_payload.get("missing_fields") or [])
     failure_reasons.extend(f"empty_backend_field:{field}" for field in backend_payload.get("empty_fields") or [])
+    failure_reasons.extend(artifact_alignment.get("failure_reasons") or [])
+    readiness = LIVING_LOOP_REALISM_PHASE2_READINESS
+    in_progress = LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS
+    phase = "Living Loop Runtime Realism Phase 2"
+    if alignment_present:
+        readiness = LIVING_LOOP_REALISM_PHASE3_READINESS
+        in_progress = LIVING_LOOP_REALISM_PHASE3_IN_PROGRESS
+        phase = "Living Loop Runtime Realism Phase 3"
     return {
-        "phase": "Living Loop Runtime Realism Phase 2",
+        "phase": phase,
         "schema": "living_loop_realism.backend_payload.v1",
         "overall_status": "passed" if ready else "in_progress",
-        "readiness_status": LIVING_LOOP_REALISM_PHASE2_READINESS if ready else LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS,
+        "readiness_status": readiness if ready else in_progress,
         "backend_payload": backend_payload,
         "causality": causality,
+        "artifact_behavior_alignment": artifact_alignment,
         "authority_boundary": dict(AUTHORITY_BOUNDARY),
         "failure_reasons": failure_reasons,
     }
@@ -521,6 +649,8 @@ __all__ = [
     "LIVING_LOOP_REALISM_PHASE1_READINESS",
     "LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS",
     "LIVING_LOOP_REALISM_PHASE2_READINESS",
+    "LIVING_LOOP_REALISM_PHASE3_IN_PROGRESS",
+    "LIVING_LOOP_REALISM_PHASE3_READINESS",
     "build_backend_payload_realism_readback",
     "build_living_loop_realism_readback",
     "compact_backend_payload_realism_line",
