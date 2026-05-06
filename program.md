@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Living Loop Runtime Realism Phase 2` backend-payload realism gate after Phase 1 causal north-star realism
+- Mainline phase: `Embodied Interaction Runtime Phase 1` runtime integration gate after Living Loop Runtime Realism Phase 2
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -35,6 +35,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
   - preserve `living_loop_runtime_realism_phase2_ready`
+  - preserve `embodied_interaction_runtime_phase1_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -57,6 +58,11 @@ This file is the live development ledger for `amadeus-thread0`.
   - `living_loop_runtime_realism_phase1_ready` does not open live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
   - `living_loop_runtime_realism_phase2_ready` means real `assistant_turn` and `event_round` backend payloads now carry the same causal readback through `living_loop_realism`
   - Phase 2 still does not change graph generation, persona core, memory-write authority, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, or external mutation authority
+- Current embodied interaction runtime focus:
+  - `embodied_interaction_runtime_phase1_ready` means real `assistant_turn` and `event_round` backend payloads now carry `embodied_interaction`
+  - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
+  - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families
+  - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:

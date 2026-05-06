@@ -151,6 +151,7 @@ Rule:
 - `executor_harness_registry.py`
 - `dynamic_skill_candidates.py`
 - `multimodal_sources.py`
+- `embodied_interaction_runtime.py`
 - `post_baseline_closure.py`
 - `runtime_productization.py`
 - `residual_living_loop.py`
@@ -240,6 +241,14 @@ Rule:
 - supports consent-bound text, image, audio-file, screen-snapshot-file, and browser-capture-ref observations
 - blocks live microphone/camera/background screen/secret capture methods
 - emits read-only source artifacts and perception events with digital-body hints
+
+`embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1 integration contract:
+
+- attaches consent-bound multimodal source artifacts to current-turn backend surfaces
+- mirrors source refs through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
+- applies deterministic Chinese semantic runtime floors to `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
+- exposes `embodied_interaction_runtime_phase1_ready` through a deterministic audit/readback gate
+- remains bounded runtime normalization; it does not call multimodal model APIs, open live capture, execute tools, mutate memory, change persona core, write the skill registry, or own frontend semantics
 
 `sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
 
@@ -392,6 +401,7 @@ Rule:
   - `run_runtime_productization_audit.py`
   - `run_residual_living_loop_audit.py`
   - `run_living_loop_realism_audit.py`
+  - `run_embodied_interaction_runtime_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`
