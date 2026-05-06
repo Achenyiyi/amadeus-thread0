@@ -11850,7 +11850,14 @@ This file is the live development ledger for `amadeus-thread0`.
     - `git diff --check`
       - passed
 - Result:
-  - `Embodied Interaction Runtime Phase 1` is implemented and ready in branch `codex/embodied-interaction-runtime-phase1`
-  - plan steps through pre-merge verification are marked complete
+  - `Embodied Interaction Runtime Phase 1` is implemented, merged to `main`, and ready for push
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase1.md` are marked complete
+  - post-merge main verification:
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_audit.py tests/test_backend_api.py -k "embodied_interaction or living_loop_realism" -q`
+      - passed: `9 passed, 47 deselected`
+    - `python evals/run_embodied_interaction_runtime_audit.py --run-tag post-merge`
+      - passed with `readiness=embodied_interaction_runtime_phase1_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Next:
-  - fast-forward merge to `main`, rerun post-merge audits, push, then select the next bounded runtime phase
+  - push `main` to `origin/main`, then select the next bounded runtime phase
