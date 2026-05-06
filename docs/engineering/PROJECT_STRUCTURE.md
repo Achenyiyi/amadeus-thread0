@@ -154,6 +154,7 @@ Rule:
 - `artifact_perception_semantics.py`
 - `artifact_appraisal_bridge.py`
 - `artifact_motive_bridge.py`
+- `artifact_behavior_alignment.py`
 - `embodied_interaction_runtime.py`
 - `post_baseline_closure.py`
 - `runtime_productization.py`
@@ -266,6 +267,13 @@ Rule:
 - keeps every hint sourced from `artifact_appraisal_evidence` with `model_api_called=false`, `memory_write_allowed=false`, `behavior_mutation_allowed=false`, and `writeback_ready=false`
 - does not call model APIs, capture live media, mutate memory, execute tools, install skills, change persona core, own frontend semantics, or widen execution/browser/sandbox authority
 
+`artifact_behavior_alignment.py` holds approved artifact motive-to-behavior alignment readback:
+
+- compares Phase 4 `artifact_motive.motive_hints` with actual `behavior_action` / `behavior_plan` motive semantics
+- emits read-only alignment states such as `causally_aligned`, `advisory_not_reflected`, and `behavior_conflict_observed`
+- keeps every alignment item sourced from `artifact_motive_hint` with `model_api_called=false`, `memory_write_allowed=false`, `behavior_mutation_allowed=false`, `behavior_mutation_applied=false`, and `writeback_ready=false`
+- does not call model APIs, capture live media, mutate memory, execute tools, install skills, change persona core, own frontend semantics, or widen execution/browser/sandbox authority
+
 `embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1, Phase 2, Phase 3, and Phase 4 integration contract:
 
 - attaches consent-bound multimodal source artifacts to current-turn backend surfaces
@@ -273,12 +281,14 @@ Rule:
 - attaches approved artifact semantic observations through `embodied_interaction.artifact_semantics`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
 - attaches approved artifact appraisal evidence through `embodied_interaction.artifact_appraisal`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
 - attaches approved artifact motive/goal advisory hints through `embodied_interaction.artifact_motive`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
+- attaches approved artifact motive-to-behavior alignment readback through `embodied_interaction.artifact_behavior_alignment`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
 - preserves existing `behavior_action.primary_motive` and `behavior_plan.primary_motive`; Phase 4 hints are readback/advisory only
 - applies deterministic Chinese semantic runtime floors to `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
 - exposes `embodied_interaction_runtime_phase1_ready` through a deterministic audit/readback gate
 - exposes `embodied_interaction_runtime_phase2_ready` when approved artifact metadata reaches perception/appraisal/carryover semantic surfaces without widening authority
 - exposes `embodied_interaction_runtime_phase3_ready` when approved artifact semantic observations become read-only appraisal-facing evidence without becoming memory facts
 - exposes `embodied_interaction_runtime_phase4_ready` when approved artifact appraisal evidence becomes read-only motive/goal advisory hints without mutating behavior or memory
+- exposes `embodied_interaction_runtime_phase5_ready` when approved artifact motive hints are compared against actual behavior action / behavior plan motives through read-only alignment readback without mutating behavior or memory
 - remains bounded runtime normalization; it does not call multimodal model APIs, open live capture, execute tools, mutate memory, change persona core, write the skill registry, or own frontend semantics
 
 `sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
@@ -436,6 +446,7 @@ Rule:
   - `run_embodied_interaction_runtime_phase2_audit.py`
   - `run_embodied_interaction_runtime_phase3_audit.py`
   - `run_embodied_interaction_runtime_phase4_audit.py`
+  - `run_embodied_interaction_runtime_phase5_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`

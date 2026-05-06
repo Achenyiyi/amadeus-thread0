@@ -29,10 +29,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Embodied Interaction Runtime Phase 2` is now implemented as approved artifact perception semantics: already-approved artifact metadata may enter perception/appraisal/carryover semantic observation surfaces while keeping live capture, multimodal model API calls, persona-core mutation, memory writes, execution authority, skill registry writes, frontend-owned semantics, and unapproved external mutation blocked.
 - `Embodied Interaction Runtime Phase 3` is now implemented as approved artifact appraisal evidence coupling: Phase 2 semantic observations may become read-only appraisal-facing evidence and influence hints while still avoiding memory facts, persona-core mutation, live capture, multimodal model API calls, execution authority changes, skill registry writes, frontend-owned semantics, and unapproved external mutation.
 - `Embodied Interaction Runtime Phase 4` is now implemented as approved artifact motive/goal advisory coupling: Phase 3 appraisal evidence may become read-only motive/goal hints that surface beside the behavior plan without replacing actual behavior motives or widening memory, model, browser, sandbox, frontend, skill, or persona authority.
+- `Embodied Interaction Runtime Phase 5` is now implemented as motive-to-behavior alignment readback: Phase 4 motive hints may be compared against actual behavior action / behavior plan motives so the runtime can distinguish `causally_aligned`, `advisory_not_reflected`, and `behavior_conflict_observed` without changing behavior, writing memory, calling models, or widening authority.
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -58,6 +59,7 @@ For backend purposes, the structural decisions in this document are now split in
 - embodied interaction runtime phase 2 gate: `python evals/run_embodied_interaction_runtime_phase2_audit.py`
 - embodied interaction runtime phase 3 gate: `python evals/run_embodied_interaction_runtime_phase3_audit.py`
 - embodied interaction runtime phase 4 gate: `python evals/run_embodied_interaction_runtime_phase4_audit.py`
+- embodied interaction runtime phase 5 gate: `python evals/run_embodied_interaction_runtime_phase5_audit.py`
 - current handoff posture:
   - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
@@ -120,17 +122,20 @@ For backend purposes, the structural decisions in this document are now split in
     - `embodied_interaction_runtime_phase2_ready`: `amadeus_thread0.runtime.artifact_perception_semantics` converts approved artifact metadata into bounded semantic observations, and `embodied_interaction_runtime` mirrors those observations into perception, appraisal, and carryover surfaces
     - `embodied_interaction_runtime_phase3_ready`: `amadeus_thread0.runtime.artifact_appraisal_bridge` converts those approved semantic observations into read-only appraisal evidence, and `embodied_interaction_runtime` mirrors that evidence into perception, appraisal, perception semantics, and carryover surfaces
     - `embodied_interaction_runtime_phase4_ready`: `amadeus_thread0.runtime.artifact_motive_bridge` converts approved appraisal evidence into read-only motive/goal advisory hints, and `embodied_interaction_runtime` mirrors those hints into perception, appraisal, carryover, and advisory behavior-plan surfaces without replacing actual motives
+    - `embodied_interaction_runtime_phase5_ready`: `amadeus_thread0.runtime.artifact_behavior_alignment` compares approved motive hints against actual behavior action / behavior plan motives, and `embodied_interaction_runtime` mirrors that alignment into perception, appraisal, carryover, and advisory behavior-plan surfaces without mutating behavior
     - `assistant_turn` and `event_round` payloads now include `embodied_interaction`
     - consent-bound source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
     - approved artifact semantics surface through `embodied_interaction.artifact_semantics.semantic_observations`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
     - approved artifact appraisal evidence surfaces through `embodied_interaction.artifact_appraisal.evidence_items`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
     - approved artifact motive/goal hints surface through `embodied_interaction.artifact_motive.motive_hints`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
-    - Phase 4 keeps `behavior_action.primary_motive` and `behavior_plan.primary_motive` intact; hints may guide readback but are not behavior mutations
+    - approved artifact behavior alignment surfaces through `embodied_interaction.artifact_behavior_alignment.alignment_items`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
+    - Phase 4 and Phase 5 keep `behavior_action.primary_motive` and `behavior_plan.primary_motive` intact; hints and alignment may guide readback but are not behavior mutations
     - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
     - `evals/run_embodied_interaction_runtime_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-audit-*`
     - `evals/run_embodied_interaction_runtime_phase2_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase2-audit-*`
     - `evals/run_embodied_interaction_runtime_phase3_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase3-audit-*`
     - `evals/run_embodied_interaction_runtime_phase4_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase4-audit-*`
+    - `evals/run_embodied_interaction_runtime_phase5_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase5-audit-*`
     - this phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, mutate behavior motives, widen memory or execution authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
@@ -1055,3 +1060,4 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 28. `Embodied Interaction Runtime Phase 2` - `baseline-closed`
 29. `Embodied Interaction Runtime Phase 3` - `baseline-closed`
 30. `Embodied Interaction Runtime Phase 4` - `baseline-closed`
+31. `Embodied Interaction Runtime Phase 5` - `baseline-closed`
