@@ -451,6 +451,26 @@ function App() {
   ];
   const signalCore =
     signalMetrics.reduce((total, metric) => total + metric.value, 0) / Math.max(signalMetrics.length, 1);
+  const readbackCards: Array<{ title: string; eyebrow: string; record: JsonRecord | undefined }> = [
+    {
+      title: "Operator readback",
+      eyebrow: "Backend-owned operator console",
+      record: selectedPayload.operator_readback,
+    },
+    {
+      title: "Living loop realism",
+      eyebrow: "Causal north-star readback",
+      record: selectedPayload.living_loop_realism,
+    },
+    {
+      title: "Embodied interaction",
+      eyebrow: "Artifact and body readback",
+      record: selectedPayload.embodied_interaction,
+    },
+  ];
+  const visibleReadbackCards = readbackCards.filter(
+    (item): item is { title: string; eyebrow: string; record: JsonRecord } => Boolean(item.record),
+  );
 
   const storyline = useMemo<TimelineEntry[]>(() => {
     const eventEntries = session.worldline.payload.worldline_events.map((item, index) => ({
@@ -778,14 +798,19 @@ function App() {
             <span />
           </div>
           <div>
-            <span className="brand-lockup__kicker">mock continuity observatory</span>
+            <span className="brand-lockup__kicker">{session.transportMode} continuity observatory</span>
             <span className="brand-lockup__title">Amadeus Interface</span>
           </div>
         </div>
         <div className="chip-row topbar__chips">
           <span className="chip chip--quiet">Schema {session.schemaVersion}</span>
           <span className="chip chip--quiet">Thread {session.threadId}</span>
-          <span className="chip chip--quiet">Mock transport</span>
+          <span className="chip chip--quiet">{titleCase(session.transportMode)} transport</span>
+          {session.runtimeProductization?.payload.readiness_status ? (
+            <span className="chip chip--quiet">
+              Productization {session.runtimeProductization.payload.readiness_status}
+            </span>
+          ) : null}
         </div>
       </header>
 
@@ -907,7 +932,11 @@ function App() {
                 <p className="panel__eyebrow">lens statement</p>
                 <h2>Why this scene matters</h2>
               </div>
-              <p className="panel__meta">Mock-only for now. The layout is being tuned before live transport arrives.</p>
+              <p className="panel__meta">
+                {session.transportMode === "route"
+                  ? "Route-backed envelopes feed this surface without frontend semantic ownership."
+                  : "Mock envelopes keep the contract surface inspectable before route transport is attached."}
+              </p>
             </div>
             <div className="statement-band">
               <div className="statement-band__primary">
@@ -949,6 +978,16 @@ function App() {
                 <RecordGrid record={selectedPayload.reconsolidation_snapshot} />
               </DetailCard>
             </div>
+            {visibleReadbackCards.length ? (
+              <div className="packet-grid packet-grid--readback">
+                {visibleReadbackCards.map((item) => (
+                  <DetailCard key={item.title} title={item.title} eyebrow={item.eyebrow}>
+                    <RecordGrid record={item.record} />
+                    <JsonDump value={item.record} label={`Raw ${item.title.toLowerCase()}`} />
+                  </DetailCard>
+                ))}
+              </div>
+            ) : null}
             {"pending_utterance_fragment" in selectedPayload && selectedPayload.pending_utterance_fragment ? (
               <div className="single-card">
                 <DetailCard title="Pending utterance fragment" eyebrow="Resume protocol">
@@ -1029,6 +1068,14 @@ function App() {
                 <strong>{session.persona.payload.behavior_queue_summary.length}</strong>
               </article>
             </div>
+            {session.runtimeProductization ? (
+              <div className="single-card">
+                <DetailCard title="Runtime productization" eyebrow="Route readback">
+                  <RecordGrid record={session.runtimeProductization.payload} />
+                  <JsonDump value={session.runtimeProductization.payload} label="Raw runtime productization" />
+                </DetailCard>
+              </div>
+            ) : null}
             <InspectorTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
         </aside>
