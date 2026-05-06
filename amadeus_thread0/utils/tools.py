@@ -67,6 +67,7 @@ from ..runtime.browser_runner import (
     build_browser_execution_spec,
     get_browser_session_manager,
 )
+from ..runtime.dynamic_skill_candidates import freeze_skill_candidate_payload, verify_candidate_approval
 from ..runtime.modeling import _normalize_provider, _resolve_api_key
 from ..runtime.skill_registry import (
     SkillRegistryError,
@@ -5226,6 +5227,48 @@ def preview_skill_operation(tool_name: str, args: dict[str, Any] | None) -> dict
     }:
         return {}
     skill_id = str(data.get("skill_id") or "").strip()
+    candidate_payload = data.get("candidate_payload") if isinstance(data.get("candidate_payload"), dict) else {}
+    if name == "install_skill" and candidate_payload:
+        frozen = freeze_skill_candidate_payload(candidate_payload)
+        verification = verify_candidate_approval(frozen, candidate_payload)
+        if not verification.get("verified", False):
+            return {
+                "skill_preview": {
+                    "operation": name,
+                    "skill_id": str(candidate_payload.get("skill_id") or skill_id).strip().lower(),
+                    "candidate_id": str(candidate_payload.get("candidate_id") or "").strip(),
+                    "validation_error": ",".join(
+                        str(item) for item in (verification.get("failure_reasons") or []) if str(item)
+                    )[:220],
+                }
+            }
+        resolved_args = dict(data)
+        resolved_args["skill_id"] = str(frozen.get("skill_id") or skill_id).strip().lower()
+        resolved_args["resolved_version"] = str(frozen.get("version") or "").strip()
+        resolved_args["source"] = "dynamic_candidate"
+        resolved_args["hash"] = str(frozen.get("hash") or "").strip().lower()
+        resolved_args["requested_permissions"] = list(frozen.get("requested_permissions") or [])
+        resolved_args["sandbox_profiles"] = list(frozen.get("sandbox_profiles") or [])
+        resolved_args["verification_summary"] = str(frozen.get("verification_summary") or "").strip()
+        resolved_args["candidate_id"] = str(frozen.get("candidate_id") or "").strip()
+        resolved_args["candidate_hash"] = str(frozen.get("hash") or "").strip().lower()
+        resolved_args["candidate_payload"] = dict(frozen)
+        return {
+            "resolved_args": resolved_args,
+            "skill_preview": {
+                "operation": name,
+                "skill_id": resolved_args["skill_id"],
+                "resolved_version": resolved_args["resolved_version"],
+                "source": "dynamic_candidate",
+                "hash": resolved_args["hash"],
+                "requested_permissions": list(resolved_args.get("requested_permissions") or []),
+                "sandbox_profiles": list(resolved_args.get("sandbox_profiles") or []),
+                "verification_summary": resolved_args["verification_summary"],
+                "trust_tier": "approved_candidate",
+                "candidate_id": resolved_args["candidate_id"],
+                "candidate_hash": resolved_args["candidate_hash"],
+            },
+        }
     if not skill_id:
         return {}
     try:

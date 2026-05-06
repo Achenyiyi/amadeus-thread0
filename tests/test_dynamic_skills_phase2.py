@@ -6,6 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from amadeus_thread0.graph_parts.skill_runtime import (
+    backend_skill_envelope,
+    derive_procedural_continuity,
+    derive_skill_effects,
+)
 from amadeus_thread0.runtime.dynamic_skill_candidates import (
     build_candidate_install_packet,
     freeze_skill_candidate_payload,
@@ -13,6 +18,7 @@ from amadeus_thread0.runtime.dynamic_skill_candidates import (
     verify_candidate_approval,
 )
 from amadeus_thread0.runtime.skill_registry import SkillRegistryError, SkillRegistryManager
+from amadeus_thread0.utils.tools import preview_skill_operation
 
 
 def _candidate():
@@ -87,3 +93,62 @@ def test_registry_rejects_candidate_install_when_approval_payload_drifts():
 
         assert manager.runtime_catalog() == []
         assert manager.compute_session_skill_state(thread_id="thread-dyn")["active_skill_ids"] == []
+
+
+def test_pending_dynamic_candidate_proposal_surfaces_candidate_metadata_without_activation():
+    frozen = freeze_skill_candidate_payload(_candidate())
+    packet = build_candidate_install_packet(frozen)
+
+    envelope = backend_skill_envelope(
+        {"catalog_entries": [], "active_skill_entries": []},
+        pending_action_proposal=packet,
+    )
+
+    assert envelope["active"] == []
+    assert envelope["pending_approval"]["candidate_id"] == frozen["candidate_id"]
+    assert envelope["pending_approval"]["candidate_hash"] == frozen["hash"]
+    assert envelope["pending_approval"]["source"] == "dynamic_candidate"
+
+
+def test_completed_dynamic_skill_use_resurfaces_only_after_actual_use():
+    state = {
+        "active_skill_entries": [
+            {
+                "skill_id": "pytest-failure-review",
+                "name": "pytest-failure-review",
+                "version": "0.1.0",
+                "source": "dynamic_candidate",
+                "trust_tier": "approved_candidate",
+                "allowed_tools": ["execute_workspace_command"],
+            }
+        ]
+    }
+    effects = derive_skill_effects(
+        state,
+        [{"tool_name": "execute_workspace_command", "status": "completed", "proposal_id": "ap-use-1"}],
+    )
+    continuity = derive_procedural_continuity(
+        {
+            "kind": "skill_usage_completed",
+            "primary_status": "completed",
+            "primary_tool_name": "execute_workspace_command",
+            "primary_proposal_id": "ap-use-1",
+            "skill_effects": effects,
+        }
+    )
+
+    assert effects[0]["operation"] == "use"
+    assert effects[0]["source"] == "dynamic_candidate"
+    assert continuity["capability_family"] == "skill"
+    assert continuity["last_success_ref"] == "ap-use-1"
+
+
+def test_dynamic_candidate_tool_preview_uses_frozen_payload_without_remote_catalog_lookup():
+    frozen = freeze_skill_candidate_payload(_candidate())
+
+    preview = preview_skill_operation("install_skill", {"candidate_payload": frozen})
+
+    assert preview["resolved_args"]["skill_id"] == frozen["skill_id"]
+    assert preview["resolved_args"]["candidate_id"] == frozen["candidate_id"]
+    assert preview["skill_preview"]["source"] == "dynamic_candidate"
+    assert preview["skill_preview"]["candidate_hash"] == frozen["hash"]

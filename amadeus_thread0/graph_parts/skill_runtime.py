@@ -460,7 +460,7 @@ def pending_skill_proposal_from_state(pending_action_proposal: Any) -> dict[str,
     if not tool_name or tool_name not in SKILL_MUTATION_TOOLS:
         return {}
     tool_args = proposal.get("tool_args") if isinstance(proposal.get("tool_args"), dict) else {}
-    return {
+    pending = {
         "proposal_id": _clean_text(proposal.get("proposal_id"), limit=120),
         "operation": tool_name,
         "skill_id": _clean_text(tool_args.get("skill_id"), limit=120).lower(),
@@ -479,6 +479,19 @@ def pending_skill_proposal_from_state(pending_action_proposal: Any) -> dict[str,
         ][:16],
         "verification_summary": _clean_text(tool_args.get("verification_summary"), limit=320),
     }
+    candidate_payload = tool_args.get("candidate_payload") if isinstance(tool_args.get("candidate_payload"), dict) else {}
+    candidate_id = _clean_text(tool_args.get("candidate_id") or candidate_payload.get("candidate_id"), limit=140)
+    candidate_hash = _clean_text(tool_args.get("candidate_hash") or candidate_payload.get("hash"), limit=128).lower()
+    if candidate_id or candidate_hash:
+        pending.update(
+            {
+                "candidate_id": candidate_id,
+                "candidate_hash": candidate_hash,
+                "candidate_payload_schema": _clean_text(candidate_payload.get("schema"), limit=80),
+                "dynamic_candidate": True,
+            }
+        )
+    return pending
 
 
 def derive_session_skill_state(
