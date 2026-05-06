@@ -12334,5 +12334,22 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `9 passed`
     - `python evals/run_chinese_semantic_descaffolding_phase2_audit.py --run-tag phase2-dev`
       - passed with `readiness=chinese_semantic_descaffolding_phase2_ready`
+  - final verification:
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py tests/test_chinese_semantic_descaffolding_phase2_audit.py tests/test_chinese_surface_de_scaffold_audit.py tests/test_embodied_interaction_runtime.py -q`
+      - passed: `25 passed`
+    - `python -m pytest tests/test_backend_api.py -k "chinese_semantic or semantic_floor or embodied_interaction" -q`
+      - passed: `2 passed, 52 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `188 passed, 17 subtests passed`
+    - `python -m py_compile amadeus_thread0/graph_parts/chinese_semantic_surface.py amadeus_thread0/runtime/embodied_interaction_runtime.py evals/run_chinese_surface_de_scaffold_audit.py evals/run_chinese_semantic_descaffolding_phase2_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag phase2-regression`
+      - passed with `readiness=chinese_semantic_descaffolding_phase1_ready`
+    - `python evals/run_chinese_semantic_descaffolding_phase2_audit.py --run-tag phase2-final`
+      - passed with `readiness=chinese_semantic_descaffolding_phase2_ready`
+    - `python evals/run_embodied_interaction_runtime_phase5_audit.py --run-tag chinese-phase2-regression`
+      - passed with `readiness=embodied_interaction_runtime_phase5_ready`
+    - `git diff --check`
+      - passed
 - Next:
   - run full Phase 2 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Multimodal Perception Phase 2`

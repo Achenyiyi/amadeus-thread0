@@ -358,7 +358,7 @@ git add AGENTS.md docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS
 git commit -m "docs: close chinese semantic phase 2"
 ```
 
-- [ ] **Step 3: Run final verification**
+- [x] **Step 3: Run final verification**
 
 Run:
 
