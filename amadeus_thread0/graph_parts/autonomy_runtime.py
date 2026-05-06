@@ -24,6 +24,7 @@ from .digital_body_runtime import (
     select_access_acquire_proposal,
     selected_access_proposal_resolved,
 )
+from .procedural_planning import build_procedural_planning_bias, normalize_procedural_planning
 from .skill_runtime import normalize_procedural_continuity
 
 _OWN_RHYTHM_EVENT_KINDS = {
@@ -682,6 +683,109 @@ def _procedural_continuity_execution_packet(
                 "cwd": workspace_root,
                 "access_hints": access_hints,
                 "procedural_continuity": procedural,
+            },
+            "capability_steps": [
+                {
+                    "kind": "tool_call",
+                    "name": "execute_workspace_command",
+                    "target": workspace_root,
+                    "status": "awaiting_approval",
+                    "requires_approval": True,
+                    "note": reason,
+                }
+            ],
+            "expected_effect": reason,
+            "result_summary": "",
+            "writeback_ready": False,
+            "execution_spec": execution_spec,
+            "execution_preview": execution_spec,
+        }
+    )
+
+
+def _procedural_planning_execution_packet(
+    *,
+    procedural_planning: dict[str, Any],
+    access_hints: dict[str, Any],
+    embodied: dict[str, Any],
+    origin: str,
+) -> dict[str, Any]:
+    planning = normalize_procedural_planning(procedural_planning)
+    if not planning or _clean_text(planning.get("bias_kind")).lower() != "sandbox_execute":
+        return {}
+    if not bool(planning.get("capability_claim", False)):
+        return {}
+    executor = _clean_text(planning.get("suggested_executor"), limit=64).lower()
+    argv = [
+        _clean_text(item, limit=120)
+        for item in _list_or_empty(planning.get("suggested_argv"))
+        if _clean_text(item, limit=120)
+    ][:16]
+    pattern = _clean_text(planning.get("suggested_profile") or planning.get("suggested_pattern"), limit=64).lower()
+    if executor not in {"pytest", "rg", "git"} or not argv:
+        return {}
+    if executor == "git" and argv[:2] not in (["git", "status"], ["git", "diff"]):
+        return {}
+    if not _procedural_trace_stays_within_current_access(embodied=embodied, access_hints=access_hints):
+        return {}
+    workspace_root = _clean_text(access_hints.get("workspace_root") or embodied.get("workspace_root"), limit=320)
+    if not workspace_root:
+        return {}
+    current_sandbox = _dict_or_empty(access_hints.get("sandbox_state"))
+    runner_kind = (
+        _clean_text(access_hints.get("sandbox_runner_kind") or current_sandbox.get("runner_kind"), limit=80).lower()
+        or _clean_text(embodied.get("sandbox_runner_kind"), limit=80).lower()
+    )
+    isolation_level = (
+        _clean_text(access_hints.get("sandbox_isolation_level") or current_sandbox.get("isolation_level"), limit=80).lower()
+        or _clean_text(embodied.get("sandbox_isolation_level"), limit=80).lower()
+    )
+    image_ref = (
+        _clean_text(access_hints.get("sandbox_image_ref") or current_sandbox.get("image_ref"), limit=160)
+        or _clean_text(embodied.get("sandbox_image_ref"), limit=160)
+    )
+    network_policy = (
+        _clean_text(access_hints.get("sandbox_network_policy") or current_sandbox.get("network_policy"), limit=32).lower()
+        or _clean_text(embodied.get("sandbox_network_policy"), limit=32).lower()
+        or "none"
+    )
+    workspace_root_kind = (
+        _clean_text(access_hints.get("workspace_root_kind") or current_sandbox.get("workspace_root_kind"), limit=64).lower()
+        or _clean_text(embodied.get("workspace_root_kind"), limit=64).lower()
+    )
+    execution_spec = {
+        "executor": executor,
+        "profile": pattern or executor,
+        "runner_kind": runner_kind,
+        "isolation_level": isolation_level,
+        "image_ref": image_ref,
+        "network_policy": network_policy,
+        "workspace_root_kind": workspace_root_kind,
+        "argv": argv,
+        "cwd": workspace_root,
+        "allowed_roots": [workspace_root],
+        "timeout_s": 60,
+        "writes_expected": False,
+        "expected_artifacts": [],
+    }
+    reason = (
+        _clean_text(planning.get("reason"), limit=220)
+        or "沿用前面成功过的受限执行模式继续检查；这仍然要按当前执行审批走。"
+    )
+    return normalize_action_packet(
+        {
+            "proposal_id": make_proposal_id("procedural-planning", executor, pattern, workspace_root, origin),
+            "origin": origin,
+            "intent": "sandbox:execute_workspace_command",
+            "status": "awaiting_approval",
+            "risk": "external_mutation",
+            "requires_approval": True,
+            "tool_name": "execute_workspace_command",
+            "tool_args": {
+                "argv": argv,
+                "cwd": workspace_root,
+                "access_hints": access_hints,
+                "procedural_planning": planning,
             },
             "capability_steps": [
                 {
@@ -1464,6 +1568,17 @@ def derive_autonomy_runtime(
     embodied_packet = _artifact_reacquisition_packet(artifact_runtime_embodied)
     source_ref_compare_packet = _source_ref_comparison_packet(artifact_runtime_embodied)
     source_ref_refresh_packet = _source_ref_inspection_packet(artifact_runtime_embodied)
+    procedural_planning = build_procedural_planning_bias(
+        current_event=event,
+        embodied_context=carried_embodied,
+        access_hints=access_hints,
+    )
+    procedural_planning_packet = _procedural_planning_execution_packet(
+        procedural_planning=procedural_planning,
+        access_hints=access_hints,
+        embodied=carried_embodied,
+        origin=primary_origin,
+    )
     procedural_packet = _procedural_continuity_execution_packet(
         current_event=event,
         embodied=carried_embodied,
@@ -1500,6 +1615,10 @@ def derive_autonomy_runtime(
         action_packets = [source_ref_refresh_packet]
         primary_packet = dict(source_ref_refresh_packet)
         primary_packet_source = "source_ref_refresh"
+    elif procedural_planning_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
+        action_packets = [procedural_planning_packet]
+        primary_packet = dict(procedural_planning_packet)
+        primary_packet_source = "procedural_planning"
     elif procedural_packet and (not primary_packet or _packet_is_default_language_shell(primary_packet)):
         action_packets = [procedural_packet]
         primary_packet = dict(procedural_packet)
@@ -1646,6 +1765,8 @@ def derive_autonomy_runtime(
                     if primary_packet_source == "source_ref_compare"
                     else "derived_from_source_ref_refresh"
                     if primary_packet_source == "source_ref_refresh"
+                    else "derived_from_procedural_planning"
+                    if primary_packet_source == "procedural_planning"
                     else "derived_from_procedural_continuity"
                     if primary_packet_source == "procedural_continuity"
                     else "derived_from_access_arrival"
@@ -1660,6 +1781,7 @@ def derive_autonomy_runtime(
                 ),
                 "requires_approval": bool(primary_packet.get("requires_approval", False)),
                 "linked_queue_id": _clean_text(primary_packet.get("linked_queue_id")),
+                "procedural_planning": procedural_planning if primary_packet_source == "procedural_planning" else {},
             }
         )
     return {
@@ -1669,6 +1791,7 @@ def derive_autonomy_runtime(
         "action_trace": action_trace,
         "autonomy_block_reason": block_reason,
         "session_context": updated_session_context,
+        "procedural_planning": procedural_planning,
     }
 
 

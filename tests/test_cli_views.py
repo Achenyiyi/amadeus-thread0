@@ -1202,6 +1202,138 @@ class CliViewsTests(unittest.TestCase):
         self.assertIn("bodyfx=sandbox_execution_completed", line)
         self.assertIn("root=E:/repo/amadeus-thread0", line)
 
+    def test_build_evolution_summary_line_surfaces_procedural_growth_hint(self):
+        summary = build_evolution_cli_summary(
+            digital_body_consequence={
+                "kind": "sandbox_execution_completed",
+                "summary": "刚才那次 Docker 隔离执行已经跑完，可以顺着日志继续看。",
+                "primary_status": "completed",
+                "primary_tool_name": "execute_workspace_command",
+                "procedural_growth": True,
+                "procedural_continuity": {
+                    "capability_family": "sandbox",
+                    "pattern": "pytest",
+                    "identity_safe": True,
+                    "confidence": 0.76,
+                    "traces": [
+                        {
+                            "trace_id": "proc_cli_pytest",
+                            "trace_kind": "sandbox_execution_pattern",
+                            "source_proposal_id": "ap-cli-pytest",
+                            "source_run_id": "run-cli-pytest",
+                            "source_tool_name": "execute_workspace_command",
+                            "status": "completed",
+                            "procedure_steps": ["inspect previous run log", "rerun bounded pytest command"],
+                            "boundary_notes": ["requires approval before execution"],
+                            "confidence": 0.76,
+                        }
+                    ],
+                },
+            },
+        )
+
+        procedural = summary.get("procedural_growth") if isinstance(summary.get("procedural_growth"), dict) else {}
+        self.assertEqual(procedural.get("procedural_hint", {}).get("source_run_id"), "run-cli-pytest")
+        line = build_evolution_summary_line(summary)
+        self.assertIn("procedure=sandbox_execution_pattern:run-cli-pytest:approval", line)
+
+    def test_build_evolution_summary_line_surfaces_procedural_planning_bias(self):
+        summary = build_evolution_cli_summary(
+            autonomy_intent={
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "requires_approval": True,
+                "primary_proposal_id": "ap-phase2-cli",
+            },
+            procedural_planning={
+                "planning_bias": True,
+                "bias_kind": "sandbox_execute",
+                "trace_id": "proc_phase2_cli",
+                "trace_kind": "sandbox_execution_pattern",
+                "source_run_id": "run-phase2-cli",
+                "source_tool_name": "execute_workspace_command",
+                "suggested_capability_family": "sandbox",
+                "suggested_pattern": "pytest",
+                "suggested_executor": "pytest",
+                "suggested_argv": ["pytest"],
+                "must_request_approval": True,
+                "requires_approval": True,
+                "capability_claim": True,
+                "confidence": 0.78,
+            },
+        )
+
+        planning = summary.get("autonomy", {}).get("procedural_planning", {})
+        current_turn = summary.get("current_turn", {})
+        self.assertEqual(planning.get("source_run_id"), "run-phase2-cli")
+        self.assertEqual(current_turn.get("procedural_planning", {}).get("trace_id"), "proc_phase2_cli")
+        line = build_evolution_summary_line(summary)
+        self.assertIn("planproc=sandbox_execute:run-phase2-cli:approval", line)
+
+    def test_build_evolution_summary_line_surfaces_procedural_outcome(self):
+        summary = build_evolution_cli_summary(
+            digital_body_consequence={
+                "kind": "sandbox_execution_completed",
+                "procedural_growth": True,
+                "procedural_outcomes": [
+                    {
+                        "outcome_id": "proc_out_cli",
+                        "source_trace_id": "proc_phase3_cli",
+                        "source_proposal_id": "ap-phase3-cli",
+                        "source_run_id": "run-phase3-cli",
+                        "planning_bias_kind": "sandbox_execute",
+                        "source_tool_name": "execute_workspace_command",
+                        "attempt_status": "completed",
+                        "outcome_kind": "confirmed_success",
+                        "confidence_delta": 0.08,
+                        "reuse_allowed": True,
+                        "boundary_reinforced": False,
+                        "evidence_refs": ["run-phase3-cli"],
+                    }
+                ],
+            },
+        )
+
+        current_turn = summary.get("current_turn", {})
+        self.assertEqual(current_turn.get("procedural_outcome", {}).get("outcome_kind"), "confirmed_success")
+        self.assertEqual(current_turn.get("procedural_outcome", {}).get("source_run_id"), "run-phase3-cli")
+        line = build_evolution_summary_line(summary)
+        self.assertIn("outcome=confirmed_success:run-phase3-cli:reuse", line)
+
+    def test_build_evolution_summary_line_surfaces_procedural_recovery(self):
+        summary = build_evolution_cli_summary(
+            digital_body_consequence={
+                "kind": "sandbox_execution_completed",
+                "procedural_growth": True,
+                "procedural_recoveries": [
+                    {
+                        "recovery_id": "proc_rec_cli",
+                        "source_outcome_id": "proc_out_cli",
+                        "source_trace_id": "proc_phase4_cli",
+                        "source_proposal_id": "ap-phase4-cli",
+                        "source_run_id": "run-phase4-cli",
+                        "recovery_kind": "inspect_failure_artifact",
+                        "status": "suggested",
+                        "safe_to_reuse": False,
+                        "requires_approval": False,
+                        "allowed_bias_kind": "workspace_guidance",
+                        "suggested_next_step": "inspect stderr/stdout artifacts before rerunning a bounded command",
+                        "must_not_repeat": ["package install"],
+                        "evidence_refs": ["run-phase4-cli"],
+                    }
+                ],
+            },
+        )
+
+        current_turn = summary.get("current_turn", {})
+        self.assertEqual(
+            current_turn.get("procedural_recovery", {}).get("recovery_kind"),
+            "inspect_failure_artifact",
+        )
+        self.assertEqual(current_turn.get("procedural_recovery", {}).get("source_run_id"), "run-phase4-cli")
+        line = build_evolution_summary_line(summary)
+        self.assertIn("recovery=inspect_failure_artifact:run-phase4-cli:hint", line)
+
     def test_build_evolution_cli_summary_surfaces_workspace_file_updated_consequence(self):
         summary = build_evolution_cli_summary(
             digital_body_state={

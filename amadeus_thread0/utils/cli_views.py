@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..graph_parts.procedural_planning import normalize_procedural_planning
 from ..graph_parts.relational_runtime import _counterpart_assessment_profile
 from .embodied_preview import (
     compact_counterpart_assessment_preview_line as _shared_compact_counterpart_assessment_preview_line,
@@ -23,6 +24,9 @@ from .turn_summary_export import (
     summarize_event_residue,
     summarize_interaction_carryover,
     summarize_opening_window_profile,
+    summarize_procedural_growth,
+    summarize_procedural_outcome,
+    summarize_procedural_recovery,
 )
 
 _SEMANTIC_ANCHOR_FLOAT_KEYS = (
@@ -858,6 +862,7 @@ def build_evolution_cli_summary(
     pending_approval: dict[str, Any] | None = None,
     action_trace: list[dict[str, Any]] | None = None,
     autonomy_block_reason: str | None = None,
+    procedural_planning: dict[str, Any] | None = None,
     digital_body_state: dict[str, Any] | None = None,
     digital_body_consequence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -876,6 +881,14 @@ def build_evolution_cli_summary(
     autonomy_intent = dict(autonomy_intent or {})
     pending_approval = dict(pending_approval or {})
     action_trace = list(action_trace or [])
+    procedural_planning = normalize_procedural_planning(procedural_planning)
+    if not procedural_planning:
+        for item in action_trace:
+            if not isinstance(item, dict):
+                continue
+            procedural_planning = normalize_procedural_planning(item.get("procedural_planning"))
+            if procedural_planning:
+                break
     digital_body = _digital_body_summary(digital_body_state)
     digital_body_consequence = _digital_body_consequence_summary(digital_body_consequence)
     frozen_counterpart = _frozen_counterpart_snapshot(recon)
@@ -909,6 +922,39 @@ def build_evolution_cli_summary(
         if isinstance(digital_body_consequence.get("tts_presence_timing"), dict)
         else {}
     )
+    procedural_growth_summary = summarize_procedural_growth(digital_body_consequence)
+    procedural_outcome_summary = summarize_procedural_outcome(digital_body_consequence)
+    procedural_recovery_summary = summarize_procedural_recovery(digital_body_consequence)
+    procedural_outcome_current: dict[str, Any] = {}
+    outcome_rows = procedural_outcome_summary.get("outcomes")
+    if isinstance(outcome_rows, list) and outcome_rows:
+        latest_outcome = outcome_rows[-1] if isinstance(outcome_rows[-1], dict) else {}
+        if latest_outcome:
+            procedural_outcome_current = {
+                "outcome_id": str(latest_outcome.get("outcome_id") or "").strip(),
+                "outcome_kind": str(latest_outcome.get("outcome_kind") or "").strip(),
+                "source_trace_id": str(latest_outcome.get("source_trace_id") or "").strip(),
+                "source_run_id": str(latest_outcome.get("source_run_id") or "").strip(),
+                "planning_bias_kind": str(latest_outcome.get("planning_bias_kind") or "").strip(),
+                "confidence_delta": _metric(latest_outcome.get("confidence_delta"), 0.0),
+                "reuse_allowed": bool(latest_outcome.get("reuse_allowed", False)),
+                "boundary_reinforced": bool(latest_outcome.get("boundary_reinforced", False)),
+            }
+    procedural_recovery_current: dict[str, Any] = {}
+    recovery_rows = procedural_recovery_summary.get("recoveries")
+    if isinstance(recovery_rows, list) and recovery_rows:
+        latest_recovery = recovery_rows[-1] if isinstance(recovery_rows[-1], dict) else {}
+        if latest_recovery:
+            procedural_recovery_current = {
+                "recovery_id": str(latest_recovery.get("recovery_id") or "").strip(),
+                "recovery_kind": str(latest_recovery.get("recovery_kind") or "").strip(),
+                "source_outcome_id": str(latest_recovery.get("source_outcome_id") or "").strip(),
+                "source_trace_id": str(latest_recovery.get("source_trace_id") or "").strip(),
+                "source_run_id": str(latest_recovery.get("source_run_id") or "").strip(),
+                "safe_to_reuse": bool(latest_recovery.get("safe_to_reuse", False)),
+                "requires_approval": bool(latest_recovery.get("requires_approval", False)),
+                "allowed_bias_kind": str(latest_recovery.get("allowed_bias_kind") or "").strip(),
+            }
 
     return {
         "relationship": {
@@ -1018,6 +1064,7 @@ def build_evolution_cli_summary(
             "autonomy_requires_approval": bool(autonomy_intent.get("requires_approval", False)),
             "action_packet_count": len(action_packets or []),
             "autonomy_block_reason": str(autonomy_block_reason or "").strip(),
+            "procedural_planning": procedural_planning,
             "digital_body_surface": str(digital_body.get("active_surface") or "").strip(),
             "digital_body_access_mode": str(
                 (
@@ -1149,6 +1196,9 @@ def build_evolution_cli_summary(
             ).strip(),
             "digital_body_artifact_mutation_mode": str(digital_body_consequence.get("artifact_mutation_mode") or "").strip(),
             "digital_body_procedural_growth": bool(digital_body_consequence.get("procedural_growth", False)),
+            "procedural_hint": dict(procedural_growth_summary.get("procedural_hint") or {}),
+            "procedural_outcome": procedural_outcome_current,
+            "procedural_recovery": procedural_recovery_current,
             "digital_body_requested_help": bool(digital_body_consequence.get("requested_help", False)),
             "digital_body_environmental_friction": bool(digital_body_consequence.get("environmental_friction", False)),
             "tts_presence_status": str(tts_presence_state.get("last_status") or "").strip(),
@@ -1213,9 +1263,13 @@ def build_evolution_cli_summary(
             "pending_approval": pending_approval,
             "execution_trace": [dict(item) for item in action_trace[:8] if isinstance(item, dict)],
             "block_reason": str(autonomy_block_reason or "").strip(),
+            "procedural_planning": procedural_planning,
         },
         "digital_body": digital_body,
         "digital_body_consequence": digital_body_consequence,
+        "procedural_growth": procedural_growth_summary,
+        "procedural_outcome": procedural_outcome_summary,
+        "procedural_recovery": procedural_recovery_summary,
         "worldline_focus_preview": _focus_preview(worldline_focus, limit=3),
         "worldline_focus_items": _focus_preview_items(worldline_focus, limit=3),
     }
@@ -1296,6 +1350,105 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
     body_fx = str(current_turn.get("digital_body_consequence_kind") or "").strip()
     if body_fx:
         parts.append(f"bodyfx={body_fx}")
+    procedural = summary.get("procedural_growth") if isinstance(summary.get("procedural_growth"), dict) else {}
+    procedural_hint = (
+        current_turn.get("procedural_hint")
+        if isinstance(current_turn.get("procedural_hint"), dict)
+        else procedural.get("procedural_hint")
+        if isinstance(procedural.get("procedural_hint"), dict)
+        else {}
+    )
+    if procedural_hint:
+        trace_kind = str(procedural_hint.get("trace_kind") or "").strip()
+        source_run_id = str(procedural_hint.get("source_run_id") or "").strip()
+        status = "approval" if bool(procedural_hint.get("must_request_approval", False)) else "hint"
+        if trace_kind:
+            label = f"procedure={trace_kind}"
+            if source_run_id:
+                label += f":{source_run_id}"
+            label += f":{status}"
+            parts.append(label)
+    procedural_planning = (
+        current_turn.get("procedural_planning")
+        if isinstance(current_turn.get("procedural_planning"), dict)
+        else {}
+    )
+    if not procedural_planning:
+        autonomy = summary.get("autonomy") if isinstance(summary.get("autonomy"), dict) else {}
+        procedural_planning = (
+            autonomy.get("procedural_planning")
+            if isinstance(autonomy.get("procedural_planning"), dict)
+            else {}
+        )
+    if procedural_planning:
+        bias_kind = str(procedural_planning.get("bias_kind") or "").strip()
+        source_run_id = str(procedural_planning.get("source_run_id") or "").strip()
+        if bool(procedural_planning.get("avoid_repeating_boundary", False)):
+            status = "boundary"
+        elif bool(procedural_planning.get("must_request_approval", False)) or bool(procedural_planning.get("requires_approval", False)):
+            status = "approval"
+        else:
+            status = "hint"
+        if bias_kind:
+            label = f"planproc={bias_kind}"
+            if source_run_id:
+                label += f":{source_run_id}"
+            label += f":{status}"
+            parts.append(label)
+    procedural_outcome = (
+        current_turn.get("procedural_outcome")
+        if isinstance(current_turn.get("procedural_outcome"), dict)
+        else {}
+    )
+    if not procedural_outcome:
+        outcome_summary = summary.get("procedural_outcome") if isinstance(summary.get("procedural_outcome"), dict) else {}
+        outcomes = outcome_summary.get("outcomes") if isinstance(outcome_summary.get("outcomes"), list) else []
+        latest_outcome = outcomes[-1] if outcomes and isinstance(outcomes[-1], dict) else {}
+        if latest_outcome:
+            procedural_outcome = latest_outcome
+    if procedural_outcome:
+        outcome_kind = str(procedural_outcome.get("outcome_kind") or "").strip()
+        source_run_id = str(procedural_outcome.get("source_run_id") or "").strip()
+        if bool(procedural_outcome.get("boundary_reinforced", False)):
+            status = "boundary"
+        elif bool(procedural_outcome.get("reuse_allowed", False)):
+            status = "reuse"
+        else:
+            status = "hold"
+        if outcome_kind:
+            label = f"outcome={outcome_kind}"
+            if source_run_id:
+                label += f":{source_run_id}"
+            label += f":{status}"
+            parts.append(label)
+    procedural_recovery = (
+        current_turn.get("procedural_recovery")
+        if isinstance(current_turn.get("procedural_recovery"), dict)
+        else {}
+    )
+    if not procedural_recovery:
+        recovery_summary = summary.get("procedural_recovery") if isinstance(summary.get("procedural_recovery"), dict) else {}
+        recoveries = recovery_summary.get("recoveries") if isinstance(recovery_summary.get("recoveries"), list) else []
+        latest_recovery = recoveries[-1] if recoveries and isinstance(recoveries[-1], dict) else {}
+        if latest_recovery:
+            procedural_recovery = latest_recovery
+    if procedural_recovery:
+        recovery_kind = str(procedural_recovery.get("recovery_kind") or "").strip()
+        source_run_id = str(procedural_recovery.get("source_run_id") or "").strip()
+        if bool(procedural_recovery.get("requires_approval", False)):
+            status = "approval"
+        elif str(procedural_recovery.get("allowed_bias_kind") or "").strip() == "boundary_only":
+            status = "boundary"
+        elif str(procedural_recovery.get("allowed_bias_kind") or "").strip() == "hold":
+            status = "hold"
+        else:
+            status = "hint"
+        if recovery_kind:
+            label = f"recovery={recovery_kind}"
+            if source_run_id:
+                label += f":{source_run_id}"
+            label += f":{status}"
+            parts.append(label)
     tts_presence_state = (
         digital_body_access.get("tts_presence_state")
         if isinstance(digital_body_access.get("tts_presence_state"), dict)

@@ -33,6 +33,7 @@ Transport-neutral API surface:
 
 - `amadeus_thread0.runtime.backend_api.BackendAPI`
 - `amadeus_thread0.runtime.backend_api.BackendApiEnvelope`
+- `amadeus_thread0.runtime.transport_adapter.BackendTransportAdapter`
 
 Turn / event execution surface:
 
@@ -483,13 +484,13 @@ envelope = backend_api.build_event_round_response(
 )
 ```
 
-## Recommended Adapter Surface
+## Callable Adapter Surface
 
-No HTTP adapter is implemented in-repo yet.
+A Python-callable route adapter now exists in-repo as `BackendTransportAdapter`.
 
-If a frontend adapter is added later, keep it as a thin transport layer over the Python contract above.
+It is not an HTTP server and does not introduce FastAPI, Flask, Uvicorn, SSE, or WebSocket infrastructure. It maps method/path calls to the existing `BackendAPI` methods and returns the same `backend.v1` envelopes as dictionaries. Future HTTP/SSE/WebSocket work should wrap this adapter or the same `BackendAPI` methods without rebuilding backend state semantics.
 
-Recommended read routes:
+Callable read routes:
 
 - `GET /api/thread-inventory` -> `BackendAPI.thread_inventory()`
 - `GET /api/runtime-layout` -> `BackendAPI.runtime_layout()`
@@ -503,14 +504,16 @@ Recommended read routes:
 - `GET /api/checkpoints/current` -> `BackendAPI.current_checkpoint(config=...)`
 - `GET /api/checkpoints/history?limit=...` -> `BackendAPI.checkpoint_history(limit=..., config=...)`
 
-Recommended write routes:
+Callable finalize routes:
 
-- `POST /api/turns`
-  - execute `BackendSession.invoke_stream(...)`
-  - finalize with `BackendAPI.build_turn_response(...)`
-- `POST /api/event-rounds`
-  - execute `BackendSession.invoke_event_round(...)`
-  - finalize with `BackendAPI.build_event_round_response(...)`
+- `POST /api/turns/finalize`
+  - body: `state_values`, optional `streamed_text`, optional `meta`
+  - delegates to `BackendAPI.build_turn_response(...)`
+- `POST /api/event-rounds/finalize`
+  - body: `state_values`, `final_text`, optional `meta`
+  - delegates to `BackendAPI.build_event_round_response(...)`
+
+Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. A future HTTP adapter may add `POST /api/turns` as an execution route, but it must end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
 
 Streaming recommendation:
 

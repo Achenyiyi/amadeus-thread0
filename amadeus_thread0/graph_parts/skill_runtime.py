@@ -4,6 +4,7 @@ from typing import Any
 
 from ..runtime.skill_registry import get_skill_registry_manager
 from .action_packets import compact_artifact_identity, normalize_action_packets
+from .procedural_growth import build_procedural_hint, normalize_procedural_traces
 from .tool_policies import SKILL_MUTATION_TOOLS
 
 
@@ -159,15 +160,16 @@ def _normalize_procedural_continuity(value: Any) -> dict[str, Any]:
     row = _dict_or_empty(value)
     if not row:
         return {}
+    traces = normalize_procedural_traces(row.get("traces"))
     family = _clean_text(row.get("capability_family"), limit=80).lower()
     pattern = _clean_text(row.get("pattern"), limit=160).lower()
     if family not in {"skill", "sandbox", "browser", "workspace"}:
-        return {}
+        return {"traces": traces} if traces else {}
     if not pattern:
-        return {}
+        return {"traces": traces} if traces else {}
     identity_safe = bool(row.get("identity_safe", False))
     if not identity_safe:
-        return {}
+        return {"traces": traces} if traces else {}
     evidence_count = max(1, min(999, int(row.get("evidence_count") or 1)))
     normalized = {
         "capability_family": family,
@@ -179,6 +181,11 @@ def _normalize_procedural_continuity(value: Any) -> dict[str, Any]:
     }
     if normalized["confidence"] <= 0.0:
         normalized["confidence"] = 0.1
+    if traces:
+        normalized["traces"] = traces
+        hint = build_procedural_hint(traces)
+        if hint:
+            normalized["procedural_hint"] = hint
     return normalized
 
 

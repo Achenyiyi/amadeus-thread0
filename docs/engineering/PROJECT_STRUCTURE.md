@@ -76,6 +76,14 @@ amadeus_thread0/
   tool gate, tool execution, tool-limit handling, and post-model routing.
 - `skill_runtime.py`
   session-level skill activation, backend skill envelope shaping, and active-skill prompt disclosure.
+- `procedural_growth.py`
+  bounded procedural trace extraction, final-state enrichment, and approval-preserving procedural hints derived from completed or blocked embodied action packets.
+- `procedural_planning.py`
+  advisory procedure-guided autonomy planning over resurfaced procedural traces; may bias existing action packet selection but never owns execution, registry mutation, or persona-core truth.
+- `procedural_outcome.py`
+  outcome-calibrated procedural learning helpers; derives final action-packet outcomes, adjusts procedural trace confidence, and keeps failed/blocked/manual/pending attempts from becoming capability facts.
+- `procedural_recovery.py`
+  recovery-oriented procedural adaptation helpers; converts failed, blocked, manual-takeover, stale, and unexecuted outcomes into bounded advisory recovery guidance without opening new execution or mutation authority.
 - `browser_runtime.py`
   live-browser state shaping, browser packet preview/result normalization, and body-surface continuity helpers.
 - `autonomy_runtime.py`
@@ -134,6 +142,9 @@ Rule:
 - `memory_admin.py`
 - `final_state.py`
 - `runtime_bundle.py`
+- `transport_adapter.py`
+- `executor_adapter.py`
+- `post_baseline_closure.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
 - `access_negotiation.py`
@@ -157,13 +168,25 @@ Rule:
 - behavior queue fallback normalization
 - autonomy envelope resolution (`intent`, `action_packets`, `pending_approval`, `execution_trace`, `block_reason`)
 - the shared rule that persisted final plan wins, and plan derivation from action is fallback-only
+- procedural-growth finalization from frozen or terminal action packets, including raw read-only packet evidence such as completed skill-use effects
+- procedural-outcome finalization from the same terminal packet evidence, including confidence calibration and boundary/recovery readback
 
 `backend_api.py` is the transport-neutral frontend schema surface:
 
 - wraps backend session and memory-admin views in stable envelopes
 - exposes thread inventory, runtime layout, environment summary, turn/event response payloads
 - exposes the unified autonomy envelope for turn/event/view payloads
+- exposes compact `procedural_growth` readback alongside `digital_body_consequence`
+- exposes advisory `autonomy.procedural_planning` readback when resurfaced procedural traces influenced planning
+- exposes compact `procedural_outcome` readback when a final procedural attempt calibrated trace confidence or reinforced a boundary
+- exposes compact `procedural_recovery` readback when a final procedural outcome requires failure-artifact inspection, boundary avoidance, manual takeover preservation, context refresh, or hold-for-approval
 - provides the interface future frontend shells should consume before any CLI formatting
+
+`transport_adapter.py` is the Python-callable route adapter over `BackendAPI`:
+
+- maps stable route-like method/path calls to existing backend envelopes
+- returns `backend.v1` envelope dictionaries without introducing FastAPI/Flask/Uvicorn
+- exists so a future HTTP/SSE/WebSocket server can wrap the same transport-neutral contract without rebuilding backend semantics
 
 `event_identity.py` holds shared readback identity normalization:
 
@@ -183,6 +206,12 @@ Rule:
 - covers both `grant_access` and `manual_takeover`
 - builds the auto-continue resume event and short resume acknowledgements after access or browser takeover is resolved
 - keeps sensitive-login friction truthful: request help or manual takeover, never credential guessing / OTP simulation / cookie forgery
+
+`executor_adapter.py` holds the fail-closed executor adapter boundary:
+
+- exposes the existing sandbox runner as the only enabled executor adapter
+- documents Deep Agents, Codex, Claude, and OpenClaw harnesses as disabled future candidates
+- keeps executor results as result-only runtime facts; adapters do not own persona memory or writeback semantics
 
 `sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
 
@@ -212,6 +241,12 @@ Rule:
 - session activation state from auto-match plus manual override
 - `SKILL.md` metadata parsing plus on-demand disclosure for active skills
 - install/update/enable/disable/pin/unpin lifecycle helpers
+
+`post_baseline_closure.py` holds the post-baseline closure status policy:
+
+- marks callable transport, TTS presence timing, and executor adapter readiness
+- marks multimodal input capture and dynamic skill generation as `deferred_fail_closed`
+- tracks Chinese de-scaffolding, bounded capability growth, and natural long-horizon calibration without widening runtime surfaces
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 

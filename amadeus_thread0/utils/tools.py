@@ -46,6 +46,12 @@ from ..graph_parts.digital_body_runtime import (
     selected_access_proposal_resolved,
 )
 from ..memory_store import MemoryStore
+from ..runtime.executor_adapter import (
+    EXECUTOR_ADAPTER_SANDBOX,
+    ExecutorAdapterError,
+    ExecutorRequest,
+    execute_executor_request,
+)
 from ..runtime.sandbox_runner import (
     ATTACHED_REPO_WORKSPACE_ROOT_KIND,
     DEFAULT_WORKSPACE_ROOT_KIND,
@@ -5644,36 +5650,37 @@ def execute_workspace_command(
             },
         )
 
-    try:
-        spec = build_sandbox_command_spec(
-            argv=argv,
-            cwd=cwd,
-            allowed_roots=[str(workspace_path)],
-            timeout_s=timeout_s,
-            writes_expected=writes_expected,
-            expected_artifacts=expected_artifacts,
-            runner_kind=existing_sandbox_state.get("runner_kind"),
-            image_ref=existing_sandbox_state.get("image_ref") or sandbox_docker_image_ref(""),
-            network_policy=existing_sandbox_state.get("network_policy"),
-            workspace_root_kind=workspace_root_kind,
-        )
-    except SandboxValidationError as exc:
-        return _err(tool_name, str(exc.code or "INVALID_SPEC").strip().upper(), str(exc))
-
-    execution_preview = build_execution_preview(spec)
     run_id = str(proposal_id or "").strip() or f"run-{uuid.uuid4().hex[:12]}"
     run_root = workspace_path / ".amadeus" / "sandbox-runs" / run_id
-    execution_result = execute_sandbox_command(
+    request = ExecutorRequest(
+        adapter_kind=EXECUTOR_ADAPTER_SANDBOX,
         proposal_id=run_id,
-        spec=spec,
-        run_root=run_root,
+        argv=list(argv or []),
+        cwd=cwd,
+        allowed_roots=[str(workspace_path)],
+        timeout_s=timeout_s,
+        writes_expected=writes_expected,
+        expected_artifacts=list(expected_artifacts or []),
+        runner_kind=str(existing_sandbox_state.get("runner_kind") or ""),
+        image_ref=str(existing_sandbox_state.get("image_ref") or sandbox_docker_image_ref("")),
+        network_policy=str(existing_sandbox_state.get("network_policy") or ""),
+        workspace_root_kind=workspace_root_kind,
     )
+    try:
+        executor_payload = execute_executor_request(request, run_root=run_root)
+        execution_preview = dict(executor_payload.get("execution_preview") or {})
+        execution_result = dict(executor_payload.get("execution_result") or {})
+    except SandboxValidationError as exc:
+        return _err(tool_name, str(exc.code or "INVALID_SPEC").strip().upper(), str(exc))
+    except ExecutorAdapterError as exc:
+        return _err(tool_name, str(exc.code or "EXECUTOR_ADAPTER_ERROR").strip().upper(), str(exc))
 
     primary_path = None
-    if execution_result.produced_artifacts:
-        primary_path = Path(execution_result.produced_artifacts[0]).resolve(strict=False)
+    produced_artifacts = list(execution_result.get("produced_artifacts") or [])
+    if produced_artifacts:
+        primary_path = Path(produced_artifacts[0]).resolve(strict=False)
     else:
-        primary_path = Path(execution_result.stdout_log_ref).resolve(strict=False)
+        primary_path = Path(str(execution_result.get("stdout_log_ref") or "")).resolve(strict=False)
     try:
         primary_content = primary_path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
@@ -5698,21 +5705,21 @@ def execute_workspace_command(
         "availability": "restricted",
         "allowed_roots": [str(workspace_path)],
         "execution_policy": "approval_required",
-        "last_status": execution_result.status,
-        "runner_kind": spec.runner_kind,
-        "isolation_level": spec.isolation_level,
-        "image_ref": spec.image_ref,
-        "network_policy": spec.network_policy,
-        "workspace_root_kind": spec.workspace_root_kind,
-        "last_command_profile": spec.profile,
-        "last_exit_code": execution_result.exit_code,
-        "last_run_id": execution_result.run_id,
+        "last_status": str(execution_result.get("status") or ""),
+        "runner_kind": str(execution_preview.get("runner_kind") or ""),
+        "isolation_level": str(execution_preview.get("isolation_level") or ""),
+        "image_ref": str(execution_preview.get("image_ref") or ""),
+        "network_policy": str(execution_preview.get("network_policy") or ""),
+        "workspace_root_kind": str(execution_preview.get("workspace_root_kind") or workspace_root_kind),
+        "last_command_profile": str(execution_preview.get("profile") or ""),
+        "last_exit_code": int(execution_result.get("exit_code") or 0),
+        "last_run_id": str(execution_result.get("run_id") or run_id),
         "arbitrary_execution": False,
     }
     refreshed_hints["sandbox_mode"] = "restricted"
     refreshed_hints["sandbox_state"] = sandbox_state
     refreshed_hints["workspace_root"] = str(workspace_path)
-    refreshed_hints["workspace_root_kind"] = spec.workspace_root_kind
+    refreshed_hints["workspace_root_kind"] = sandbox_state["workspace_root_kind"]
     refreshed_hints["filesystem_state"] = _probe_filesystem_state(workspace_path)
 
     body = derive_digital_body_state(
@@ -5729,47 +5736,42 @@ def execute_workspace_command(
 
     produced_relative = [
         _workspace_relative_from_absolute(Path(path), workspace_root=workspace_path)
-        for path in execution_result.produced_artifacts
+        for path in produced_artifacts
     ]
     summary = (
         "已在当前 workspace 内完成一次受限执行，结果已经落成可续接的工作面。"
-        if execution_result.status == "completed"
-        else (execution_result.error_summary or "这次受限执行没有成功完成。")
+        if str(execution_result.get("status") or "") == "completed"
+        else (str(execution_result.get("error_summary") or "") or "这次受限执行没有成功完成。")
     )
+    argv_payload = list(execution_preview.get("argv") or [])
     return _ok(
         tool_name,
         {
             "summary": summary,
             "workspace_path": str(workspace_path),
             "workspace_name": workspace_path.name,
-            "cwd": str(spec.cwd),
-            "argv": list(spec.argv),
+            "cwd": str(execution_preview.get("cwd") or ""),
+            "argv": argv_payload,
+            "adapter_kind": executor_payload.get("adapter_kind"),
+            "memory_policy": executor_payload.get("memory_policy"),
+            "writeback_policy": executor_payload.get("writeback_policy"),
             "execution_spec": {
-                "executor": spec.executor,
-                "profile": spec.profile,
-                "runner_kind": spec.runner_kind,
-                "isolation_level": spec.isolation_level,
-                "image_ref": spec.image_ref,
-                "network_policy": spec.network_policy,
-                "workspace_root_kind": spec.workspace_root_kind,
-                "argv": list(spec.argv),
-                "cwd": spec.cwd,
-                "allowed_roots": list(spec.allowed_roots),
-                "timeout_s": spec.timeout_s,
-                "writes_expected": spec.writes_expected,
-                "expected_artifacts": list(spec.expected_artifacts),
+                "executor": str(argv_payload[0]).strip().lower() if argv_payload else "",
+                "profile": sandbox_state["last_command_profile"],
+                "runner_kind": execution_preview.get("runner_kind"),
+                "isolation_level": execution_preview.get("isolation_level"),
+                "image_ref": execution_preview.get("image_ref"),
+                "network_policy": execution_preview.get("network_policy"),
+                "workspace_root_kind": execution_preview.get("workspace_root_kind"),
+                "argv": argv_payload,
+                "cwd": execution_preview.get("cwd"),
+                "allowed_roots": list(execution_preview.get("allowed_roots") or []),
+                "timeout_s": execution_preview.get("timeout_s"),
+                "writes_expected": execution_preview.get("writes_expected"),
+                "expected_artifacts": list(execution_preview.get("expected_artifacts") or []),
             },
             "execution_preview": execution_preview,
-            "execution_result": {
-                "run_id": execution_result.run_id,
-                "status": execution_result.status,
-                "exit_code": execution_result.exit_code,
-                "duration_ms": execution_result.duration_ms,
-                "stdout_log_ref": execution_result.stdout_log_ref,
-                "stderr_log_ref": execution_result.stderr_log_ref,
-                "produced_artifacts": list(execution_result.produced_artifacts),
-                "error_summary": execution_result.error_summary,
-            },
+            "execution_result": execution_result,
             "produced_artifact_relpaths": produced_relative,
             "access_hints": refreshed_hints,
             "access_state": access_state,

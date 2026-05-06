@@ -19,6 +19,7 @@ from ..graph_parts.digital_body_runtime import (
 )
 from ..graph_parts.action_packets import build_tool_action_packet, normalize_action_packets
 from ..graph_parts.autonomy_runtime import refresh_autonomy_intent_from_packets
+from ..graph_parts.procedural_planning import normalize_procedural_planning
 from ..graph_parts import build_implicit_idle_event_override, build_implicit_idle_state_update
 from ..graph_parts.relational_runtime import _prefer_refreshed_relationship_state, _worldline_focus
 from ..memory_store import MemoryStore
@@ -799,6 +800,18 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
         reconsolidation_snapshot=reconsolidation_snapshot,
         digital_body_state=digital_body,
     )
+    action_trace = resolve_action_trace(
+        action_trace=data.get("action_trace"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    procedural_planning = normalize_procedural_planning(data.get("procedural_planning"))
+    if not procedural_planning:
+        for item in action_trace:
+            if not isinstance(item, dict):
+                continue
+            procedural_planning = normalize_procedural_planning(item.get("procedural_planning"))
+            if procedural_planning:
+                break
     return {
         "intent": resolve_autonomy_intent(
             autonomy_intent=_dict_or_empty(data.get("autonomy_intent")),
@@ -813,15 +826,13 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
             assist_request=negotiation.get("assist_request") if isinstance(negotiation, dict) else None,
             source_packet=negotiation.get("packet") if isinstance(negotiation, dict) else None,
         ),
-        "execution_trace": resolve_action_trace(
-            action_trace=data.get("action_trace"),
-            reconsolidation_snapshot=reconsolidation_snapshot,
-        ),
+        "execution_trace": action_trace,
         "block_reason": resolve_autonomy_block_reason(
             autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
             action_packets=action_packets,
             reconsolidation_snapshot=reconsolidation_snapshot,
         ),
+        "procedural_planning": procedural_planning,
     }
 
 
@@ -1192,6 +1203,7 @@ class BackendSession:
             pending_approval=autonomy.get("pending_approval"),
             action_trace=autonomy.get("execution_trace"),
             autonomy_block_reason=autonomy.get("block_reason"),
+            procedural_planning=autonomy.get("procedural_planning"),
             digital_body_state=digital_body,
             digital_body_consequence=digital_body_consequence,
         )

@@ -10445,3 +10445,626 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - commit Task 4 as `test: add tts presence timing audit`
   - next backend step should be a readiness decision: either run the new TTS audit two more fresh times for a three-run closure streak, or select the next spec-only body slice without reopening the preserved baselines
+
+## 2026-05-05 Run 242
+
+- Focus:
+  - refresh the independent OpenClaw reference checkout after the earlier clone appeared unresponsive
+  - keep `openclaw-latest` isolated as a reference repo for comparison research only
+- Files changed:
+  - `program.md`
+- Key changes:
+  - backed up the previous `openclaw-latest` directory to `openclaw-latest.backup-20260505-154744`
+  - re-cloned `https://github.com/openclaw/openclaw.git` into `E:\桌面\amadeus-thread0\提供当前项目改进思路的一些开源项目\openclaw-latest`
+  - confirmed the new checkout is a clean git repo on `main` at `89f75263 fix: avoid control regex in handoff diagnostics`
+- Validation:
+  - `git -C "E:\桌面\amadeus-thread0\提供当前项目改进思路的一些开源项目\openclaw-latest" status --short --branch`
+    - passed: `## main...origin/main`
+  - `git -C "E:\桌面\amadeus-thread0\提供当前项目改进思路的一些开源项目\openclaw-latest" log --oneline -1`
+    - passed: `89f75263 fix: avoid control regex in handoff diagnostics`
+- Next:
+  - continue the OpenClaw vs Amadeus-K comparison by reading the refreshed clone's architecture, sandbox, tools, skills, and session docs
+
+## 2026-05-05 Run 243
+
+- Focus:
+  - research-only adaptation comparison for OpenClaw, OpenAI Codex / Agents SDK, LangChain Deep Agents, and Claude Code / Claude Agent SDK
+  - produce architecture guidance without migrating code or changing Amadeus-K runtime contracts
+- Files changed:
+  - `program.md`
+- Key findings:
+  - refreshed `openclaw-latest` remains an independent reference repo at `89f75263`; it was read for Gateway, sandbox, exec approvals, skills, subagents, ACP, and Codex harness behavior
+  - OpenClaw is best treated as a reference/control-plane design, not a wholesale import, because its agent/session/workspace model and default host execution assumptions would compete with Amadeus-K's single persona, single memory substrate, and stricter digital-body execution contract
+  - Deep Agents is the strongest internal library candidate for bounded research/coding executor subflows because it is Python/LangGraph-based and has planning, filesystem, subagents, memory, skills, sandbox backends, and HITL primitives, but it should sit behind Amadeus-K action packets rather than replace the main persona graph
+  - Codex and Claude Code / Agent SDK are strongest as external coding harnesses or executor adapters, not as persona/memory cores
+  - OpenAI Agents SDK is a good lightweight agentic-service option, but its built-in sessions/tool loop would need careful suppression or adapter wrapping so it does not become a second memory or execution truth model
+- Validation:
+  - read local OpenClaw docs/source checkout under `E:\桌面\amadeus-thread0\提供当前项目改进思路的一些开源项目\openclaw-latest`
+  - checked official current docs for OpenAI Codex, OpenAI Agents SDK, LangChain Deep Agents, and Claude Code / Claude Agent SDK
+  - attempted `opencli gemini ask` external cross-check after required help preflight; it failed with `BROWSER_CONNECT` because the Browser Bridge extension was not connected, so no external AI-search result was used as evidence
+  - no tests were run because this was research-only and no implementation code changed
+- Next:
+  - if the recommendation is accepted, write a focused adapter design spec for a single bounded executor lane: `Amadeus action_packet -> executor adapter -> sandbox/harness result -> digital_body_consequence/writeback`, starting with Deep Agents or external Codex/Claude harness as a candidate rather than migrating OpenClaw wholesale
+
+## 2026-05-05 Run 244
+
+- Focus:
+  - write a concrete implementation plan for the executor adapter layer refactor
+  - keep the plan scoped to architecture upgrade only, with no runtime implementation changes in this run
+- Files changed:
+  - `docs/superpowers/plans/2026-05-05-executor-adapter-layer-refactor.md`
+  - `program.md`
+- Key changes:
+  - planned a fail-closed executor adapter boundary around the existing sandbox runner
+  - kept the existing sandbox runner as the only enabled adapter in the first implementation
+  - documented Deep Agents, Codex, and Claude Code as disabled future adapter candidates rather than runtime dependencies
+  - included TDD tasks for adapter boundary, sandbox routing, action-packet metadata, backend/CLI readback, docs, and audit closure
+  - preserved LangGraph persona core, unified memory, action packets, sandbox phase-2, skills, browser runtime, and TTS presence timing baselines
+- Validation:
+  - `rg -n "TBD|TODO|implement later|Similar to Task|Add appropriate|Write tests for the above|fill in" docs/superpowers/plans/2026-05-05-executor-adapter-layer-refactor.md`
+    - passed: no placeholder hits
+  - `git diff --check -- docs/superpowers/plans/2026-05-05-executor-adapter-layer-refactor.md`
+    - passed
+  - no implementation tests were run because this run only wrote the plan
+- Next:
+  - choose execution mode for `docs/superpowers/plans/2026-05-05-executor-adapter-layer-refactor.md`: subagent-driven task execution or inline execution with checkpoints
+
+## 2026-05-05 Run 245
+
+- Focus:
+  - repository capability/status inventory for the current Amadeus-K project state
+  - answer which product/runtime/evaluation capabilities exist, which are closed, and which remain planned or frozen
+- Files changed:
+  - `program.md`
+- Key findings:
+  - current product boundary remains `backend-first`, `CLI + TTS + evals`, with frontend UI frozen except contract assets
+  - preserved closed baselines include freeze gate, companion autonomy, digital embodiment phase 2, sandbox phase 1, skills ecosystem, live browser runtime phase 1, and sandbox phase 2
+  - `TTS_presence_timing` is implemented and has passing audit evidence, but the latest visible audit streak is `2`, so three-run closure is not yet recorded in the ledger
+  - executor adapter layer is currently a written implementation plan only; no runtime adapter module exists yet
+  - future multimodal capture surfaces such as microphone, image, screen, and browser-capture expansion remain deferred
+- Validation:
+  - read `AGENTS.md`, `program.md`, `docs/engineering/PROJECT_STRUCTURE.md`, `README.md`, backend handoff docs, runtime entrypoints, tool registry, and latest audit reports
+  - no tests were run because this was analysis-only and no implementation code changed
+- Next:
+  - if implementation resumes, either close the TTS timing audit streak with one more fresh run or start Task 1 of the executor adapter plan
+
+## 2026-05-06 Run 246
+
+- Focus:
+  - Markdown-wide project capability inventory
+  - distinguish Amadeus-K first-party product/runtime/evaluation claims from generated eval reports, thesis/user-study materials, third-party benchmarks, and OpenClaw reference docs
+- Files changed:
+  - `program.md`
+- Key findings:
+  - first-party source docs agree that the active product boundary is backend-first `CLI + TTS + evals`; frontend UI remains frozen except contract/handoff assets
+  - closed/preserved implementation baselines remain: backend freeze gate, companion autonomy, digital embodiment phase 2, sandbox embodied execution phase 1, skills ecosystem, live browser runtime phase 1, and sandbox embodied execution phase 2
+  - implemented-but-not-formally-closed-latest-streak item remains `TTS_presence_timing`, with passing smoke/audit evidence but no ledgered three-run closure streak
+  - planned-only items remain executor adapter layer refactor, richer multimodal capture surfaces, frontend UI/product shell, user-study real data, and Chinese lexical de-scaffolding replacement track
+  - generated `evals/reports/*.md`, `third_party/benchmarks/**`, and `提供当前项目改进思路的一些开源项目/**` should not be counted as Amadeus-K product capability claims
+- Validation:
+  - read `AGENTS.md`, `program.md`, `docs/engineering/PROJECT_STRUCTURE.md`, `README.md`, core architecture docs, backend handoff/interface docs, multimodal spec, self-evolution audit, eval baseline, final delivery manifest, thesis/user-study/skills README files, and Markdown file listings
+  - no tests were run because this was documentation/status analysis only
+- Next:
+  - if a machine-readable inventory is needed, generate a dedicated Markdown/CSV capability matrix from the same categories instead of relying on prose summary alone
+
+## 2026-05-06 Run 247
+
+- Focus:
+  - close the selected post-baseline pending items `2,3,4,5,6,7,11,12` in one bounded pass
+  - implement only the safe runtime gaps and mark unsafe/deferred surfaces fail-closed or tracked
+- Files changed:
+  - `amadeus_thread0/runtime/transport_adapter.py`
+  - `amadeus_thread0/runtime/executor_adapter.py`
+  - `amadeus_thread0/runtime/post_baseline_closure.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `evals/run_executor_adapter_audit.py`
+  - `evals/run_post_baseline_closure_audit.py`
+  - `tests/test_transport_adapter.py`
+  - `tests/test_executor_adapter.py`
+  - `tests/test_post_baseline_closure.py`
+  - `tests/test_executor_adapter_audit.py`
+  - `tests/test_post_baseline_closure_audit.py`
+  - `docs/superpowers/specs/2026-05-06-post-baseline-closure-design.md`
+  - `docs/superpowers/plans/2026-05-06-post-baseline-closure.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `program.md`
+- Key changes:
+  - added `BackendTransportAdapter` as a Python-callable route adapter over existing `BackendAPI` envelopes; no FastAPI/Flask/Uvicorn dependency was introduced
+  - added `executor_adapter` with `sandbox_runner` as the only enabled adapter and Deep Agents / Codex / Claude / OpenClaw harnesses fail-closed
+  - routed `execute_workspace_command` through `ExecutorRequest -> execute_executor_request(...)` while preserving existing `execution_spec`, `execution_preview`, `execution_result`, `sandbox_state`, and artifact continuity payloads
+  - added `post_baseline_closure` status policy:
+    - callable transport adapter: `implemented_ready`
+    - TTS presence timing: `preserved_ready`
+    - multimodal input capture: `deferred_fail_closed`
+    - executor adapter: `implemented_ready`
+    - dynamic skill generation: `deferred_fail_closed`
+    - Chinese de-scaffolding: `tracked_not_mainline`
+    - bounded capability growth: `quality_backlog_tracked`
+    - natural long-horizon calibration: `quality_backlog_tracked`
+  - added repeatable executor and post-baseline closure audits
+  - documented the callable adapter as a future HTTP wrapping surface, not an HTTP server
+- Validation:
+  - TDD red check before implementation:
+    - `python -m pytest tests/test_transport_adapter.py tests/test_executor_adapter.py tests/test_post_baseline_closure.py -q`
+    - failed as expected with missing modules for `transport_adapter`, `executor_adapter`, and `post_baseline_closure`
+  - `python -m pytest tests/test_transport_adapter.py tests/test_executor_adapter.py tests/test_post_baseline_closure.py -q`
+    - passed: `15 passed`
+  - `python -m pytest tests/test_executor_adapter_audit.py tests/test_post_baseline_closure_audit.py tests/test_transport_adapter.py tests/test_executor_adapter.py tests/test_post_baseline_closure.py -q`
+    - passed: `25 passed`
+  - `python -m pytest tests/test_sandbox_execution_runtime.py tests/test_sandbox_runner.py tests/test_sandbox_backend_contract.py -q`
+    - passed: `9 passed`
+  - `python evals/run_executor_adapter_audit.py --run-tag post-baseline-closure`
+    - passed with `readiness=executor_adapter_ready`
+    - report: `evals/reports/executor-adapter-audit-20260506-015758-post-baseline-closure.{json,md}`
+  - TTS presence timing three-run closure streak:
+    - `python evals/run_tts_presence_timing_audit.py --run-tag post-baseline-closure-a`
+      - passed with `readiness=tts_presence_timing_ready`
+      - report: `evals/reports/tts-presence-timing-audit-20260506-015822-post-baseline-closure-a.{json,md}`
+    - `python evals/run_tts_presence_timing_audit.py --run-tag post-baseline-closure-b`
+      - passed with `readiness=tts_presence_timing_ready`
+      - report: `evals/reports/tts-presence-timing-audit-20260506-015901-post-baseline-closure-b.{json,md}`
+    - `python evals/run_tts_presence_timing_audit.py --run-tag post-baseline-closure-c`
+      - passed with `readiness=tts_presence_timing_ready`
+      - report: `evals/reports/tts-presence-timing-audit-20260506-015942-post-baseline-closure-c.{json,md}`
+  - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag post-baseline-closure`
+    - passed with `readiness=chinese_surface_de_scaffold_ready`
+    - report: `evals/reports/chinese-surface-de-scaffold-audit-20260506-020020-post-baseline-closure.{json,md}`
+  - `python evals/run_post_baseline_closure_audit.py --run-tag final`
+    - passed with `readiness=post_baseline_closure_ready`
+    - report: `evals/reports/post-baseline-closure-audit-20260506-020030-final.{json,md}`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+    - passed: `164 passed, 17 subtests passed`
+  - `python -m pytest tests/test_skill_registry.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py tests/test_perception_event_contract.py tests/test_world_model_residue.py -q`
+    - passed: `206 passed`
+- Result:
+  - selected post-baseline tail items are closed without widening persona core, memory substrate, browser authority, skills registry authority, package-install surface, arbitrary host execution, or frontend scope
+  - generated eval reports remain under `evals/reports/`
+- Next:
+  - keep `post_baseline_closure_ready` as a preserved status
+  - only open multimodal capture, dynamic skill generation, external executor harnesses, Chinese semantic replacement, capability self-growth, or long-horizon calibration as separate future specs with their own approval and audit gates
+
+## 2026-05-06 Run 248
+
+- Focus:
+  - select and specify the recommended next backend phase after post-baseline closure
+  - keep this pass design-only with no runtime/code implementation
+- Files changed:
+  - `docs/superpowers/specs/2026-05-06-bounded-procedural-growth-phase1-design.md`
+  - `program.md`
+- Key changes:
+  - selected `Bounded Procedural Growth Phase 1` as the recommended next phase
+  - scoped the phase to reusable procedural experience from completed embodied actions
+  - explicitly excluded frontend work, true multimodal capture, dynamic skill generation, external executor harness runtime, package installation, wider sandbox commands, automatic browser mutation, persona-core edits, and a second work-memory store
+  - defined phase-1 trace kinds:
+    - `workspace_procedure`
+    - `sandbox_execution_pattern`
+    - `browser_runtime_pattern`
+    - `skill_usage_pattern`
+    - `blocked_boundary_pattern`
+    - `recovery_pattern`
+  - defined writeback policy:
+    - completed/executed packets may create reusable procedural traces
+    - blocked packets may create boundary/friction traces only
+    - pending/rejected/expired/approved-but-not-executed packets must not create completed capability facts
+  - defined retrieval policy:
+    - resurfaced traces are hints, not commands
+    - approval requirements must survive resurfacing
+    - blocked traces resurface as boundary notes, not capability claims
+  - defined smoke/audit scenarios and readiness target `procedural_growth_phase1_ready`
+- Validation:
+  - `rg -n "TBD|TODO|implement later|fill in|Add appropriate|Similar to Task|Write tests for the above" docs/superpowers/specs/2026-05-06-bounded-procedural-growth-phase1-design.md`
+    - passed: no matches
+  - `git diff --check -- docs/superpowers/specs/2026-05-06-bounded-procedural-growth-phase1-design.md`
+    - passed
+- Result:
+  - next phase is specified and ready for an implementation plan
+  - no runtime behavior changed in this run
+- Next:
+  - write `docs/superpowers/plans/2026-05-06-bounded-procedural-growth-phase1.md` before touching implementation code
+
+## 2026-05-06 Run 249
+
+- Focus:
+  - implement `Bounded Procedural Growth Phase 1` end to end after the plan was accepted
+  - keep procedural growth bounded to final embodied action experience without widening sandbox, browser, skill, executor, frontend, or persona-core authority
+- Files changed:
+  - `amadeus_thread0/graph_parts/procedural_growth.py`
+  - `amadeus_thread0/runtime/final_state.py`
+  - `amadeus_thread0/graph_parts/skill_runtime.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_procedural_growth_smokes.py`
+  - `evals/run_procedural_growth_audit.py`
+  - `tests/test_procedural_growth.py`
+  - `tests/test_procedural_growth_writeback.py`
+  - `tests/test_procedural_growth_retrieval.py`
+  - `tests/test_procedural_growth_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `docs/superpowers/plans/2026-05-06-bounded-procedural-growth-phase1.md`
+  - `docs/superpowers/specs/2026-05-06-bounded-procedural-growth-phase1-design.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `procedural_growth.py` as the pure graph-adjacent layer for trace normalization, extraction, consequence enrichment, carryover enrichment, and hint building
+  - supported phase-1 trace kinds:
+    - `workspace_procedure`
+    - `sandbox_execution_pattern`
+    - `browser_runtime_pattern`
+    - `skill_usage_pattern`
+    - `blocked_boundary_pattern`
+    - `recovery_pattern`
+  - kept writeback policy strict:
+    - completed / executed packets can create capability traces
+    - blocked packets create boundary traces only
+    - pending / rejected / expired / awaiting-approval / approved-only packets do not create completed capability facts
+  - enriched final `digital_body_consequence`, `procedural_continuity.traces`, carryover embodied context, backend payloads, session summaries, and compact CLI lines with procedural-growth readback
+  - fixed final-state procedural enrichment to preserve raw read-only packet evidence such as completed `skill_effects` while still letting frozen reconsolidation traces beat stale live packets
+  - made resurfaced hints preserve approval and manual-takeover requirements; blocked traces set `capability_claim=false`
+  - added deterministic smokes and an audit runner that reports `procedural_growth_phase1_ready`
+  - documented module ownership and the phase-1 preserved contract
+- Validation:
+  - TDD red checks:
+    - `python -m pytest tests/test_procedural_growth.py -q`
+      - initially failed with missing module before implementation
+    - `python -m pytest tests/test_procedural_growth_writeback.py -q`
+      - initially failed on missing final-state enrichment and later on raw `skill_effects` loss
+    - `python -m pytest tests/test_procedural_growth_retrieval.py -q`
+      - initially failed on manual-takeover hint priority before the hint fix
+    - `python -m pytest tests/test_procedural_growth_audit.py -q`
+      - initially failed with missing `evals.run_procedural_growth_audit`
+  - `python -m pytest tests/test_procedural_growth_audit.py -q`
+    - passed: `7 passed`
+  - `python -m pytest tests/test_procedural_growth.py tests/test_procedural_growth_writeback.py tests/test_procedural_growth_retrieval.py tests/test_procedural_growth_audit.py -q`
+    - passed: `24 passed`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_growth -q`
+    - passed: `3 passed, 151 deselected`
+  - `python evals/run_procedural_growth_smokes.py --run-tag phase1-dev`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-smokes-20260506-030102-phase1-dev.{json,md}`
+  - `python evals/run_procedural_growth_audit.py --run-tag phase1-dev`
+    - passed with `overall_status=passed` and `readiness=procedural_growth_phase1_ready`
+    - report: `evals/reports/procedural-growth-audit-20260506-030113-phase1-dev.{json,md}`
+  - `python -m pytest tests/test_procedural_growth.py tests/test_procedural_growth_writeback.py tests/test_procedural_growth_retrieval.py tests/test_procedural_growth_audit.py -q`
+    - final pass: `24 passed`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_growth -q`
+    - final pass: `3 passed, 151 deselected`
+  - `python -m pytest tests/test_sandbox_execution_runtime.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py tests/test_world_model_residue.py -q`
+    - final pass: `191 passed`
+  - `python evals/run_procedural_growth_smokes.py --run-tag phase1-final`
+    - final pass with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-smokes-20260506-030758-phase1-final.{json,md}`
+  - `python evals/run_procedural_growth_audit.py --run-tag phase1-final`
+    - final pass with `overall_status=passed` and `readiness=procedural_growth_phase1_ready`
+    - report: `evals/reports/procedural-growth-audit-20260506-030749-phase1-final.{json,md}`
+  - `python -m py_compile amadeus_thread0\graph_parts\procedural_growth.py evals\run_procedural_growth_smokes.py evals\run_procedural_growth_audit.py`
+    - passed
+  - `git diff --check -- amadeus_thread0/graph_parts/procedural_growth.py evals/run_procedural_growth_smokes.py evals/run_procedural_growth_audit.py tests/test_procedural_growth.py tests/test_procedural_growth_writeback.py tests/test_procedural_growth_retrieval.py tests/test_procedural_growth_audit.py docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md program.md`
+    - passed with only Windows LF-to-CRLF warnings
+  - touched-file whitespace/conflict-marker hygiene check
+    - passed: `hygiene_ok`
+- Result:
+  - `Bounded Procedural Growth Phase 1` is implemented and has initial ready audit evidence
+  - no frontend work, dynamic skill generation, package install, wider command family, external executor harness runtime, automatic browser mutation, persona-core edit, or second memory store was introduced
+  - generated eval reports remain under `evals/reports/`
+- Next:
+  - keep `procedural_growth_phase1_ready` as a preserved backend status
+  - next backend phase should require a new spec before opening any broader capability-growth, multimodal capture, dynamic skill, executor-harness, or frontend work
+
+## 2026-05-06 Run 250
+
+- Focus:
+  - specify and implement `Procedural Growth Phase 2: Procedure-Guided Autonomy Planning`
+  - let Phase 1 procedural traces bias autonomy planning without turning hints into execution facts or widening approval/runtime boundaries
+- Files changed:
+  - `amadeus_thread0/graph_parts/procedural_planning.py`
+  - `amadeus_thread0/graph_parts/autonomy_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_procedural_growth_phase2_smokes.py`
+  - `evals/run_procedural_growth_phase2_audit.py`
+  - `tests/test_procedural_planning.py`
+  - `tests/test_procedural_growth_phase2_audit.py`
+  - `tests/test_companion_autonomy_runtime.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `docs/superpowers/specs/2026-05-06-procedural-growth-phase2-design.md`
+  - `docs/superpowers/plans/2026-05-06-procedural-growth-phase2.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `procedural_planning.py` as the pure advisory planning layer over carried procedural traces and current access truth
+  - supported phase-2 bias kinds:
+    - `sandbox_execute`
+    - `browser_manual_takeover`
+    - `skill_guidance`
+    - `workspace_guidance`
+    - `boundary_only`
+  - kept planning bias advisory:
+    - only matching completed sandbox traces can produce existing approval-gated sandbox packets
+    - blocked traces remain `boundary_only`
+    - browser manual-takeover traces remain readback/manual-boundary only
+    - skill traces guide planning without registry mutation truth
+    - low-confidence or workspace/access-mismatched traces are ignored for execution-producing bias
+  - integrated `procedural_planning` into autonomy runtime, action trace readback, backend API envelopes, backend session summaries, and CLI compact lines as `planproc=...`
+  - added deterministic Phase 2 smokes and an audit runner reporting `procedural_growth_phase2_ready`
+  - documented module ownership and the phase-2 preserved contract
+- Validation:
+  - TDD red checks:
+    - `python -m pytest tests/test_procedural_planning.py -q`
+      - initially failed with missing `amadeus_thread0.graph_parts.procedural_planning`
+    - `python -m pytest tests/test_companion_autonomy_runtime.py -k procedural -q`
+      - initially failed on missing `runtime["procedural_planning"]`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural -q`
+      - initially failed on missing backend/session/CLI procedural-planning readback
+    - `python -m pytest tests/test_procedural_growth_phase2_audit.py -q`
+      - initially failed with missing `evals.run_procedural_growth_phase2_audit`
+  - `python -m pytest tests/test_procedural_planning.py -q`
+    - passed: `8 passed`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k procedural -q`
+    - passed: `4 passed, 57 deselected`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural -q`
+    - passed: `6 passed, 151 deselected`
+  - `python -m pytest tests/test_procedural_growth_phase2_audit.py -q`
+    - passed: `7 passed`
+  - `python evals/run_procedural_growth_phase2_smokes.py --run-tag phase2-dev`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase2-smokes-20260506-033738-phase2-dev.{json,md}`
+  - `python evals/run_procedural_growth_phase2_audit.py --run-tag phase2-dev`
+    - passed with `overall_status=passed` and `readiness=procedural_growth_phase2_ready`
+    - report: `evals/reports/procedural-growth-phase2-audit-20260506-033746-phase2-dev.{json,md}`
+  - `python -m pytest tests/test_procedural_planning.py tests/test_procedural_growth_phase2_audit.py -q`
+    - final pass: `15 passed`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k procedural -q`
+    - final pass: `4 passed, 57 deselected`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural -q`
+    - final pass: `6 passed, 151 deselected`
+  - `python -m pytest tests/test_sandbox_execution_runtime.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py tests/test_world_model_residue.py -q`
+    - final pass: `191 passed`
+  - `python evals/run_procedural_growth_phase2_smokes.py --run-tag phase2-final`
+    - final pass with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase2-smokes-20260506-034148-phase2-final.{json,md}`
+  - `python evals/run_procedural_growth_phase2_audit.py --run-tag phase2-final`
+    - final pass with `overall_status=passed` and `readiness=procedural_growth_phase2_ready`
+    - report: `evals/reports/procedural-growth-phase2-audit-20260506-034157-phase2-final.{json,md}`
+  - `python -m py_compile amadeus_thread0/graph_parts/procedural_planning.py evals/run_procedural_growth_phase2_smokes.py evals/run_procedural_growth_phase2_audit.py`
+    - passed
+  - `git diff --check -- amadeus_thread0/graph_parts/procedural_planning.py amadeus_thread0/graph_parts/autonomy_runtime.py amadeus_thread0/runtime/backend_api.py amadeus_thread0/runtime/backend_session.py amadeus_thread0/utils/cli_views.py evals/run_procedural_growth_phase2_smokes.py evals/run_procedural_growth_phase2_audit.py tests/test_procedural_planning.py tests/test_procedural_growth_phase2_audit.py tests/test_companion_autonomy_runtime.py tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md program.md docs/superpowers/specs/2026-05-06-procedural-growth-phase2-design.md docs/superpowers/plans/2026-05-06-procedural-growth-phase2.md`
+    - passed with only Windows LF-to-CRLF warnings
+  - touched Phase 2 placeholder/conflict-marker scan
+    - passed: no matches
+- Result:
+  - `Procedural Growth Phase 2` is implemented and has final ready audit evidence
+  - `procedural_growth_phase2_ready` is now the current preserved procedural-growth backend status
+  - no frontend work, dynamic skill generation, package install, wider sandbox command family, automatic browser mutation, external executor harness runtime, persona-core edit, or second memory store was introduced
+- Next:
+  - next backend phase should require a new spec before opening broader capability growth, multimodal capture, dynamic skills, external executor harness runtime, or frontend work
+
+## 2026-05-06 Run 251
+
+- Focus:
+  - implement `Procedural Growth Phase 3: Outcome-Calibrated Procedural Learning`
+  - let final embodied attempt results calibrate procedural trace confidence and planning reuse without widening sandbox, browser, skill, executor, frontend, persona-core, or memory authority
+- Files changed:
+  - `amadeus_thread0/graph_parts/procedural_outcome.py`
+  - `amadeus_thread0/graph_parts/procedural_growth.py`
+  - `amadeus_thread0/graph_parts/procedural_planning.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_procedural_growth_phase3_smokes.py`
+  - `evals/run_procedural_growth_phase3_audit.py`
+  - `tests/test_procedural_outcome.py`
+  - `tests/test_procedural_growth_writeback.py`
+  - `tests/test_procedural_planning.py`
+  - `tests/test_procedural_growth_phase3_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `docs/superpowers/specs/2026-05-06-procedural-growth-phase3-design.md`
+  - `docs/superpowers/plans/2026-05-06-procedural-growth-phase3.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `procedural_outcome.py` as the pure graph-adjacent helper for final attempt outcome normalization, outcome summary readback, and procedural trace confidence calibration
+  - supported phase-3 outcome kinds:
+    - `confirmed_success`
+    - `partial_success`
+    - `failed_execution`
+    - `blocked_boundary_reinforced`
+    - `manual_takeover_required`
+    - `stale_or_mismatched_context`
+    - `no_executed_attempt`
+  - derived outcomes from final action packets, using packet `tool_args.procedural_planning` or trace refs for attribution
+  - calibrated procedural traces from outcomes:
+    - confirmed success boosts reuse confidence
+    - failed execution reduces reuse confidence and carries recovery hints
+    - blocked/manual outcomes reinforce boundary readback
+    - pending/rejected/approved-only attempts remain unexecuted intentions
+  - integrated calibrated traces and `procedural_outcome_summary` into `digital_body_consequence`
+  - let Phase 2 planning rank calibrated traces by updated confidence while downgrading boundary-reinforced traces to `boundary_only`
+  - exposed readback through backend API/session/CLI:
+    - top-level `procedural_outcome`
+    - `turn_summary.current_turn.procedural_outcome`
+    - compact `outcome=<outcome_kind>:<source_run_id>:reuse|boundary|hold`
+  - added deterministic Phase 3 smokes and an audit runner reporting `procedural_growth_phase3_ready`
+  - documented module ownership and the phase-3 preserved contract
+- Validation:
+  - TDD red checks:
+    - `python -m pytest tests/test_procedural_outcome.py -q`
+      - initially failed with missing `amadeus_thread0.graph_parts.procedural_outcome`
+    - `python -m pytest tests/test_procedural_growth_writeback.py -k outcome -q`
+      - initially failed on missing `procedural_outcome_summary`
+    - `python -m pytest tests/test_procedural_planning.py -k outcome -q`
+      - initially failed because planning ignored calibrated outcomes and boundary reinforcement
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_outcome -q`
+      - initially failed on missing backend/session/CLI outcome readback
+    - `python -m pytest tests/test_procedural_growth_phase3_audit.py -q`
+      - initially failed with missing `evals.run_procedural_growth_phase3_audit`
+  - `python -m pytest tests/test_procedural_outcome.py -q`
+    - passed: `7 passed`
+  - `python -m pytest tests/test_procedural_growth_writeback.py -k outcome -q`
+    - passed: `1 passed, 5 deselected`
+  - `python -m pytest tests/test_procedural_planning.py -k outcome -q`
+    - passed: `2 passed, 8 deselected`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_outcome -q`
+    - passed: `3 passed, 157 deselected`
+  - `python -m pytest tests/test_procedural_growth_phase3_audit.py -q`
+    - passed: `7 passed`
+  - `python evals/run_procedural_growth_phase3_smokes.py --run-tag phase3-dev`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase3-smokes-20260506-095920-phase3-dev.{json,md}`
+  - `python -m pytest tests/test_procedural_outcome.py tests/test_procedural_planning.py tests/test_procedural_growth_writeback.py tests/test_procedural_growth_phase3_audit.py -q`
+    - passed: `30 passed`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural -q`
+    - passed: `9 passed, 151 deselected`
+  - `python evals/run_procedural_growth_phase3_audit.py --run-tag phase3-dev`
+    - passed with `overall_status=passed` and `readiness_status=procedural_growth_phase3_ready`
+    - report: `evals/reports/procedural-growth-phase3-audit-20260506-100231-phase3-dev.{json,md}`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k procedural -q`
+    - passed: `4 passed, 57 deselected`
+  - `python -m pytest tests/test_sandbox_execution_runtime.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py tests/test_world_model_residue.py -q`
+    - passed: `191 passed`
+  - `python evals/run_procedural_growth_phase3_smokes.py --run-tag phase3-final`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase3-smokes-20260506-100312-phase3-final.{json,md}`
+  - `python -m py_compile amadeus_thread0/graph_parts/procedural_outcome.py evals/run_procedural_growth_phase3_smokes.py evals/run_procedural_growth_phase3_audit.py`
+    - passed
+  - `python evals/run_procedural_growth_phase3_audit.py --run-tag phase3-final`
+    - passed with `overall_status=passed` and `readiness_status=procedural_growth_phase3_ready`
+    - report: `evals/reports/procedural-growth-phase3-audit-20260506-100416-phase3-final.{json,md}`
+  - `git diff --check -- ...`
+    - passed with only Windows LF-to-CRLF warnings
+  - touched Phase 3 placeholder/conflict-marker scan
+    - passed: no matches
+- Result:
+  - `Procedural Growth Phase 3` is implemented and has final ready audit evidence
+  - `procedural_growth_phase3_ready` is now the current preserved procedural-growth backend status
+  - no frontend work, dynamic skill generation, package install, wider sandbox command family, automatic browser mutation, external executor harness runtime, persona-core edit, or second memory store was introduced
+- Next:
+  - preserve `procedural_growth_phase3_ready` as the current backend capability-growth baseline
+  - the next phase should require a fresh spec before opening broader capability growth, dynamic skill formation, multimodal capture, external executor harness runtime, or frontend work
+
+## 2026-05-06 Run 252
+
+- Focus:
+  - implement `Procedural Growth Phase 4: Recovery-Oriented Procedure Adaptation`
+  - convert failed / blocked / manual-takeover / stale / unexecuted procedural outcomes into bounded recovery guidance without widening sandbox, browser, skill, executor, frontend, persona-core, or memory authority
+- Files changed:
+  - `amadeus_thread0/graph_parts/procedural_recovery.py`
+  - `amadeus_thread0/graph_parts/procedural_growth.py`
+  - `amadeus_thread0/graph_parts/procedural_planning.py`
+  - `amadeus_thread0/graph_parts/digital_body_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/utils/turn_summary_export.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_procedural_growth_phase4_smokes.py`
+  - `evals/run_procedural_growth_phase4_audit.py`
+  - `tests/test_procedural_recovery.py`
+  - `tests/test_procedural_growth_writeback.py`
+  - `tests/test_procedural_planning.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_procedural_growth_phase4_audit.py`
+  - `docs/superpowers/specs/2026-05-06-procedural-growth-phase4-design.md`
+  - `docs/superpowers/plans/2026-05-06-procedural-growth-phase4.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `program.md`
+- Key changes:
+  - added `procedural_recovery.py` as the pure graph-adjacent helper for recovery guidance normalization, outcome-to-recovery derivation, recovery summaries, and recovery markers on procedural traces
+  - supported phase-4 recovery kinds:
+    - `inspect_failure_artifact`
+    - `adjust_bounded_command`
+    - `preserve_manual_takeover`
+    - `avoid_blocked_boundary`
+    - `refresh_workspace_context`
+    - `hold_for_approval`
+    - `no_recovery_needed`
+  - attached `procedural_recoveries` and `procedural_recovery_summary` to `digital_body_consequence`
+  - preserved recovery markers through normalized procedural traces:
+    - `recovery_required`
+    - `recovery_kind`
+    - `recovery_allowed_bias_kind`
+    - `recovery_suggested_next_step`
+    - `recovery_refs`
+  - updated procedure-guided planning so unresolved recovery does not produce direct `sandbox_execute` reuse:
+    - failed execution recovery surfaces `workspace_guidance`
+    - blocked recovery stays `boundary_only`
+    - manual takeover recovery stays `browser_manual_takeover`
+    - hold recovery stays approval/hold readback
+  - exposed readback through backend API/session/CLI:
+    - top-level `procedural_recovery`
+    - `turn_summary.current_turn.procedural_recovery`
+    - compact `recovery=<recovery_kind>:<source_run_id>:approval|boundary|hold|hint`
+  - added deterministic Phase 4 smokes and an audit runner reporting `procedural_growth_phase4_ready`
+  - documented module ownership and the phase-4 preserved contract
+- Validation:
+  - TDD red checks:
+    - `python -m pytest tests/test_procedural_recovery.py -q`
+      - initially failed with missing `amadeus_thread0.graph_parts.procedural_recovery`
+    - `python -m pytest tests/test_procedural_growth_writeback.py -k recovery -q`
+      - initially failed on missing `procedural_recovery_summary`
+    - `python -m pytest tests/test_procedural_planning.py -k recovery -q`
+      - initially failed because planning still produced `sandbox_execute` for recovery-required traces
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_recovery -q`
+      - initially failed on missing backend/session/CLI recovery readback
+    - `python -m pytest tests/test_procedural_growth_phase4_audit.py -q`
+      - initially failed with missing `evals.run_procedural_growth_phase4_audit`
+  - `python -m pytest tests/test_procedural_recovery.py -q`
+    - passed: `9 passed`
+  - `python -m pytest tests/test_procedural_growth_writeback.py -k recovery -q`
+    - passed: `1 passed, 6 deselected`
+  - `python -m pytest tests/test_procedural_planning.py -k recovery -q`
+    - passed: `3 passed, 10 deselected`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural_recovery -q`
+    - passed: `3 passed, 160 deselected`
+  - `python -m pytest tests/test_procedural_growth_phase4_audit.py -q`
+    - passed: `7 passed`
+  - `python -m pytest tests/test_procedural_recovery.py tests/test_procedural_planning.py tests/test_procedural_growth_writeback.py tests/test_procedural_growth_phase4_audit.py -q`
+    - initial pass: `35 passed`
+    - final pass: `36 passed`
+  - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py -k procedural -q`
+    - final pass: `12 passed, 151 deselected`
+  - `python -m pytest tests/test_companion_autonomy_runtime.py -k procedural -q`
+    - final pass: `4 passed, 57 deselected`
+  - `python -m pytest tests/test_sandbox_execution_runtime.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py tests/test_world_model_residue.py -q`
+    - final pass: `191 passed`
+  - `python evals/run_procedural_growth_phase4_smokes.py --run-tag phase4-dev`
+    - passed with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase4-smokes-20260506-103539-phase4-dev.{json,md}`
+  - `python evals/run_procedural_growth_phase4_audit.py --run-tag phase4-dev`
+    - passed with `overall_status=passed` and `readiness_status=procedural_growth_phase4_ready`
+    - report: `evals/reports/procedural-growth-phase4-audit-20260506-103615-phase4-dev.{json,md}`
+  - `python evals/run_procedural_growth_phase4_smokes.py --run-tag phase4-final`
+    - final pass with `overall_status=passed`
+    - report: `evals/reports/procedural-growth-phase4-smokes-20260506-104007-phase4-final.{json,md}`
+  - `python evals/run_procedural_growth_phase4_audit.py --run-tag phase4-final`
+    - final pass with `overall_status=passed` and `readiness_status=procedural_growth_phase4_ready`
+    - report: `evals/reports/procedural-growth-phase4-audit-20260506-104045-phase4-final.{json,md}`
+  - `python -m py_compile amadeus_thread0/graph_parts/procedural_recovery.py evals/run_procedural_growth_phase4_smokes.py evals/run_procedural_growth_phase4_audit.py`
+    - passed
+  - `git diff --check -- ...`
+    - passed with only Windows LF-to-CRLF warnings
+  - touched Phase 4 placeholder/conflict-marker scan
+    - passed for new Phase 4 docs/code; `program.md` matches were historical logged command text only
+- Result:
+  - `Procedural Growth Phase 4` is implemented and has ready audit evidence
+  - `procedural_growth_phase4_ready` is now the current preserved procedural-growth backend status
+  - no frontend work, dynamic skill generation, package install, wider sandbox command family, automatic browser mutation, external executor harness runtime, persona-core edit, or second memory store was introduced
+- Next:
+  - preserve `procedural_growth_phase4_ready` as the current backend capability-growth baseline
+  - the next phase should require a fresh spec before opening broader capability growth, dynamic skill formation, multimodal capture, external executor harness runtime, frontend work, or Chinese lexical de-scaffolding

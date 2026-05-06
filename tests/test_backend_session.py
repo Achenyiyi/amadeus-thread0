@@ -3717,6 +3717,261 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(digital_body_consequence.get("kind"), "access_request_pending")
         self.assertTrue(bool(digital_body_consequence.get("requested_help")))
 
+    def test_build_evolution_summary_surfaces_procedural_growth_hint(self):
+        values = {
+            "digital_body_state": {
+                "active_surface": "tooling",
+                "perception_channels": ["dialogue", "filesystem"],
+                "action_channels": ["language", "structured_action", "tooling"],
+                "world_surfaces": ["filesystem", "sandbox"],
+                "access_state": {
+                    "mode": "tool_enabled",
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "execution_policy": "approval_required",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                    },
+                },
+                "resource_state": {
+                    "completed_packet_count": 1,
+                    "artifact_continuity": "attached",
+                    "active_artifact_kind": "workspace",
+                    "active_artifact_ref": "E:/repo/amadeus-thread0",
+                    "active_artifact_label": "amadeus-thread0",
+                    "artifact_carrier": "filesystem",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+            "action_packets": [
+                {
+                    "proposal_id": "ap-procedural-session",
+                    "origin": "motive_goal",
+                    "intent": "sandbox:execute_workspace_command",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "execute_workspace_command",
+                    "result_summary": "pytest passed",
+                    "execution_spec": {
+                        "executor": "pytest",
+                        "profile": "pytest",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                        "argv": ["pytest", "-q", "tests/test_demo.py"],
+                        "cwd": "E:/repo/amadeus-thread0",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                    },
+                    "execution_result": {
+                        "run_id": "run-procedural-session",
+                        "status": "completed",
+                        "exit_code": 0,
+                        "stdout_log_ref": "E:/repo/.amadeus/sandbox-runs/run-procedural-session/stdout.txt",
+                    },
+                }
+            ],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        procedural = summary.get("procedural_growth") if isinstance(summary.get("procedural_growth"), dict) else {}
+        self.assertTrue(procedural.get("procedural_growth"))
+        self.assertEqual(procedural.get("traces", [])[0]["trace_kind"], "sandbox_execution_pattern")
+        self.assertEqual(procedural.get("procedural_hint", {}).get("source_run_id"), "run-procedural-session")
+        self.assertTrue(procedural.get("procedural_hint", {}).get("must_request_approval"))
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        self.assertTrue(current_turn.get("digital_body_procedural_growth"))
+        self.assertEqual(current_turn.get("procedural_hint", {}).get("source_run_id"), "run-procedural-session")
+
+    def test_build_evolution_summary_surfaces_procedural_planning_bias(self):
+        values = {
+            "autonomy_intent": {
+                "mode": "approval_pending",
+                "origin": "counterpart_request",
+                "requires_approval": True,
+                "primary_proposal_id": "ap-phase2-session",
+            },
+            "procedural_planning": {
+                "planning_bias": True,
+                "bias_kind": "sandbox_execute",
+                "trace_id": "proc_phase2_session",
+                "trace_kind": "sandbox_execution_pattern",
+                "source_run_id": "run-phase2-session",
+                "source_tool_name": "execute_workspace_command",
+                "suggested_capability_family": "sandbox",
+                "suggested_pattern": "pytest",
+                "suggested_executor": "pytest",
+                "suggested_argv": ["pytest"],
+                "must_request_approval": True,
+                "requires_approval": True,
+                "capability_claim": True,
+                "confidence": 0.79,
+            },
+            "action_trace": [
+                {
+                    "proposal_id": "ap-phase2-session",
+                    "event": "derived_from_procedural_planning",
+                    "status": "awaiting_approval",
+                    "procedural_planning": {
+                        "planning_bias": True,
+                        "bias_kind": "sandbox_execute",
+                        "trace_id": "proc_phase2_session",
+                        "trace_kind": "sandbox_execution_pattern",
+                        "source_run_id": "run-phase2-session",
+                        "source_tool_name": "execute_workspace_command",
+                        "suggested_capability_family": "sandbox",
+                        "suggested_pattern": "pytest",
+                        "suggested_executor": "pytest",
+                        "suggested_argv": ["pytest"],
+                        "must_request_approval": True,
+                        "requires_approval": True,
+                        "capability_claim": True,
+                        "confidence": 0.79,
+                    },
+                }
+            ],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        planning = summary.get("autonomy", {}).get("procedural_planning", {})
+        current_turn = summary.get("current_turn", {})
+        self.assertEqual(planning.get("bias_kind"), "sandbox_execute")
+        self.assertEqual(planning.get("source_run_id"), "run-phase2-session")
+        self.assertEqual(current_turn.get("procedural_planning", {}).get("trace_id"), "proc_phase2_session")
+
+    def test_build_evolution_summary_surfaces_procedural_outcome(self):
+        values = {
+            "action_packets": [
+                {
+                    "proposal_id": "ap-phase3-session",
+                    "origin": "motive_goal",
+                    "intent": "sandbox:execute_workspace_command",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "execute_workspace_command",
+                    "result_summary": "pytest passed",
+                    "tool_args": {
+                        "procedural_planning": {
+                            "planning_bias": True,
+                            "bias_kind": "sandbox_execute",
+                            "trace_id": "proc_phase3_session",
+                            "trace_kind": "sandbox_execution_pattern",
+                            "source_run_id": "run-phase3-prior",
+                            "source_tool_name": "execute_workspace_command",
+                            "suggested_capability_family": "sandbox",
+                            "suggested_pattern": "pytest",
+                            "suggested_executor": "pytest",
+                            "suggested_argv": ["pytest"],
+                            "must_request_approval": True,
+                            "requires_approval": True,
+                            "capability_claim": True,
+                            "confidence": 0.7,
+                        }
+                    },
+                    "execution_spec": {
+                        "executor": "pytest",
+                        "profile": "pytest",
+                        "argv": ["pytest"],
+                        "cwd": "E:/repo/amadeus-thread0",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                    },
+                    "execution_result": {
+                        "run_id": "run-phase3-session",
+                        "status": "completed",
+                        "exit_code": 0,
+                        "stdout_log_ref": "E:/repo/.amadeus/sandbox-runs/run-phase3-session/stdout.txt",
+                    },
+                }
+            ],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        outcome = summary.get("procedural_outcome") if isinstance(summary.get("procedural_outcome"), dict) else {}
+        current_turn = summary.get("current_turn", {})
+        self.assertTrue(outcome.get("procedural_outcome"))
+        self.assertEqual(outcome.get("last_outcome_kind"), "confirmed_success")
+        self.assertEqual(current_turn.get("procedural_outcome", {}).get("source_run_id"), "run-phase3-session")
+        self.assertEqual(current_turn.get("procedural_outcome", {}).get("outcome_kind"), "confirmed_success")
+
+    def test_build_evolution_summary_surfaces_procedural_recovery(self):
+        values = {
+            "action_packets": [
+                {
+                    "proposal_id": "ap-phase4-session",
+                    "origin": "motive_goal",
+                    "intent": "sandbox:execute_workspace_command",
+                    "status": "completed",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                    "tool_name": "execute_workspace_command",
+                    "result_summary": "pytest failed",
+                    "tool_args": {
+                        "procedural_planning": {
+                            "planning_bias": True,
+                            "bias_kind": "sandbox_execute",
+                            "trace_id": "proc_phase4_session",
+                            "trace_kind": "sandbox_execution_pattern",
+                            "source_run_id": "run-phase4-prior",
+                            "source_tool_name": "execute_workspace_command",
+                            "suggested_capability_family": "sandbox",
+                            "suggested_pattern": "pytest",
+                            "suggested_executor": "pytest",
+                            "suggested_argv": ["pytest"],
+                            "must_request_approval": True,
+                            "requires_approval": True,
+                            "capability_claim": True,
+                            "confidence": 0.7,
+                        }
+                    },
+                    "execution_spec": {
+                        "executor": "pytest",
+                        "profile": "pytest",
+                        "argv": ["pytest"],
+                        "cwd": "E:/repo/amadeus-thread0",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                    },
+                    "execution_result": {
+                        "run_id": "run-phase4-session",
+                        "status": "failed",
+                        "exit_code": 2,
+                        "stderr_log_ref": "E:/repo/.amadeus/sandbox-runs/run-phase4-session/stderr.txt",
+                        "error_summary": "process exited with code 2",
+                    },
+                }
+            ],
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        summary = session.build_evolution_summary()
+
+        recovery = summary.get("procedural_recovery") if isinstance(summary.get("procedural_recovery"), dict) else {}
+        current_turn = summary.get("current_turn", {})
+        self.assertTrue(recovery.get("procedural_recovery"))
+        self.assertEqual(recovery.get("last_recovery_kind"), "inspect_failure_artifact")
+        self.assertEqual(current_turn.get("procedural_recovery", {}).get("source_run_id"), "run-phase4-session")
+        self.assertEqual(
+            current_turn.get("procedural_recovery", {}).get("recovery_kind"),
+            "inspect_failure_artifact",
+        )
+
     def test_build_evolution_summary_surfaces_tts_presence_timing(self):
         values = {
             "current_event": {
