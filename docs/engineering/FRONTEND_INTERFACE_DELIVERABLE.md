@@ -6,7 +6,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 
 - It is based on the current Python runtime surface, not on hypothetical HTTP handlers.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
-- Frontend implementation is intentionally paused in this phase. This document exists so later frontend work can consume a frozen backend shape instead of forcing another backend redesign.
+- Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
 
 ## Freeze Status
 
@@ -19,8 +19,17 @@ Frontend work should therefore treat:
 - `persona_view`
 - `worldline_view`
 - `bond_view`
+- `runtime_productization`
 
 as the canonical readback surfaces for current runtime semantics.
+
+Finished `assistant_turn` and `event_round` payloads may also carry backend-owned:
+
+- `operator_readback`
+- `living_loop_realism`
+- `embodied_interaction`
+
+The frontend may render those blocks, but it must not recompute them.
 
 ## Authoritative Python Entry Points
 
@@ -98,6 +107,9 @@ Field meanings:
 - `environment_summary`
   - source: `BackendAPI.environment_summary()`
   - purpose: runtime/provider/TTS summary for debug and environment visibility
+- `runtime_productization`
+  - source: `BackendAPI.runtime_productization()`
+  - purpose: read-only operator console/productization readback, including readiness, console health, evidence summary, route inventory, and next-action hints
 
 ### Inspector and continuity kinds
 
@@ -173,6 +185,9 @@ Authoritative fields:
 - `sources`
 - `pending_utterance_fragment`
 - `writeback_trace`
+- `operator_readback`
+- `living_loop_realism`
+- `embodied_interaction`
 
 Important provenance:
 
@@ -188,6 +203,7 @@ Important provenance:
 - `digital_body` is the resolved current runtime/body state
 - `digital_body_consequence` is the resolved embodied consequence of this turn; it should be treated as frozen final semantics, not recomputed in the frontend
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
+- `operator_readback`, `living_loop_realism`, and `embodied_interaction` are backend-owned readbacks; frontend should render them as received and never derive memory, body, motive, autonomy, or causal-loop truth from them
 - when a turn is blocked on missing access or manual browser takeover, `final_text` may deliberately come from the derived persona-facing `assist_request.message` rather than a stale assistant draft; frontend should treat that as the authoritative user-visible reply for the pending turn
 
 ### `event_round.payload`
@@ -216,6 +232,9 @@ Authoritative fields:
 - `turn_appraisal`
 - `turn_summary`
 - `writeback_trace`
+- `operator_readback`
+- `living_loop_realism`
+- `embodied_interaction`
 
 Use this for:
 
@@ -235,7 +254,27 @@ Traceability note:
 - `digital_body / digital_body_consequence` for embodied runtime state plus frozen embodied consequence
 - `turn_summary.event_residue.digital_body_consequence` when the finished turn left a meaningful embodied consequence at the event-residue layer
   - `reconsolidation_snapshot` for frozen final semantics
-  - `writeback_trace` for the just-written self-narrative / revision-trace / counterpart-assessment / proactive-continuity persistence delta
+- `writeback_trace` for the just-written self-narrative / revision-trace / counterpart-assessment / proactive-continuity persistence delta
+- optional `operator_readback`, `living_loop_realism`, and `embodied_interaction` for backend-owned operator, causal-loop, and embodied-interaction readbacks
+
+### `runtime_productization.payload`
+
+Use this as the route-level operator-console readback, not as a command surface.
+
+Key fields:
+
+- `schema`
+- `readiness_status`
+- `operator_snapshot`
+- `console_health`
+- `evidence_summary`
+- `route_inventory`
+- `next_action_hints`
+- `lanes`
+
+Boundary rule:
+
+- this payload is readback-only and does not authorize execution, memory writes, persona mutation, frontend-owned semantics, live capture, skill registry writes, browser/sandbox widening, or external mutation
 
 ### `persona_view.payload`
 
@@ -495,6 +534,7 @@ Callable read routes:
 - `GET /api/thread-inventory` -> `BackendAPI.thread_inventory()`
 - `GET /api/runtime-layout` -> `BackendAPI.runtime_layout()`
 - `GET /api/environment-summary` -> `BackendAPI.environment_summary()`
+- `GET /api/runtime-productization` -> `BackendAPI.runtime_productization()`
 - `GET /api/persona-view` -> `BackendAPI.persona()`
 - `GET /api/worldline-view` -> `BackendAPI.worldline()`
 - `GET /api/bond-view` -> `BackendAPI.bond()`
@@ -531,6 +571,7 @@ On session startup:
    - `thread_inventory`
    - `runtime_layout`
    - `environment_summary`
+   - `runtime_productization`
 3. Fetch inspector defaults:
    - `persona_view`
    - `worldline_view`
@@ -538,6 +579,7 @@ On session startup:
    - `sources_view`
    - `behavior_queue_view`
    - `current_checkpoint`
+   - `runtime_productization`
 4. Fetch `checkpoint_history` lazily when a rewind/history panel is opened.
 
 After every completed user turn or event round:
@@ -557,6 +599,7 @@ After every completed user turn or event round:
 - New fields may be added additively.
 - Existing keys must not be renamed or repurposed silently.
 - `kind` names are stable API surface and must not drift casually.
+- Frontend contract consumers may validate envelope shape and group payloads for UI, but must not create reducer/store modules that own memory, persona, autonomy, digital-body, graph, browser, sandbox, skill-registry, or external-mutation semantics.
 
 ## Available Contract Assets
 
