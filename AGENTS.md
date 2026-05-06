@@ -70,6 +70,10 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - `runtime_productization_phase2_ready`
   - it upgrades `operator_readback` to v2 with console health, evidence summary, read-only route inventory, and next-action hints
   - it remains readback-only and does not add execution authority, persona-core mutation, memory writes, auto skill registry writes, frontend-owned semantics, live capture, or external harness runtime enablement
+- `Residual Living Loop Closure Phase 1` is now closed as a residual/north-star traceability gate:
+  - `residual_living_loop_phase1_ready`
+  - it folds the remaining post-unlock residuals into one auditable loop readback across perception, appraisal, internal state, motive/goal, behavior, consequence, reconsolidation, and self-narrative update
+  - it does not add live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
 - These post-unlock ready statuses are bounded contracts, not blanket runtime authority:
   - live microphone/camera/background screen capture remains blocked
   - dynamic skills remain proposal/hash/approval-gated and do not write the registry automatically
@@ -78,7 +82,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - Chinese semantic de-scaffolding is diagnostic first, not broad prompt sprawl
   - capability growth remains advisory workflow continuity
   - long-horizon calibration remains offline deterministic evaluation
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, and `runtime_productization_phase2_ready` are preserved baselines / release gates.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, and `residual_living_loop_phase1_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona

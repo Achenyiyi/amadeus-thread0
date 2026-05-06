@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Runtime Productization Phase 2` operator-console readback gate after the post-unlock roadmap
+- Mainline phase: `Residual Living Loop Closure Phase 1` north-star residual traceability gate after runtime productization phase 2
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -32,6 +32,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `post_unlock_roadmap_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
+  - preserve `residual_living_loop_phase1_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -45,6 +46,9 @@ This file is the live development ledger for `amadeus-thread0`.
   - runtime surfaces should expose one operator-console readback over backend/post-unlock/preserved-baseline truth
   - `operator_readback.v2` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
+- Current residual closure focus:
+  - the remaining post-unlock lanes are assessed as one traceable living-loop contract rather than as disconnected small cleanup items
+  - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:
@@ -11480,3 +11484,92 @@ This file is the live development ledger for `amadeus-thread0`.
   - no persona-core mutation, memory write, tool/browser/sandbox execution, external executor harness enablement, automatic dynamic skill registry write, frontend-owned backend semantics, or live capture was introduced
 - Next:
   - push `main` to `origin/main`
+
+## 2026-05-06 Run 260
+
+- Focus:
+  - implement `Residual Living Loop Closure Phase 1` after reassessing the project residuals from markdown
+  - make the remaining Chinese semantic, multimodal, dynamic capability, and long-horizon calibration lanes visible under one north-star loop audit rather than continuing generic productization readback
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/residual_living_loop.py`
+  - `amadeus_thread0/runtime/runtime_productization.py`
+  - `evals/run_residual_living_loop_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_residual_living_loop.py`
+  - `tests/test_residual_living_loop_audit.py`
+  - `tests/test_runtime_productization.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-residual-living-loop-closure-phase1.md`
+  - `program.md`
+- Key changes:
+  - added a pure residual living-loop readback module that checks the eight north-star stages:
+    - perception
+    - appraisal
+    - internal state change
+    - motive / goal shift
+    - behavior
+    - consequence
+    - memory reconsolidation
+    - self-narrative update
+  - added residual lane readback for:
+    - Chinese semantic de-scaffolding
+    - multimodal perception bridge
+    - dynamic capability boundaries
+    - natural long-horizon calibration
+  - added `evals/run_residual_living_loop_audit.py` reporting `residual_living_loop_phase1_ready`
+  - allowed `operator_readback.v2` to optionally include residual living-loop readback without making productization depend on it
+  - folded `residual_living_loop_phase1_ready` into the preserved-baselines meta-audit as the `residual_closure` category
+  - kept the phase non-widening:
+    - no live capture
+    - no automatic skill registry writes
+    - no external harness runtime enablement
+    - no frontend-owned semantics
+    - no persona-core mutation
+    - no memory writes
+    - no unapproved external mutation
+- Validation:
+  - initial RED checks:
+    - `python -m pytest tests/test_residual_living_loop.py -q`
+      - failed because `amadeus_thread0.runtime.residual_living_loop` did not exist
+    - `python -m pytest tests/test_residual_living_loop_audit.py -q`
+      - failed because `evals.run_residual_living_loop_audit` did not exist
+    - `python -m pytest tests/test_runtime_productization.py -q`
+      - failed because `build_runtime_productization_readback` did not accept `residual_living_loop`
+  - focused green checks so far:
+    - `python -m pytest tests/test_residual_living_loop.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_residual_living_loop_audit.py -q`
+      - passed: `3 passed`
+    - `python evals/run_residual_living_loop_audit.py --run-tag phase1-dev`
+      - passed with `readiness=residual_living_loop_phase1_ready`
+    - `python -m pytest tests/test_runtime_productization.py tests/test_residual_living_loop.py -q`
+      - passed: `9 passed`
+    - `python -m pytest tests/test_preserved_baselines_audit.py tests/test_residual_living_loop.py tests/test_residual_living_loop_audit.py tests/test_runtime_productization.py -q`
+      - passed: `19 passed`
+  - final focused verification:
+    - `python -m pytest tests/test_residual_living_loop.py tests/test_residual_living_loop_audit.py tests/test_runtime_productization.py tests/test_multimodal_sources.py tests/test_chinese_surface_de_scaffold_audit.py -q`
+      - passed: `23 passed`
+    - `python evals/run_residual_living_loop_audit.py --run-tag phase1-final`
+      - passed with `readiness=residual_living_loop_phase1_ready`
+    - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag residual-phase1-final`
+      - passed with `readiness=chinese_semantic_descaffolding_phase1_ready`
+    - `python evals/run_multimodal_capture_audit.py --run-tag residual-phase1-final`
+      - passed with `readiness=multimodal_capture_phase1_ready`
+    - `python -m py_compile amadeus_thread0/runtime/residual_living_loop.py amadeus_thread0/runtime/runtime_productization.py evals/run_residual_living_loop_audit.py`
+      - passed
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - placeholder scan over the residual plan/code/test set
+      - passed with no matches
+  - isolated-worktree note:
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - failed because this fresh worktree only had the newly generated residual report and lacked the historical baseline report artifacts
+      - code-level preserved-baseline tests passed; the full report-backed meta-audit must be rerun after merge in the primary workspace report directory
+- Result:
+  - `Residual Living Loop Closure Phase 1` is implemented and ready in branch `codex/residual-closure-plan`
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-residual-living-loop-closure-phase1.md` are marked complete
+- Next:
+  - commit, fast-forward merge to `main`, and push

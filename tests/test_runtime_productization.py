@@ -8,6 +8,7 @@ from amadeus_thread0.runtime.runtime_productization import (
     compact_operator_readback_line,
     evaluate_runtime_productization_contract,
 )
+from amadeus_thread0.runtime.residual_living_loop import build_residual_living_loop_readback
 
 
 def test_readback_reports_ready_lanes_without_widening_authority():
@@ -102,3 +103,39 @@ def test_console_next_action_surfaces_pending_operator_approval():
 
     assert readback["console_summary"]["next_action"] == "resolve_pending_operator_approval"
     assert "pending_approvals=2" in line
+
+
+def test_operator_readback_can_include_residual_living_loop_without_widening_authority():
+    residual = build_residual_living_loop_readback(
+        current_turn={
+            "current_event": {"kind": "user_message", "perception": {"modality": "text"}},
+            "turn_appraisal": {"scene": "repair"},
+            "emotion_state": {"label": "guarded"},
+            "bond_state": {"trust": 0.58},
+            "allostasis_state": {"autonomy_need": 0.62},
+            "behavior_action": {"primary_motive": "repair_without_erasing_boundary"},
+            "behavior_plan": {"action_family": "low_pressure_support"},
+            "digital_body_consequence": {"kind": "source_material_inspected"},
+            "reconsolidation_snapshot": {
+                "behavior_action": {"primary_motive": "repair_without_erasing_boundary"},
+                "digital_body_consequence": {"kind": "source_material_inspected"},
+            },
+            "writeback_trace": {
+                "revision_traces": [{"namespace": "semantic_self_evidence"}],
+                "counterpart_assessment_history": [{"stance": "watchful"}],
+            },
+            "semantic_narrative_profile": {"continuity_axes": [{"category": "repair_style"}]},
+        }
+    )
+
+    readback = build_runtime_productization_readback(
+        post_baseline_status={"overall_status": "passed", "readiness_status": "post_baseline_closure_ready", "items": {}},
+        preserved_baselines={"overall_status": "passed", "readiness_status": "preserved_baselines_ready"},
+        post_unlock_roadmap={"overall_status": "passed", "readiness_status": "post_unlock_roadmap_ready"},
+        residual_living_loop=residual,
+    )
+    line = compact_operator_readback_line(readback)
+
+    assert readback["residual_living_loop"]["readiness_status"] == "residual_living_loop_phase1_ready"
+    assert readback["authority_boundary"]["live_capture_auto_enabled"] is False
+    assert "residual=residual_living_loop_phase1_ready" in line

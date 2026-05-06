@@ -153,6 +153,7 @@ Rule:
 - `multimodal_sources.py`
 - `post_baseline_closure.py`
 - `runtime_productization.py`
+- `residual_living_loop.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
 - `access_negotiation.py`
@@ -281,7 +282,15 @@ Rule:
 - emits `operator_readback.v2` with console health, evidence summary, read-only route inventory, and next-action hints for operator-console consumption
 - exposes authority-boundary booleans that keep external mutation approval, persona-core immutability, frontend consumer-only semantics, dynamic skill registry approval, and fail-closed harness behavior explicit
 - formats compact operator readback lines for CLI summaries
+- may optionally include residual living-loop readback when supplied, but absence of that optional block must not change the runtime productization gate
 - must remain readback-only; it does not execute tools, mutate memory, change persona state, install skills, run browser actions, or enable external executor harnesses
+
+`residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
+
+- evaluates whether one final-turn packet exposes the north-star stages from perception through self-narrative update
+- summarizes residual post-unlock lanes such as Chinese semantic de-scaffolding, multimodal perception bridge, dynamic capability boundaries, and offline long-horizon calibration
+- keeps live capture, auto skill registry writes, external harness enablement, frontend-owned semantics, and persona-core mutation explicitly blocked
+- remains pure readback/audit logic with no execution, memory-write, browser, sandbox, skill-install, or frontend authority
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
@@ -371,6 +380,7 @@ Rule:
   - `run_preserved_baselines_audit.py`
   - `run_post_unlock_roadmap_audit.py`
   - `run_runtime_productization_audit.py`
+  - `run_residual_living_loop_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`
