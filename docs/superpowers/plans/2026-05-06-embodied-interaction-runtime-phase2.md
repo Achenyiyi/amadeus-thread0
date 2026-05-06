@@ -533,7 +533,7 @@ rg -n "T[B]D|T[O]DO|implement[ ]later|fill[ ]in[ ]details|Similar[ ]to[ ]Task" A
 
 Expected: no matches.
 
-- [ ] **Step 3: Commit Task 4**
+- [x] **Step 3: Commit Task 4**
 
 Run:
 
@@ -551,7 +551,7 @@ Expected: commit succeeds.
 **Files:**
 - All files touched by Tasks 1-4.
 
-- [ ] **Step 1: Run focused runtime/backend verification**
+- [x] **Step 1: Run focused runtime/backend verification**
 
 Run:
 
@@ -562,7 +562,7 @@ python -m pytest tests/test_backend_api.py -k "artifact_semantics or embodied_in
 
 Expected: PASS.
 
-- [ ] **Step 2: Run required backend/memory regressions**
+- [x] **Step 2: Run required backend/memory regressions**
 
 Run:
 
@@ -573,7 +573,7 @@ python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -
 
 Expected: PASS.
 
-- [ ] **Step 3: Run graph entrypoint checks**
+- [x] **Step 3: Run graph entrypoint checks**
 
 Run:
 
@@ -584,7 +584,7 @@ python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"
 
 Expected: compile passes and prints `CompiledStateGraph`.
 
-- [ ] **Step 4: Run phase audits**
+- [x] **Step 4: Run phase audits**
 
 Run:
 
@@ -602,7 +602,7 @@ Expected:
 - multimodal audit reports `multimodal_capture_phase1_ready`
 - living-loop realism phase 2 audit reports `living_loop_runtime_realism_phase2_ready`
 
-- [ ] **Step 5: Run diff checks**
+- [x] **Step 5: Run diff checks**
 
 Run:
 
@@ -616,7 +616,7 @@ Expected:
 - no diff-check errors other than benign Windows LF-to-CRLF warnings
 - only intended files are modified
 
-- [ ] **Step 6: Commit any remaining tracked changes**
+- [x] **Step 6: Commit any remaining tracked changes**
 
 If any intended changes remain unstaged:
 
