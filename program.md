@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Embodied Interaction Runtime Phase 2` approved artifact perception semantics gate after Embodied Interaction Runtime Phase 1
+- Mainline phase: `Embodied Interaction Runtime Phase 3` approved artifact appraisal evidence coupling after Embodied Interaction Runtime Phase 2
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -37,6 +37,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `living_loop_runtime_realism_phase2_ready`
   - preserve `embodied_interaction_runtime_phase1_ready`
   - preserve `embodied_interaction_runtime_phase2_ready`
+  - preserve `embodied_interaction_runtime_phase3_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -64,8 +65,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
   - `embodied_interaction_runtime_phase2_ready` means approved artifact metadata can enter perception-facing semantic observation surfaces without opening live capture or model vision
   - approved semantic observations surface through `embodied_interaction.artifact_semantics.semantic_observations`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
+  - `embodied_interaction_runtime_phase3_ready` means approved semantic observations can become read-only appraisal-facing evidence and influence hints without becoming memory facts
+  - approved artifact appraisal evidence surfaces through `embodied_interaction.artifact_appraisal.evidence_items`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
   - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families
-  - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
+  - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:
@@ -11954,3 +11957,64 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=preserved_baselines_ready`
 - Next:
   - select the next bounded runtime phase only after checking roadmap dependency order and preserved-baseline evidence
+
+## 2026-05-06 Run 265
+
+- Focus:
+  - implement `Embodied Interaction Runtime Phase 3` after Phase 2 approved artifact perception semantics
+  - convert approved semantic observations into appraisal-facing evidence and influence hints
+  - preserve Phase 1/2 boundaries: no live capture, no multimodal model API call, no memory fact creation, no execution authority widening
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/artifact_appraisal_bridge.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `evals/run_embodied_interaction_runtime_phase3_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_artifact_appraisal_bridge.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_embodied_interaction_runtime_phase3_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase3.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.artifact_appraisal_bridge` as the bounded approved-observation appraisal evidence normalizer
+  - attached Phase 3 evidence through:
+    - `embodied_interaction.artifact_appraisal.evidence_items`
+    - `current_event.perception.appraisal_evidence`
+    - `turn_appraisal.artifact_evidence`
+    - `turn_appraisal.perception_semantics.appraisal_evidence`
+    - `interaction_carryover.embodied_context.artifact_appraisal_evidence`
+  - evidence may carry deterministic influence hints such as `task_relevance` and `access_friction`
+  - every evidence item stays `source=approved_metadata`, `model_api_called=false`, `memory_write_allowed=false`, and `writeback_ready=false`
+  - blocked live capture sources do not emit appraisal evidence
+  - added `evals/run_embodied_interaction_runtime_phase3_audit.py` reporting `embodied_interaction_runtime_phase3_ready`
+  - folded `embodied_interaction_runtime_phase3_ready` into preserved baselines under the `embodied_interaction` category
+- Validation:
+  - initial RED checks:
+    - `python -m pytest tests/test_artifact_appraisal_bridge.py -q`
+      - failed because `amadeus_thread0.runtime.artifact_appraisal_bridge` did not exist
+    - `python -m pytest tests/test_embodied_interaction_runtime.py -q`
+      - failed because `artifact_appraisal` was not attached to embodied interaction readback
+    - `python -m pytest tests/test_backend_api.py -k "artifact_appraisal or artifact_semantics or embodied_interaction" -q`
+      - failed because backend payloads did not carry Phase 3 appraisal evidence
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_embodied_interaction_runtime_phase3_audit` and the preserved-baseline row did not exist
+  - focused green checks so far:
+    - `python -m pytest tests/test_artifact_appraisal_bridge.py -q`
+      - passed: `3 passed`
+    - `python -m pytest tests/test_artifact_appraisal_bridge.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py -q`
+      - passed: `14 passed`
+    - `python -m pytest tests/test_backend_api.py -k "artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+      - passed: `4 passed, 47 deselected`
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase3-dev`
+      - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+- Result:
+  - `Embodied Interaction Runtime Phase 3` is implemented in branch `codex/embodied-interaction-runtime-phase3`
+  - final verification, merge to `main`, and push are still pending
+- Next:
+  - run final verification, commit docs, fast-forward merge to `main`, rerun post-merge audits, and push

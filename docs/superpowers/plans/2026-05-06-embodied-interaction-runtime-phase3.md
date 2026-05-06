@@ -54,7 +54,7 @@
 - Create: `tests/test_artifact_appraisal_bridge.py`
 - Create: `amadeus_thread0/runtime/artifact_appraisal_bridge.py`
 
-- [ ] **Step 1: Write failing bridge tests**
+- [x] **Step 1: Write failing bridge tests**
 
 Create `tests/test_artifact_appraisal_bridge.py`:
 
@@ -179,7 +179,7 @@ def test_empty_or_blocked_semantics_return_inert_readback():
     assert blocked["influence_summary"]["should_write_memory"] is False
 ```
 
-- [ ] **Step 2: Run bridge tests to verify RED**
+- [x] **Step 2: Run bridge tests to verify RED**
 
 Run:
 
@@ -189,7 +189,7 @@ python -m pytest tests/test_artifact_appraisal_bridge.py -q
 
 Expected: FAIL because `amadeus_thread0.runtime.artifact_appraisal_bridge` does not exist.
 
-- [ ] **Step 3: Implement bridge module**
+- [x] **Step 3: Implement bridge module**
 
 Create `amadeus_thread0/runtime/artifact_appraisal_bridge.py` with:
 
@@ -252,7 +252,7 @@ The function must:
   - `model_api_called=False`
   - `writeback_ready_count=0`
 
-- [ ] **Step 4: Run bridge tests to verify GREEN**
+- [x] **Step 4: Run bridge tests to verify GREEN**
 
 Run:
 
@@ -262,7 +262,7 @@ python -m pytest tests/test_artifact_appraisal_bridge.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 Run:
 
@@ -282,7 +282,7 @@ Expected: commit succeeds.
 - Modify: `tests/test_embodied_interaction_runtime.py`
 - Modify: `tests/test_backend_api.py`
 
-- [ ] **Step 1: Write failing runtime/backend tests**
+- [x] **Step 1: Write failing runtime/backend tests**
 
 Extend `tests/test_embodied_interaction_runtime.py` with:
 
@@ -336,7 +336,7 @@ payload["interaction_carryover"]["embodied_context"]["artifact_appraisal_evidenc
 payload["embodied_interaction"]["artifact_appraisal"]["influence_summary"]["should_write_memory"] is False
 ```
 
-- [ ] **Step 2: Run runtime/backend tests to verify RED**
+- [x] **Step 2: Run runtime/backend tests to verify RED**
 
 Run:
 
@@ -347,7 +347,7 @@ python -m pytest tests/test_backend_api.py -k "artifact_appraisal or artifact_se
 
 Expected: FAIL because Phase 3 runtime surfaces are not implemented yet.
 
-- [ ] **Step 3: Implement runtime attachment**
+- [x] **Step 3: Implement runtime attachment**
 
 Modify `amadeus_thread0/runtime/embodied_interaction_runtime.py`:
 
@@ -379,7 +379,7 @@ artifact_appraisal = build_artifact_appraisal_readback(artifact_semantics)
   - `interaction_carryover.embodied_context.artifact_appraisal_evidence`
 - keep Phase 2 behavior unchanged when `artifact_appraisal["status"]` is not `ready`.
 
-- [ ] **Step 4: Run runtime/backend tests to verify GREEN**
+- [x] **Step 4: Run runtime/backend tests to verify GREEN**
 
 Run:
 
@@ -390,7 +390,7 @@ python -m pytest tests/test_backend_api.py -k "artifact_appraisal or artifact_se
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
 
 Run:
 
@@ -411,7 +411,7 @@ Expected: commit succeeds.
 - Modify: `evals/run_preserved_baselines_audit.py`
 - Modify: `tests/test_preserved_baselines_audit.py`
 
-- [ ] **Step 1: Write failing audit tests**
+- [x] **Step 1: Write failing audit tests**
 
 Create `tests/test_embodied_interaction_runtime_phase3_audit.py`:
 
@@ -449,7 +449,7 @@ Modify `tests/test_preserved_baselines_audit.py`:
 - add expected id `embodied_interaction_runtime_phase3`
 - change `summary["summary"]["categories"]["embodied_interaction"]["passed"]` from `2` to `3`
 
-- [ ] **Step 2: Run audit tests to verify RED**
+- [x] **Step 2: Run audit tests to verify RED**
 
 Run:
 
@@ -459,7 +459,7 @@ python -m pytest tests/test_embodied_interaction_runtime_phase3_audit.py tests/t
 
 Expected: FAIL because the Phase 3 audit entrypoint and preserved baseline row do not exist yet.
 
-- [ ] **Step 3: Implement Phase 3 audit**
+- [x] **Step 3: Implement Phase 3 audit**
 
 Create `evals/run_embodied_interaction_runtime_phase3_audit.py` with deterministic scenarios:
 
@@ -478,7 +478,7 @@ The report must emit:
 
 when all scenarios pass.
 
-- [ ] **Step 4: Register preserved baseline**
+- [x] **Step 4: Register preserved baseline**
 
 Add to `BASELINE_SPECS` in `evals/run_preserved_baselines_audit.py`:
 
@@ -491,7 +491,7 @@ Add to `BASELINE_SPECS` in `evals/run_preserved_baselines_audit.py`:
 }
 ```
 
-- [ ] **Step 5: Run audit tests to verify GREEN**
+- [x] **Step 5: Run audit tests to verify GREEN**
 
 Run:
 
@@ -502,7 +502,7 @@ python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase3-d
 
 Expected: tests PASS and audit prints `readiness=embodied_interaction_runtime_phase3_ready`.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
@@ -524,7 +524,7 @@ Expected: commit succeeds.
 - Modify: `program.md`
 - Modify: `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase3.md`
 
-- [ ] **Step 1: Update project contracts**
+- [x] **Step 1: Update project contracts**
 
 Update `AGENTS.md`:
 
@@ -554,7 +554,7 @@ Update `program.md`:
 - update Current State to Phase 3
 - add a dated run entry with files changed, validations, result, and next step
 
-- [ ] **Step 2: Run doc/placeholder scan**
+- [x] **Step 2: Run doc/placeholder scan**
 
 Run:
 
