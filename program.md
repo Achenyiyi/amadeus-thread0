@@ -11919,8 +11919,31 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `9 passed`
     - `python evals/run_embodied_interaction_runtime_phase2_audit.py --run-tag phase2-dev`
       - passed with `readiness=embodied_interaction_runtime_phase2_ready`
+  - pre-merge final verification:
+    - `python -m pytest tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_audit.py tests/test_embodied_interaction_runtime_phase2_audit.py tests/test_multimodal_sources.py -q`
+      - passed: `18 passed`
+    - `python -m pytest tests/test_backend_api.py -k "artifact_semantics or embodied_interaction or living_loop_realism or turn_and_event_responses_attach_operator_readback" -q`
+      - passed: `4 passed, 46 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `184 passed, 17 subtests passed`
+    - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+      - passed: `14 passed, 9 subtests passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/artifact_perception_semantics.py amadeus_thread0/runtime/embodied_interaction_runtime.py amadeus_thread0/runtime/backend_api.py evals/run_embodied_interaction_runtime_audit.py evals/run_embodied_interaction_runtime_phase2_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_embodied_interaction_runtime_audit.py --run-tag phase2-regression`
+      - passed with `readiness=embodied_interaction_runtime_phase1_ready`
+    - `python evals/run_embodied_interaction_runtime_phase2_audit.py --run-tag phase2-final`
+      - passed with `readiness=embodied_interaction_runtime_phase2_ready`
+    - `python evals/run_multimodal_capture_audit.py --run-tag embodied-phase2-regression`
+      - passed with `readiness=multimodal_capture_phase1_ready`
+    - `python evals/run_living_loop_realism_phase2_audit.py --run-tag embodied-phase2-regression`
+      - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+    - `git diff --check`
+      - passed
 - Result:
-  - implementation is in progress in branch `codex/embodied-interaction-runtime-phase2`
-  - remaining work is final focused verification, commit/merge to `main`, post-merge preserved-baseline audit, and push
+  - `Embodied Interaction Runtime Phase 2` is implemented and ready in branch `codex/embodied-interaction-runtime-phase2`
+  - all pre-merge plan checkboxes through final verification are complete
 - Next:
-  - run final verification for Phase 1/Phase 2 embodied interaction, backend API/session/CLI/tool approval, memory/session, graph entrypoint, and preserved baselines
+  - fast-forward merge to `main`, rerun post-merge phase-2 and preserved-baseline checks, and push
