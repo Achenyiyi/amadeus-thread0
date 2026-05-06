@@ -31,6 +31,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "procedural_growth_phase3",
             "procedural_growth_phase4",
             "post_unlock_roadmap",
+            "chinese_semantic_descaffolding_phase2",
             "runtime_productization_phase1",
             "runtime_productization_phase2",
             "residual_living_loop_phase1",
@@ -156,6 +157,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["passed"], 4)
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["failed"], 0)
         self.assertEqual(summary["summary"]["categories"]["post_unlock"]["passed"], 1)
+        self.assertEqual(summary["summary"]["categories"]["chinese_semantic"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 2)
         self.assertEqual(summary["summary"]["categories"]["residual_closure"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 3)

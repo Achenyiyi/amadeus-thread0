@@ -95,6 +95,12 @@ BASELINE_SPECS = [
         "category": "post_unlock",
     },
     {
+        "id": "chinese_semantic_descaffolding_phase2",
+        "prefix": "chinese-semantic-descaffolding-phase2-audit-",
+        "expected_readiness": "chinese_semantic_descaffolding_phase2_ready",
+        "category": "chinese_semantic",
+    },
+    {
         "id": "runtime_productization_phase1",
         "prefix": "runtime-productization-audit-",
         "expected_readiness": "runtime_productization_phase1_ready",
