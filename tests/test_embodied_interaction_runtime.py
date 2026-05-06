@@ -5,6 +5,10 @@ from amadeus_thread0.runtime.embodied_interaction_runtime import (
     build_embodied_interaction_readback,
     compact_embodied_interaction_line,
 )
+from amadeus_thread0.runtime.multimodal_sources import (
+    build_multimodal_inspection_packet,
+    normalize_multimodal_source,
+)
 
 
 def _turn_with_sources() -> dict:
@@ -369,3 +373,45 @@ def test_artifact_behavior_alignment_reaches_readback_without_mutating_behavior_
         ]
         is False
     )
+
+
+def test_completed_multimodal_inspection_packet_reaches_artifact_semantics_without_live_capture():
+    source = normalize_multimodal_source(
+        {
+            "source_id": "img-runtime-approved-1",
+            "modality": "image",
+            "path": "fixtures/approved.png",
+            "consent_scope": "single_turn",
+            "capture_method": "operator_attached_file",
+            "label": "approved.png",
+        }
+    )
+    packet = build_multimodal_inspection_packet(
+        source,
+        status="completed",
+        approved_result={
+            "semantic_summary": "An approved fixture result says a checklist is visible.",
+            "tags": ["checklist"],
+            "confidence": 0.8,
+        },
+    )
+
+    readback = build_embodied_interaction_readback(
+        {
+            "final_text": "嗯，我看到了。",
+            "current_event": {"digital_body_hints": {"multimodal_sources": [source]}},
+            "action_packets": [packet],
+            "behavior_action": {"primary_motive": "continue_artifact_review"},
+            "behavior_plan": {"primary_motive": "continue_artifact_review"},
+            "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+            "reconsolidation_snapshot": {"final_text": "嗯，我看到了。"},
+        }
+    )
+
+    observation = readback["artifact_semantics"]["semantic_observations"][0]
+    assert observation["source"] == "approved_inspection_result"
+    assert observation["source_ref_id"] == "img-runtime-approved-1"
+    assert observation["model_api_called"] is False
+    assert readback["authority_boundary"]["live_microphone_enabled"] is False
+    assert readback["authority_boundary"]["live_camera_enabled"] is False
+    assert readback["authority_boundary"]["background_screen_capture_enabled"] is False
