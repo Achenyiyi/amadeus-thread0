@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from .dynamic_skill_candidates import freeze_skill_candidate_payload, verify_candidate_approval
 from .settings import BASE_DIR, get_settings
 
 
@@ -687,6 +688,83 @@ class SkillRegistryManager:
 
     def update(self, **kwargs: Any) -> dict[str, Any]:
         return self.install(operation="update", **kwargs)
+
+    def install_candidate(
+        self,
+        candidate: dict[str, Any] | None,
+        approval_payload: dict[str, Any] | None,
+        *,
+        thread_id: str = "",
+        enable: bool = False,
+    ) -> dict[str, Any]:
+        frozen = freeze_skill_candidate_payload(candidate)
+        verification = verify_candidate_approval(frozen, approval_payload)
+        if not verification.get("verified", False):
+            reasons = ",".join(str(item) for item in (verification.get("failure_reasons") or []) if str(item))
+            raise SkillRegistryError(f"dynamic candidate approval drift detected: {reasons or 'unknown'}")
+        skill_key = _clean_id(frozen.get("skill_id"))
+        version_key = _clean_id(str(frozen.get("version") or "0.1.0"), fallback="0.1.0")
+        draft_skill_md = str(frozen.get("draft_skill_md") or "").strip()
+        if not skill_key:
+            raise SkillRegistryError("empty dynamic candidate skill_id")
+        if not draft_skill_md:
+            raise SkillRegistryError("empty dynamic candidate SKILL.md")
+
+        self.ensure_layout()
+        target_root = self.installed_root / skill_key / version_key
+        _ensure_directory_inside(self.installed_root, target_root)
+        if target_root.exists():
+            shutil.rmtree(target_root)
+        try:
+            target_root.mkdir(parents=True, exist_ok=True)
+            (target_root / "SKILL.md").write_text(draft_skill_md + "\n", encoding="utf-8")
+
+            installed = self._load_skill_directory(
+                target_root,
+                status="installed",
+                source="dynamic_candidate",
+            )
+            if str(installed.get("skill_id") or "") != skill_key:
+                raise SkillRegistryError("dynamic candidate skill_id mismatch")
+            if str(installed.get("version") or "") != str(frozen.get("version") or ""):
+                raise SkillRegistryError("dynamic candidate version mismatch")
+            installed["requested_permissions"] = list(frozen.get("requested_permissions") or [])
+            installed["sandbox_profiles"] = list(frozen.get("sandbox_profiles") or [])
+            installed["verification_summary"] = str(frozen.get("verification_summary") or "")
+            installed["hash"] = str(frozen.get("hash") or "")
+            installed["installed_at"] = int(time.time())
+            installed["status"] = "installed"
+            installed["source"] = "dynamic_candidate"
+            installed["trust_tier"] = "approved_candidate"
+            installed["candidate_id"] = str(frozen.get("candidate_id") or "")
+            installed["source_evidence_refs"] = list(frozen.get("source_evidence_refs") or [])
+            lock_payload = {
+                "skill_id": installed.get("skill_id"),
+                "version": installed.get("version"),
+                "source": installed.get("source"),
+                "trust_tier": installed.get("trust_tier"),
+                "hash": installed.get("hash"),
+                "candidate_id": installed.get("candidate_id"),
+                "source_evidence_refs": list(installed.get("source_evidence_refs") or []),
+                "installed_at": installed.get("installed_at"),
+                "verification_status": "verified",
+                "requested_permissions": list(installed.get("requested_permissions") or []),
+                "sandbox_profiles": list(installed.get("sandbox_profiles") or []),
+                "verification_summary": str(installed.get("verification_summary") or ""),
+            }
+            _write_json(target_root / "skill.lock.json", lock_payload)
+            self._upsert_installed_registry_entry(installed)
+            result = self._compact_entry(installed)
+            result["candidate_id"] = str(frozen.get("candidate_id") or "")
+            result["source_evidence_refs"] = list(frozen.get("source_evidence_refs") or [])
+            result["enabled"] = False
+            if enable and str(thread_id or "").strip():
+                result["session_state"] = self.enable(skill_id=skill_key, thread_id=str(thread_id or "").strip())
+                result["enabled"] = True
+            return result
+        except Exception:
+            shutil.rmtree(target_root, ignore_errors=True)
+            raise
 
     def enable(self, *, skill_id: str, thread_id: str) -> dict[str, Any]:
         return self._update_session_override(thread_id=thread_id, skill_id=skill_id, enable=True)

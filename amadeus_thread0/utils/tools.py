@@ -2204,12 +2204,23 @@ def install_skill(
     requested_permissions: list[str] | None = None,
     sandbox_profiles: list[str] | None = None,
     verification_summary: str = "",
+    candidate_payload: dict[str, Any] | None = None,
+    thread_id: str = "",
+    enable: bool = False,
 ) -> dict[str, Any]:
     """安装一个 runtime skill。审批后必须沿用同一份 resolved install payload。"""
 
     tool_name = "install_skill"
     try:
         manager = _get_skill_registry()
+        if isinstance(candidate_payload, dict) and candidate_payload:
+            result = manager.install_candidate(
+                candidate_payload,
+                candidate_payload,
+                thread_id=str(thread_id or "").strip() or _current_thread_id(),
+                enable=bool(enable),
+            )
+            return _ok(tool_name, result)
         result = manager.install(
             skill_id=str(skill_id or ""),
             resolved_version=str(resolved_version or ""),
@@ -2230,6 +2241,7 @@ def install_skill(
                 "resolved_version": resolved_version,
                 "source": source,
                 "hash": hash,
+                "candidate_payload": candidate_payload if isinstance(candidate_payload, dict) else {},
             },
         )
     except Exception as e:
