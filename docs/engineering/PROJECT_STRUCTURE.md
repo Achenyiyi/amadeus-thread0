@@ -151,6 +151,7 @@ Rule:
 - `executor_harness_registry.py`
 - `dynamic_skill_candidates.py`
 - `multimodal_sources.py`
+- `artifact_perception_semantics.py`
 - `embodied_interaction_runtime.py`
 - `post_baseline_closure.py`
 - `runtime_productization.py`
@@ -242,12 +243,21 @@ Rule:
 - blocks live microphone/camera/background screen/secret capture methods
 - emits read-only source artifacts and perception events with digital-body hints
 
-`embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1 integration contract:
+`artifact_perception_semantics.py` holds approved artifact semantic observation normalization:
+
+- converts already-approved artifact metadata such as summaries, captions, transcripts, OCR text, observed text, and tags into bounded `semantic_observations`
+- keeps every observation read-only with `source=approved_metadata`, `model_api_called=false`, and `writeback_ready=false`
+- reuses multimodal source blocking so live microphone/camera/background screen and secret capture methods cannot become semantic observations
+- does not call model APIs, capture live media, mutate memory, execute tools, install skills, or own frontend semantics
+
+`embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1 and Phase 2 integration contract:
 
 - attaches consent-bound multimodal source artifacts to current-turn backend surfaces
 - mirrors source refs through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
+- attaches approved artifact semantic observations through `embodied_interaction.artifact_semantics`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
 - applies deterministic Chinese semantic runtime floors to `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
 - exposes `embodied_interaction_runtime_phase1_ready` through a deterministic audit/readback gate
+- exposes `embodied_interaction_runtime_phase2_ready` when approved artifact metadata reaches perception/appraisal/carryover semantic surfaces without widening authority
 - remains bounded runtime normalization; it does not call multimodal model APIs, open live capture, execute tools, mutate memory, change persona core, write the skill registry, or own frontend semantics
 
 `sandbox_runner.py` holds the bounded execution surface for the preserved sandbox baselines:
@@ -402,6 +412,7 @@ Rule:
   - `run_residual_living_loop_audit.py`
   - `run_living_loop_realism_audit.py`
   - `run_embodied_interaction_runtime_audit.py`
+  - `run_embodied_interaction_runtime_phase2_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`

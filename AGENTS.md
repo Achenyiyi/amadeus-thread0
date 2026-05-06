@@ -93,16 +93,26 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
     - `interaction_carryover.embodied_context.multimodal_sources`
   - deterministic Chinese semantic floors may update the runtime `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
   - it does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory authority, widen browser/tool/sandbox execution, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation
+- `Embodied Interaction Runtime Phase 2` is now closed as approved artifact perception semantics:
+  - `embodied_interaction_runtime_phase2_ready`
+  - approved artifact metadata may become bounded semantic observations inside:
+    - `embodied_interaction.artifact_semantics.semantic_observations`
+    - `current_event.perception.semantic_observations`
+    - `turn_appraisal.perception_semantics`
+    - `interaction_carryover.embodied_context.artifact_semantic_observations`
+  - accepted semantic inputs remain already-approved metadata such as summaries, captions, transcripts, OCR text, observed text, and tags
+  - every Phase 2 observation stays `source=approved_metadata`, `model_api_called=false`, and `writeback_ready=false`
+  - it does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory authority, widen browser/tool/sandbox execution, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation
 - These post-unlock ready statuses are bounded contracts, not blanket runtime authority:
   - live microphone/camera/background screen capture remains blocked
-  - embodied interaction consumes consent-bound source artifacts only; it does not create a live capture runtime
+  - embodied interaction consumes consent-bound source artifacts and approved artifact metadata only; it does not create a live capture runtime
   - dynamic skills remain proposal/hash/approval-gated and do not write the registry automatically
   - external harnesses remain fail-closed except the preserved sandbox runner
   - frontend remains a `backend.v1` consumer
   - Chinese semantic de-scaffolding now has deterministic replacement guidance and conservative runtime safe-surface floors, not broad prompt sprawl
   - capability growth remains advisory workflow continuity
   - long-horizon calibration remains offline deterministic evaluation
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, and `embodied_interaction_runtime_phase1_ready` are preserved baselines / release gates.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `embodied_interaction_runtime_phase1_ready`, and `embodied_interaction_runtime_phase2_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona
