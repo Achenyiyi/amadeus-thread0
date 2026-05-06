@@ -658,7 +658,7 @@ Expected:
 - Phase 2 audit reports `embodied_interaction_runtime_phase2_ready`
 - preserved baselines audit reports `preserved_baselines_ready`
 
-- [ ] **Step 9: Push main**
+- [x] **Step 9: Push main**
 
 Run:
 
