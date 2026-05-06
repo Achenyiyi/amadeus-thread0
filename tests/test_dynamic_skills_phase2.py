@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from pathlib import Path
+
+import pytest
+
 from amadeus_thread0.runtime.dynamic_skill_candidates import (
     build_candidate_install_packet,
     freeze_skill_candidate_payload,
     propose_skill_candidate_from_trace,
     verify_candidate_approval,
 )
+from amadeus_thread0.runtime.skill_registry import SkillRegistryError, SkillRegistryManager
 
 
 def _candidate():
@@ -49,3 +56,34 @@ def test_candidate_approval_detects_payload_drift():
 
     assert verification["verified"] is False
     assert "version_drift" in verification["failure_reasons"]
+
+
+def test_registry_installs_and_enables_exact_frozen_candidate():
+    with tempfile.TemporaryDirectory() as tmp:
+        manager = SkillRegistryManager(base_dir=Path(tmp) / "repo", data_dir=Path(tmp) / "data")
+        frozen = freeze_skill_candidate_payload(_candidate())
+
+        result = manager.install_candidate(frozen, frozen, thread_id="thread-dyn", enable=True)
+        state = manager.compute_session_skill_state(thread_id="thread-dyn", query_text="pytest failures")
+        lock_path = Path(tmp) / "data" / "skills" / "installed" / "pytest-failure-review" / "0.1.0" / "skill.lock.json"
+        lock_payload = json.loads(lock_path.read_text(encoding="utf-8"))
+
+        assert result["status"] == "installed"
+        assert result["enabled"] is True
+        assert result["hash"] == frozen["hash"]
+        assert state["active_skill_ids"] == ["pytest-failure-review"]
+        assert lock_payload["source"] == "dynamic_candidate"
+        assert lock_payload["candidate_id"] == frozen["candidate_id"]
+
+
+def test_registry_rejects_candidate_install_when_approval_payload_drifts():
+    with tempfile.TemporaryDirectory() as tmp:
+        manager = SkillRegistryManager(base_dir=Path(tmp) / "repo", data_dir=Path(tmp) / "data")
+        frozen = freeze_skill_candidate_payload(_candidate())
+        drifted = {**frozen, "hash": "sha256:" + "0" * 64}
+
+        with pytest.raises(SkillRegistryError):
+            manager.install_candidate(frozen, drifted, thread_id="thread-dyn", enable=True)
+
+        assert manager.runtime_catalog() == []
+        assert manager.compute_session_skill_state(thread_id="thread-dyn")["active_skill_ids"] == []

@@ -264,8 +264,11 @@ def verify_candidate_approval(
 ) -> dict[str, Any]:
     expected = freeze_skill_candidate_payload(candidate)
     raw_actual = _dict_or_empty(approval_payload)
-    actual = raw_actual.get("candidate_payload") if isinstance(raw_actual.get("candidate_payload"), dict) else raw_actual
-    actual = freeze_skill_candidate_payload(actual)
+    actual_source = raw_actual.get("candidate_payload") if isinstance(raw_actual.get("candidate_payload"), dict) else raw_actual
+    actual_source = _dict_or_empty(actual_source)
+    actual = freeze_skill_candidate_payload(actual_source)
+    if _clean_text(actual_source.get("hash"), limit=128):
+        actual["hash"] = _clean_text(actual_source.get("hash"), limit=128, lower=True)
     failure_reasons: list[str] = []
     if not expected or expected.get("status") != "frozen":
         failure_reasons.append("candidate_not_frozen")
