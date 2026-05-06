@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Embodied Interaction Runtime Phase 3` approved artifact appraisal evidence coupling after Embodied Interaction Runtime Phase 2
+- Mainline phase: `Embodied Interaction Runtime Phase 4` approved artifact motive/goal advisory coupling after Embodied Interaction Runtime Phase 3
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -38,6 +38,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `embodied_interaction_runtime_phase1_ready`
   - preserve `embodied_interaction_runtime_phase2_ready`
   - preserve `embodied_interaction_runtime_phase3_ready`
+  - preserve `embodied_interaction_runtime_phase4_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -67,8 +68,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - approved semantic observations surface through `embodied_interaction.artifact_semantics.semantic_observations`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
   - `embodied_interaction_runtime_phase3_ready` means approved semantic observations can become read-only appraisal-facing evidence and influence hints without becoming memory facts
   - approved artifact appraisal evidence surfaces through `embodied_interaction.artifact_appraisal.evidence_items`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
+  - `embodied_interaction_runtime_phase4_ready` means approved appraisal evidence can become read-only motive/goal advisory hints without replacing actual behavior motives or writing memory facts
+  - approved artifact motive/goal advisory hints surface through `embodied_interaction.artifact_motive.motive_hints`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
   - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families
-  - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
+  - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, mutate behavior motives, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:
@@ -12046,3 +12049,61 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=preserved_baselines_ready`
 - Next:
   - select the next bounded runtime phase only after checking roadmap dependency order and preserved-baseline evidence
+
+## 2026-05-06 Run 266
+
+- Focus:
+  - implement `Embodied Interaction Runtime Phase 4` after Phase 3 approved artifact appraisal evidence coupling
+  - convert approved appraisal evidence into read-only motive/goal advisory hints
+  - preserve all prior embodied interaction boundaries: no behavior-motive replacement, no memory write, no model API call, no live capture, no execution authority widening
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/artifact_motive_bridge.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `evals/run_embodied_interaction_runtime_phase3_audit.py`
+  - `evals/run_embodied_interaction_runtime_phase4_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_artifact_motive_bridge.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_embodied_interaction_runtime_phase4_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase4.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.artifact_motive_bridge` as the bounded approved-evidence motive/goal advisory normalizer
+  - attached Phase 4 hints through:
+    - `embodied_interaction.artifact_motive.motive_hints`
+    - `current_event.perception.motive_hints`
+    - `turn_appraisal.motive_evidence`
+    - `turn_appraisal.perception_semantics.motive_hints`
+    - `interaction_carryover.embodied_context.artifact_motive_hints`
+    - advisory `behavior_plan.artifact_motive_hints`
+  - kept existing `behavior_action.primary_motive` and `behavior_plan.primary_motive` intact; Phase 4 hints are advisory/readback-only
+  - every hint stays derived from `artifact_appraisal_evidence` with `model_api_called=false`, `memory_write_allowed=false`, `behavior_mutation_allowed=false`, and `writeback_ready=false`
+  - added `evals/run_embodied_interaction_runtime_phase4_audit.py` reporting `embodied_interaction_runtime_phase4_ready`
+  - folded `embodied_interaction_runtime_phase4_ready` into preserved baselines under the `embodied_interaction` category
+  - updated Phase 3 audit compatibility so Phase 3 preserved-baseline checks assert the `artifact_appraisal_bridge_ready` sub-contract under Phase 4 top-level readiness
+- Validation so far:
+  - initial RED checks:
+    - `python -m pytest tests/test_artifact_motive_bridge.py -q`
+      - failed because `amadeus_thread0.runtime.artifact_motive_bridge` did not exist
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction" -q`
+      - failed because `artifact_motive` was not attached and top-level readiness was still Phase 3
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase4_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_embodied_interaction_runtime_phase4_audit` and the preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_artifact_motive_bridge.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_artifact_motive_bridge.py tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "artifact_motive or artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+      - passed: `17 passed, 47 deselected`
+    - `python -m pytest tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_embodied_interaction_runtime_phase4_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `11 passed`
+    - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag phase4-regression-fixed`
+      - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+    - `python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag phase4-dev-fixed`
+      - passed with `readiness=embodied_interaction_runtime_phase4_ready`
+- Next:
+  - run final pre-merge verification, merge Phase 4 to `main`, run post-merge preserved-baseline checks, and push `main`
