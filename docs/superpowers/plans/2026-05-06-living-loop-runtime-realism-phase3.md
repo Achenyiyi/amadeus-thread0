@@ -284,7 +284,7 @@ git commit -m "docs: close living loop realism phase 3"
 **Files:**
 - No new implementation files. This task verifies and integrates all prior slices.
 
-- [ ] **Step 1: Run focused regression**
+- [x] **Step 1: Run focused regression**
 
 Run:
 
@@ -292,7 +292,7 @@ Run:
 python -m pytest tests/test_living_loop_realism.py tests/test_living_loop_realism_phase2_audit.py tests/test_living_loop_realism_phase3_audit.py tests/test_embodied_interaction_runtime.py tests/test_artifact_behavior_alignment.py -q
 ```
 
-- [ ] **Step 2: Run backend and preserved-baseline selected regression**
+- [x] **Step 2: Run backend and preserved-baseline selected regression**
 
 Run:
 
@@ -302,7 +302,7 @@ python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/t
 python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q
 ```
 
-- [ ] **Step 3: Run compile and graph checks**
+- [x] **Step 3: Run compile and graph checks**
 
 Run:
 
@@ -311,7 +311,7 @@ python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_t
 python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"
 ```
 
-- [ ] **Step 4: Run audits**
+- [x] **Step 4: Run audits**
 
 Run:
 
