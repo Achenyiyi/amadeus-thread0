@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Living Loop Runtime Realism Phase 3` artifact-alignment realism after Embodied Interaction Runtime Phase 5
+- Mainline phase: `Chinese Semantic De-Scaffolding Phase 2` typed runtime replacement policy after Living Loop Runtime Realism Phase 3
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -30,6 +30,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `procedural_growth_phase3_ready`
   - preserve `procedural_growth_phase4_ready`
   - preserve `post_unlock_roadmap_ready`
+  - preserve `chinese_semantic_descaffolding_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `residual_living_loop_phase1_ready`
@@ -59,12 +60,17 @@ This file is the live development ledger for `amadeus-thread0`.
   - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
 - Current runtime realism focus:
   - visible living-loop stages must causally align across appraisal, internal state, motive/behavior, consequence, reconsolidation, and final semantics
-  - Chinese semantic de-scaffolding now includes deterministic replacement guidance and conservative safe-surface floors, not broad prompt-sprawl rewrites
+  - Chinese semantic de-scaffolding now includes deterministic replacement guidance, typed runtime replacement policy envelopes, conservative safe-surface floors, and text/TTS parity checks, not broad prompt-sprawl rewrites
   - `living_loop_runtime_realism_phase1_ready` does not open live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
   - `living_loop_runtime_realism_phase2_ready` means real `assistant_turn` and `event_round` backend payloads now carry the same causal readback through `living_loop_realism`
   - `living_loop_runtime_realism_phase3_ready` means those backend payloads can also consume Phase 5 `embodied_interaction.artifact_behavior_alignment` readback without recalculating alignment from raw artifacts
   - Phase 3 preserves `advisory_not_reflected` as truthful visible evidence, keeps payloads without artifact alignment at Phase 2 readiness, and fails closed on unsafe or mutating alignment claims
   - Phase 3 still does not change graph generation, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, multimodal model API use, skill registry state, or external mutation authority
+- Current Chinese semantic de-scaffolding focus:
+  - `chinese_semantic_descaffolding_phase2_ready` means `chinese_semantic_surface.runtime_policy` now exposes typed `family`, `semantic_intent`, `replacement_strategy`, `applied_floor`, and `authority_boundary`
+  - deterministic safe floors apply only for known semantic scaffold families and keep `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` aligned
+  - Phase 2 audit covers everyday, repair, self-rhythm, and technical-task scaffold cases for duplicate output, scaffold residue leaks, and text/TTS drift
+  - Phase 2 does not change generation prompts, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, live capture, multimodal model API use, skill registry state, or external mutation authority
 - Current embodied interaction runtime focus:
   - `embodied_interaction_runtime_phase1_ready` means real `assistant_turn` and `event_round` backend payloads now carry `embodied_interaction`
   - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
@@ -76,7 +82,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - approved artifact motive/goal advisory hints surface through `embodied_interaction.artifact_motive.motive_hints`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
   - `embodied_interaction_runtime_phase5_ready` means approved artifact motive hints can be compared against actual behavior action / behavior plan motives as read-only alignment evidence without mutating behavior or writing memory facts
   - approved artifact behavior alignment surfaces through `embodied_interaction.artifact_behavior_alignment.alignment_items`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
-  - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families
+  - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families, with `tts_text` parity exposed by the Phase 2 policy envelope
   - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, mutate behavior motives, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
@@ -12271,3 +12277,62 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed
 - Next:
   - run full Phase 3 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Chinese Semantic De-Scaffolding Phase 2`
+
+## 2026-05-07 Run 269
+
+- Focus:
+  - implement `Chinese Semantic De-Scaffolding Phase 2` after Living Loop Runtime Realism Phase 3
+  - convert Phase 1 Chinese semantic floors into typed runtime replacement policy envelopes
+  - preserve deterministic safe-floor scope and avoid broad prompt rewrites or ad hoc tone micro-polish
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/graph_parts/chinese_semantic_surface.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `evals/run_chinese_semantic_descaffolding_phase2_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_chinese_semantic_surface_phase2.py`
+  - `tests/test_chinese_semantic_descaffolding_phase2_audit.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-07-chinese-semantic-descaffolding-phase2.md`
+  - `program.md`
+- Key changes:
+  - added `build_runtime_replacement_policy()` as the Phase 2 Chinese semantic runtime policy builder
+  - added readiness constants for `chinese_semantic_descaffolding_phase2_ready`, `not_applicable`, and `in_progress`
+  - added policy fields:
+    - `family`
+    - `semantic_intent`
+    - `replacement_strategy=deterministic_safe_surface_floor`
+    - `applied_floor`
+    - `authority_boundary`
+  - attached policy readback under `embodied_interaction.chinese_semantic_surface.runtime_policy`
+  - kept `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` aligned when a safe floor applies
+  - added `evals/run_chinese_semantic_descaffolding_phase2_audit.py` covering everyday, repair, self-rhythm, and technical-task scaffold families
+  - folded Phase 2 into preserved-baselines under the `chinese_semantic` category
+- Validation so far:
+  - baseline before implementation:
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py tests/test_chinese_surface_de_scaffold_audit.py -q`
+      - passed: `11 passed`
+    - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag phase2-baseline`
+      - passed with `readiness=chinese_semantic_descaffolding_phase1_ready`
+  - initial RED checks:
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py -q`
+      - failed because `build_runtime_replacement_policy` did not exist
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "chinese_semantic or semantic_floor" -q`
+      - failed because `runtime_policy`, `tts_text`, and `text_tts_drift` were not attached
+    - `python -m pytest tests/test_chinese_semantic_descaffolding_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because the Phase 2 audit module and preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py -q`
+      - passed: `6 passed`
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_api.py -k "chinese_semantic or semantic_floor" -q`
+      - passed: `3 passed, 61 deselected`
+    - `python -m pytest tests/test_chinese_semantic_descaffolding_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_chinese_semantic_descaffolding_phase2_audit.py --run-tag phase2-dev`
+      - passed with `readiness=chinese_semantic_descaffolding_phase2_ready`
+- Next:
+  - run full Phase 2 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Multimodal Perception Phase 2`
