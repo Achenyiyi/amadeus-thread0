@@ -19,6 +19,7 @@ For handoff purposes, the current backend should already be treated as:
 - envelope-based
 - final-state normalized
 - transport-neutral
+- callable through `BackendTransportAdapter` when a route-shaped Python adapter is useful
 - stable enough for a thin frontend adapter
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
@@ -31,8 +32,10 @@ For handoff purposes, the current backend should already be treated as:
 
 - runtime assembly: `amadeus_thread0.runtime.runtime_bundle`
 - transport-neutral API: `amadeus_thread0.runtime.backend_api`
+- Python-callable route adapter: `amadeus_thread0.runtime.transport_adapter`
 - turn/event/readback execution: `amadeus_thread0.runtime.backend_session`
 - final-state normalization: `amadeus_thread0.runtime.final_state`
+- executor adapter boundary: `amadeus_thread0.runtime.executor_adapter`
 - restricted execution runner: `amadeus_thread0.runtime.sandbox_runner`
 - live browser runner: `amadeus_thread0.runtime.browser_runner`
 - access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
@@ -68,6 +71,7 @@ For sandbox phase 2, frontend/CLI should also expect these stable execution fiel
 - `workspace_root_kind`
 
 Frontend/CLI may render these as preview/result surfaces, but they must not reinterpret them as permission to widen execution scope.
+The current callable executor adapter keeps the sandbox runner as the only enabled harness. Deep Agents, Codex, Claude, and OpenClaw harness candidates are disabled until a future architecture decision opens and validates one of them.
 For live browser packets, the stable contract additions are:
 
 - `autonomy.action_packets[*].browser_execution_spec`

@@ -4,6 +4,9 @@ from typing import Any
 
 from ..graph_parts.browser_runtime import normalize_browser_runtime_state
 from ..graph_parts.digital_body_runtime import normalize_digital_body_state, normalize_embodied_context
+from ..graph_parts.procedural_growth import build_procedural_hint, normalize_procedural_traces
+from ..graph_parts.procedural_outcome import normalize_procedural_outcomes, summarize_procedural_outcomes
+from ..graph_parts.procedural_recovery import normalize_procedural_recoveries, summarize_procedural_recoveries
 from .embodied_preview import compact_event_residue_preview_line
 
 
@@ -156,6 +159,43 @@ def _clean_skill_effects(values: Any, *, limit: int = 6) -> list[dict[str, Any]]
         if len(out) >= max(1, int(limit)):
             break
     return out
+
+
+def summarize_procedural_growth(state: Any) -> dict[str, Any]:
+    embodied = normalize_embodied_context(state)
+    continuity = embodied.get("procedural_continuity") if isinstance(embodied.get("procedural_continuity"), dict) else {}
+    traces = normalize_procedural_traces(
+        embodied.get("procedural_traces")
+        if isinstance(embodied.get("procedural_traces"), list)
+        else continuity.get("traces")
+    )
+    explicit_hint = embodied.get("procedural_hint") if isinstance(embodied.get("procedural_hint"), dict) else {}
+    hint = build_procedural_hint(traces) or dict(explicit_hint)
+    return {
+        "procedural_growth": bool(embodied.get("procedural_growth", False)),
+        "traces": traces,
+        "procedural_hint": hint,
+    }
+
+
+def summarize_procedural_outcome(state: Any) -> dict[str, Any]:
+    embodied = normalize_embodied_context(state)
+    outcomes = normalize_procedural_outcomes(embodied.get("procedural_outcomes"))
+    if not outcomes and isinstance(embodied.get("procedural_outcome_summary"), dict):
+        outcomes = normalize_procedural_outcomes(
+            embodied.get("procedural_outcome_summary", {}).get("outcomes")
+        )
+    return summarize_procedural_outcomes(outcomes)
+
+
+def summarize_procedural_recovery(state: Any) -> dict[str, Any]:
+    embodied = normalize_embodied_context(state)
+    recoveries = normalize_procedural_recoveries(embodied.get("procedural_recoveries"))
+    if not recoveries and isinstance(embodied.get("procedural_recovery_summary"), dict):
+        recoveries = normalize_procedural_recoveries(
+            embodied.get("procedural_recovery_summary", {}).get("recoveries")
+        )
+    return summarize_procedural_recoveries(recoveries)
 
 
 def _clean_tts_presence_state(value: Any) -> dict[str, Any]:
@@ -336,6 +376,9 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
         "tts_presence_state": tts_presence_state,
         "tts_presence_timing": tts_presence_timing,
         "procedural_growth": bool(normalized.get("procedural_growth", False)),
+        "procedural_continuity": dict(normalized.get("procedural_continuity"))
+        if isinstance(normalized.get("procedural_continuity"), dict)
+        else {},
         "environmental_friction": bool(normalized.get("environmental_friction", False)),
         "requested_help": bool(normalized.get("requested_help", False)),
     }
@@ -344,6 +387,21 @@ def summarize_embodied_context(state: Any) -> dict[str, Any]:
     skill_effects = _clean_skill_effects(normalized.get("skill_effects"), limit=6)
     if skill_effects:
         summary["skill_effects"] = skill_effects
+    procedural_traces = normalize_procedural_traces(normalized.get("procedural_traces"))
+    if procedural_traces:
+        summary["procedural_traces"] = procedural_traces
+        summary["procedural_hint"] = build_procedural_hint(procedural_traces)
+        procedural_continuity = summary.get("procedural_continuity")
+        if isinstance(procedural_continuity, dict):
+            procedural_continuity["traces"] = procedural_traces
+    procedural_outcomes = normalize_procedural_outcomes(normalized.get("procedural_outcomes"))
+    if procedural_outcomes:
+        summary["procedural_outcomes"] = procedural_outcomes
+        summary["procedural_outcome_summary"] = summarize_procedural_outcomes(procedural_outcomes)
+    procedural_recoveries = normalize_procedural_recoveries(normalized.get("procedural_recoveries"))
+    if procedural_recoveries:
+        summary["procedural_recoveries"] = procedural_recoveries
+        summary["procedural_recovery_summary"] = summarize_procedural_recoveries(procedural_recoveries)
     return summary
 
 
@@ -655,4 +713,7 @@ __all__ = [
     "summarize_event_residue",
     "summarize_interaction_carryover",
     "summarize_opening_window_profile",
+    "summarize_procedural_growth",
+    "summarize_procedural_outcome",
+    "summarize_procedural_recovery",
 ]

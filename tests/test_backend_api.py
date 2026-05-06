@@ -87,6 +87,17 @@ class FakeBackendSession:
             if isinstance(values.get("interaction_carryover"), dict)
             else {}
         )
+        action_trace = values.get("action_trace") if isinstance(values.get("action_trace"), list) else []
+        procedural_planning = (
+            values.get("procedural_planning")
+            if isinstance(values.get("procedural_planning"), dict)
+            else {}
+        )
+        if not procedural_planning:
+            for item in action_trace:
+                if isinstance(item, dict) and isinstance(item.get("procedural_planning"), dict):
+                    procedural_planning = dict(item.get("procedural_planning") or {})
+                    break
         return {
             "relationship": {"stage": "warming"},
             "current_turn": {
@@ -125,6 +136,10 @@ class FakeBackendSession:
                 "digital_body_consequence_preferred_anchor_reason": str(
                     digital_body_consequence.get("preferred_anchor_reason") or ""
                 ).strip(),
+                "procedural_planning": dict(procedural_planning),
+            },
+            "autonomy": {
+                "procedural_planning": dict(procedural_planning),
             },
             "event_residue": {
                 "event_kind": str(current_event.get("kind") or "").strip(),
@@ -3473,6 +3488,312 @@ class BackendApiTests(unittest.TestCase):
                 "none",
             )
             self.assertEqual(payload["digital_body_consequence"]["sandbox_runner_kind"], "docker_isolated_runner")
+
+    def test_turn_and_event_responses_surface_procedural_growth_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "digital_body_state": {
+                    "active_surface": "tooling",
+                    "perception_channels": ["dialogue", "filesystem"],
+                    "action_channels": ["language", "structured_action", "tooling"],
+                    "world_surfaces": ["filesystem", "sandbox"],
+                    "access_state": {
+                        "mode": "tool_enabled",
+                        "filesystem_state": "writable",
+                        "sandbox_mode": "restricted",
+                        "sandbox_state": {
+                            "availability": "restricted",
+                            "execution_policy": "approval_required",
+                            "runner_kind": "docker_isolated_runner",
+                            "isolation_level": "docker_local_isolated",
+                            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                            "network_policy": "none",
+                            "workspace_root_kind": "attached_repo_root",
+                        },
+                    },
+                    "resource_state": {
+                        "completed_packet_count": 1,
+                        "artifact_continuity": "attached",
+                        "active_artifact_kind": "workspace",
+                        "active_artifact_ref": "E:/repo/amadeus-thread0",
+                        "active_artifact_label": "amadeus-thread0",
+                        "artifact_carrier": "filesystem",
+                        "workspace_root": "E:/repo/amadeus-thread0",
+                    },
+                },
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-procedural-api",
+                        "origin": "motive_goal",
+                        "intent": "sandbox:execute_workspace_command",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "execute_workspace_command",
+                        "result_summary": "pytest passed",
+                        "execution_spec": {
+                            "executor": "pytest",
+                            "profile": "pytest",
+                            "runner_kind": "docker_isolated_runner",
+                            "isolation_level": "docker_local_isolated",
+                            "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                            "network_policy": "none",
+                            "workspace_root_kind": "attached_repo_root",
+                            "argv": ["pytest", "-q", "tests/test_demo.py"],
+                            "cwd": "E:/repo/amadeus-thread0",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        },
+                        "execution_result": {
+                            "run_id": "run-procedural-api",
+                            "status": "completed",
+                            "exit_code": 0,
+                            "stdout_log_ref": "E:/repo/.amadeus/sandbox-runs/run-procedural-api/stdout.txt",
+                            "stderr_log_ref": "E:/repo/.amadeus/sandbox-runs/run-procedural-api/stderr.txt",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我把 pytest 跑完了。",
+            )
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                procedural = payload["procedural_growth"]
+                self.assertTrue(procedural["procedural_growth"])
+                self.assertEqual(procedural["traces"][0]["trace_kind"], "sandbox_execution_pattern")
+                self.assertEqual(procedural["traces"][0]["source_run_id"], "run-procedural-api")
+                self.assertTrue(procedural["procedural_hint"]["must_request_approval"])
+                self.assertTrue(procedural["procedural_hint"]["capability_claim"])
+                self.assertEqual(
+                    payload["digital_body_consequence"]["procedural_continuity"]["traces"][0]["source_run_id"],
+                    "run-procedural-api",
+                )
+
+    def test_turn_and_event_responses_surface_procedural_planning_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "autonomy_intent": {
+                    "mode": "approval_pending",
+                    "origin": "counterpart_request",
+                    "requires_approval": True,
+                    "primary_proposal_id": "ap-phase2-planning",
+                },
+                "procedural_planning": {
+                    "planning_bias": True,
+                    "bias_kind": "sandbox_execute",
+                    "trace_id": "proc_phase2_api",
+                    "trace_kind": "sandbox_execution_pattern",
+                    "source_run_id": "run-phase2-api",
+                    "source_tool_name": "execute_workspace_command",
+                    "suggested_capability_family": "sandbox",
+                    "suggested_pattern": "pytest",
+                    "suggested_executor": "pytest",
+                    "suggested_argv": ["pytest"],
+                    "must_request_approval": True,
+                    "requires_approval": True,
+                    "capability_claim": True,
+                    "confidence": 0.78,
+                },
+                "action_trace": [
+                    {
+                        "proposal_id": "ap-phase2-planning",
+                        "event": "derived_from_procedural_planning",
+                        "status": "awaiting_approval",
+                        "procedural_planning": {
+                            "planning_bias": True,
+                            "bias_kind": "sandbox_execute",
+                            "trace_id": "proc_phase2_api",
+                            "trace_kind": "sandbox_execution_pattern",
+                            "source_run_id": "run-phase2-api",
+                            "source_tool_name": "execute_workspace_command",
+                            "suggested_capability_family": "sandbox",
+                            "suggested_pattern": "pytest",
+                            "suggested_executor": "pytest",
+                            "suggested_argv": ["pytest"],
+                            "must_request_approval": True,
+                            "requires_approval": True,
+                            "capability_claim": True,
+                            "confidence": 0.78,
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="我会按刚才的 pytest 轨迹继续，但先等审批。",
+            )
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                planning = payload["autonomy"]["procedural_planning"]
+                self.assertEqual(planning["bias_kind"], "sandbox_execute")
+                self.assertEqual(planning["trace_id"], "proc_phase2_api")
+                self.assertTrue(planning["must_request_approval"])
+                self.assertEqual(
+                    payload["turn_summary"]["autonomy"]["procedural_planning"]["source_run_id"],
+                    "run-phase2-api",
+                )
+
+    def test_turn_and_event_responses_surface_procedural_outcome_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-phase3-api",
+                        "origin": "motive_goal",
+                        "intent": "sandbox:execute_workspace_command",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "execute_workspace_command",
+                        "result_summary": "pytest passed",
+                        "tool_args": {
+                            "procedural_planning": {
+                                "planning_bias": True,
+                                "bias_kind": "sandbox_execute",
+                                "trace_id": "proc_phase3_api",
+                                "trace_kind": "sandbox_execution_pattern",
+                                "source_run_id": "run-phase3-prior",
+                                "source_tool_name": "execute_workspace_command",
+                                "suggested_capability_family": "sandbox",
+                                "suggested_pattern": "pytest",
+                                "suggested_executor": "pytest",
+                                "suggested_argv": ["pytest"],
+                                "must_request_approval": True,
+                                "requires_approval": True,
+                                "capability_claim": True,
+                                "confidence": 0.7,
+                            }
+                        },
+                        "execution_spec": {
+                            "executor": "pytest",
+                            "profile": "pytest",
+                            "argv": ["pytest"],
+                            "cwd": "E:/repo/amadeus-thread0",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        },
+                        "execution_result": {
+                            "run_id": "run-phase3-api",
+                            "status": "completed",
+                            "exit_code": 0,
+                            "stdout_log_ref": "E:/repo/.amadeus/sandbox-runs/run-phase3-api/stdout.txt",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="这次 pytest 跑通了。",
+            )
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                outcome = payload["procedural_outcome"]
+                self.assertTrue(outcome["procedural_outcome"])
+                self.assertEqual(outcome["last_outcome_kind"], "confirmed_success")
+                self.assertEqual(outcome["source_trace_id"], "proc_phase3_api")
+                self.assertEqual(outcome["source_run_id"], "run-phase3-api")
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["procedural_outcome"]["source_run_id"],
+                    "run-phase3-api",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["procedural_outcome"]["outcome_kind"],
+                    "confirmed_success",
+                )
+
+    def test_turn_and_event_responses_surface_procedural_recovery_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-phase4-api",
+                        "origin": "motive_goal",
+                        "intent": "sandbox:execute_workspace_command",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                        "tool_name": "execute_workspace_command",
+                        "result_summary": "pytest failed",
+                        "tool_args": {
+                            "procedural_planning": {
+                                "planning_bias": True,
+                                "bias_kind": "sandbox_execute",
+                                "trace_id": "proc_phase4_api",
+                                "trace_kind": "sandbox_execution_pattern",
+                                "source_run_id": "run-phase4-prior",
+                                "source_tool_name": "execute_workspace_command",
+                                "suggested_capability_family": "sandbox",
+                                "suggested_pattern": "pytest",
+                                "suggested_executor": "pytest",
+                                "suggested_argv": ["pytest"],
+                                "must_request_approval": True,
+                                "requires_approval": True,
+                                "capability_claim": True,
+                                "confidence": 0.7,
+                            }
+                        },
+                        "execution_spec": {
+                            "executor": "pytest",
+                            "profile": "pytest",
+                            "argv": ["pytest"],
+                            "cwd": "E:/repo/amadeus-thread0",
+                            "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        },
+                        "execution_result": {
+                            "run_id": "run-phase4-api",
+                            "status": "failed",
+                            "exit_code": 2,
+                            "stdout_log_ref": "E:/repo/.amadeus/sandbox-runs/run-phase4-api/stdout.txt",
+                            "stderr_log_ref": "E:/repo/.amadeus/sandbox-runs/run-phase4-api/stderr.txt",
+                            "error_summary": "process exited with code 2",
+                        },
+                    }
+                ],
+            }
+
+            event_response = api.build_event_round_response(
+                state_values=state_values,
+                final_text="这次 pytest 没跑通，我先看日志。",
+            )
+            turn_response = api.build_turn_response(state_values=state_values, streamed_text="ignored")
+
+            for payload in (event_response.payload, turn_response.payload):
+                recovery = payload["procedural_recovery"]
+                self.assertTrue(recovery["procedural_recovery"])
+                self.assertEqual(recovery["last_recovery_kind"], "inspect_failure_artifact")
+                self.assertEqual(recovery["source_trace_id"], "proc_phase4_api")
+                self.assertEqual(recovery["source_run_id"], "run-phase4-api")
+                self.assertFalse(recovery["safe_to_reuse"])
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["procedural_recovery"]["source_run_id"],
+                    "run-phase4-api",
+                )
+                self.assertEqual(
+                    payload["turn_summary"]["current_turn"]["procedural_recovery"]["recovery_kind"],
+                    "inspect_failure_artifact",
+                )
 
 
 if __name__ == "__main__":

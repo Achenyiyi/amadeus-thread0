@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..graph_parts.digital_body_runtime import derive_digital_body_state
+from ..graph_parts.procedural_planning import normalize_procedural_planning
 from ..graph_parts.skill_runtime import backend_skill_envelope
 from ..utils.memory_history_export import normalize_memory_history_export
 from ..utils.relational_history_export import (
@@ -16,6 +17,11 @@ from ..utils.relational_history_export import (
 from ..utils.revision_trace_export import normalize_revision_trace_export
 from ..utils.runtime_audit import audit_runtime_layout
 from ..utils.source_material_export import normalize_claim_link_exports, normalize_source_material_exports
+from ..utils.turn_summary_export import (
+    summarize_procedural_growth,
+    summarize_procedural_outcome,
+    summarize_procedural_recovery,
+)
 from .access_negotiation import attach_assist_request_to_pending_approval, resolve_access_negotiation_context
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
@@ -107,6 +113,18 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
         reconsolidation_snapshot=reconsolidation_snapshot,
         digital_body_state=digital_body,
     )
+    action_trace = resolve_action_trace(
+        action_trace=data.get("action_trace"),
+        reconsolidation_snapshot=reconsolidation_snapshot,
+    )
+    procedural_planning = normalize_procedural_planning(data.get("procedural_planning"))
+    if not procedural_planning:
+        for item in action_trace:
+            if not isinstance(item, dict):
+                continue
+            procedural_planning = normalize_procedural_planning(item.get("procedural_planning"))
+            if procedural_planning:
+                break
     return {
         "intent": resolve_autonomy_intent(
             autonomy_intent=_dict_or_empty(data.get("autonomy_intent")),
@@ -121,15 +139,13 @@ def _resolved_autonomy(values: dict[str, Any] | None) -> dict[str, Any]:
             assist_request=negotiation.get("assist_request") if isinstance(negotiation, dict) else None,
             source_packet=negotiation.get("packet") if isinstance(negotiation, dict) else None,
         ),
-        "execution_trace": resolve_action_trace(
-            action_trace=data.get("action_trace"),
-            reconsolidation_snapshot=reconsolidation_snapshot,
-        ),
+        "execution_trace": action_trace,
         "block_reason": resolve_autonomy_block_reason(
             autonomy_block_reason=str(data.get("autonomy_block_reason") or ""),
             action_packets=action_packets,
             reconsolidation_snapshot=reconsolidation_snapshot,
         ),
+        "procedural_planning": procedural_planning,
     }
 
 
@@ -212,11 +228,53 @@ def _summary_state_values(
             "pending_action_proposal": dict((autonomy or {}).get("pending_approval") or {}),
             "action_trace": list((autonomy or {}).get("execution_trace") or []),
             "autonomy_block_reason": str((autonomy or {}).get("block_reason") or ""),
+            "procedural_planning": dict((autonomy or {}).get("procedural_planning") or {}),
         }
     )
     if "action_packets" not in summary_values and isinstance((autonomy or {}).get("action_packets"), list):
         summary_values["action_packets"] = list((autonomy or {}).get("action_packets") or [])
     return summary_values
+
+
+def _summary_with_procedural_readback(summary: Any, *, digital_body_consequence: Any) -> dict[str, Any]:
+    enriched = dict(summary) if isinstance(summary, dict) else {}
+    outcome = summarize_procedural_outcome(digital_body_consequence)
+    recovery = summarize_procedural_recovery(digital_body_consequence)
+    if not bool(outcome.get("procedural_outcome", False)) and not bool(recovery.get("procedural_recovery", False)):
+        return enriched
+    current_turn = dict(enriched.get("current_turn") or {}) if isinstance(enriched.get("current_turn"), dict) else {}
+    if bool(outcome.get("procedural_outcome", False)):
+        enriched["procedural_outcome"] = outcome
+        outcomes = outcome.get("outcomes") if isinstance(outcome.get("outcomes"), list) else []
+        latest = outcomes[-1] if outcomes and isinstance(outcomes[-1], dict) else {}
+        if latest:
+            current_turn["procedural_outcome"] = {
+                "outcome_id": str(latest.get("outcome_id") or "").strip(),
+                "outcome_kind": str(latest.get("outcome_kind") or "").strip(),
+                "source_trace_id": str(latest.get("source_trace_id") or "").strip(),
+                "source_run_id": str(latest.get("source_run_id") or "").strip(),
+                "planning_bias_kind": str(latest.get("planning_bias_kind") or "").strip(),
+                "confidence_delta": float(latest.get("confidence_delta") or 0.0),
+                "reuse_allowed": bool(latest.get("reuse_allowed", False)),
+                "boundary_reinforced": bool(latest.get("boundary_reinforced", False)),
+            }
+    if bool(recovery.get("procedural_recovery", False)):
+        enriched["procedural_recovery"] = recovery
+        recoveries = recovery.get("recoveries") if isinstance(recovery.get("recoveries"), list) else []
+        latest_recovery = recoveries[-1] if recoveries and isinstance(recoveries[-1], dict) else {}
+        if latest_recovery:
+            current_turn["procedural_recovery"] = {
+                "recovery_id": str(latest_recovery.get("recovery_id") or "").strip(),
+                "recovery_kind": str(latest_recovery.get("recovery_kind") or "").strip(),
+                "source_outcome_id": str(latest_recovery.get("source_outcome_id") or "").strip(),
+                "source_trace_id": str(latest_recovery.get("source_trace_id") or "").strip(),
+                "source_run_id": str(latest_recovery.get("source_run_id") or "").strip(),
+                "safe_to_reuse": bool(latest_recovery.get("safe_to_reuse", False)),
+                "requires_approval": bool(latest_recovery.get("requires_approval", False)),
+                "allowed_bias_kind": str(latest_recovery.get("allowed_bias_kind") or "").strip(),
+            }
+    enriched["current_turn"] = current_turn
+    return enriched
 
 
 def _record_field(record: dict[str, Any] | None, key: str, default: Any = "") -> Any:
@@ -550,6 +608,10 @@ class BackendAPI:
             digital_body=digital_body,
             digital_body_consequence=digital_body_consequence,
         )
+        turn_summary = _summary_with_procedural_readback(
+            self.backend_session.build_evolution_summary(state_values=summary_values),
+            digital_body_consequence=digital_body_consequence,
+        )
         payload = {
             "final_text": str(final_text or "").strip(),
             "emotion_label": _emotion_label_from_state(values),
@@ -562,11 +624,14 @@ class BackendAPI:
             "current_event": current_event,
             "session_context": resolve_readback_session_context(values, thread_id=self.thread_id, current_event=current_event),
             "turn_appraisal": _dict_or_empty(values.get("turn_appraisal")),
-            "turn_summary": self.backend_session.build_evolution_summary(state_values=summary_values),
+            "turn_summary": turn_summary,
             "autonomy": autonomy,
             "skills": skills,
             "digital_body": digital_body,
             "digital_body_consequence": digital_body_consequence,
+            "procedural_growth": summarize_procedural_growth(digital_body_consequence),
+            "procedural_outcome": summarize_procedural_outcome(digital_body_consequence),
+            "procedural_recovery": summarize_procedural_recovery(digital_body_consequence),
             "writeback_trace": writeback_trace,
             **internal_state,
         }
@@ -608,10 +673,14 @@ class BackendAPI:
             digital_body=digital_body,
             digital_body_consequence=digital_body_consequence,
         )
+        turn_summary = _summary_with_procedural_readback(
+            self.backend_session.build_evolution_summary(state_values=summary_values),
+            digital_body_consequence=digital_body_consequence,
+        )
         payload = {
             "final_text": final_text,
             "emotion_label": _emotion_label_from_state(values),
-            "turn_summary": self.backend_session.build_evolution_summary(state_values=summary_values),
+            "turn_summary": turn_summary,
             "behavior_action": behavior_action,
             "behavior_plan": behavior_plan,
             "interaction_carryover": interaction_carryover,
@@ -628,6 +697,9 @@ class BackendAPI:
             "skills": skills,
             "digital_body": digital_body,
             "digital_body_consequence": digital_body_consequence,
+            "procedural_growth": summarize_procedural_growth(digital_body_consequence),
+            "procedural_outcome": summarize_procedural_outcome(digital_body_consequence),
+            "procedural_recovery": summarize_procedural_recovery(digital_body_consequence),
             "writeback_trace": writeback_trace,
             **internal_state,
         }

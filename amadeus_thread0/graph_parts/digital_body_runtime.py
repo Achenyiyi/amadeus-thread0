@@ -7,6 +7,9 @@ from .browser_runtime import (
     browser_runtime_state_has_signal,
     normalize_browser_runtime_state,
 )
+from .procedural_growth import build_procedural_hint, normalize_procedural_traces
+from .procedural_outcome import normalize_procedural_outcomes, summarize_procedural_outcomes
+from .procedural_recovery import normalize_procedural_recoveries, summarize_procedural_recoveries
 from .skill_runtime import normalize_procedural_continuity, normalize_skill_effects
 
 _OWN_RHYTHM_EVENT_KINDS = {
@@ -1409,6 +1412,28 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
     environmental_friction = bool(row.get("environmental_friction", False))
     procedural_growth = bool(row.get("procedural_growth", False))
     procedural_continuity = normalize_procedural_continuity(row.get("procedural_continuity"))
+    procedural_traces = normalize_procedural_traces(
+        row.get("procedural_traces")
+        if isinstance(row.get("procedural_traces"), list)
+        else procedural_continuity.get("traces")
+    )
+    procedural_hint = build_procedural_hint(procedural_traces)
+    procedural_outcomes = normalize_procedural_outcomes(row.get("procedural_outcomes"))
+    procedural_outcome_summary = summarize_procedural_outcomes(
+        procedural_outcomes
+        if procedural_outcomes
+        else row.get("procedural_outcome_summary")
+        if isinstance(row.get("procedural_outcome_summary"), dict)
+        else {}
+    )
+    procedural_recoveries = normalize_procedural_recoveries(row.get("procedural_recoveries"))
+    procedural_recovery_summary = summarize_procedural_recoveries(
+        procedural_recoveries
+        if procedural_recoveries
+        else row.get("procedural_recovery_summary")
+        if isinstance(row.get("procedural_recovery_summary"), dict)
+        else {}
+    )
     retry_after_s = _clean_nonnegative_int(
         row.get("retry_after_s")
         or quota_state_detail.get("retry_after_s")
@@ -1591,6 +1616,12 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
         "tts_presence_timing": tts_presence_timing,
         "procedural_growth": procedural_growth,
         "procedural_continuity": procedural_continuity,
+        "procedural_traces": procedural_traces,
+        "procedural_hint": procedural_hint,
+        "procedural_outcomes": procedural_outcomes,
+        "procedural_outcome_summary": procedural_outcome_summary,
+        "procedural_recoveries": procedural_recoveries,
+        "procedural_recovery_summary": procedural_recovery_summary,
         "environmental_friction": environmental_friction,
         "requested_help": requested_help,
         "external_mutation_pending": bool(
@@ -1681,6 +1712,16 @@ def normalize_embodied_context(context: Any) -> dict[str, Any]:
             normalized["active_tools"],
             normalized["procedural_growth"],
             normalized["procedural_continuity"],
+            normalized["procedural_traces"],
+            normalized["procedural_hint"],
+            normalized["procedural_outcomes"],
+            normalized["procedural_outcome_summary"].get("procedural_outcome", False)
+            if isinstance(normalized["procedural_outcome_summary"], dict)
+            else False,
+            normalized["procedural_recoveries"],
+            normalized["procedural_recovery_summary"].get("procedural_recovery", False)
+            if isinstance(normalized["procedural_recovery_summary"], dict)
+            else False,
             normalized["environmental_friction"],
             normalized["requested_help"],
             normalized["external_mutation_pending"],

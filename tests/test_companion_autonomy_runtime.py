@@ -569,6 +569,176 @@ class CompanionAutonomyRuntimeTests(unittest.TestCase):
         self.assertEqual(runtime["pending_action_proposal"], {})
         self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_access_refresh")
 
+    def test_derive_autonomy_runtime_uses_phase2_procedural_trace_bias_for_pytest_packet(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "text": "继续跑刚才那类 pytest 检查。",
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "sandbox_state": {
+                        "availability": "restricted",
+                        "allowed_roots": ["E:/repo/amadeus-thread0"],
+                        "execution_policy": "approval_required",
+                        "runner_kind": "docker_isolated_runner",
+                        "isolation_level": "docker_local_isolated",
+                        "image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                        "network_policy": "none",
+                        "workspace_root_kind": "attached_repo_root",
+                        "arbitrary_execution": False,
+                    },
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "sandbox_runner_kind": "docker_isolated_runner",
+                    "sandbox_isolation_level": "docker_local_isolated",
+                    "sandbox_image_ref": "amadeus-thread0/sandbox-phase2:py312",
+                    "sandbox_network_policy": "none",
+                    "workspace_root_kind": "attached_repo_root",
+                    "procedural_traces": [
+                        {
+                            "trace_id": "proc_phase2_pytest",
+                            "trace_kind": "sandbox_execution_pattern",
+                            "source_proposal_id": "ap-phase2-pytest",
+                            "source_run_id": "run-phase2-pytest",
+                            "source_tool_name": "execute_workspace_command",
+                            "status": "completed",
+                            "procedure_steps": ["inspect cwd", "run bounded command", "read stdout/artifact"],
+                            "result_summary": "pytest passed",
+                            "reuse_conditions": ["similar workspace command", "pytest command profile"],
+                            "boundary_notes": ["requires approval before execution"],
+                            "confidence": 0.78,
+                        }
+                    ],
+                },
+            },
+            session_context={
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "workspace_root_kind": "attached_repo_root",
+                }
+            },
+        )
+
+        packet = runtime["action_packets"][0]
+        planning = runtime["procedural_planning"]
+        self.assertEqual(planning["bias_kind"], "sandbox_execute")
+        self.assertEqual(planning["trace_id"], "proc_phase2_pytest")
+        self.assertEqual(runtime["autonomy_intent"]["mode"], "approval_pending")
+        self.assertTrue(runtime["autonomy_intent"]["requires_approval"])
+        self.assertEqual(packet["intent"], "sandbox:execute_workspace_command")
+        self.assertEqual(packet["status"], "awaiting_approval")
+        self.assertEqual(packet["risk"], "external_mutation")
+        self.assertTrue(packet["requires_approval"])
+        self.assertEqual(packet["execution_spec"]["executor"], "pytest")
+        self.assertEqual(packet["execution_spec"]["profile"], "pytest")
+        self.assertEqual(packet["tool_args"]["procedural_planning"]["trace_id"], "proc_phase2_pytest")
+        self.assertEqual(runtime["action_trace"][0]["event"], "derived_from_procedural_planning")
+        self.assertEqual(runtime["action_trace"][0]["procedural_planning"]["trace_id"], "proc_phase2_pytest")
+
+    def test_derive_autonomy_runtime_keeps_blocked_procedural_trace_as_readback_only_planning(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "text": "别再重复刚才被拦住的命令。",
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "procedural_traces": [
+                        {
+                            "trace_id": "proc_phase2_blocked",
+                            "trace_kind": "blocked_boundary_pattern",
+                            "source_proposal_id": "ap-blocked",
+                            "source_run_id": "run-blocked",
+                            "source_tool_name": "execute_workspace_command",
+                            "status": "blocked",
+                            "procedure_steps": ["preserve command preview", "read failure trace"],
+                            "result_summary": "pip install was blocked",
+                            "reuse_conditions": ["similar workspace command"],
+                            "boundary_notes": ["package install is blocked in the sandbox"],
+                            "confidence": 0.67,
+                        }
+                    ],
+                },
+            },
+            session_context={
+                "digital_body_hints": {
+                    "filesystem_state": "writable",
+                    "sandbox_mode": "restricted",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                }
+            },
+        )
+
+        self.assertEqual(runtime["procedural_planning"]["bias_kind"], "boundary_only")
+        self.assertFalse(runtime["procedural_planning"]["capability_claim"])
+        self.assertNotEqual(runtime["action_packets"][0].get("tool_name"), "execute_workspace_command")
+        self.assertEqual(runtime["procedural_planning"]["avoid_repeating_boundary"], True)
+
+    def test_derive_autonomy_runtime_keeps_browser_takeover_trace_as_readback_only_planning(self):
+        runtime = derive_autonomy_runtime(
+            current_event={
+                "kind": "user_utterance",
+                "text": "继续刚才浏览器登录那一步。",
+                "digital_body_hints": {
+                    "browser_session": "present",
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                },
+            },
+            behavior_action={},
+            behavior_plan={},
+            behavior_queue=[],
+            interaction_carryover={
+                "strength": 0.31,
+                "embodied_context": {
+                    "workspace_root": "E:/repo/amadeus-thread0",
+                    "procedural_traces": [
+                        {
+                            "trace_id": "proc_phase2_browser",
+                            "trace_kind": "blocked_boundary_pattern",
+                            "source_proposal_id": "ap-browser",
+                            "source_run_id": "run-browser",
+                            "source_tool_name": "browser_fill",
+                            "status": "blocked",
+                            "procedure_steps": [
+                                "preserve current page/profile",
+                                "hand off sensitive step",
+                                "resume after manual takeover",
+                            ],
+                            "result_summary": "manual browser takeover required",
+                            "reuse_conditions": ["same browser profile/page family"],
+                            "boundary_notes": ["manual browser takeover required"],
+                            "confidence": 0.61,
+                        }
+                    ],
+                },
+            },
+        )
+
+        self.assertEqual(runtime["procedural_planning"]["bias_kind"], "browser_manual_takeover")
+        self.assertTrue(runtime["procedural_planning"]["must_request_approval"])
+        self.assertTrue(all(packet.get("tool_name") != "browser_fill" for packet in runtime["action_packets"]))
+
     def test_derive_autonomy_runtime_builds_access_refresh_packet_from_session_hints(self):
         runtime = derive_autonomy_runtime(
             current_event={"kind": "user_utterance"},

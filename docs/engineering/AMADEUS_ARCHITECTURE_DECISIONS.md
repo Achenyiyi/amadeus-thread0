@@ -12,11 +12,16 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - We borrow `runtime structure`, `continuity`, and `presence` ideas.
 - We do not borrow `task-first identity` or tool-heavy persona drift.
 - The latest closed execution target is `Sandbox Embodied Execution Phase 2`: one fixed persona interacting with the digital world through one unified memory substrate, one bounded runtime body, one managed capability ecology, one truthful live browser/runtime surface, and one Docker-isolated local execution backend that still stays outside persona-core.
-- No new active backend expansion phase is selected in this document; preserve the closed baselines until a separate architecture decision opens the next bounded slice.
+- The post-baseline tail items selected on `2026-05-06` are closed as a bounded closure pack, not as a new capability-expansion phase.
+- `Bounded Procedural Growth Phase 1` is now implemented as the next bounded slice on top of those baselines: completed embodied actions may leave reusable procedural traces, while blocked actions leave boundary notes only.
+- `Procedural Growth Phase 2` is now implemented as the next advisory planning slice: resurfaced procedural traces may bias autonomy planning, but execution remains packet-owned and approval-gated.
+- `Procedural Growth Phase 3` is now implemented as outcome-calibrated procedural learning: final action-packet results adjust procedural trace confidence and boundary/recovery readback without widening execution, browser, skill, frontend, persona-core, or memory authority.
+- `Procedural Growth Phase 4` is now implemented as recovery-oriented procedural adaptation: failed, blocked, manual-takeover, stale, and unexecuted outcomes produce bounded recovery guidance without becoming new capability facts.
+- No broader backend expansion phase is selected in this document; preserve the closed baselines and the procedural-growth phase-4 contract until a separate architecture decision opens the next bounded slice.
 
 ## Backend Status
 
-Status as of `2026-05-04`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -27,6 +32,11 @@ For backend purposes, the structural decisions in this document are now split in
 - sandbox phase 2 gate: `python evals/run_sandbox_phase2_audit.py`
 - skills ecosystem gate: `python evals/run_skills_ecosystem_audit.py`
 - live browser gate: `python evals/run_live_browser_runtime_audit.py`
+- post-baseline closure gate: `python evals/run_post_baseline_closure_audit.py`
+- procedural growth gate: `python evals/run_procedural_growth_audit.py`
+- procedural growth phase 2 gate: `python evals/run_procedural_growth_phase2_audit.py`
+- procedural growth phase 3 gate: `python evals/run_procedural_growth_phase3_audit.py`
+- procedural growth phase 4 gate: `python evals/run_procedural_growth_phase4_audit.py`
 - current handoff posture:
   - frontend remains frozen
   - backend contract is stable enough to consume
@@ -47,6 +57,29 @@ For backend purposes, the structural decisions in this document are now split in
     - approval/manual takeover then reuses the same structured truth
     - after resolution the runtime should auto-continue on the same task when safe
     - no credential guessing, OTP simulation, CAPTCHA bypass, or cookie forgery paths are allowed
+  - current post-baseline closure posture is:
+    - callable transport adapter exists as `amadeus_thread0.runtime.transport_adapter.BackendTransportAdapter`
+    - no FastAPI/Flask/Uvicorn dependency is introduced
+    - executor adapter exists as `amadeus_thread0.runtime.executor_adapter`
+    - the only enabled executor adapter is `sandbox_runner`
+    - Deep Agents, Codex, Claude, and OpenClaw executor harnesses are documented but fail closed
+    - multimodal input capture and dynamic skill generation remain `deferred_fail_closed`
+    - Chinese de-scaffolding, bounded capability growth, and natural long-horizon calibration remain tracked quality/future lanes rather than runtime expansion
+  - current procedural-growth posture is:
+    - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
+    - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias
+    - `amadeus_thread0.graph_parts.procedural_outcome` owns final attempt outcome normalization and trace confidence calibration
+    - `amadeus_thread0.graph_parts.procedural_recovery` owns recovery guidance derived from failed, blocked, manual-takeover, stale, and unexecuted outcomes
+    - completed / executed packets may create capability traces
+    - blocked packets may create boundary traces only
+    - pending / rejected / expired / approved-but-not-executed packets do not create completed capability facts
+    - resurfaced hints preserve approval and manual-takeover requirements
+    - only safe sandbox planning bias may produce existing approval-gated sandbox action packets
+    - blocked, browser-manual-takeover, and skill-guidance bias remain readback/planning-only
+    - outcome-calibrated traces may adjust confidence but cannot create new executor, browser, skill registry, persona-core, or memory authority
+    - recovery-oriented traces may narrow planning into workspace guidance, boundary-only readback, manual takeover preservation, or hold states
+    - unresolved recovery never produces a direct execution-producing packet
+    - procedural traces are digital-body continuity, not persona-core or registry truth
 
 Closure evidence by decision family:
 
@@ -188,6 +221,169 @@ Sandbox Embodied Execution Phase 2 preserved contract:
     - `evals/reports/sandbox-phase2-audit-20260503-203850-phase2-ready-c.{json,md}`
   - latest phase-2 audit pass streak: `3`
   - phase 2 is formally closed and should now be treated as a preserved backend baseline
+
+Post-Baseline Closure Pack preserved contract:
+
+- This closure pack resolves the selected tail items `2,3,4,5,6,7,11,12` without opening a new broad phase.
+- HTTP/Web adapter closure:
+  - implemented as a Python-callable adapter over `BackendAPI`
+  - route-like calls return existing `backend.v1` envelopes as dictionaries
+  - no server framework dependency is introduced
+  - future HTTP/SSE/WebSocket work should wrap this adapter or the same `BackendAPI` methods rather than rebuilding response semantics
+- TTS presence timing closure:
+  - `TTS_presence_timing` is preserved as timing-only digital-body telemetry
+  - fresh closure reports now include:
+    - `evals/reports/tts-presence-timing-audit-20260506-015822-post-baseline-closure-a.{json,md}`
+    - `evals/reports/tts-presence-timing-audit-20260506-015901-post-baseline-closure-b.{json,md}`
+    - `evals/reports/tts-presence-timing-audit-20260506-015942-post-baseline-closure-c.{json,md}`
+- Executor adapter closure:
+  - implemented as `amadeus_thread0.runtime.executor_adapter`
+  - `execute_workspace_command` now routes through the adapter while preserving existing `execution_spec`, `execution_preview`, and `execution_result` shapes
+  - external harness candidates are disabled and may not own persona memory or writeback facts
+  - closeout report:
+    - `evals/reports/executor-adapter-audit-20260506-015758-post-baseline-closure.{json,md}`
+- Deferred / tracked lanes:
+  - multimodal input capture: `deferred_fail_closed`
+  - dynamic skill generation: `deferred_fail_closed`
+  - Chinese lexical de-scaffolding: `tracked_not_mainline`
+  - bounded capability growth: `quality_backlog_tracked`
+  - natural long-horizon calibration: `quality_backlog_tracked`
+- Final closure evidence:
+  - `evals/reports/post-baseline-closure-audit-20260506-020030-final.{json,md}`
+  - `overall_status=passed`
+  - `readiness_status=post_baseline_closure_ready`
+
+Bounded Procedural Growth Phase 1 preserved contract:
+
+- This phase adds reusable procedural continuity without widening runtime authority.
+- The owned graph-adjacent module is `amadeus_thread0.graph_parts.procedural_growth`.
+- Allowed phase-1 trace kinds are:
+  - `workspace_procedure`
+  - `sandbox_execution_pattern`
+  - `browser_runtime_pattern`
+  - `skill_usage_pattern`
+  - `blocked_boundary_pattern`
+  - `recovery_pattern`
+- Writeback remains final-state based:
+  - completed / executed embodied packets may become reusable procedural traces
+  - blocked packets may become boundary/friction traces only
+  - pending / rejected / expired / awaiting-approval / approved-only packets do not become completed capability facts
+  - frozen reconsolidation procedural traces win over stale live intermediates
+- Resurfacing remains advisory:
+  - `procedural_hint` is a planning hint, not execution authority
+  - sandbox and browser traces preserve `must_request_approval`
+  - manual browser takeover resurfaces as a boundary note
+  - blocked traces set `capability_claim=false`
+- Backend and CLI readback expose compact `procedural_growth` summaries while keeping the canonical embodied truth on `digital_body_consequence`.
+- This phase does not add dynamic skill generation, package install, wider sandbox command families, external executor harness runtime, frontend UI, persona-core edits, or a second memory store.
+- Initial closure evidence:
+  - `evals/reports/procedural-growth-smokes-20260506-030102-phase1-dev.{json,md}`
+  - `evals/reports/procedural-growth-audit-20260506-030113-phase1-dev.{json,md}`
+  - `overall_status=passed`
+  - `readiness_status=procedural_growth_phase1_ready`
+
+Procedural Growth Phase 2 preserved contract:
+
+- This phase adds procedure-guided autonomy planning without widening runtime authority.
+- The owned graph-adjacent module is `amadeus_thread0.graph_parts.procedural_planning`.
+- `procedural_planning` is advisory readback and planning bias, not an execution fact:
+  - reads carried `procedural_traces`, `procedural_continuity.traces`, and compact hints
+  - dedupes by trace id and ignores low-confidence traces
+  - requires current request match before execution-producing bias
+  - checks workspace root, runner, isolation, and network policy before sandbox execution bias
+- Allowed phase-2 bias kinds are:
+  - `sandbox_execute`
+  - `browser_manual_takeover`
+  - `skill_guidance`
+  - `workspace_guidance`
+  - `boundary_only`
+- Only `sandbox_execute` with a completed capability trace may produce an action packet, and that packet must keep:
+  - `intent=sandbox:execute_workspace_command`
+  - `status=awaiting_approval`
+  - `risk=external_mutation`
+  - `requires_approval=true`
+  - existing `execution_spec` / `execution_preview` boundaries
+- Boundary-only traces, browser manual takeover traces, and skill guidance traces do not create execution/browser/registry mutation packets.
+- Backend and CLI readback expose:
+  - `autonomy.procedural_planning`
+  - `turn_summary.autonomy.procedural_planning`
+  - `turn_summary.current_turn.procedural_planning`
+  - compact `planproc=<bias_kind>:<source_run_id>:approval|boundary|hint`
+- This phase does not add dynamic skill generation, package install, wider sandbox command families, automatic browser mutation, external executor harness runtime, frontend UI, persona-core edits, or a second memory store.
+- Initial closure evidence:
+  - `evals/reports/procedural-growth-phase2-smokes-20260506-033738-phase2-dev.{json,md}`
+  - `evals/reports/procedural-growth-phase2-audit-20260506-033746-phase2-dev.{json,md}`
+  - `overall_status=passed`
+  - `readiness_status=procedural_growth_phase2_ready`
+
+Procedural Growth Phase 3 preserved contract:
+
+- This phase adds outcome-calibrated procedural learning without widening runtime authority.
+- The owned graph-adjacent module is `amadeus_thread0.graph_parts.procedural_outcome`.
+- `procedural_outcome` is final-result readback and trace calibration, not an execution fact by itself:
+  - derives outcomes from final/frozen action packets
+  - uses packet `tool_args.procedural_planning` or carried trace refs to attribute attempts to prior procedural traces
+  - adjusts only procedural trace confidence, reuse hints, boundary notes, and recovery hints
+  - does not mutate persona core, relationship core, skills registry truth, sandbox/browser authority, or memory storage topology
+- Allowed outcome kinds are:
+  - `confirmed_success`
+  - `partial_success`
+  - `failed_execution`
+  - `blocked_boundary_reinforced`
+  - `manual_takeover_required`
+  - `stale_or_mismatched_context`
+  - `no_executed_attempt`
+- Outcome semantics stay honest:
+  - confirmed success may increase reuse confidence
+  - failed execution reduces reuse confidence and carries recovery hints
+  - blocked/manual outcomes reinforce boundary readback and cannot become capability facts
+  - pending/rejected/expired/approved-only attempts remain `no_executed_attempt`
+- Phase-2 planning ranks calibrated traces by updated confidence, but boundary-reinforced traces are downgraded to `boundary_only` and cannot produce execution packets.
+- Backend and CLI readback expose:
+  - top-level `procedural_outcome`
+  - `turn_summary.current_turn.procedural_outcome`
+  - compact `outcome=<outcome_kind>:<source_run_id>:reuse|boundary|hold`
+- This phase does not add dynamic skill generation, package install, wider sandbox command families, automatic browser mutation, external executor harness runtime, frontend UI, persona-core edits, or a second memory store.
+- Initial closure evidence:
+  - `evals/reports/procedural-growth-phase3-smokes-20260506-095920-phase3-dev.{json,md}`
+  - `overall_status=passed`
+
+Procedural Growth Phase 4 preserved contract:
+
+- This phase adds recovery-oriented procedural adaptation without widening runtime authority.
+- The owned graph-adjacent module is `amadeus_thread0.graph_parts.procedural_recovery`.
+- `procedural_recovery` is advisory recovery readback, not an execution fact:
+  - derives recoveries from normalized `procedural_outcome` rows
+  - marks affected procedural traces with `recovery_required`, `recovery_kind`, `recovery_allowed_bias_kind`, and recovery refs
+  - keeps failed execution as failure-artifact inspection / workspace guidance before any future reuse
+  - keeps blocked boundaries as `boundary_only`
+  - keeps manual browser takeover as manual-takeover preservation
+  - keeps stale context as workspace/artifact refresh guidance
+  - keeps unexecuted attempts as hold-for-approval
+- Allowed recovery kinds are:
+  - `inspect_failure_artifact`
+  - `adjust_bounded_command`
+  - `preserve_manual_takeover`
+  - `avoid_blocked_boundary`
+  - `refresh_workspace_context`
+  - `hold_for_approval`
+  - `no_recovery_needed`
+- Recovery semantics stay conservative:
+  - unresolved recovery cannot produce direct `sandbox_execute` reuse
+  - failed recovery may surface `workspace_guidance`
+  - blocked recovery may surface `boundary_only`
+  - manual recovery may surface `browser_manual_takeover`
+  - hold recovery may surface approval/hold readback
+  - no recovery item may add package install, shell wrappers, git mutation, network enablement, browser mutation, skill registry mutation, external executor harness runtime, persona-core edits, or a second memory store
+- Backend and CLI readback expose:
+  - top-level `procedural_recovery`
+  - `turn_summary.current_turn.procedural_recovery`
+  - compact `recovery=<recovery_kind>:<source_run_id>:approval|boundary|hold|hint`
+- Initial closure evidence:
+  - `evals/reports/procedural-growth-phase4-smokes-20260506-103539-phase4-dev.{json,md}`
+  - `evals/reports/procedural-growth-phase4-audit-20260506-103615-phase4-dev.{json,md}`
+  - `overall_status=passed`
+  - `readiness_status=procedural_growth_phase4_ready`
 
 Skills Ecosystem Formal Closure preserved contract:
 
@@ -768,5 +964,6 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 9. `Skills Ecosystem Formal Closure` - `baseline-closed`
 10. `Live Browser Runtime Closure Phase 1` - `baseline-closed`
 11. `Sandbox Embodied Execution Phase 2` - `baseline-closed`
-12. `Chinese lexical de-scaffolding with semantic replacements` - `future deferred track`
-13. later frontend / multimodal integration - `intentionally deferred`
+12. `Post-Baseline Closure Pack` - `baseline-closed`
+13. `Chinese lexical de-scaffolding with semantic replacements` - `tracked future deferred track`
+14. later frontend / multimodal integration - `intentionally deferred`

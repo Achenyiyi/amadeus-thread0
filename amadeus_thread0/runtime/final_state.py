@@ -17,6 +17,9 @@ from ..graph_parts.digital_body_runtime import (
     normalize_digital_body_state,
     normalize_embodied_context,
 )
+from ..graph_parts.procedural_growth import (
+    enrich_digital_body_consequence_with_procedural_growth,
+)
 from ..evolution_engine.reconsolidation import derive_digital_body_consequence
 from ..utils.counterpart_profile import normalize_counterpart_assessment_profile
 
@@ -341,6 +344,32 @@ def _reconsolidation_autonomy_intent(reconsolidation_snapshot: dict[str, Any] | 
 def _reconsolidation_action_packets(reconsolidation_snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
     recon = _dict_or_empty(reconsolidation_snapshot)
     return normalize_action_packets(recon.get("action_packets"))
+
+
+def _raw_action_packet_dicts(value: Any) -> list[dict[str, Any]]:
+    return [dict(item) for item in _list_or_empty(value) if isinstance(item, dict)]
+
+
+def _resolve_procedural_growth_packets(
+    *,
+    action_packets: Any,
+    reconsolidation_snapshot: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    live_raw = _raw_action_packet_dicts(action_packets)
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    frozen_raw = _raw_action_packet_dicts(recon.get("action_packets"))
+    live_packets = normalize_action_packets(live_raw)
+    frozen_packets = normalize_action_packets(frozen_raw)
+    frozen_terminal = any(
+        str(packet.get("status") or "").strip().lower() in {"completed", "blocked", "rejected", "awaiting_approval"}
+        or bool(packet.get("writeback_ready", False))
+        for packet in frozen_packets
+    )
+    if frozen_raw and (frozen_terminal or not live_packets):
+        return frozen_raw
+    if live_raw:
+        return live_raw
+    return frozen_raw
 
 
 def _reconsolidation_action_trace(reconsolidation_snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -723,10 +752,23 @@ def resolve_digital_body_consequence(
     reconsolidation_snapshot: dict[str, Any] | None = None,
     session_skill_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    live_consequence = _normalize_digital_body_consequence(digital_body_consequence)
+    recon = _dict_or_empty(reconsolidation_snapshot)
+    procedural_packets = _resolve_procedural_growth_packets(
+        action_packets=action_packets,
+        reconsolidation_snapshot=recon,
+    )
+    live_consequence = (
+        _normalize_digital_body_consequence(
+            enrich_digital_body_consequence_with_procedural_growth(
+                digital_body_consequence,
+                action_packets=procedural_packets,
+            )
+        )
+        if _dict_or_empty(digital_body_consequence)
+        else {}
+    )
     if digital_body_consequence_has_signal(live_consequence):
         return live_consequence
-    recon = _dict_or_empty(reconsolidation_snapshot)
     raw_frozen_consequence = _dict_or_empty(recon.get("digital_body_consequence"))
     resolved_body = normalize_digital_body_state(digital_body_state)
     access_state = _dict_or_empty(resolved_body.get("access_state"))
@@ -805,16 +847,24 @@ def resolve_digital_body_consequence(
     frozen_consequence = _reconsolidation_digital_body_consequence(reconsolidation_snapshot)
     if digital_body_consequence_has_signal(frozen_consequence):
         merged_frozen = _normalize_digital_body_consequence(
-            {
-                **body_fill_raw,
-                **_dict_or_empty(derived_raw),
-                **raw_frozen_consequence,
-            }
+            enrich_digital_body_consequence_with_procedural_growth(
+                {
+                    **body_fill_raw,
+                    **_dict_or_empty(derived_raw),
+                    **raw_frozen_consequence,
+                },
+                action_packets=procedural_packets,
+            )
         )
         if digital_body_consequence_has_signal(merged_frozen):
             return merged_frozen
         return frozen_consequence
-    derived = _normalize_digital_body_consequence(derived_raw)
+    derived = _normalize_digital_body_consequence(
+        enrich_digital_body_consequence_with_procedural_growth(
+            derived_raw,
+            action_packets=procedural_packets,
+        )
+    )
     if digital_body_consequence_has_signal(derived):
         return derived
     return {}
