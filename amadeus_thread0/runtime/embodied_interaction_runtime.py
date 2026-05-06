@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..graph_parts.chinese_semantic_surface import rewrite_semantic_surface_floor
+from ..graph_parts.chinese_semantic_surface import (
+    build_runtime_replacement_policy,
+    rewrite_semantic_surface_floor,
+)
 from .artifact_appraisal_bridge import build_artifact_appraisal_readback
 from .artifact_behavior_alignment import build_artifact_behavior_alignment_readback
 from .artifact_motive_bridge import build_artifact_motive_readback
@@ -318,14 +321,19 @@ def _carryover_patch(
 
 def _semantic_runtime_floor(turn: dict[str, Any]) -> dict[str, Any]:
     final_text = _clean(turn.get("final_text"))
+    runtime_policy = build_runtime_replacement_policy(final_text)
     result = rewrite_semantic_surface_floor(final_text)
-    runtime_text = _clean(result.get("safe_surface_floor")) or final_text
+    runtime_text = _clean(runtime_policy.get("runtime_final_text")) or _clean(result.get("safe_surface_floor")) or final_text
+    tts_text = runtime_text
     return {
         "status": _clean(result.get("status")) or "no_semantic_residue",
         "families": list(result.get("families") or []),
         "applied_floor": bool(result.get("applied_floor", False)),
         "original_text": final_text,
         "runtime_final_text": runtime_text,
+        "runtime_policy": runtime_policy,
+        "tts_text": tts_text,
+        "text_tts_drift": tts_text != runtime_text,
         "replacement_plan": _dict_or_empty(result.get("replacement_plan")),
     }
 

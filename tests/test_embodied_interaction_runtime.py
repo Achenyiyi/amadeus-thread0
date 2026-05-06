@@ -96,6 +96,24 @@ def test_chinese_semantic_floor_updates_final_and_snapshot_text_together():
     assert readback["reconsolidation_snapshot"]["final_text"] == semantic["runtime_final_text"]
 
 
+def test_chinese_semantic_surface_exposes_runtime_policy_envelope():
+    readback = build_embodied_interaction_readback(
+        {
+            "final_text": "请问有什么可以帮你？",
+            "reconsolidation_snapshot": {"final_text": "请问有什么可以帮你？"},
+        }
+    )
+
+    policy = readback["chinese_semantic_surface"]["runtime_policy"]
+    assert policy["readiness_status"] == "chinese_semantic_descaffolding_phase2_ready"
+    assert policy["selected_policy"]["family"] == "generic_assistant_tone"
+    assert policy["selected_policy"]["replacement_strategy"] == "deterministic_safe_surface_floor"
+    assert readback["final_text"] == policy["runtime_final_text"]
+    assert readback["reconsolidation_snapshot"]["final_text"] == policy["runtime_final_text"]
+    assert readback["chinese_semantic_surface"]["tts_text"] == readback["final_text"]
+    assert readback["chinese_semantic_surface"]["text_tts_drift"] is False
+
+
 def test_no_sources_and_no_semantic_residue_remains_not_applicable_without_breaking_payloads():
     readback = build_embodied_interaction_readback(
         {
