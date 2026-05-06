@@ -99,6 +99,7 @@ For backend purposes, the structural decisions in this document are now split in
     - `multimodal_capture_phase1_ready`: consent-bound source artifacts and read-only perception events are implemented; live microphone/camera/background screen/secret capture remains blocked
     - `multimodal_perception_phase2_ready`: approval-gated `artifact:inspect_multimodal` packets are implemented for consent-bound artifacts; pending previews never auto-execute or call model APIs, and completed observations only come from approved precomputed inspection results
     - `dynamic_skills_phase1_ready`: completed procedural traces may propose hash-verified skill candidates; install/enable/registry writes remain approval-gated and manual
+    - `dynamic_skills_phase2_ready`: exact frozen dynamic candidate payloads may be installed/enabled after approval through the existing managed skills registry; pending/rejected/drifted candidates never become active skills or memory facts
     - `external_executor_harness_phase1_ready`: external harness families are represented as disabled result-only metadata; only `sandbox_runner` is enabled
     - `frontend_runtime_shell_phase1_ready`: the React/Vite shell builds against `backend.v1` fixtures and does not own backend semantics
     - `chinese_semantic_descaffolding_phase1_ready`: semantic diagnostics exist before any broad runtime rewrite; legacy post-baseline tracking remains compatible
@@ -332,6 +333,7 @@ Post-Baseline Closure Pack preserved contract:
 - Complete closeout unlock lanes:
   - multimodal input capture: `multimodal_capture_phase1_ready`
   - dynamic skill generation: `dynamic_skills_phase1_ready`
+  - approved dynamic skill candidate install/readback: `dynamic_skills_phase2_ready`
   - Chinese semantic de-scaffolding: `chinese_semantic_descaffolding_phase1_ready`
   - bounded capability growth: `capability_growth_phase5_ready`
   - natural long-horizon calibration: `natural_long_horizon_calibration_phase1_ready`
