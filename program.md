@@ -11768,3 +11768,89 @@ This file is the live development ledger for `amadeus-thread0`.
   - all plan checkboxes in `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase2.md` are marked complete
 - Next:
   - run final verification, commit, fast-forward merge to `main`, rerun post-merge audits, and push
+
+## 2026-05-06 Run 263
+
+- Focus:
+  - implement `Embodied Interaction Runtime Phase 1` after Living Loop Runtime Realism Phase 2
+  - move the unlocked multimodal source-artifact and Chinese semantic de-scaffolding lanes from isolated phase gates into real backend turn/event payloads
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `evals/run_embodied_interaction_runtime_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_embodied_interaction_runtime_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.embodied_interaction_runtime` as the bounded runtime adapter for embodied interaction phase 1
+  - attached `embodied_interaction` to real `assistant_turn` and `event_round` backend payloads
+  - consent-bound multimodal source artifacts now surface through:
+    - `current_event.perception_sources`
+    - `digital_body.resource_state.multimodal_source_refs`
+    - `interaction_carryover.embodied_context.multimodal_sources`
+  - deterministic Chinese semantic floors now update runtime `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
+  - added `evals/run_embodied_interaction_runtime_audit.py` reporting `embodied_interaction_runtime_phase1_ready`
+  - folded `embodied_interaction_runtime_phase1_ready` into preserved baselines under the `embodied_interaction` category
+  - kept the phase non-widening:
+    - no multimodal model API calls
+    - no live microphone/camera/background screen capture
+    - no persona-core mutation
+    - no memory authority change
+    - no browser/tool/sandbox execution authority change
+    - no automatic skill registry writes
+    - no frontend-owned semantics
+    - no unapproved external mutation
+- Validation:
+  - initial RED checks:
+    - `python -m pytest tests/test_embodied_interaction_runtime.py -q`
+      - failed because `amadeus_thread0.runtime.embodied_interaction_runtime` did not exist
+    - `python -m pytest tests/test_backend_api.py -k embodied_interaction -q`
+      - failed because backend payloads did not attach `embodied_interaction`
+    - `python -m pytest tests/test_embodied_interaction_runtime_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_embodied_interaction_runtime_audit` and the preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_embodied_interaction_runtime.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_backend_api.py -k "embodied_interaction or living_loop_realism" -q`
+      - passed: `2 passed, 47 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `183 passed, 17 subtests passed`
+    - `python -m pytest tests/test_embodied_interaction_runtime_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_embodied_interaction_runtime_audit.py --run-tag phase1-dev`
+      - passed with `readiness=embodied_interaction_runtime_phase1_ready`
+  - pre-merge final verification:
+    - `python -m pytest tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_audit.py tests/test_multimodal_sources.py tests/test_chinese_semantic_surface_phase2.py tests/test_chinese_surface_de_scaffold_audit.py -q`
+      - passed: `22 passed`
+    - `python -m pytest tests/test_backend_api.py -k "embodied_interaction or living_loop_realism or turn_and_event_responses_attach_operator_readback" -q`
+      - passed: `3 passed, 46 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `183 passed, 17 subtests passed`
+    - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+      - passed: `14 passed, 9 subtests passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/embodied_interaction_runtime.py amadeus_thread0/runtime/backend_api.py evals/run_embodied_interaction_runtime_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_embodied_interaction_runtime_audit.py --run-tag phase1-final`
+      - passed with `readiness=embodied_interaction_runtime_phase1_ready`
+    - `python evals/run_multimodal_capture_audit.py --run-tag embodied-phase1-regression`
+      - passed with `readiness=multimodal_capture_phase1_ready`
+    - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag embodied-phase1-regression`
+      - passed with `readiness=chinese_semantic_descaffolding_phase1_ready`
+    - `python evals/run_living_loop_realism_phase2_audit.py --run-tag embodied-phase1-regression`
+      - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+    - `git diff --check`
+      - passed
+- Result:
+  - `Embodied Interaction Runtime Phase 1` is implemented and ready in branch `codex/embodied-interaction-runtime-phase1`
+  - plan steps through pre-merge verification are marked complete
+- Next:
+  - fast-forward merge to `main`, rerun post-merge audits, push, then select the next bounded runtime phase
