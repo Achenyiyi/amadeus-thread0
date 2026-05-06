@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Frontend Runtime Shell Phase 2` route-consumption readback gate after Dynamic Skills Phase 2
+- Mainline phase: `rolling closure complete through Frontend Runtime Shell Phase 2`; next work should be a fresh bounded spec rather than reopening closed gates
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -12538,5 +12538,30 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `10 passed`
     - `python evals/run_frontend_runtime_shell_phase2_audit.py --run-tag phase2-dev`
       - passed with `readiness=frontend_runtime_shell_phase2_ready`
+  - final worktree verification:
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2.py tests/test_frontend_runtime_shell_phase2_audit.py tests/test_frontend_contract_sync.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `17 passed`
+    - `npm --prefix frontend run build`
+      - passed
+    - `python evals/run_frontend_runtime_shell_phase2_audit.py --run-tag phase2-final`
+      - passed with `readiness=frontend_runtime_shell_phase2_ready`
+    - `python evals/run_frontend_runtime_shell_audit.py --run-tag phase2-regression`
+      - passed with `readiness=frontend_runtime_shell_phase1_ready`
+    - `python evals/run_dynamic_skills_phase2_audit.py --run-tag frontend-phase2-regression`
+      - passed with `readiness=dynamic_skills_phase2_ready`
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings in the worktree
+  - post-merge verification on `main`:
+    - `npm --prefix frontend run build`
+      - passed
+    - `python evals/run_frontend_runtime_shell_phase2_audit.py --run-tag post-merge`
+      - passed with `readiness=frontend_runtime_shell_phase2_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
+    - `git diff --check`
+      - passed
+    - `git push origin main`
+      - pushed `737de0ba..8b319f2b`
 - Next:
-  - run final verification, commit logical slices, fast-forward merge to `main`, run post-merge verification, push `main`
+  - the rolling six-phase closeout roadmap is closed through `frontend_runtime_shell_phase2_ready`
+  - only start a new lane from a fresh bounded spec, tests, approval semantics, and audit gate
