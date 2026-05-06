@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Complete Closeout Unlock` control-plane after `Procedural Growth Phase 4`
+- Mainline phase: `Runtime Productization Phase 1` readback/productization gate after the post-unlock roadmap
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -29,6 +29,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `procedural_growth_phase2_ready`
   - preserve `procedural_growth_phase3_ready`
   - preserve `procedural_growth_phase4_ready`
+  - preserve `post_unlock_roadmap_ready`
+  - preserve `runtime_productization_phase1_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -36,11 +38,11 @@ This file is the live development ledger for `amadeus-thread0`.
     - explicit approval for repo-root attachment
   - keep `Access Negotiation Persona Closure` and all previously closed baselines preserved after phase 2 closeout
   - keep `search_web + source_ref` continuity and live browser continuity as preserved external-world surfaces
-  - newly unlocked lanes are `unlocked_planned`, not runtime-available
+  - post-unlock lanes have ready phase gates, but their blocked surfaces and approval semantics remain in force
   - keep reply-tone / naturalness micro-polish inside the Chinese semantic de-scaffolding phase or only when it blocks runtime correctness
-- Current unlock focus:
-  - unlocked planned lanes: multimodal capture, dynamic skills, external executor harnesses, frontend runtime shell, Chinese semantic de-scaffolding, capability growth phase 5, natural long-horizon calibration
-  - each lane still needs a fresh bounded spec, tests, approval semantics, and audit gate before runtime authority is exposed
+- Current productization focus:
+  - runtime surfaces should expose one operator-readable readback over backend/post-unlock/preserved-baseline truth
+  - `operator_readback.v1` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
@@ -11293,3 +11295,91 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - choose the next release train explicitly; recommended default is `Runtime Productization Phase 1`
   - before new implementation work, either push/sync local `main` or deliberately keep the 22 local commits unpublished
+
+## 2026-05-06 Run 258
+
+- Focus:
+  - implement `Runtime Productization Phase 1` in an isolated worktree
+  - expose one operator readback surface over current backend/post-unlock/preserved-baseline truth without widening runtime authority
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/runtime_productization.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/backend_session.py`
+  - `amadeus_thread0/runtime/transport_adapter.py`
+  - `amadeus_thread0/utils/cli_views.py`
+  - `evals/run_runtime_productization_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `evals/reports/` runtime/post-unlock/preserved audit artifacts generated as local evidence, not tracked source files
+  - `tests/test_runtime_productization.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_transport_adapter.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_runtime_productization_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-runtime-productization-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `runtime_productization.py` as a pure readback module for `operator_readback.v1`
+  - exposed `operator_readback` through backend API turn/event payloads, `BackendAPI.runtime_productization()`, `BackendSession.operator_readback_view()`, transport route `GET /api/runtime-productization`, and compact CLI summary lines
+  - added `run_runtime_productization_audit.py` reporting `runtime_productization_phase1_ready`
+  - folded the new phase into preserved-baselines meta-audit under category `productization`
+  - kept the phase readback-only:
+    - no persona-core mutation
+    - no memory write
+    - no tool/browser/sandbox execution
+    - no external executor harness enablement
+    - no automatic dynamic skill registry write
+    - no frontend-owned backend semantics
+- Validation:
+  - red checks were run for the missing readback module, API/session/transport surfaces, CLI readback line, audit entrypoint, and preserved-baseline inclusion
+  - focused green checks passed:
+    - `python -m pytest tests/test_runtime_productization.py -q`
+    - `python -m pytest tests/test_backend_api.py -k runtime_productization -q`
+    - `python -m pytest tests/test_backend_session.py -k operator_readback -q`
+    - `python -m pytest tests/test_transport_adapter.py -k runtime_productization -q`
+    - `python -m pytest tests/test_cli_views.py -k operator_readback -q`
+    - `python -m pytest tests/test_runtime_productization_audit.py -q`
+    - `python -m pytest tests/test_preserved_baselines_audit.py -k "expected_ready or passes_when_all_latest_reports_are_ready" -q`
+  - final focused bundle:
+    - `python -m pytest tests/test_runtime_productization.py tests/test_backend_api.py tests/test_backend_session.py tests/test_transport_adapter.py tests/test_cli_views.py tests/test_runtime_productization_audit.py tests/test_preserved_baselines_audit.py -q`
+    - passed: `186 passed, 17 subtests passed`
+  - contract regression:
+    - `python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py tests/test_preserved_baselines_audit.py -q`
+    - passed: `18 passed`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+    - passed: `180 passed, 17 subtests passed`
+  - audits:
+    - `python evals/run_post_baseline_closure_audit.py --run-tag runtime-productization-phase1-final`
+      - passed with `readiness=post_baseline_closure_ready`
+    - `python evals/run_post_unlock_roadmap_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=post_unlock_roadmap_ready`
+    - `python evals/run_runtime_productization_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=runtime_productization_phase1_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=preserved_baselines_ready`
+  - compile / graph:
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/runtime_productization.py evals/run_runtime_productization_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+  - frontend:
+    - initial `npm --prefix frontend run build` failed because the isolated worktree lacked `frontend/node_modules` and TypeScript could not find `vite/client`
+    - `npm --prefix frontend ci`
+      - installed worktree-local dependencies; npm reported 2 existing dependency advisories
+    - `npm --prefix frontend run build`
+      - passed
+  - checks:
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - placeholder scan over the touched runtime-productization plan/code/test/doc set
+      - passed with no matches
+- Result:
+  - `Runtime Productization Phase 1` is implemented and ready in branch `codex/runtime-productization-phase1`
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-runtime-productization-phase1.md` are marked complete to avoid stale "unfinished plan" readback
+  - no persona-core mutation, memory write, tool/browser/sandbox execution, external executor harness enablement, automatic dynamic skill registry write, frontend-owned backend semantics, or live capture was introduced
+- Next:
+  - commit and fast-forward merge `codex/runtime-productization-phase1` to `main`

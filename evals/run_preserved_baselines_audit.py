@@ -94,6 +94,12 @@ BASELINE_SPECS = [
         "expected_readiness": "post_unlock_roadmap_ready",
         "category": "post_unlock",
     },
+    {
+        "id": "runtime_productization_phase1",
+        "prefix": "runtime-productization-audit-",
+        "expected_readiness": "runtime_productization_phase1_ready",
+        "category": "productization",
+    },
 ]
 
 BASELINES = {str(spec["id"]): str(spec["prefix"]) for spec in BASELINE_SPECS}

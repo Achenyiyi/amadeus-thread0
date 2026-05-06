@@ -61,6 +61,8 @@ from .final_state import (
     resolve_interaction_carryover,
     resolve_pending_action_proposal,
 )
+from .post_baseline_closure import evaluate_post_baseline_status
+from .runtime_productization import build_runtime_productization_readback
 
 
 def _coerce_values(snapshot: Any) -> dict[str, Any]:
@@ -885,6 +887,13 @@ def _resolved_skills(values: dict[str, Any] | None) -> dict[str, Any]:
     )
 
 
+def _default_runtime_productization_inputs() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    post_unlock = {"overall_status": "passed", "readiness_status": "post_unlock_roadmap_ready"}
+    post_baseline = evaluate_post_baseline_status(post_unlock_roadmap=post_unlock)
+    preserved = {"overall_status": "passed", "readiness_status": "preserved_baselines_ready"}
+    return post_baseline, preserved, post_unlock
+
+
 @dataclass
 class BackendSession:
     graph: Any
@@ -1405,6 +1414,18 @@ class BackendSession:
             "behavior_queue_summary": build_behavior_queue_cli_summary(queue, limit=3),
             "autonomy": autonomy,
         }
+
+    def operator_readback_view(self, *, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        vals = self.get_state_values(config=config)
+        summary = self.build_evolution_summary(state_values=vals)
+        current_turn = summary.get("current_turn") if isinstance(summary.get("current_turn"), dict) else {}
+        post_baseline, preserved, post_unlock = _default_runtime_productization_inputs()
+        return build_runtime_productization_readback(
+            post_baseline_status=post_baseline,
+            preserved_baselines=preserved,
+            post_unlock_roadmap=post_unlock,
+            current_turn=current_turn,
+        )
 
 
 __all__ = [

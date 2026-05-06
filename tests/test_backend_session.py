@@ -4604,6 +4604,30 @@ class BackendSessionTests(unittest.TestCase):
         self.assertEqual(queue["behavior_queue"][0]["agenda_id"], "b1")
         self.assertEqual(queue["behavior_queue_summary"][0]["agenda_id"], "b1")
 
+    def test_operator_readback_view_surfaces_runtime_productization(self):
+        values = {
+            "autonomy_intent": {"mode": "assist"},
+            "action_packets": [
+                {
+                    "proposal_id": "ap-operator-readback",
+                    "intent": "browser:manual_takeover",
+                    "status": "blocked",
+                    "risk": "external_mutation",
+                    "requires_approval": True,
+                }
+            ],
+            "digital_body_consequence": {"kind": "browser_takeover_requested"},
+        }
+        graph = FakeStreamGraph(stream_rows=[], state_values=values)
+        session = BackendSession(graph=graph, memory_store=FakeMemoryStore(), thread_id="thread-a")
+
+        readback = session.operator_readback_view()
+
+        self.assertEqual(readback["readiness_status"], "runtime_productization_phase1_ready")
+        self.assertEqual(readback["operator_snapshot"]["autonomy_mode"], "assist")
+        self.assertEqual(readback["operator_snapshot"]["action_packet_count"], 1)
+        self.assertEqual(readback["operator_snapshot"]["digital_body_consequence_kind"], "browser_takeover_requested")
+
     def test_checkpoint_scoped_views_preserve_checkpoint_config_during_readback(self):
         values = {
             "behavior_queue": [{"agenda_id": "latest", "kind": "checkin", "status": "pending"}],

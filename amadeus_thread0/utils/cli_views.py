@@ -4,6 +4,7 @@ from typing import Any
 
 from ..graph_parts.procedural_planning import normalize_procedural_planning
 from ..graph_parts.relational_runtime import _counterpart_assessment_profile
+from ..runtime.runtime_productization import compact_operator_readback_line
 from .embodied_preview import (
     compact_counterpart_assessment_preview_line as _shared_compact_counterpart_assessment_preview_line,
     compact_event_residue_preview_line as _shared_compact_event_residue_preview_line,
@@ -865,6 +866,7 @@ def build_evolution_cli_summary(
     procedural_planning: dict[str, Any] | None = None,
     digital_body_state: dict[str, Any] | None = None,
     digital_body_consequence: dict[str, Any] | None = None,
+    operator_readback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     relationship = dict(relationship or {})
     semantic = dict(semantic_narrative_profile or {})
@@ -891,6 +893,7 @@ def build_evolution_cli_summary(
                 break
     digital_body = _digital_body_summary(digital_body_state)
     digital_body_consequence = _digital_body_consequence_summary(digital_body_consequence)
+    operator_readback = dict(operator_readback or {})
     frozen_counterpart = _frozen_counterpart_snapshot(recon)
     frozen_semantic_anchor_bundle = _frozen_semantic_anchor_bundle(recon)
     recon_consequence = (
@@ -1270,6 +1273,7 @@ def build_evolution_cli_summary(
         "procedural_growth": procedural_growth_summary,
         "procedural_outcome": procedural_outcome_summary,
         "procedural_recovery": procedural_recovery_summary,
+        "operator_readback": operator_readback,
         "worldline_focus_preview": _focus_preview(worldline_focus, limit=3),
         "worldline_focus_items": _focus_preview_items(worldline_focus, limit=3),
     }
@@ -1294,6 +1298,7 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
         if isinstance(summary.get("digital_body_consequence"), dict)
         else {}
     )
+    operator_readback = summary.get("operator_readback") if isinstance(summary.get("operator_readback"), dict) else {}
 
     def _axis_text(name: str) -> str:
         axis = continuity.get(name) if isinstance(continuity.get(name), dict) else {}
@@ -1528,6 +1533,9 @@ def build_evolution_summary_line(summary: dict[str, Any] | None) -> str:
         if len(body_workspace_root) > 60:
             body_workspace_root = "..." + body_workspace_root[-57:]
         parts.append(f"root={body_workspace_root}")
+    operator_line = compact_operator_readback_line(operator_readback)
+    if operator_line:
+        parts.append(operator_line)
     carry_mode = str(current_turn.get("carryover_mode") or "").strip()
     if carry_mode:
         parts.append(f"carry={carry_mode}:{_metric(current_turn.get('carryover_strength'), 0.0):.3f}")

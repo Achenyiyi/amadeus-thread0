@@ -1334,6 +1334,25 @@ class CliViewsTests(unittest.TestCase):
         line = build_evolution_summary_line(summary)
         self.assertIn("recovery=inspect_failure_artifact:run-phase4-cli:hint", line)
 
+    def test_build_evolution_summary_line_surfaces_operator_readback(self):
+        summary = build_evolution_cli_summary(
+            operator_readback={
+                "readiness_status": "runtime_productization_phase1_ready",
+                "operator_snapshot": {
+                    "autonomy_mode": "assist",
+                    "action_packet_count": 1,
+                    "digital_body_consequence_kind": "browser_takeover_requested",
+                },
+            }
+        )
+
+        line = build_evolution_summary_line(summary)
+
+        self.assertIn("productization=runtime_productization_phase1_ready", line)
+        self.assertIn("runtime=operator_readback", line)
+        self.assertIn("autonomy=assist", line)
+        self.assertIn("packets=1", line)
+
     def test_build_evolution_cli_summary_surfaces_workspace_file_updated_consequence(self):
         summary = build_evolution_cli_summary(
             digital_body_state={

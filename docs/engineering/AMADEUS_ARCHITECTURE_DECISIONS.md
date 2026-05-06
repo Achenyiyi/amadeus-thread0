@@ -20,10 +20,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Complete Closeout Unlock` is now active as the control-plane decision after procedural growth phase 4: formerly deferred or tracked lanes may enter bounded implementation phases as `unlocked_planned`, but no lane gains runtime authority until its own spec, tests, approval semantics, and audit gate close.
 - The unlocked lanes are multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth beyond phase 4, natural long-horizon calibration, external executor harness adapters, and a frontend runtime shell.
 - `Post-Unlock Roadmap` is now implemented as a bounded release gate: all seven lanes have phase specs, implementation slices, tests, smoke/audit runners, and ready reports, while each lane's blocked surfaces remain in force.
+- `Runtime Productization Phase 1` is now implemented as a readback/productization gate: backend API, backend session, transport adapter, CLI summary, and audit surfaces expose one operator readback without adding runtime authority.
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -41,6 +42,7 @@ For backend purposes, the structural decisions in this document are now split in
 - procedural growth phase 4 gate: `python evals/run_procedural_growth_phase4_audit.py`
 - preserved-baselines meta-gate: `python evals/run_preserved_baselines_audit.py`
 - post-unlock roadmap gate: `python evals/run_post_unlock_roadmap_audit.py`
+- runtime productization gate: `python evals/run_runtime_productization_audit.py`
 - current handoff posture:
   - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
@@ -78,6 +80,13 @@ For backend purposes, the structural decisions in this document are now split in
     - `chinese_semantic_descaffolding_phase1_ready`: semantic diagnostics exist before any broad runtime rewrite; legacy post-baseline tracking remains compatible
     - `capability_growth_phase5_ready`: workflow candidates are advisory continuity over completed traces, not capability claims
     - `natural_long_horizon_calibration_phase1_ready`: deterministic offline packs evaluate the lived-loop surface without scene scripts
+  - current runtime productization posture is:
+    - `runtime_productization_phase1_ready`: `amadeus_thread0.runtime.runtime_productization` composes existing post-baseline, post-unlock, preserved-baseline, and current-turn readbacks into one operator surface
+    - `BackendAPI.runtime_productization()` and `BackendSession.operator_readback_view()` expose the same readback family to runtime consumers
+    - `assistant_turn` and `event_round` payloads now include `operator_readback`
+    - `BackendTransportAdapter` exposes `GET /api/runtime-productization`
+    - CLI compact summaries may render `productization=runtime_productization_phase1_ready`
+    - the phase is readback-only and does not enable live capture, automatic skill registry writes, external harness execution, frontend-owned backend semantics, persona-core mutation, or unapproved external mutation
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias

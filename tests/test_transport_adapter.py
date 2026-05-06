@@ -20,6 +20,13 @@ class _FakeBackendApi:
     def environment_summary(self):
         return BackendApiEnvelope(kind="environment_summary", thread_id="thread-a", payload={"runtime_mode": "regression"})
 
+    def runtime_productization(self):
+        return BackendApiEnvelope(
+            kind="runtime_productization",
+            thread_id="thread-a",
+            payload={"readiness_status": "runtime_productization_phase1_ready"},
+        )
+
     def persona(self):
         return BackendApiEnvelope(kind="persona_view", thread_id="thread-a", payload={"persona_state": {"mood": "focused"}})
 
@@ -77,6 +84,16 @@ def test_transport_adapter_turn_route_delegates_to_backend_api_without_schema_re
     assert response["status"] == 200
     assert response["body"]["kind"] == "assistant_turn"
     assert api.turn_calls == [{"state_values": {"x": 1}, "streamed_text": "stream", "meta": {"transport": "test"}}]
+
+
+def test_transport_adapter_runtime_productization_route_delegates_to_backend_api():
+    adapter = BackendTransportAdapter(backend_api=_FakeBackendApi())
+
+    response = adapter.handle("GET", "/api/runtime-productization")
+
+    assert response["status"] == 200
+    assert response["body"]["kind"] == "runtime_productization"
+    assert response["body"]["payload"]["readiness_status"] == "runtime_productization_phase1_ready"
 
 
 def test_transport_adapter_event_route_delegates_to_backend_api():
