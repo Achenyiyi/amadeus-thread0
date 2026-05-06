@@ -114,10 +114,11 @@ def _scenario_result(
 
 def _artifact_appraisal_to_motive_scenario() -> dict[str, Any]:
     readback = build_embodied_interaction_readback(_turn(IMAGE_SOURCE))
+    motive = _dict_or_empty(readback.get("artifact_motive"))
     hints = _hints_from_readback(readback)
     first = _dict_or_empty(hints[0] if hints else {})
     passed = (
-        readback.get("readiness_status") == PHASE4_READY
+        motive.get("readiness_status") == "artifact_motive_bridge_ready"
         and len(hints) == 1
         and first.get("source_ref_id") == IMAGE_SOURCE["source_id"]
         and first.get("primary_motive_hint") == "restore_access_continuity"
@@ -262,29 +263,42 @@ def _authority_scenario() -> dict[str, Any]:
 def _phase3_preserved_scenario() -> dict[str, Any]:
     readback = build_embodied_interaction_readback(_turn(IMAGE_SOURCE))
     appraisal = _dict_or_empty(readback.get("artifact_appraisal"))
+    motive = _dict_or_empty(readback.get("artifact_motive"))
     evidence = [
         dict(item)
         for item in list(appraisal.get("evidence_items") or [])
         if isinstance(item, dict)
     ]
+    motive_hints = [
+        dict(item)
+        for item in list(motive.get("motive_hints") or [])
+        if isinstance(item, dict)
+    ]
     first = _dict_or_empty(evidence[0] if evidence else {})
+    first_motive = _dict_or_empty(motive_hints[0] if motive_hints else {})
     authority = _dict_or_empty(first.get("authority"))
+    motive_authority = _dict_or_empty(first_motive.get("authority"))
     passed = (
-        readback.get("readiness_status") == PHASE4_READY
-        and appraisal.get("readiness_status") == "artifact_appraisal_bridge_ready"
+        appraisal.get("readiness_status") == "artifact_appraisal_bridge_ready"
+        and motive.get("readiness_status") == "artifact_motive_bridge_ready"
         and len(evidence) == 1
+        and len(motive_hints) == 1
         and first.get("source_ref_id") == IMAGE_SOURCE["source_id"]
+        and first_motive.get("source_ref_id") == IMAGE_SOURCE["source_id"]
         and authority.get("model_api_called") is False
         and authority.get("memory_write_allowed") is False
         and authority.get("writeback_ready") is False
+        and motive_authority.get("behavior_mutation_allowed") is False
+        and motive_authority.get("writeback_ready") is False
     )
     return _scenario_result(
         name="phase3_appraisal_contract_remains_preserved",
         passed=passed,
-        hint_count=len(_hints_from_readback(readback)),
+        hint_count=len(motive_hints),
         readback={
             "phase3_expected_readiness": PHASE3_READY,
             "phase3_subcontract_readiness": appraisal.get("readiness_status"),
+            "phase4_subcontract_readiness": motive.get("readiness_status"),
             "readback": readback,
         },
     )
