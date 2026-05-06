@@ -120,3 +120,52 @@ def test_compact_line_names_sources_semantics_and_boundaries():
     assert "sources=1" in line
     assert "semantic_floor=floor_rewritten" in line
     assert "live_capture=false" in line
+
+
+def test_artifact_semantics_reaches_perception_appraisal_and_carryover():
+    turn = {
+        "final_text": "嗯，我听见了。",
+        "current_event": {
+            "kind": "multimodal_observation",
+            "perception": {"channel": "image"},
+            "digital_body_hints": {
+                "multimodal_sources": [
+                    {
+                        "source_id": "img-runtime-sem-1",
+                        "modality": "image",
+                        "path": "fixtures/login.png",
+                        "consent_scope": "single_turn",
+                        "capture_method": "operator_attached_file",
+                        "semantic_summary": "A login dialog with an expired session warning.",
+                        "semantic_label": "login_prompt",
+                    }
+                ]
+            },
+        },
+        "turn_appraisal": {"scene": "artifact_review"},
+        "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+        "reconsolidation_snapshot": {"final_text": "嗯，我听见了。"},
+    }
+
+    readback = build_embodied_interaction_readback(turn)
+
+    observation = readback["artifact_semantics"]["semantic_observations"][0]
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase2_ready"
+    assert observation["source_ref_id"] == "img-runtime-sem-1"
+    assert (
+        readback["current_event"]["perception"]["semantic_observations"][0]["source_ref_id"]
+        == "img-runtime-sem-1"
+    )
+    assert readback["current_event"]["perception"]["channel"] == "image"
+    assert (
+        readback["turn_appraisal"]["perception_semantics"]["semantic_observations"][0][
+            "source_ref_id"
+        ]
+        == "img-runtime-sem-1"
+    )
+    assert (
+        readback["interaction_carryover"]["embodied_context"][
+            "artifact_semantic_observations"
+        ][0]["source_ref_id"]
+        == "img-runtime-sem-1"
+    )
