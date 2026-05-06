@@ -36,6 +36,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "residual_living_loop_phase1",
             "living_loop_runtime_realism_phase1",
             "living_loop_runtime_realism_phase2",
+            "living_loop_runtime_realism_phase3",
             "embodied_interaction_runtime_phase1",
             "embodied_interaction_runtime_phase2",
             "embodied_interaction_runtime_phase3",
@@ -157,7 +158,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["post_unlock"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 2)
         self.assertEqual(summary["summary"]["categories"]["residual_closure"]["passed"], 1)
-        self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 2)
+        self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 3)
         self.assertEqual(summary["summary"]["categories"]["embodied_interaction"]["passed"], 5)
 
     def test_load_statuses_marks_missing_reports_explicitly(self):
