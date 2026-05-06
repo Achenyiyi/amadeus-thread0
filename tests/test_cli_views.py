@@ -1337,7 +1337,11 @@ class CliViewsTests(unittest.TestCase):
     def test_build_evolution_summary_line_surfaces_operator_readback(self):
         summary = build_evolution_cli_summary(
             operator_readback={
-                "readiness_status": "runtime_productization_phase1_ready",
+                "readiness_status": "runtime_productization_phase2_ready",
+                "console_summary": {
+                    "health": "ready",
+                    "next_action": "monitor_runtime_readback",
+                },
                 "operator_snapshot": {
                     "autonomy_mode": "assist",
                     "action_packet_count": 1,
@@ -1348,8 +1352,10 @@ class CliViewsTests(unittest.TestCase):
 
         line = build_evolution_summary_line(summary)
 
-        self.assertIn("productization=runtime_productization_phase1_ready", line)
+        self.assertIn("productization=runtime_productization_phase2_ready", line)
         self.assertIn("runtime=operator_readback", line)
+        self.assertIn("console=ready", line)
+        self.assertIn("next=monitor_runtime_readback", line)
         self.assertIn("autonomy=assist", line)
         self.assertIn("packets=1", line)
 

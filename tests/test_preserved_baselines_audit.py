@@ -32,6 +32,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "procedural_growth_phase4",
             "post_unlock_roadmap",
             "runtime_productization_phase1",
+            "runtime_productization_phase2",
         }
 
         self.assertEqual(set(EXPECTED_READY), expected_ids)
@@ -146,7 +147,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["passed"], 4)
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["failed"], 0)
         self.assertEqual(summary["summary"]["categories"]["post_unlock"]["passed"], 1)
-        self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 1)
+        self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 2)
 
     def test_load_statuses_marks_missing_reports_explicitly(self):
         with tempfile.TemporaryDirectory() as td:

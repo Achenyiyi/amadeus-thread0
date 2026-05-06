@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 
-RUNTIME_PRODUCTIZATION_READINESS = "runtime_productization_phase1_ready"
+RUNTIME_PRODUCTIZATION_PHASE1_READINESS = "runtime_productization_phase1_ready"
+RUNTIME_PRODUCTIZATION_PHASE2_READINESS = "runtime_productization_phase2_ready"
+RUNTIME_PRODUCTIZATION_READINESS = RUNTIME_PRODUCTIZATION_PHASE2_READINESS
 
 EXPECTED_INPUT_READINESS = {
     "post_baseline": "post_baseline_closure_ready",
@@ -20,6 +22,12 @@ AUTHORITY_BOUNDARY = {
     "external_harness_runtime_auto_enabled": False,
     "live_capture_auto_enabled": False,
 }
+
+READ_ONLY_ROUTES = [
+    "/api/runtime-productization",
+    "/api/environment-summary",
+    "/api/runtime-layout",
+]
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
@@ -80,6 +88,53 @@ def _operator_snapshot(current_turn: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def _evidence_summary(inputs: dict[str, dict[str, str]]) -> dict[str, Any]:
+    rows = inputs if isinstance(inputs, dict) else {}
+    ready_inputs = 0
+    missing_or_regressed: list[str] = []
+    for key, expected in EXPECTED_INPUT_READINESS.items():
+        row = rows.get(key) if isinstance(rows.get(key), dict) else {}
+        ready = (
+            str(row.get("overall_status") or "").strip() == "passed"
+            and str(row.get("readiness_status") or "").strip() == expected
+        )
+        if ready:
+            ready_inputs += 1
+        else:
+            missing_or_regressed.append(key)
+    return {
+        "ready_inputs": ready_inputs,
+        "total_inputs": len(EXPECTED_INPUT_READINESS),
+        "missing_or_regressed_inputs": missing_or_regressed,
+    }
+
+
+def _safe_routes() -> dict[str, Any]:
+    return {
+        "read_only_routes": list(READ_ONLY_ROUTES),
+        "mutation_routes": [],
+        "approval_required_for_external_mutation": True,
+        "frontend_semantics_owner": False,
+    }
+
+
+def _console_summary(contract: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any]:
+    health = "ready" if str(contract.get("overall_status") or "") == "passed" else "attention_required"
+    pending = _int_value(snapshot.get("pending_approval_count"), 0)
+    if health != "ready":
+        next_action = "inspect_productization_failures"
+    elif pending:
+        next_action = "resolve_pending_operator_approval"
+    else:
+        next_action = "monitor_runtime_readback"
+    return {
+        "health": health,
+        "mode": "readback_only",
+        "next_action": next_action,
+        "pending_approval_count": pending,
+    }
+
+
 def evaluate_runtime_productization_contract(readback: dict[str, Any] | None) -> dict[str, Any]:
     data = _dict_or_empty(readback)
     inputs = data.get("inputs") if isinstance(data.get("inputs"), dict) else {}
@@ -107,7 +162,7 @@ def evaluate_runtime_productization_contract(readback: dict[str, Any] | None) ->
 
     return {
         "overall_status": "failed" if failure_reasons else "passed",
-        "readiness_status": RUNTIME_PRODUCTIZATION_READINESS if not failure_reasons else "runtime_productization_phase1_in_progress",
+        "readiness_status": RUNTIME_PRODUCTIZATION_READINESS if not failure_reasons else "runtime_productization_phase2_in_progress",
         "failure_reasons": failure_reasons,
     }
 
@@ -124,15 +179,19 @@ def build_runtime_productization_readback(
         "preserved_baselines": _status_line(preserved_baselines),
         "post_unlock_roadmap": _status_line(post_unlock_roadmap),
     }
+    snapshot = _operator_snapshot(current_turn)
     readback = {
-        "phase": "Runtime Productization Phase 1",
-        "schema": "operator_readback.v1",
+        "phase": "Runtime Productization Phase 2",
+        "schema": "operator_readback.v2",
         "inputs": inputs,
         "lanes": _lane_rows(post_baseline_status),
         "authority_boundary": dict(AUTHORITY_BOUNDARY),
-        "operator_snapshot": _operator_snapshot(current_turn),
+        "safe_routes": _safe_routes(),
+        "evidence_summary": _evidence_summary(inputs),
+        "operator_snapshot": snapshot,
     }
     contract = evaluate_runtime_productization_contract(readback)
+    readback["console_summary"] = _console_summary(contract, snapshot)
     readback["overall_status"] = contract["overall_status"]
     readback["readiness_status"] = contract["readiness_status"]
     readback["failure_reasons"] = list(contract.get("failure_reasons") or [])
@@ -148,6 +207,13 @@ def compact_operator_readback_line(readback: dict[str, Any] | None) -> str:
         f"productization={str(data.get('readiness_status') or '').strip() or 'unknown'}",
         "runtime=operator_readback",
     ]
+    console = data.get("console_summary") if isinstance(data.get("console_summary"), dict) else {}
+    health = str(console.get("health") or "").strip()
+    if health:
+        parts.append(f"console={health}")
+    next_action = str(console.get("next_action") or "").strip()
+    if next_action:
+        parts.append(f"next={next_action}")
     autonomy = str(snapshot.get("autonomy_mode") or "").strip()
     if autonomy:
         parts.append(f"autonomy={autonomy}")
@@ -160,12 +226,18 @@ def compact_operator_readback_line(readback: dict[str, Any] | None) -> str:
     recovery = str(snapshot.get("procedural_recovery_kind") or "").strip()
     if recovery:
         parts.append(f"recovery={recovery}")
+    pending = _int_value(snapshot.get("pending_approval_count"), 0)
+    if pending:
+        parts.append(f"pending_approvals={pending}")
     return " | ".join(parts)
 
 
 __all__ = [
     "AUTHORITY_BOUNDARY",
     "EXPECTED_INPUT_READINESS",
+    "READ_ONLY_ROUTES",
+    "RUNTIME_PRODUCTIZATION_PHASE1_READINESS",
+    "RUNTIME_PRODUCTIZATION_PHASE2_READINESS",
     "RUNTIME_PRODUCTIZATION_READINESS",
     "build_runtime_productization_readback",
     "compact_operator_readback_line",
