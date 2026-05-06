@@ -3,12 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 from ..graph_parts.chinese_semantic_surface import rewrite_semantic_surface_floor
+from .artifact_perception_semantics import build_artifact_semantics_readback
 from .multimodal_sources import normalize_multimodal_source
 
 
 EMBODIED_INTERACTION_PHASE1_READINESS = "embodied_interaction_runtime_phase1_ready"
 EMBODIED_INTERACTION_PHASE1_IN_PROGRESS = "embodied_interaction_runtime_phase1_in_progress"
 EMBODIED_INTERACTION_PHASE1_NOT_APPLICABLE = "embodied_interaction_runtime_phase1_not_applicable"
+EMBODIED_INTERACTION_PHASE2_READINESS = "embodied_interaction_runtime_phase2_ready"
+EMBODIED_INTERACTION_PHASE2_IN_PROGRESS = "embodied_interaction_runtime_phase2_in_progress"
 
 AUTHORITY_BOUNDARY = {
     "persona_core_mutation_allowed": False,
@@ -114,8 +117,28 @@ def normalize_embodied_interaction_sources(turn: dict[str, Any] | None) -> dict[
     }
 
 
-def _current_event_patch(sources: dict[str, Any]) -> dict[str, Any]:
-    return {"perception_sources": list(sources.get("available_sources") or [])}
+def _current_event_patch(turn: dict[str, Any], sources: dict[str, Any], artifact_semantics: dict[str, Any]) -> dict[str, Any]:
+    current_event = _dict_or_empty(turn.get("current_event"))
+    patch: dict[str, Any] = {"perception_sources": list(sources.get("available_sources") or [])}
+    observations = list(artifact_semantics.get("semantic_observations") or [])
+    if observations:
+        perception = _dict_or_empty(current_event.get("perception"))
+        perception["semantic_observations"] = observations
+        patch["perception"] = perception
+    return patch
+
+
+def _turn_appraisal_patch(turn: dict[str, Any], artifact_semantics: dict[str, Any]) -> dict[str, Any]:
+    turn_appraisal = _dict_or_empty(turn.get("turn_appraisal"))
+    observations = list(artifact_semantics.get("semantic_observations") or [])
+    if observations:
+        turn_appraisal["perception_semantics"] = {
+            "status": _clean(artifact_semantics.get("status")) or "empty",
+            "semantic_observations": observations,
+            "model_api_called": bool(artifact_semantics.get("model_api_called", False)),
+            "writeback_ready_count": int(artifact_semantics.get("writeback_ready_count") or 0),
+        }
+    return turn_appraisal
 
 
 def _digital_body_patch(turn: dict[str, Any], sources: dict[str, Any]) -> dict[str, Any]:
@@ -134,7 +157,7 @@ def _digital_body_patch(turn: dict[str, Any], sources: dict[str, Any]) -> dict[s
     return digital_body
 
 
-def _carryover_patch(turn: dict[str, Any], sources: dict[str, Any]) -> dict[str, Any]:
+def _carryover_patch(turn: dict[str, Any], sources: dict[str, Any], artifact_semantics: dict[str, Any]) -> dict[str, Any]:
     carryover = _dict_or_empty(turn.get("interaction_carryover"))
     embodied = _dict_or_empty(carryover.get("embodied_context"))
     available = list(sources.get("available_sources") or [])
@@ -143,6 +166,11 @@ def _carryover_patch(turn: dict[str, Any], sources: dict[str, Any]) -> dict[str,
         embodied.setdefault("kind", "multimodal_observation")
         embodied.setdefault("artifact_continuity", "attached")
         embodied.setdefault("artifact_carrier", available[0].get("artifact_carrier") or "multimodal_source")
+    observations = list(artifact_semantics.get("semantic_observations") or [])
+    if observations:
+        embodied["artifact_semantic_observations"] = observations
+        embodied.setdefault("kind", "artifact_semantic_observation")
+        embodied.setdefault("artifact_continuity", "attached")
     carryover["embodied_context"] = embodied
     return carryover
 
@@ -164,11 +192,16 @@ def _semantic_runtime_floor(turn: dict[str, Any]) -> dict[str, Any]:
 def build_embodied_interaction_readback(turn: dict[str, Any] | None) -> dict[str, Any]:
     data = _dict_or_empty(turn)
     sources = normalize_embodied_interaction_sources(data)
+    artifact_semantics = build_artifact_semantics_readback(_candidate_sources(data))
     semantic = _semantic_runtime_floor(data)
     available = int(sources.get("available_count") or 0)
     blocked = int(sources.get("blocked_count") or 0)
     semantic_applied = bool(semantic.get("applied_floor", False))
-    if available > 0 and blocked == 0:
+    artifact_semantics_ready = _clean(artifact_semantics.get("status")) == "ready"
+    if artifact_semantics_ready:
+        overall = "passed"
+        readiness = EMBODIED_INTERACTION_PHASE2_READINESS
+    elif available > 0 and blocked == 0:
         overall = "passed"
         readiness = EMBODIED_INTERACTION_PHASE1_READINESS
     elif available > 0 and blocked > 0:
@@ -195,11 +228,13 @@ def build_embodied_interaction_readback(turn: dict[str, Any] | None) -> dict[str
         "overall_status": overall,
         "readiness_status": readiness,
         "final_text": runtime_text,
-        "current_event": _current_event_patch(sources),
+        "current_event": _current_event_patch(data, sources, artifact_semantics),
+        "turn_appraisal": _turn_appraisal_patch(data, artifact_semantics),
         "digital_body": _digital_body_patch(data, sources),
-        "interaction_carryover": _carryover_patch(data, sources),
+        "interaction_carryover": _carryover_patch(data, sources, artifact_semantics),
         "reconsolidation_snapshot": reconsolidation_snapshot,
         "source_status": sources,
+        "artifact_semantics": artifact_semantics,
         "chinese_semantic_surface": semantic,
         "authority_boundary": dict(AUTHORITY_BOUNDARY),
         "failure_reasons": [
@@ -216,8 +251,18 @@ def apply_embodied_interaction_readback_to_payload(payload: dict[str, Any] | Non
         data["final_text"] = str(readback.get("final_text") or "")
     if isinstance(readback.get("current_event"), dict):
         current_event = _dict_or_empty(data.get("current_event"))
-        current_event.update(readback["current_event"])
+        event_patch = _dict_or_empty(readback.get("current_event"))
+        perception = _dict_or_empty(current_event.get("perception"))
+        perception_patch = _dict_or_empty(event_patch.pop("perception", {}))
+        if perception_patch:
+            perception.update(perception_patch)
+            current_event["perception"] = perception
+        current_event.update(event_patch)
         data["current_event"] = current_event
+    if isinstance(readback.get("turn_appraisal"), dict):
+        turn_appraisal = _dict_or_empty(data.get("turn_appraisal"))
+        turn_appraisal.update(readback["turn_appraisal"])
+        data["turn_appraisal"] = turn_appraisal
     if isinstance(readback.get("digital_body"), dict):
         data["digital_body"] = dict(readback["digital_body"])
     if isinstance(readback.get("interaction_carryover"), dict):
@@ -242,6 +287,7 @@ def compact_embodied_interaction_line(readback: dict[str, Any] | None) -> str:
         f"embodied_interaction={_clean(data.get('readiness_status')) or 'unknown'}",
         f"sources={int(source_status.get('available_count') or 0)}",
         f"blocked={int(source_status.get('blocked_count') or 0)}",
+        f"artifact_semantics={int(_dict_or_empty(data.get('artifact_semantics')).get('observation_count') or 0)}",
         f"semantic_floor={_clean(semantic.get('status')) or 'unknown'}",
         f"live_capture={str(live_capture).lower()}",
     ]
@@ -253,6 +299,8 @@ __all__ = [
     "EMBODIED_INTERACTION_PHASE1_IN_PROGRESS",
     "EMBODIED_INTERACTION_PHASE1_NOT_APPLICABLE",
     "EMBODIED_INTERACTION_PHASE1_READINESS",
+    "EMBODIED_INTERACTION_PHASE2_IN_PROGRESS",
+    "EMBODIED_INTERACTION_PHASE2_READINESS",
     "apply_embodied_interaction_readback_to_payload",
     "build_embodied_interaction_readback",
     "compact_embodied_interaction_line",
