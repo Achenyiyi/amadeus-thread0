@@ -164,8 +164,9 @@ def _backend_payload_scenario() -> dict[str, Any]:
         if isinstance(readback.get("interaction_carryover"), dict)
         else []
     )
+    artifact_semantics = readback.get("artifact_semantics") if isinstance(readback.get("artifact_semantics"), dict) else {}
     passed = (
-        readback.get("readiness_status") == PHASE2_READY
+        artifact_semantics.get("readiness_status") == "artifact_perception_semantics_ready"
         and len(observations) == 1
         and len(perception_observations) == 1
         and len(appraisal_observations) == 1
