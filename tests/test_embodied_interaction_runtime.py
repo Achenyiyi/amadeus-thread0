@@ -150,7 +150,7 @@ def test_artifact_semantics_reaches_perception_appraisal_and_carryover():
     readback = build_embodied_interaction_readback(turn)
 
     observation = readback["artifact_semantics"]["semantic_observations"][0]
-    assert readback["readiness_status"] == "embodied_interaction_runtime_phase4_ready"
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase5_ready"
     assert (
         readback["artifact_semantics"]["readiness_status"]
         == "artifact_perception_semantics_ready"
@@ -203,7 +203,7 @@ def test_artifact_appraisal_evidence_reaches_appraisal_and_carryover_surfaces():
     readback = build_embodied_interaction_readback(turn)
 
     evidence = readback["artifact_appraisal"]["evidence_items"][0]
-    assert readback["readiness_status"] == "embodied_interaction_runtime_phase4_ready"
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase5_ready"
     assert evidence["source_ref_id"] == "img-runtime-appraisal-1"
     assert evidence["suggested_appraisal_delta"]["access_friction"] is True
     assert (
@@ -257,7 +257,7 @@ def test_artifact_motive_hints_reach_readback_surfaces_without_replacing_behavio
     readback = build_embodied_interaction_readback(turn)
 
     hint = readback["artifact_motive"]["motive_hints"][0]
-    assert readback["readiness_status"] == "embodied_interaction_runtime_phase4_ready"
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase5_ready"
     assert hint["source_ref_id"] == "img-runtime-motive-1"
     assert hint["primary_motive_hint"] == "restore_access_continuity"
     assert (
@@ -284,4 +284,70 @@ def test_artifact_motive_hints_reach_readback_surfaces_without_replacing_behavio
     assert (
         readback["behavior_plan"]["artifact_motive_hints"][0]["primary_motive_hint"]
         == "restore_access_continuity"
+    )
+
+
+def test_artifact_behavior_alignment_reaches_readback_without_mutating_behavior_motive():
+    turn = {
+        "final_text": "嗯，我听见了。",
+        "current_event": {
+            "kind": "multimodal_observation",
+            "perception": {"channel": "image"},
+            "digital_body_hints": {
+                "multimodal_sources": [
+                    {
+                        "source_id": "img-runtime-align-1",
+                        "modality": "image",
+                        "path": "fixtures/login.png",
+                        "consent_scope": "single_turn",
+                        "capture_method": "operator_attached_file",
+                        "semantic_summary": "A login dialog with an expired session warning.",
+                        "semantic_label": "login_prompt",
+                    }
+                ]
+            },
+        },
+        "turn_appraisal": {"scene": "artifact_review"},
+        "behavior_action": {"primary_motive": "continue_workspace_task"},
+        "behavior_plan": {"primary_motive": "continue_workspace_task"},
+        "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+        "reconsolidation_snapshot": {"final_text": "嗯，我听见了。"},
+    }
+
+    readback = build_embodied_interaction_readback(turn)
+
+    alignment = readback["artifact_behavior_alignment"]
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase5_ready"
+    assert alignment["readiness_status"] == "artifact_behavior_alignment_ready"
+    assert alignment["alignment_items"][0]["alignment_status"] == "advisory_not_reflected"
+    assert (
+        readback["current_event"]["perception"]["behavior_alignment"]["alignment_items"][0][
+            "source_ref_id"
+        ]
+        == "img-runtime-align-1"
+    )
+    assert (
+        readback["turn_appraisal"]["behavior_alignment_evidence"]["alignment_items"][0][
+            "source_ref_id"
+        ]
+        == "img-runtime-align-1"
+    )
+    assert (
+        readback["turn_appraisal"]["perception_semantics"]["behavior_alignment"][
+            "alignment_items"
+        ][0]["source_ref_id"]
+        == "img-runtime-align-1"
+    )
+    assert (
+        readback["interaction_carryover"]["embodied_context"][
+            "artifact_behavior_alignment"
+        ]["alignment_items"][0]["source_ref_id"]
+        == "img-runtime-align-1"
+    )
+    assert readback["behavior_plan"]["primary_motive"] == "continue_workspace_task"
+    assert (
+        readback["behavior_plan"]["artifact_behavior_alignment"]["alignment_summary"][
+            "should_mutate_behavior"
+        ]
+        is False
     )
