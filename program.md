@@ -12413,3 +12413,74 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=multimodal_perception_phase2_ready`
 - Next:
   - run full Phase 2 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Dynamic Skills Phase 2`
+
+## 2026-05-07 Run 271
+
+- Focus:
+  - implement `Dynamic Skills Phase 2` after Multimodal Perception Phase 2
+  - close the approved candidate installation loop from frozen dynamic candidate payload to registry install/enable/readback
+  - keep dynamic skills inside the existing skills registry and session activation layer rather than autobiographical memory
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/dynamic_skill_candidates.py`
+  - `amadeus_thread0/runtime/skill_registry.py`
+  - `amadeus_thread0/graph_parts/skill_runtime.py`
+  - `amadeus_thread0/utils/tools.py`
+  - `evals/run_dynamic_skills_phase2_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_dynamic_skills_phase2.py`
+  - `tests/test_dynamic_skills_phase2_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-07-dynamic-skills-phase2.md`
+  - `program.md`
+- Key changes:
+  - added frozen `dynamic_skill_candidate.v1` payloads with stable `candidate_id`, `skill_id`, `version`, source evidence refs, requested permissions, sandbox profiles, draft `SKILL.md`, and hash
+  - added approval-gated dynamic candidate install packets via `install_skill` while keeping candidate proposals non-mutating
+  - added `SkillRegistryManager.install_candidate()` so exact frozen approved candidates install into the existing managed registry / installed-skill layout
+  - rejected, pending, blocked, or drifted candidate payloads do not install, do not activate, and do not become capability facts
+  - `install_skill` can preview and execute frozen candidate installs without remote-catalog lookup when `candidate_payload` is present
+  - pending backend skill envelopes now expose `candidate_id`, `candidate_hash`, `candidate_payload_schema`, and `dynamic_candidate=true`
+  - manual disable precedence and pin precedence remain unchanged for dynamic skills
+  - completed dynamic skill use may resurface as identity-safe procedural continuity only after an actual completed tool use
+  - added deterministic Phase 2 audit and preserved-baseline registration under the `skills` category
+- Validation so far:
+  - initial RED checks:
+    - `python -m pytest tests/test_dynamic_skills_phase2.py -q`
+      - failed because candidate freeze/install packet helpers did not exist
+    - after freeze helpers, `python -m pytest tests/test_dynamic_skills_phase2.py -q`
+      - failed because `SkillRegistryManager.install_candidate()` did not exist
+    - after registry install, the same suite caught approval-hash drift being accidentally normalized away
+    - `python -m pytest tests/test_dynamic_skills_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_dynamic_skills_phase2_audit` and the preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_dynamic_skills_phase2.py tests/test_dynamic_skill_candidates.py tests/test_skill_registry.py -q`
+      - passed: `13 passed`
+    - `python -m pytest tests/test_tool_approval_policy.py -q`
+      - passed: `13 passed`
+    - `python -m pytest tests/test_dynamic_skills_phase2.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py -q`
+      - passed: `26 passed`
+    - `python -m pytest tests/test_dynamic_skills_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `8 passed`
+    - `python evals/run_dynamic_skills_phase2_audit.py --run-tag phase2-dev`
+      - passed with `readiness=dynamic_skills_phase2_ready`
+  - final verification:
+    - `python -m pytest tests/test_dynamic_skill_candidates.py tests/test_dynamic_skills_phase2.py tests/test_skill_registry.py tests/test_skill_runtime.py tests/test_tool_approval_policy.py -q`
+      - passed: `35 passed`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `188 passed, 17 subtests passed`
+    - `python -m py_compile amadeus_thread0/runtime/dynamic_skill_candidates.py amadeus_thread0/runtime/skill_registry.py amadeus_thread0/graph_parts/skill_runtime.py amadeus_thread0/utils/tools.py evals/run_dynamic_skills_phase2_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python evals/run_dynamic_skills_phase2_audit.py --run-tag phase2-final`
+      - passed with `readiness=dynamic_skills_phase2_ready`
+    - `python evals/run_skills_ecosystem_audit.py --run-tag dynamic-phase2-regression`
+      - first run exposed worktree verification-environment gaps: missing ignored sandbox baseline report and C-drive Temp space pressure
+      - after copying the authoritative sandbox Phase 2 baseline report into the worktree `evals/reports` and pointing `TEMP/TMP` to the E-drive worktree temp directory, three consecutive runs passed
+      - final run passed with `readiness=skills_ecosystem_ready`
+    - `python evals/run_multimodal_perception_phase2_audit.py --run-tag dynamic-skills-phase2-regression`
+      - passed with `readiness=multimodal_perception_phase2_ready`
+    - `git diff --check`
+      - passed with only the existing Windows LF-to-CRLF warnings
+- Next:
+  - fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Frontend Runtime Shell Phase 2`

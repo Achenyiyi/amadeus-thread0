@@ -234,11 +234,13 @@ Rule:
 - preserves `sandbox_runner` as the only enabled executor harness
 - keeps external harness metadata outside persona memory/writeback ownership
 
-`dynamic_skill_candidates.py` holds proposal-only dynamic skill candidate helpers:
+`dynamic_skill_candidates.py` holds dynamic skill candidate helpers:
 
 - derives draft `SKILL.md` candidates only from completed procedural evidence
-- produces hash-verified approval payloads
-- does not install, enable, or mutate the managed skills registry automatically
+- produces frozen `dynamic_skill_candidate.v1` payloads with stable candidate/version/permission/profile/hash fields
+- builds approval-gated `install_skill` action packets for those frozen payloads
+- verifies approval payloads before any registry mutation can happen
+- does not install, enable, or mutate the managed skills registry automatically from a proposal
 
 `multimodal_sources.py` holds phase-1 multimodal source artifact normalization and phase-2 inspection packet helpers:
 
@@ -323,6 +325,7 @@ Rule:
 
 - local authored skill discovery from `skills/`
 - remote catalog / install cache / registry truth
+- approved dynamic candidate install into the existing installed-skill layout after exact frozen-payload verification
 - session activation state from auto-match plus manual override
 - `SKILL.md` metadata parsing plus on-demand disclosure for active skills
 - install/update/enable/disable/pin/unpin lifecycle helpers
@@ -460,6 +463,7 @@ Rule:
   - `run_multimodal_perception_phase2_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
+  - `run_dynamic_skills_phase2_audit.py`
   - `run_external_executor_harness_audit.py`
   - `run_frontend_runtime_shell_audit.py`
   - `run_capability_growth_phase5_audit.py`
@@ -496,6 +500,8 @@ Current skills closure coverage lives in:
 
 - `tests/test_skill_registry.py`
 - `tests/test_skill_runtime.py`
+- `tests/test_dynamic_skills_phase2.py`
+- `tests/test_dynamic_skills_phase2_audit.py`
 - `tests/test_skills_ecosystem_smokes.py`
 - `tests/test_skills_ecosystem_audit.py`
 
