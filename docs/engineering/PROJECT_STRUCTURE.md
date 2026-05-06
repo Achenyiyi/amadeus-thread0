@@ -240,16 +240,21 @@ Rule:
 - produces hash-verified approval payloads
 - does not install, enable, or mutate the managed skills registry automatically
 
-`multimodal_sources.py` holds phase-1 multimodal source artifact normalization:
+`multimodal_sources.py` holds phase-1 multimodal source artifact normalization and phase-2 inspection packet helpers:
 
 - supports consent-bound text, image, audio-file, screen-snapshot-file, and browser-capture-ref observations
 - blocks live microphone/camera/background screen/secret capture methods
 - emits read-only source artifacts and perception events with digital-body hints
+- builds approval-gated `artifact:inspect_multimodal` packets with stable `multimodal_inspection_spec`, `multimodal_inspection_preview`, and optional `multimodal_inspection_result`
+- keeps pending inspection preview-only with `auto_execute=false`, `model_api_call_planned=false`, `model_api_call_allowed=false`, and `live_capture_allowed=false`
+- accepts completed inspection semantics only from approved precomputed results; the helper itself does not call multimodal model APIs
 
 `artifact_perception_semantics.py` holds approved artifact semantic observation normalization:
 
 - converts already-approved artifact metadata such as summaries, captions, transcripts, OCR text, observed text, and tags into bounded `semantic_observations`
+- converts completed approved multimodal inspection results into bounded `semantic_observations` with `source=approved_inspection_result`
 - keeps every observation read-only with `source=approved_metadata`, `model_api_called=false`, and `writeback_ready=false`
+- keeps every approved inspection observation read-only with `model_api_called=false` and `writeback_ready=false`
 - reuses multimodal source blocking so live microphone/camera/background screen and secret capture methods cannot become semantic observations
 - does not call model APIs, capture live media, mutate memory, execute tools, install skills, or own frontend semantics
 
@@ -277,6 +282,7 @@ Rule:
 `embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 integration contract:
 
 - attaches consent-bound multimodal source artifacts to current-turn backend surfaces
+- mirrors completed approved multimodal inspection results from `artifact:inspect_multimodal` action packets into artifact semantics candidates without admitting pending/rejected/blocked results
 - mirrors source refs through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
 - attaches approved artifact semantic observations through `embodied_interaction.artifact_semantics`, `current_event.perception.semantic_observations`, `turn_appraisal.perception_semantics`, and `interaction_carryover.embodied_context.artifact_semantic_observations`
 - attaches approved artifact appraisal evidence through `embodied_interaction.artifact_appraisal`, `current_event.perception.appraisal_evidence`, `turn_appraisal.artifact_evidence`, `turn_appraisal.perception_semantics.appraisal_evidence`, and `interaction_carryover.embodied_context.artifact_appraisal_evidence`
@@ -451,6 +457,7 @@ Rule:
   - `run_embodied_interaction_runtime_phase3_audit.py`
   - `run_embodied_interaction_runtime_phase4_audit.py`
   - `run_embodied_interaction_runtime_phase5_audit.py`
+  - `run_multimodal_perception_phase2_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`
@@ -525,6 +532,8 @@ Current skills closure coverage lives in:
   `python evals/run_preserved_baselines_audit.py`
 - Chinese semantic de-scaffolding phase-2 audit:
   `python evals/run_chinese_semantic_descaffolding_phase2_audit.py`
+- multimodal perception phase-2 audit:
+  `python evals/run_multimodal_perception_phase2_audit.py`
 - living-loop realism phase-3 audit:
   `python evals/run_living_loop_realism_phase3_audit.py`
 - frontend dev shell:
