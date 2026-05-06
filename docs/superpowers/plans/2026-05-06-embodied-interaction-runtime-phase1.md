@@ -1040,7 +1040,7 @@ git commit -m "feat: close embodied interaction runtime phase 1"
 
 Expected: commit succeeds or there is nothing to commit.
 
-- [ ] **Step 7: Merge to main**
+- [x] **Step 7: Merge to main**
 
 Run from primary workspace:
 
@@ -1055,7 +1055,7 @@ Expected:
 - merge fast-forwards
 - existing untracked `third_party/benchmarks/ESConv` remains untouched
 
-- [ ] **Step 8: Post-merge verification on main**
+- [x] **Step 8: Post-merge verification on main**
 
 Run from `E:\桌面\amadeus-thread0`:
 
@@ -1071,7 +1071,7 @@ Expected:
 - embodied interaction audit reports `embodied_interaction_runtime_phase1_ready`
 - preserved baselines audit reports `preserved_baselines_ready`
 
-- [ ] **Step 9: Push main**
+- [x] **Step 9: Push main**
 
 Run:
 
