@@ -150,7 +150,11 @@ def test_artifact_semantics_reaches_perception_appraisal_and_carryover():
     readback = build_embodied_interaction_readback(turn)
 
     observation = readback["artifact_semantics"]["semantic_observations"][0]
-    assert readback["readiness_status"] == "embodied_interaction_runtime_phase2_ready"
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase3_ready"
+    assert (
+        readback["artifact_semantics"]["readiness_status"]
+        == "artifact_perception_semantics_ready"
+    )
     assert observation["source_ref_id"] == "img-runtime-sem-1"
     assert (
         readback["current_event"]["perception"]["semantic_observations"][0]["source_ref_id"]
@@ -168,4 +172,57 @@ def test_artifact_semantics_reaches_perception_appraisal_and_carryover():
             "artifact_semantic_observations"
         ][0]["source_ref_id"]
         == "img-runtime-sem-1"
+    )
+
+
+def test_artifact_appraisal_evidence_reaches_appraisal_and_carryover_surfaces():
+    turn = {
+        "final_text": "嗯，我听见了。",
+        "current_event": {
+            "kind": "multimodal_observation",
+            "perception": {"channel": "image"},
+            "digital_body_hints": {
+                "multimodal_sources": [
+                    {
+                        "source_id": "img-runtime-appraisal-1",
+                        "modality": "image",
+                        "path": "fixtures/login.png",
+                        "consent_scope": "single_turn",
+                        "capture_method": "operator_attached_file",
+                        "semantic_summary": "A login dialog with an expired session warning.",
+                        "semantic_label": "login_prompt",
+                    }
+                ]
+            },
+        },
+        "turn_appraisal": {"scene": "artifact_review"},
+        "interaction_carryover": {"embodied_context": {"kind": "multimodal_observation"}},
+        "reconsolidation_snapshot": {"final_text": "嗯，我听见了。"},
+    }
+
+    readback = build_embodied_interaction_readback(turn)
+
+    evidence = readback["artifact_appraisal"]["evidence_items"][0]
+    assert readback["readiness_status"] == "embodied_interaction_runtime_phase3_ready"
+    assert evidence["source_ref_id"] == "img-runtime-appraisal-1"
+    assert evidence["suggested_appraisal_delta"]["access_friction"] is True
+    assert (
+        readback["current_event"]["perception"]["appraisal_evidence"][0]["source_ref_id"]
+        == "img-runtime-appraisal-1"
+    )
+    assert (
+        readback["turn_appraisal"]["artifact_evidence"][0]["source_ref_id"]
+        == "img-runtime-appraisal-1"
+    )
+    assert (
+        readback["turn_appraisal"]["perception_semantics"]["appraisal_evidence"][0][
+            "source_ref_id"
+        ]
+        == "img-runtime-appraisal-1"
+    )
+    assert (
+        readback["interaction_carryover"]["embodied_context"][
+            "artifact_appraisal_evidence"
+        ][0]["source_ref_id"]
+        == "img-runtime-appraisal-1"
     )
