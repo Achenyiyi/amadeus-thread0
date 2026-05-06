@@ -12035,7 +12035,14 @@ This file is the live development ledger for `amadeus-thread0`.
     - `git diff --check`
       - passed
 - Result:
-  - `Embodied Interaction Runtime Phase 3` is implemented and verified in branch `codex/embodied-interaction-runtime-phase3`
-  - all plan checkboxes through pre-merge verification are complete
+  - `Embodied Interaction Runtime Phase 3` is implemented, fast-forward merged to `main`, and pushed to `origin/main`
+  - all plan checkboxes are complete
+  - post-merge main verification:
+    - `python -m pytest tests/test_artifact_appraisal_bridge.py tests/test_embodied_interaction_runtime.py tests/test_embodied_interaction_runtime_phase3_audit.py tests/test_backend_api.py -k "artifact_appraisal or artifact_semantics or embodied_interaction or living_loop_realism" -q`
+      - passed: `16 passed, 47 deselected`
+    - `python evals/run_embodied_interaction_runtime_phase3_audit.py --run-tag post-merge`
+      - passed with `readiness=embodied_interaction_runtime_phase3_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Next:
-  - fast-forward merge to `main`, rerun post-merge audits, and push
+  - select the next bounded runtime phase only after checking roadmap dependency order and preserved-baseline evidence
