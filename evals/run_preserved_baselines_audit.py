@@ -125,6 +125,12 @@ BASELINE_SPECS = [
         "category": "living_loop_realism",
     },
     {
+        "id": "living_loop_runtime_realism_phase3",
+        "prefix": "living-loop-realism-phase3-audit-",
+        "expected_readiness": "living_loop_runtime_realism_phase3_ready",
+        "category": "living_loop_realism",
+    },
+    {
         "id": "embodied_interaction_runtime_phase1",
         "prefix": "embodied-interaction-runtime-audit-",
         "expected_readiness": "embodied_interaction_runtime_phase1_ready",

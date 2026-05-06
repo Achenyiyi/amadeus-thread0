@@ -578,7 +578,9 @@ def build_backend_payload_realism_readback(payload: dict[str, Any] | None) -> di
         and str(causality.get("status") or "") == "ready"
     )
     artifact_alignment = _artifact_behavior_alignment_from_payload(data)
-    alignment_present = str(artifact_alignment.get("status") or "") == "ready"
+    alignment_present = bool(int(artifact_alignment.get("alignment_count") or 0)) or str(
+        artifact_alignment.get("status") or ""
+    ) == "ready"
     artifact_ready = str(artifact_alignment.get("status") or "") == "ready"
     ready = bool(base_ready and (not alignment_present or artifact_ready))
     failure_reasons = list(causality.get("missing_links") or [])
