@@ -50,7 +50,7 @@
 - Create: `tests/test_artifact_motive_bridge.py`
 - Create: `amadeus_thread0/runtime/artifact_motive_bridge.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add tests covering the desired public API:
 
@@ -95,7 +95,7 @@ def test_access_friction_appraisal_evidence_creates_restore_access_hint():
     assert readback["motive_summary"]["should_write_memory"] is False
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -105,7 +105,7 @@ python -m pytest tests/test_artifact_motive_bridge.py -q
 
 Expected: fails because `amadeus_thread0.runtime.artifact_motive_bridge` does not exist.
 
-- [ ] **Step 3: Implement the bridge**
+- [x] **Step 3: Implement the bridge**
 
 Create `amadeus_thread0/runtime/artifact_motive_bridge.py` with:
 
@@ -143,7 +143,7 @@ The implementation must:
 - return `empty` when no admissible evidence exists;
 - keep all authority flags false.
 
-- [ ] **Step 4: Run bridge tests to verify GREEN**
+- [x] **Step 4: Run bridge tests to verify GREEN**
 
 Run:
 
@@ -153,7 +153,7 @@ python -m pytest tests/test_artifact_motive_bridge.py -q
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -171,7 +171,7 @@ git commit -m "feat: add artifact motive bridge"
 - Modify: `tests/test_embodied_interaction_runtime.py`
 - Modify: `tests/test_backend_api.py`
 
-- [ ] **Step 1: Write failing integration tests**
+- [x] **Step 1: Write failing integration tests**
 
 Extend `tests/test_embodied_interaction_runtime.py` so login/access artifact evidence now reports Phase 4 readiness and mirrors motive hints:
 
@@ -212,7 +212,7 @@ def test_artifact_motive_hints_reach_readback_surfaces_without_replacing_behavio
 
 Extend `tests/test_backend_api.py` with equivalent `assistant_turn` and `event_round` payload checks.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -222,7 +222,7 @@ python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_a
 
 Expected: fails because Phase 4 readback and mirrors do not exist.
 
-- [ ] **Step 3: Attach runtime bridge**
+- [x] **Step 3: Attach runtime bridge**
 
 Modify `amadeus_thread0/runtime/embodied_interaction_runtime.py` to:
 
@@ -245,7 +245,7 @@ EMBODIED_INTERACTION_PHASE4_IN_PROGRESS = "embodied_interaction_runtime_phase4_i
   - `behavior_plan.artifact_motive_hints`
 - preserve existing `behavior_plan.primary_motive` and all `behavior_action` motive fields.
 
-- [ ] **Step 4: Run integration tests to verify GREEN**
+- [x] **Step 4: Run integration tests to verify GREEN**
 
 Run:
 
@@ -255,7 +255,7 @@ python -m pytest tests/test_artifact_motive_bridge.py tests/test_embodied_intera
 
 Expected: all selected tests pass.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -274,7 +274,7 @@ git commit -m "feat: attach artifact motive readback"
 - Modify: `evals/run_preserved_baselines_audit.py`
 - Modify: `tests/test_preserved_baselines_audit.py`
 
-- [ ] **Step 1: Write failing audit tests**
+- [x] **Step 1: Write failing audit tests**
 
 Add tests that assert:
 
@@ -294,7 +294,7 @@ def test_phase4_audit_reports_ready_when_motive_hints_are_readonly():
 
 Update preserved baseline tests to include `embodied_interaction_runtime_phase4` and expect embodied-interaction category pass count `4`.
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -304,7 +304,7 @@ python -m pytest tests/test_embodied_interaction_runtime_phase4_audit.py tests/t
 
 Expected: fails because the audit module and preserved baseline row do not exist.
 
-- [ ] **Step 3: Implement audit and baseline row**
+- [x] **Step 3: Implement audit and baseline row**
 
 Create an audit script with scenarios:
 
@@ -326,7 +326,7 @@ Add this baseline spec:
 }
 ```
 
-- [ ] **Step 4: Run audit tests and audit**
+- [x] **Step 4: Run audit tests and audit**
 
 Run:
 
@@ -337,7 +337,7 @@ python evals/run_embodied_interaction_runtime_phase4_audit.py --run-tag phase4-d
 
 Expected: tests pass and audit prints `readiness=embodied_interaction_runtime_phase4_ready`.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -357,7 +357,7 @@ git commit -m "test: audit embodied interaction phase 4"
 - Modify: `program.md`
 - Modify: `docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase4.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 Document that `Embodied Interaction Runtime Phase 4`:
 
@@ -370,11 +370,11 @@ Document that `Embodied Interaction Runtime Phase 4`:
 - does not open live capture;
 - does not mutate persona core or widen execution authority.
 
-- [ ] **Step 2: Mark plan checkboxes complete**
+- [x] **Step 2: Mark plan checkboxes complete**
 
 Update this plan file as each task is finished.
 
-- [ ] **Step 3: Commit docs**
+- [x] **Step 3: Commit docs**
 
 Run:
 
@@ -450,3 +450,4 @@ git push origin main
 ```
 
 Expected: post-merge verification passes and `main` pushes successfully.
+
