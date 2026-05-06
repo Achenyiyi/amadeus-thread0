@@ -18,6 +18,7 @@ export type BackendKind =
   | "thread_inventory"
   | "runtime_layout"
   | "environment_summary"
+  | "runtime_productization"
   | "event_round"
   | "assistant_turn";
 
@@ -965,6 +966,9 @@ export interface AssistantTurnPayload {
   sources: SourceRef[];
   pending_utterance_fragment: string;
   writeback_trace: WritebackTracePayload;
+  operator_readback?: JsonRecord;
+  living_loop_realism?: JsonRecord;
+  embodied_interaction?: JsonRecord;
 }
 
 export interface EventRoundPayload {
@@ -991,6 +995,9 @@ export interface EventRoundPayload {
   evolution_state?: JsonRecord;
   turn_summary: EvolutionSummary;
   writeback_trace: WritebackTracePayload;
+  operator_readback?: JsonRecord;
+  living_loop_realism?: JsonRecord;
+  embodied_interaction?: JsonRecord;
 }
 
 export interface WritebackTracePayload {
@@ -1127,6 +1134,17 @@ export interface EnvironmentSummaryPayload {
   dashscope_api_key_set: boolean;
 }
 
+export interface RuntimeProductizationPayload extends JsonRecord {
+  schema?: string;
+  readiness_status?: string;
+  operator_snapshot?: JsonRecord;
+  console_health?: JsonRecord;
+  evidence_summary?: JsonRecord;
+  route_inventory?: JsonRecord;
+  next_action_hints?: JsonRecord[];
+  lanes?: JsonRecord;
+}
+
 export type MemorySnapshotPayload = JsonRecord;
 
 export interface BackendEnvelopeMap {
@@ -1142,6 +1160,7 @@ export interface BackendEnvelopeMap {
   thread_inventory: ThreadInventoryPayload;
   runtime_layout: RuntimeLayoutPayload;
   environment_summary: EnvironmentSummaryPayload;
+  runtime_productization: RuntimeProductizationPayload;
   event_round: EventRoundPayload;
   assistant_turn: AssistantTurnPayload;
 }
