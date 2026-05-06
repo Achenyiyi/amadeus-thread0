@@ -54,7 +54,7 @@
 - Create: `tests/test_embodied_interaction_runtime.py`
 - Create: `amadeus_thread0/runtime/embodied_interaction_runtime.py`
 
-- [ ] **Step 1: Write the failing runtime adapter tests**
+- [x] **Step 1: Write the failing runtime adapter tests**
 
 Create `tests/test_embodied_interaction_runtime.py` with:
 
@@ -173,7 +173,7 @@ def test_compact_line_names_sources_semantics_and_boundaries():
     assert "live_capture=false" in line
 ```
 
-- [ ] **Step 2: Run runtime adapter tests to verify RED**
+- [x] **Step 2: Run runtime adapter tests to verify RED**
 
 Run:
 
@@ -183,7 +183,7 @@ python -m pytest tests/test_embodied_interaction_runtime.py -q
 
 Expected: FAIL because `amadeus_thread0.runtime.embodied_interaction_runtime` does not exist.
 
-- [ ] **Step 3: Implement the runtime adapter**
+- [x] **Step 3: Implement the runtime adapter**
 
 Create `amadeus_thread0/runtime/embodied_interaction_runtime.py` with:
 
@@ -445,7 +445,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4: Run runtime adapter tests to verify GREEN**
+- [x] **Step 4: Run runtime adapter tests to verify GREEN**
 
 Run:
 
@@ -455,7 +455,7 @@ python -m pytest tests/test_embodied_interaction_runtime.py -q
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 Run:
 
@@ -474,7 +474,7 @@ Expected: commit succeeds.
 - Modify: `amadeus_thread0/runtime/backend_api.py`
 - Modify: `tests/test_backend_api.py`
 
-- [ ] **Step 1: Write failing backend payload tests**
+- [x] **Step 1: Write failing backend payload tests**
 
 Append tests to `tests/test_backend_api.py` inside `BackendApiTests`:
 
@@ -553,7 +553,7 @@ Append tests to `tests/test_backend_api.py` inside `BackendApiTests`:
             self.assertTrue(payload["embodied_interaction"]["chinese_semantic_surface"]["applied_floor"])
 ```
 
-- [ ] **Step 2: Run backend payload tests to verify RED**
+- [x] **Step 2: Run backend payload tests to verify RED**
 
 Run:
 
@@ -563,7 +563,7 @@ python -m pytest tests/test_backend_api.py -k embodied_interaction -q
 
 Expected: FAIL because backend payloads do not yet attach `embodied_interaction`.
 
-- [ ] **Step 3: Attach readback in `backend_api.py`**
+- [x] **Step 3: Attach readback in `backend_api.py`**
 
 Modify imports near the current `living_loop_realism` import:
 
@@ -589,7 +589,7 @@ return self._envelope(..., payload, ...)
 
 Keep the existing envelope kind and meta unchanged.
 
-- [ ] **Step 4: Run backend payload tests to verify GREEN**
+- [x] **Step 4: Run backend payload tests to verify GREEN**
 
 Run:
 
@@ -599,7 +599,7 @@ python -m pytest tests/test_backend_api.py -k "embodied_interaction or living_lo
 
 Expected: PASS.
 
-- [ ] **Step 5: Run focused backend regression**
+- [x] **Step 5: Run focused backend regression**
 
 Run:
 
@@ -609,7 +609,7 @@ python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/t
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 Run:
 
@@ -630,7 +630,7 @@ Expected: commit succeeds.
 - Modify: `evals/run_preserved_baselines_audit.py`
 - Modify: `tests/test_preserved_baselines_audit.py`
 
-- [ ] **Step 1: Write failing audit tests**
+- [x] **Step 1: Write failing audit tests**
 
 Create `tests/test_embodied_interaction_runtime_audit.py` with:
 
@@ -672,7 +672,7 @@ And add category assertion in `test_evaluate_preserved_baselines_passes_when_all
 self.assertEqual(summary["summary"]["categories"]["embodied_interaction"]["passed"], 1)
 ```
 
-- [ ] **Step 2: Run audit tests to verify RED**
+- [x] **Step 2: Run audit tests to verify RED**
 
 Run:
 
@@ -682,7 +682,7 @@ python -m pytest tests/test_embodied_interaction_runtime_audit.py tests/test_pre
 
 Expected: FAIL because the audit entrypoint and preserved-baseline row do not exist yet.
 
-- [ ] **Step 3: Implement audit runner**
+- [x] **Step 3: Implement audit runner**
 
 Create `evals/run_embodied_interaction_runtime_audit.py` with:
 
@@ -862,7 +862,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Register preserved baseline**
+- [x] **Step 4: Register preserved baseline**
 
 Add to `BASELINE_SPECS` in `evals/run_preserved_baselines_audit.py` after `living_loop_runtime_realism_phase2`:
 
@@ -875,7 +875,7 @@ Add to `BASELINE_SPECS` in `evals/run_preserved_baselines_audit.py` after `livin
     },
 ```
 
-- [ ] **Step 5: Run audit tests to verify GREEN**
+- [x] **Step 5: Run audit tests to verify GREEN**
 
 Run:
 
@@ -886,7 +886,7 @@ python evals/run_embodied_interaction_runtime_audit.py --run-tag phase1-dev
 
 Expected: tests PASS and audit prints `readiness=embodied_interaction_runtime_phase1_ready`.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
@@ -907,7 +907,7 @@ Expected: commit succeeds.
 - Modify: `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
 - Modify: `program.md`
 
-- [ ] **Step 1: Update project contracts**
+- [x] **Step 1: Update project contracts**
 
 Update `AGENTS.md`:
 
@@ -936,12 +936,12 @@ Update `program.md`:
 - Update Current State mainline phase to `Embodied Interaction Runtime Phase 1`.
 - Add a dated run entry with files changed, key behavior, validations, result, and next step.
 
-- [ ] **Step 2: Run doc/placeholder scan**
+- [x] **Step 2: Run doc/placeholder scan**
 
 Run:
 
 ```powershell
-rg -n "TBD|TODO|implement later|fill in details|Similar to Task" AGENTS.md docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase1.md amadeus_thread0/runtime/embodied_interaction_runtime.py tests/test_embodied_interaction_runtime.py evals/run_embodied_interaction_runtime_audit.py tests/test_embodied_interaction_runtime_audit.py
+rg -n "T[B]D|T[O]DO|implement[ ]later|fill[ ]in[ ]details|Similar[ ]to[ ]Task" AGENTS.md docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md docs/superpowers/plans/2026-05-06-embodied-interaction-runtime-phase1.md amadeus_thread0/runtime/embodied_interaction_runtime.py tests/test_embodied_interaction_runtime.py evals/run_embodied_interaction_runtime_audit.py tests/test_embodied_interaction_runtime_audit.py
 ```
 
 Expected: no matches.
