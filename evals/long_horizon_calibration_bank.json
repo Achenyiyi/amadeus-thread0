@@ -1,0 +1,48 @@
+{
+  "packs": {
+    "everyday_low_stakes_7_turns": {
+      "turns": 7,
+      "metrics": [
+        "final_text_tts_parity",
+        "no_duplicate_output",
+        "generic_assistant_tone_absent"
+      ]
+    },
+    "repair_after_tension_9_turns": {
+      "turns": 9,
+      "metrics": [
+        "relationship_continuity_resurfaced",
+        "boundary_not_punitive",
+        "no_middle_state_leak"
+      ]
+    },
+    "self_rhythm_boundary_8_turns": {
+      "turns": 8,
+      "metrics": [
+        "own_rhythm_not_subservient",
+        "boundary_not_punitive"
+      ]
+    },
+    "shared_work_continuity_10_turns": {
+      "turns": 10,
+      "metrics": [
+        "relationship_continuity_resurfaced",
+        "embodied_context_truthful"
+      ]
+    },
+    "embodied_artifact_resume_8_turns": {
+      "turns": 8,
+      "metrics": [
+        "embodied_context_truthful",
+        "no_middle_state_leak"
+      ]
+    },
+    "silence_and_deferred_return_6_turns": {
+      "turns": 6,
+      "metrics": [
+        "own_rhythm_not_subservient",
+        "relationship_continuity_resurfaced"
+      ]
+    }
+  }
+}

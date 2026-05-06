@@ -40,6 +40,11 @@ def _modality_from_event(kind: str, source: str) -> str:
     channel = _channel_from_source(source)
     if normalized_kind == "tts_presence_timing_observation":
         return "TTS_presence_timing"
+    if normalized_kind == "multimodal_observation":
+        existing = _clean_text(source).lower()
+        if existing in {"image", "audio", "screen", "text", "browser_capture"}:
+            return existing
+        return _clean_text(source).lower() if _clean_text(source).lower() != "multimodal_source" else "multimodal"
     if normalized_kind in {"browser_runtime_observation", "body_resource_observation"}:
         return "browser" if channel == "browser" else "body"
     if normalized_kind == "sandbox_run_observation":
@@ -68,6 +73,8 @@ def _source_role(kind: str, source: str) -> str:
         return "self"
     if normalized_kind == "tts_presence_timing_observation" or normalized_source == "tts":
         return "runtime"
+    if normalized_kind == "multimodal_observation":
+        return "environment" if normalized_source in {"multimodal_source", "runtime"} else "operator"
     if normalized_kind == "skill_usage_observation" or normalized_source in {"skill", "skills", "skill_runtime"}:
         return "capability"
     if normalized_kind in {
@@ -122,6 +129,8 @@ def _trust_tier(kind: str, source: str) -> str:
     normalized_source = _clean_text(source).lower()
     if normalized_kind == "tts_presence_timing_observation":
         return "high_runtime_telemetry"
+    if normalized_kind == "multimodal_observation":
+        return "medium"
     if normalized_kind in {"user_utterance", "time_idle", "scheduled_life_due"}:
         return "high"
     if normalized_kind.startswith("self_") or normalized_source in {"system", "commitment_scheduler", "scheduler"}:

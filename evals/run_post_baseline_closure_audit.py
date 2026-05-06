@@ -15,7 +15,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from amadeus_thread0.runtime.post_baseline_closure import evaluate_post_baseline_status
+from amadeus_thread0.runtime.post_baseline_closure import (
+    evaluate_post_baseline_status,
+    post_unlock_overrides_from_roadmap,
+)
 
 
 REPORT_DIR = PROJECT_ROOT / "evals" / "reports"
@@ -52,6 +55,16 @@ def _load_json(path: str) -> dict[str, Any]:
         return dict(payload) if isinstance(payload, dict) else {}
     except Exception:
         return {}
+
+
+def _load_latest_json_by_prefix(prefix: str) -> dict[str, Any]:
+    reports = sorted(REPORT_DIR.glob(f"{prefix}*.json"))
+    for path in reversed(reports):
+        report = _load_json(str(path))
+        if report:
+            report["report_path"] = str(path)
+            return report
+    return {}
 
 
 def _tail(text: str, *, limit: int = 2400) -> str:
@@ -99,8 +112,10 @@ def _parse_prefixed_output(stdout: str, *, family: str) -> dict[str, str]:
     if report:
         payload["report_overall_status"] = str(report.get("overall_status") or "").strip()
         payload["report_readiness_status"] = str(report.get("readiness_status") or "").strip()
-        if "historical_pass_streak" in report:
-            payload["historical_pass_streak"] = str(report.get("historical_pass_streak") or 0)
+    if "historical_pass_streak" in report:
+        payload["historical_pass_streak"] = str(report.get("historical_pass_streak") or 0)
+        if family == "chinese" and report.get("legacy_readiness_status"):
+            payload["legacy_readiness_status"] = str(report.get("legacy_readiness_status") or "").strip()
     return payload
 
 
@@ -125,10 +140,16 @@ def _check(
         if str(artifacts.get("overall_status") or artifacts.get("report_overall_status") or "") != "passed":
             status = "failed"
             failure_reasons.append(parser + "_overall_status=" + str(artifacts.get("overall_status") or "unknown"))
-        if expected_readiness and str(artifacts.get("readiness_status") or artifacts.get("report_readiness_status") or "") != expected_readiness:
+        actual_readiness = str(
+            artifacts.get("readiness_status")
+            or artifacts.get("report_readiness_status")
+            or artifacts.get("legacy_readiness_status")
+            or ""
+        )
+        if expected_readiness and actual_readiness != expected_readiness:
             status = "failed"
             failure_reasons.append(
-                parser + "_readiness=" + str(artifacts.get("readiness_status") or "unknown") + " expected=" + expected_readiness
+                parser + "_readiness=" + (actual_readiness or "unknown") + " expected=" + expected_readiness
             )
     elif status != "passed":
         failure_reasons.append("command_returncode=" + str(outcome.get("returncode")))
@@ -191,9 +212,19 @@ def _status_overrides_from_checks(checks: Sequence[dict[str, Any]]) -> dict[str,
     }
 
 
-def _aggregate_report(checks: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def _status_overrides_from_roadmap_audit(report: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    return post_unlock_overrides_from_roadmap(report)
+
+
+def _aggregate_report(
+    checks: Sequence[dict[str, Any]],
+    *,
+    roadmap_report: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     rows = [dict(item) for item in checks]
-    closure = evaluate_post_baseline_status(_status_overrides_from_checks(rows))
+    overrides = _status_overrides_from_roadmap_audit(roadmap_report)
+    overrides.update(_status_overrides_from_checks(rows))
+    closure = evaluate_post_baseline_status(overrides)
     blocking_failure_ids = list(closure.get("blocking_failure_ids") or [])
     for row in rows:
         if bool(row.get("blocking", True)) and str(row.get("status") or "") != "passed":
@@ -205,6 +236,8 @@ def _aggregate_report(checks: Sequence[dict[str, Any]]) -> dict[str, Any]:
     summary["checks_total"] = len(rows)
     summary["checks_passed"] = len([row for row in rows if str(row.get("status") or "") == "passed"])
     summary["checks_failed"] = len(rows) - int(summary["checks_passed"])
+    if roadmap_report:
+        summary["post_unlock_roadmap_readiness"] = str(roadmap_report.get("readiness_status") or roadmap_report.get("readiness") or "")
     return {
         "overall_status": overall_status,
         "readiness_status": (
@@ -294,11 +327,19 @@ def main() -> int:
         )
         for spec in _build_check_specs(run_id)
     ]
+    roadmap_report = _load_latest_json_by_prefix("post-unlock-roadmap-audit-")
     report = {
         "run_id": run_id,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "checks": checks,
-        **_aggregate_report(checks),
+        "post_unlock_roadmap_report": {
+            "overall_status": str(roadmap_report.get("overall_status") or ""),
+            "readiness_status": str(roadmap_report.get("readiness_status") or roadmap_report.get("readiness") or ""),
+            "report_path": str(roadmap_report.get("report_path") or ""),
+        }
+        if roadmap_report
+        else {},
+        **_aggregate_report(checks, roadmap_report=roadmap_report),
     }
     json_path = REPORT_DIR / f"post-baseline-closure-audit-{run_id}.json"
     md_path = REPORT_DIR / f"post-baseline-closure-audit-{run_id}.md"

@@ -11,6 +11,7 @@ from evals.run_chinese_surface_de_scaffold_audit import (
     load_residue_bank,
     render_markdown,
 )
+from amadeus_thread0.graph_parts.chinese_semantic_surface import classify_chinese_surface_semantics
 
 
 class ChineseSurfaceDeScaffoldAuditTests(unittest.TestCase):
@@ -55,6 +56,14 @@ class ChineseSurfaceDeScaffoldAuditTests(unittest.TestCase):
         model_call.assert_not_called()
         self.assertIn("teacherly_scold", families)
         self.assertIn("generic_scold_template", families)
+
+    def test_semantic_classifier_detects_teacherly_scold_without_exact_phrase(self):
+        families = classify_chinese_surface_semantics("你能回来说明问题，别摆出一副求表扬的样子。")
+        self.assertIn("teacherly_scold", families)
+
+    def test_semantic_classifier_detects_boundary_threat_without_exact_phrase(self):
+        families = classify_chinese_surface_semantics("再来一次，我就不会继续给你留余地。")
+        self.assertIn("boundary_threat_excess", families)
 
     def test_evaluate_residue_bank_reports_category_counts_and_status(self):
         items = [

@@ -11193,3 +11193,69 @@ This file is the live development ledger for `amadeus-thread0`.
   - post-unlock work is organized into lane-specific phase gates with dependency order and shared guardrails
 - Next:
   - start with `Multimodal Capture Phase 1` in its own worktree
+
+## 2026-05-06 Run 256
+
+- Focus:
+  - implement the full post-unlock roadmap release train in an isolated worktree
+  - close all seven unlocked lanes with bounded specs, tests, smoke/audit runners, and integration gating
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/multimodal_sources.py`
+  - `amadeus_thread0/runtime/dynamic_skill_candidates.py`
+  - `amadeus_thread0/runtime/executor_harness_registry.py`
+  - `amadeus_thread0/runtime/post_baseline_closure.py`
+  - `amadeus_thread0/graph_parts/capability_growth.py`
+  - `amadeus_thread0/graph_parts/chinese_semantic_surface.py`
+  - `amadeus_thread0/graph_parts/perception.py`
+  - `evals/run_multimodal_capture_smokes.py`
+  - `evals/run_multimodal_capture_audit.py`
+  - `evals/run_dynamic_skills_smokes.py`
+  - `evals/run_dynamic_skills_audit.py`
+  - `evals/run_external_executor_harness_audit.py`
+  - `evals/run_frontend_runtime_shell_audit.py`
+  - `evals/run_chinese_surface_de_scaffold_audit.py`
+  - `evals/run_capability_growth_phase5_smokes.py`
+  - `evals/run_capability_growth_phase5_audit.py`
+  - `evals/run_natural_long_horizon_calibration_smokes.py`
+  - `evals/run_natural_long_horizon_calibration_audit.py`
+  - `evals/run_post_unlock_roadmap_audit.py`
+  - `evals/run_post_baseline_closure_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `evals/long_horizon_calibration_bank.json`
+  - lane specs/plans under `docs/superpowers/specs/` and `docs/superpowers/plans/`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - focused tests for each new lane plus post-baseline/preserved-baseline integration
+- Key changes:
+  - added consent-bound multimodal source artifacts and perception events without live capture
+  - added proposal-only dynamic skill candidates with hash verification and approval payloads
+  - added fail-closed external harness registry while keeping `sandbox_runner` the only enabled harness
+  - verified frontend runtime shell as a `backend.v1` contract consumer and fixed Windows npm resolution in its audit
+  - added semantic Chinese surface diagnostics with legacy readiness compatibility
+  - added advisory workflow candidates for capability growth phase 5
+  - added deterministic natural long-horizon calibration bank/audit
+  - added `post_unlock_roadmap_ready` as the release-train integration gate and folded it into preserved-baselines auditing
+- Validation:
+  - initial RED checks were run for missing lane modules/audits
+  - lane audits reached ready status:
+    - `multimodal_capture_phase1_ready`
+    - `dynamic_skills_phase1_ready`
+    - `external_executor_harness_phase1_ready`
+    - `frontend_runtime_shell_phase1_ready`
+    - `chinese_semantic_descaffolding_phase1_ready`
+    - `capability_growth_phase5_ready`
+    - `natural_long_horizon_calibration_phase1_ready`
+    - `post_unlock_roadmap_ready`
+  - final validation commands to complete before merge:
+    - full focused pytest lane bundle
+    - lane smoke/audit runners
+    - post-baseline closure audit
+    - preserved-baselines meta-audit
+    - graph compile/build checks
+    - frontend build
+    - diff/placeholder checks
+- Result:
+  - implementation complete in the worktree pending final verification, commit, and merge
+- Next:
+  - run final verification and merge `codex/post-unlock-roadmap-implementation` to `main`

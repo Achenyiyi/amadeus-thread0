@@ -94,6 +94,12 @@ def detect_legacy_surface_families(text: str) -> list[str]:
     return families
 
 
+def detect_semantic_surface_families(text: str) -> list[str]:
+    from amadeus_thread0.graph_parts.chinese_semantic_surface import classify_chinese_surface_semantics
+
+    return classify_chinese_surface_semantics(text)
+
+
 def evaluate_residue_bank(items: list[dict[str, Any]], *, run_id: str) -> dict[str, Any]:
     category_counts: dict[str, int] = {category: 0 for category in REQUIRED_CATEGORIES}
     evaluated: list[dict[str, Any]] = []
@@ -102,7 +108,9 @@ def evaluate_residue_bank(items: list[dict[str, Any]], *, run_id: str) -> dict[s
     for item in items:
         category = str(item.get("category") or "").strip()
         detected_families = detect_legacy_surface_families(str(item.get("bad_surface") or ""))
-        detected = bool(detected_families)
+        semantic_families = detect_semantic_surface_families(str(item.get("bad_surface") or ""))
+        merged_families = list(dict.fromkeys([*detected_families, *semantic_families]))
+        detected = bool(merged_families)
         if category in category_counts:
             category_counts[category] += 1
         if detected:
@@ -110,7 +118,12 @@ def evaluate_residue_bank(items: list[dict[str, Any]], *, run_id: str) -> dict[s
         evaluated.append(
             {
                 **item,
-                "detected_families": detected_families,
+                "detected_families": merged_families,
+                "legacy_detected_families": detected_families,
+                "semantic_detected_families": semantic_families,
+                "semantic_only_matches": [family for family in semantic_families if family not in detected_families],
+                "legacy_only_matches": [family for family in detected_families if family not in semantic_families],
+                "replacement_candidate_available": bool(semantic_families),
                 "status": "passed" if detected else "failed",
             }
         )
@@ -126,7 +139,8 @@ def evaluate_residue_bank(items: list[dict[str, Any]], *, run_id: str) -> dict[s
         "run_id": run_id,
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "overall_status": overall_status,
-        "readiness_status": "chinese_surface_de_scaffold_ready" if overall_status == "passed" else "chinese_surface_de_scaffold_in_progress",
+        "readiness_status": "chinese_semantic_descaffolding_phase1_ready" if overall_status == "passed" else "chinese_semantic_descaffolding_phase1_in_progress",
+        "legacy_readiness_status": "chinese_surface_de_scaffold_ready" if overall_status == "passed" else "chinese_surface_de_scaffold_in_progress",
         "summary": {
             "total_items": len(evaluated),
             "detected_items": detected_total,
