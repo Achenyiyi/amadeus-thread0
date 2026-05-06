@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Chinese Semantic De-Scaffolding Phase 2` typed runtime replacement policy after Living Loop Runtime Realism Phase 3
+- Mainline phase: `Multimodal Perception Phase 2` approval-gated artifact inspection packet gate after Chinese Semantic De-Scaffolding Phase 2
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -31,6 +31,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `procedural_growth_phase4_ready`
   - preserve `post_unlock_roadmap_ready`
   - preserve `chinese_semantic_descaffolding_phase2_ready`
+  - preserve `multimodal_perception_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `residual_living_loop_phase1_ready`
@@ -71,6 +72,13 @@ This file is the live development ledger for `amadeus-thread0`.
   - deterministic safe floors apply only for known semantic scaffold families and keep `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` aligned
   - Phase 2 audit covers everyday, repair, self-rhythm, and technical-task scaffold cases for duplicate output, scaffold residue leaks, and text/TTS drift
   - Phase 2 does not change generation prompts, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, live capture, multimodal model API use, skill registry state, or external mutation authority
+- Current multimodal perception focus:
+  - `multimodal_perception_phase2_ready` means consent-bound source artifacts can produce approval-gated `artifact:inspect_multimodal` action packets
+  - packet fields now include `multimodal_inspection_spec`, `multimodal_inspection_preview`, and optional `multimodal_inspection_result`
+  - pending inspection packets stay preview-only with `requires_approval=true`, `auto_execute=false`, `model_api_call_planned=false`, `model_api_call_allowed=false`, and `live_capture_allowed=false`
+  - completed semantic observations are accepted only from approved precomputed inspection results and surface as `source=approved_inspection_result`
+  - rejected, blocked, pending, or live-capture-derived attempts do not become semantic observations, memory facts, or completed capability facts
+  - Phase 2 does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory/browser/tool/sandbox authority, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation
 - Current embodied interaction runtime focus:
   - `embodied_interaction_runtime_phase1_ready` means real `assistant_turn` and `event_round` backend payloads now carry `embodied_interaction`
   - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
@@ -12353,3 +12361,55 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed
 - Next:
   - run full Phase 2 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Multimodal Perception Phase 2`
+
+## 2026-05-07 Run 270
+
+- Focus:
+  - implement `Multimodal Perception Phase 2` after Chinese Semantic De-Scaffolding Phase 2
+  - add approval-gated multimodal artifact inspection packets while keeping live capture and automatic multimodal model API calls blocked
+  - mirror completed approved precomputed inspection results into existing artifact semantics/runtime surfaces as read-only evidence
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/multimodal_sources.py`
+  - `amadeus_thread0/graph_parts/action_packets.py`
+  - `amadeus_thread0/runtime/artifact_perception_semantics.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `evals/run_multimodal_perception_phase2_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_multimodal_perception_phase2.py`
+  - `tests/test_multimodal_perception_phase2_audit.py`
+  - `tests/test_action_packet_contract.py`
+  - `tests/test_artifact_perception_semantics.py`
+  - `tests/test_embodied_interaction_runtime.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-07-multimodal-perception-phase2.md`
+  - `program.md`
+- Key changes:
+  - added `MULTIMODAL_PERCEPTION_PHASE2_READY` / `IN_PROGRESS` constants
+  - added `normalize_multimodal_inspection_spec()`, `normalize_multimodal_inspection_preview()`, `normalize_multimodal_inspection_result()`, and `build_multimodal_inspection_packet()`
+  - preserved `multimodal_inspection_spec`, `multimodal_inspection_preview`, and `multimodal_inspection_result` through generic `action_packets`
+  - pending packets use `intent=artifact:inspect_multimodal`, `risk=external_mutation`, `requires_approval=true`, `auto_execute=false`, and no model API plan
+  - blocked live microphone/camera/background screen sources produce blocked packets and no semantic observation
+  - completed approved fixture results become artifact semantic observations with `source=approved_inspection_result`, `model_api_called=false`, and `writeback_ready=false`
+  - `embodied_interaction_runtime` can consume completed approved inspection results from action packets without admitting pending/rejected/blocked results
+  - added deterministic Phase 2 audit and preserved-baseline registration under the `multimodal_perception` category
+- Validation so far:
+  - initial RED checks:
+    - `python -m pytest tests/test_multimodal_perception_phase2.py -q`
+      - failed because `build_multimodal_inspection_packet` did not exist
+    - after packet implementation, the same test failed on approved-result semantic mirroring because artifact semantics/runtime did not yet consume inspection results
+    - `python -m pytest tests/test_multimodal_perception_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_multimodal_perception_phase2_audit` and preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_multimodal_perception_phase2.py -q`
+      - passed: `6 passed`
+    - `python -m pytest tests/test_multimodal_perception_phase2.py tests/test_action_packet_contract.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py -q`
+      - passed: `36 passed`
+    - `python -m pytest tests/test_multimodal_perception_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_multimodal_perception_phase2_audit.py --run-tag phase2-dev`
+      - passed with `readiness=multimodal_perception_phase2_ready`
+- Next:
+  - run full Phase 2 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Dynamic Skills Phase 2`
