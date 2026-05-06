@@ -142,6 +142,12 @@ BASELINE_SPECS = [
         "expected_readiness": "embodied_interaction_runtime_phase3_ready",
         "category": "embodied_interaction",
     },
+    {
+        "id": "embodied_interaction_runtime_phase4",
+        "prefix": "embodied-interaction-runtime-phase4-audit-",
+        "expected_readiness": "embodied_interaction_runtime_phase4_ready",
+        "category": "embodied_interaction",
+    },
 ]
 
 BASELINES = {str(spec["id"]): str(spec["prefix"]) for spec in BASELINE_SPECS}
