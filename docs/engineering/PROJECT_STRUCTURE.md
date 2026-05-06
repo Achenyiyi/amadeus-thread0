@@ -466,6 +466,7 @@ Rule:
   - `run_dynamic_skills_phase2_audit.py`
   - `run_external_executor_harness_audit.py`
   - `run_frontend_runtime_shell_audit.py`
+  - `run_frontend_runtime_shell_phase2_audit.py`
   - `run_capability_growth_phase5_audit.py`
   - `run_natural_long_horizon_calibration_audit.py`
 - manual smoke packs:
@@ -511,8 +512,10 @@ Current skills closure coverage lives in:
 
 - It should render frozen `backend.v1` envelopes rather than inventing an alternative state schema.
 - Contract copies and mock fixtures should stay close to the frontend shell so UI work can proceed without touching backend internals.
+- The Phase 2 route client in `frontend/src/runtime/backendClient.ts` validates common envelope shape, consumes route-like backend responses, and groups them into the UI session without deriving backend semantics.
+- The shell can render backend-owned `operator_readback`, `living_loop_realism`, `embodied_interaction`, and `runtime_productization` payloads as read-only records.
 - Any future transport adapter should remain thin and delegate semantics to `amadeus_thread0/runtime/backend_api.py` and `backend_session.py`.
-- It is now unlocked as a runtime shell lane, but only as a consumer of the existing backend contract; it must not own memory, body, autonomy, or graph semantics.
+- It is now unlocked as a runtime shell lane, but only as a consumer of the existing backend contract; it must not own memory, body, autonomy, persona, graph, browser, sandbox, skill-registry, or external-mutation semantics.
 
 ## Entry Points
 
@@ -542,6 +545,8 @@ Current skills closure coverage lives in:
   `python evals/run_multimodal_perception_phase2_audit.py`
 - living-loop realism phase-3 audit:
   `python evals/run_living_loop_realism_phase3_audit.py`
+- frontend runtime shell phase-2 audit:
+  `python evals/run_frontend_runtime_shell_phase2_audit.py`
 - frontend dev shell:
   `cd frontend && npm run dev`
 - deployment config:

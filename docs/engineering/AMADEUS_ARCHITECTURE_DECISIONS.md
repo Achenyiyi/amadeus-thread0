@@ -28,6 +28,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Living Loop Runtime Realism Phase 3` is now implemented as an artifact-alignment realism gate: backend payloads carrying Phase 5 `embodied_interaction.artifact_behavior_alignment` are promoted to `living_loop_runtime_realism_phase3_ready`, while payloads without alignment remain Phase 2 ready and unsafe or mutating alignment evidence fails closed without memory writes, behavior mutation, persona-core mutation, model API calls, frontend semantics, or authority widening.
 - `Chinese Semantic De-Scaffolding Phase 2` is now implemented as a typed runtime replacement policy gate: deterministic Chinese safe floors expose `chinese_semantic_surface.runtime_policy` with family, semantic intent, replacement strategy, applied floor, and authority boundaries, while `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` remain aligned and prompt sprawl, model calls, persona-core mutation, memory writes, behavior mutation, frontend-owned semantics, skill registry writes, live capture, and external mutation stay blocked.
 - `Multimodal Perception Phase 2` is now implemented as an approval-gated artifact inspection packet gate: consent-bound artifacts may propose `artifact:inspect_multimodal` packets with spec/preview/result readback, pending packets never auto-execute or call model APIs, and completed semantics come only from approved precomputed inspection results while live microphone/camera/background screen capture remains blocked.
+- `Frontend Runtime Shell Phase 2` is now implemented as a route-consumption readback gate: the React/Vite shell can consume route-like `backend.v1` envelopes, render `operator_readback`, `living_loop_realism`, `embodied_interaction`, and `runtime_productization`, and remains consumer-only without owning memory, body, autonomy, persona, graph, browser, sandbox, skill-registry, live-capture, HTTP-server, or external-mutation semantics.
 - `Embodied Interaction Runtime Phase 1` is now implemented as the first runtime integration gate over the unlocked multimodal and Chinese semantic lanes: `assistant_turn` and `event_round` payloads carry `embodied_interaction`, consent-bound source artifacts enter current-turn/body/carryover surfaces, and deterministic Chinese semantic floors update final/snapshot text together without opening live capture, multimodal model API calls, persona-core mutation, memory writes, external execution, skill registry writes, frontend-owned semantics, or unapproved external mutation.
 - `Embodied Interaction Runtime Phase 2` is now implemented as approved artifact perception semantics: already-approved artifact metadata may enter perception/appraisal/carryover semantic observation surfaces while keeping live capture, multimodal model API calls, persona-core mutation, memory writes, execution authority, skill registry writes, frontend-owned semantics, and unapproved external mutation blocked.
 - `Embodied Interaction Runtime Phase 3` is now implemented as approved artifact appraisal evidence coupling: Phase 2 semantic observations may become read-only appraisal-facing evidence and influence hints while still avoiding memory facts, persona-core mutation, live capture, multimodal model API calls, execution authority changes, skill registry writes, frontend-owned semantics, and unapproved external mutation.
@@ -36,7 +37,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 
 ## Backend Status
 
-Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, chinese-semantic-descaffolding-phase2-ready, multimodal-perception-phase2-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
+Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, chinese-semantic-descaffolding-phase2-ready, multimodal-perception-phase2-ready, dynamic-skills-phase2-ready, frontend-runtime-shell-phase2-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -102,6 +103,7 @@ For backend purposes, the structural decisions in this document are now split in
     - `dynamic_skills_phase2_ready`: exact frozen dynamic candidate payloads may be installed/enabled after approval through the existing managed skills registry; pending/rejected/drifted candidates never become active skills or memory facts
     - `external_executor_harness_phase1_ready`: external harness families are represented as disabled result-only metadata; only `sandbox_runner` is enabled
     - `frontend_runtime_shell_phase1_ready`: the React/Vite shell builds against `backend.v1` fixtures and does not own backend semantics
+    - `frontend_runtime_shell_phase2_ready`: the same shell consumes route-like `backend.v1` envelopes through a thin adapter and renders runtime/productization, living-loop, and embodied readbacks without owning backend semantics
     - `chinese_semantic_descaffolding_phase1_ready`: semantic diagnostics exist before any broad runtime rewrite; legacy post-baseline tracking remains compatible
     - `chinese_semantic_descaffolding_phase2_ready`: deterministic typed runtime policy envelopes are implemented for known scaffold families, with final/snapshot/TTS parity and no prompt/model/persona/memory/behavior/frontend/skill/external authority widening
     - `capability_growth_phase5_ready`: workflow candidates are advisory continuity over completed traces, not capability claims
@@ -338,7 +340,7 @@ Post-Baseline Closure Pack preserved contract:
   - bounded capability growth: `capability_growth_phase5_ready`
   - natural long-horizon calibration: `natural_long_horizon_calibration_phase1_ready`
   - external executor harness adapters: `external_executor_harness_phase1_ready`
-  - frontend runtime shell: `frontend_runtime_shell_phase1_ready`
+  - frontend runtime shell: `frontend_runtime_shell_phase2_ready`
   - these statuses close bounded implementation specs; they still do not widen beyond each lane's explicit runtime/approval boundary
 - Final closure evidence:
   - `evals/reports/post-baseline-closure-audit-20260506-020030-final.{json,md}`
@@ -1064,7 +1066,7 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 15. `Multimodal Capture Phase 1` - `phase1-ready`
 16. `Dynamic Skills Phase 1` - `phase1-ready`
 17. `External Executor Harness Phase 1` - `phase1-ready`
-18. `Frontend Runtime Shell` - `phase1-ready`
+18. `Frontend Runtime Shell` - `phase2-ready`
 19. `Chinese semantic de-scaffolding` - `baseline-closed through phase 2 typed runtime policy`
 20. `Capability Growth Phase 5` - `phase5-ready`
 21. `Natural Long-Horizon Calibration` - `phase1-ready`

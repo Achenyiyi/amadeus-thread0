@@ -60,9 +60,16 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - `dynamic_skills_phase2_ready`
   - `external_executor_harness_phase1_ready`
   - `frontend_runtime_shell_phase1_ready`
+  - `frontend_runtime_shell_phase2_ready`
   - `chinese_semantic_descaffolding_phase1_ready`
   - `capability_growth_phase5_ready`
   - `natural_long_horizon_calibration_phase1_ready`
+- `Frontend Runtime Shell Phase 2` is now closed as a route-consumption readback gate:
+  - `frontend_runtime_shell_phase2_ready`
+  - it adds a thin frontend route transport seam over `backend.v1` envelopes
+  - it renders backend-owned `operator_readback`, `living_loop_realism`, and `embodied_interaction` blocks when present on `assistant_turn` / `event_round` payloads
+  - it consumes `runtime_productization` as a backend-owned readback kind
+  - it remains consumer-only and does not add frontend-owned memory/body/autonomy/persona semantics, execution authority, live capture, skill registry writes, persona-core mutation, memory writes, HTTP server ownership, or unapproved external mutation
 - `Runtime Productization Phase 1` is now closed as a readback/productization gate:
   - `runtime_productization_phase1_ready`
   - it exposes one operator readback over existing backend/post-unlock/preserved-baseline truth
@@ -178,7 +185,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - Chinese semantic de-scaffolding now has deterministic replacement guidance, typed runtime replacement policy envelopes, conservative runtime safe-surface floors, and text/TTS parity checks, not broad prompt sprawl
   - capability growth remains advisory workflow continuity
   - long-horizon calibration remains offline deterministic evaluation
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `chinese_semantic_descaffolding_phase2_ready`, `multimodal_perception_phase2_ready`, `dynamic_skills_phase2_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `living_loop_runtime_realism_phase3_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `chinese_semantic_descaffolding_phase2_ready`, `multimodal_perception_phase2_ready`, `dynamic_skills_phase2_ready`, `frontend_runtime_shell_phase2_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `living_loop_runtime_realism_phase3_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona

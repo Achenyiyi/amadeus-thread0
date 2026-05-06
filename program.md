@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Multimodal Perception Phase 2` approval-gated artifact inspection packet gate after Chinese Semantic De-Scaffolding Phase 2
+- Mainline phase: `Frontend Runtime Shell Phase 2` route-consumption readback gate after Dynamic Skills Phase 2
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -32,6 +32,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `post_unlock_roadmap_ready`
   - preserve `chinese_semantic_descaffolding_phase2_ready`
   - preserve `multimodal_perception_phase2_ready`
+  - preserve `dynamic_skills_phase2_ready`
+  - preserve `frontend_runtime_shell_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `residual_living_loop_phase1_ready`
@@ -79,6 +81,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - completed semantic observations are accepted only from approved precomputed inspection results and surface as `source=approved_inspection_result`
   - rejected, blocked, pending, or live-capture-derived attempts do not become semantic observations, memory facts, or completed capability facts
   - Phase 2 does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory/browser/tool/sandbox authority, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation
+- Current frontend runtime shell focus:
+  - `frontend_runtime_shell_phase2_ready` means the React/Vite shell now has a thin route transport seam over route-like `backend.v1` envelopes
+  - the shell can render backend-owned `operator_readback`, `living_loop_realism`, `embodied_interaction`, and route-level `runtime_productization` readbacks as read-only records
+  - frontend remains a contract consumer and does not own memory, body, autonomy, persona, graph, browser, sandbox, skill-registry, live-capture, HTTP-server, or external-mutation semantics
 - Current embodied interaction runtime focus:
   - `embodied_interaction_runtime_phase1_ready` means real `assistant_turn` and `event_round` backend payloads now carry `embodied_interaction`
   - consent-bound multimodal source artifacts surface through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
@@ -12484,3 +12490,53 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with only the existing Windows LF-to-CRLF warnings
 - Next:
   - fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Frontend Runtime Shell Phase 2`
+
+## 2026-05-07 Run 272
+
+- Focus:
+  - implement `Frontend Runtime Shell Phase 2` after Dynamic Skills Phase 2
+  - make the React/Vite shell consume route-like `backend.v1` envelopes through a thin client seam
+  - render backend-owned operator, living-loop, embodied-interaction, and runtime-productization readbacks without creating frontend-owned backend semantics
+- Files changed so far:
+  - `AGENTS.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `docs/superpowers/plans/2026-05-07-frontend-runtime-shell-phase2.md`
+  - `evals/run_frontend_runtime_shell_phase2_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `frontend/src/App.tsx`
+  - `frontend/src/contracts/backend.ts`
+  - `frontend/src/data/mockBackend.ts`
+  - `frontend/src/runtime/backendClient.ts`
+  - `tests/test_frontend_runtime_shell_phase2.py`
+  - `tests/test_frontend_runtime_shell_phase2_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `program.md`
+- Key changes so far:
+  - added `runtime_productization` to the synced frontend TypeScript contract
+  - added optional `operator_readback`, `living_loop_realism`, and `embodied_interaction` payload fields for `assistant_turn` and `event_round`
+  - added a runtime-neutral `RuntimeSession` grouping helper used by both mock and route-backed clients
+  - added `BackendRouteTransport` / `RouteBackendClient` with common envelope validation only
+  - updated the UI to render transport mode, productization readiness, selected-payload readbacks, and route-level runtime productization when present
+  - added deterministic Phase 2 audit and preserved-baseline row under the `frontend` category
+  - kept frontend consumer-only: no memory/body/autonomy/persona reducers or stores, no HTTP server ownership, and no backend semantic recomputation
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2.py -q`
+      - failed because Phase 2 contract fields, route transport, and readback UI were absent
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2_audit.py -q`
+      - failed because `evals.run_frontend_runtime_shell_phase2_audit` did not exist
+  - GREEN:
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2.py tests/test_frontend_contract_sync.py -q`
+      - passed: `7 passed`
+    - `npm --prefix frontend run build`
+      - initially failed because `frontend/node_modules` was absent in the worktree
+      - after `npm --prefix frontend ci --cache E:\桌面\codex-temp\npm-cache`, the build passed
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `10 passed`
+    - `python evals/run_frontend_runtime_shell_phase2_audit.py --run-tag phase2-dev`
+      - passed with `readiness=frontend_runtime_shell_phase2_ready`
+- Next:
+  - run final verification, commit logical slices, fast-forward merge to `main`, run post-merge verification, push `main`
