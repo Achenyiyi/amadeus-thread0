@@ -58,7 +58,7 @@
 **Files:**
 - Create: `tests/test_frontend_runtime_shell_phase2.py`
 
-- [ ] **Step 1: Write the failing static tests**
+- [x] **Step 1: Write the failing static tests**
 
 Add this test file:
 
@@ -126,7 +126,7 @@ def test_frontend_phase2_has_no_frontend_owned_semantic_modules():
     assert not {path.name for path in frontend_files} & forbidden_names
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -145,7 +145,7 @@ Expected: fail because Phase 2 contract fields and route transport do not exist 
 - Modify: `frontend/src/contracts/backend.ts`
 - Modify: `frontend/src/data/mockBackend.ts`
 
-- [ ] **Step 1: Add contract fields**
+- [x] **Step 1: Add contract fields**
 
 Apply the same TypeScript changes to both contract files:
 
@@ -207,7 +207,7 @@ Add this map entry:
 runtime_productization: RuntimeProductizationPayload;
 ```
 
-- [ ] **Step 2: Add runtime-neutral session grouping**
+- [x] **Step 2: Add runtime-neutral session grouping**
 
 In `frontend/src/data/mockBackend.ts`, add:
 
@@ -232,7 +232,7 @@ export type MockSession = RuntimeSession;
 
 Then export `createSessionSnapshotFromEnvelopes(...)` that sorts transcript envelopes and uses `sources_view` when present, otherwise falls back to `assistant_turn.payload.sources`.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Run:
 
@@ -249,7 +249,7 @@ Expected: Phase 2 static contract assertions pass, contract sync passes, route c
 **Files:**
 - Modify: `frontend/src/runtime/backendClient.ts`
 
-- [ ] **Step 1: Implement route transport seam**
+- [x] **Step 1: Implement route transport seam**
 
 Replace the mock-only client with:
 
@@ -279,7 +279,7 @@ export interface BackendClientOptions {
 - pass envelopes to `createSessionSnapshotFromEnvelopes(..., "route")`,
 - not interpret backend payload semantics.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 Run:
 
@@ -289,7 +289,7 @@ python -m pytest tests/test_frontend_runtime_shell_phase2.py tests/test_frontend
 
 Expected: all Python static/frontend contract tests pass.
 
-- [ ] **Step 3: Run TypeScript build**
+- [x] **Step 3: Run TypeScript build**
 
 Run:
 
@@ -307,7 +307,7 @@ Expected: TypeScript and Vite build succeed.
 - Modify: `frontend/src/App.tsx`
 - Modify: `frontend/src/styles.css` only if necessary
 
-- [ ] **Step 1: Render backend-owned readbacks**
+- [x] **Step 1: Render backend-owned readbacks**
 
 Add UI blocks under the selected packet panel:
 
@@ -321,7 +321,7 @@ const readbackCards = [
 
 Render each present record through existing `DetailCard`, `RecordGrid`, and `JsonDump`.
 
-- [ ] **Step 2: Render runtime productization route envelope**
+- [x] **Step 2: Render runtime productization route envelope**
 
 Add a compact chip:
 
@@ -333,7 +333,7 @@ Add a compact chip:
 
 Add an inspector card titled `Runtime productization` that renders the route envelope payload when available.
 
-- [ ] **Step 3: Run focused tests and build**
+- [x] **Step 3: Run focused tests and build**
 
 Run:
 
@@ -354,7 +354,7 @@ Expected: tests and build pass.
 - Modify: `evals/run_preserved_baselines_audit.py`
 - Modify: `tests/test_preserved_baselines_audit.py`
 
-- [ ] **Step 1: Add audit script**
+- [x] **Step 1: Add audit script**
 
 Audit checks:
 
@@ -373,11 +373,11 @@ Return:
 
 when all checks pass.
 
-- [ ] **Step 2: Add audit tests**
+- [x] **Step 2: Add audit tests**
 
 Test `evaluate_checks()` passes ready when all checks are passed, fails in-progress when one check fails, and markdown includes `frontend_runtime_shell_phase2_ready`.
 
-- [ ] **Step 3: Add preserved baseline row**
+- [x] **Step 3: Add preserved baseline row**
 
 Add:
 
@@ -392,7 +392,7 @@ Add:
 
 Update preserved-baseline tests to expect this id and `frontend` category count of 1.
 
-- [ ] **Step 4: Verify audit test RED/GREEN**
+- [x] **Step 4: Verify audit test RED/GREEN**
 
 Run first before the implementation to see RED if the audit script is missing, then after adding it:
 
@@ -414,7 +414,7 @@ Expected after implementation: tests pass and audit reports `frontend_runtime_sh
 - Modify: `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
 - Modify: `program.md`
 
-- [ ] **Step 1: Document Phase 2 boundary**
+- [x] **Step 1: Document Phase 2 boundary**
 
 Add the ready gate:
 
@@ -429,7 +429,7 @@ Document that Phase 2:
 - keeps frontend consumer-only,
 - adds no HTTP server, execution authority, memory writes, persona mutation, frontend-owned semantics, live capture, skill registry writes, or external mutation.
 
-- [ ] **Step 2: Run docs/static checks**
+- [x] **Step 2: Run docs/static checks**
 
 Run:
 
@@ -446,7 +446,7 @@ Expected: docs strings and preserved-baseline metadata remain aligned.
 **Files:**
 - All touched files
 
-- [ ] **Step 1: Run final verification in the worktree**
+- [x] **Step 1: Run final verification in the worktree**
 
 Run:
 
@@ -463,7 +463,7 @@ git diff --check
 
 Expected: all commands exit 0; phase audit reports `frontend_runtime_shell_phase2_ready`; Phase 1 audit and dynamic skills regression remain ready.
 
-- [ ] **Step 2: Commit logical slices**
+- [x] **Step 2: Commit logical slices**
 
 Suggested commits:
 
@@ -478,7 +478,7 @@ git add AGENTS.md docs/engineering/PROJECT_STRUCTURE.md docs/engineering/AMADEUS
 git commit -m "docs: record frontend runtime shell phase 2"
 ```
 
-- [ ] **Step 3: Merge to main and verify**
+- [x] **Step 3: Merge to main and verify**
 
 Run:
 
