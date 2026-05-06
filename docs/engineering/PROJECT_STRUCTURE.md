@@ -298,6 +298,8 @@ Rule:
 - evaluates whether visible north-star stages causally constrain each other instead of merely appearing in one packet
 - checks appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final-semantics alignment
 - exposes `living_loop_runtime_realism_phase1_ready` as a deterministic audit/readback gate
+- exposes `living_loop_runtime_realism_phase2_ready` when real `assistant_turn` / `event_round` backend payloads carry the same causal readback through `living_loop_realism`
+- normalizes backend payload fields such as `turn_summary`, `writeback_trace`, final behavior payloads, internal state, and reconsolidation snapshots into one current-turn realism view
 - remains pure readback/audit logic with no execution, memory-write, browser, sandbox, skill-install, frontend, prompt-sprawl, or persona-core authority
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:

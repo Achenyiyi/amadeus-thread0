@@ -5,6 +5,8 @@ from typing import Any
 
 LIVING_LOOP_REALISM_PHASE1_READINESS = "living_loop_runtime_realism_phase1_ready"
 LIVING_LOOP_REALISM_IN_PROGRESS = "living_loop_runtime_realism_phase1_in_progress"
+LIVING_LOOP_REALISM_PHASE2_READINESS = "living_loop_runtime_realism_phase2_ready"
+LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS = "living_loop_runtime_realism_phase2_in_progress"
 
 CAUSAL_LINKS = (
     "appraisal_to_motive",
@@ -12,6 +14,15 @@ CAUSAL_LINKS = (
     "action_plan_alignment",
     "consequence_reconsolidation_alignment",
     "final_semantics_alignment",
+)
+
+BACKEND_PAYLOAD_REQUIRED_FIELDS = (
+    "final_text",
+    "behavior_action",
+    "behavior_plan",
+    "turn_summary",
+    "writeback_trace",
+    "reconsolidation_snapshot",
 )
 
 AUTHORITY_BOUNDARY = {
@@ -400,6 +411,72 @@ def build_living_loop_realism_readback(*, current_turn: dict[str, Any] | None = 
     }
 
 
+def _backend_payload_status(payload: dict[str, Any] | None) -> dict[str, Any]:
+    data = _dict_or_empty(payload)
+    missing = [field for field in BACKEND_PAYLOAD_REQUIRED_FIELDS if field not in data]
+    empty = [
+        field
+        for field in BACKEND_PAYLOAD_REQUIRED_FIELDS
+        if field in data
+        and (
+            (isinstance(data.get(field), dict) and not data.get(field))
+            or (isinstance(data.get(field), list) and not data.get(field))
+            or (isinstance(data.get(field), str) and not data.get(field).strip())
+            or data.get(field) is None
+        )
+    ]
+    ready = not missing and not empty
+    return {
+        "source": "backend_payload",
+        "status": "ready" if ready else "missing",
+        "missing_fields": missing,
+        "empty_fields": empty,
+        "required_fields": list(BACKEND_PAYLOAD_REQUIRED_FIELDS),
+    }
+
+
+def normalize_backend_turn_payload_for_realism(payload: dict[str, Any] | None) -> dict[str, Any]:
+    data = _dict_or_empty(payload)
+    return {
+        "final_text": data.get("final_text"),
+        "current_event": _dict_or_empty(data.get("current_event")),
+        "turn_appraisal": _dict_or_empty(data.get("turn_appraisal")),
+        "emotion_state": _dict_or_empty(data.get("emotion_state")),
+        "bond_state": _dict_or_empty(data.get("bond_state")),
+        "allostasis_state": _dict_or_empty(data.get("allostasis_state")),
+        "counterpart_assessment": _dict_or_empty(data.get("counterpart_assessment")),
+        "semantic_narrative_profile": _dict_or_empty(data.get("semantic_narrative_profile")),
+        "behavior_action": _dict_or_empty(data.get("behavior_action")),
+        "behavior_plan": _dict_or_empty(data.get("behavior_plan")),
+        "digital_body_consequence": _dict_or_empty(data.get("digital_body_consequence")),
+        "reconsolidation_snapshot": _dict_or_empty(data.get("reconsolidation_snapshot")),
+        "writeback_trace": _dict_or_empty(data.get("writeback_trace")),
+    }
+
+
+def build_backend_payload_realism_readback(payload: dict[str, Any] | None) -> dict[str, Any]:
+    backend_payload = _backend_payload_status(payload)
+    current_turn = normalize_backend_turn_payload_for_realism(payload)
+    causality = evaluate_behavior_causality(current_turn)
+    ready = (
+        str(backend_payload.get("status") or "") == "ready"
+        and str(causality.get("status") or "") == "ready"
+    )
+    failure_reasons = list(causality.get("missing_links") or [])
+    failure_reasons.extend(f"missing_backend_field:{field}" for field in backend_payload.get("missing_fields") or [])
+    failure_reasons.extend(f"empty_backend_field:{field}" for field in backend_payload.get("empty_fields") or [])
+    return {
+        "phase": "Living Loop Runtime Realism Phase 2",
+        "schema": "living_loop_realism.backend_payload.v1",
+        "overall_status": "passed" if ready else "in_progress",
+        "readiness_status": LIVING_LOOP_REALISM_PHASE2_READINESS if ready else LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS,
+        "backend_payload": backend_payload,
+        "causality": causality,
+        "authority_boundary": dict(AUTHORITY_BOUNDARY),
+        "failure_reasons": failure_reasons,
+    }
+
+
 def compact_living_loop_realism_line(readback: dict[str, Any] | None) -> str:
     data = _dict_or_empty(readback)
     if not data:
@@ -417,12 +494,37 @@ def compact_living_loop_realism_line(readback: dict[str, Any] | None) -> str:
     return " | ".join(parts)
 
 
+def compact_backend_payload_realism_line(readback: dict[str, Any] | None) -> str:
+    data = _dict_or_empty(readback)
+    if not data:
+        return ""
+    causality = _dict_or_empty(data.get("causality"))
+    backend_payload = _dict_or_empty(data.get("backend_payload"))
+    parts = [
+        f"realism={_clean(data.get('readiness_status')) or 'unknown'}",
+        f"backend_payload={_clean(backend_payload.get('status')) or 'unknown'}",
+        f"causality={_clean(causality.get('status')) or 'unknown'}",
+    ]
+    missing = [_clean(item) for item in _list_or_empty(data.get("failure_reasons")) if _clean(item)]
+    if missing:
+        parts.append("missing=" + ",".join(missing))
+    boundary = _dict_or_empty(data.get("authority_boundary"))
+    parts.append(f"prompt_sprawl={str(bool(boundary.get('prompt_sprawl_rewrite_allowed', False))).lower()}")
+    return " | ".join(parts)
+
+
 __all__ = [
     "AUTHORITY_BOUNDARY",
+    "BACKEND_PAYLOAD_REQUIRED_FIELDS",
     "CAUSAL_LINKS",
     "LIVING_LOOP_REALISM_IN_PROGRESS",
     "LIVING_LOOP_REALISM_PHASE1_READINESS",
+    "LIVING_LOOP_REALISM_PHASE2_IN_PROGRESS",
+    "LIVING_LOOP_REALISM_PHASE2_READINESS",
+    "build_backend_payload_realism_readback",
     "build_living_loop_realism_readback",
+    "compact_backend_payload_realism_line",
     "compact_living_loop_realism_line",
     "evaluate_behavior_causality",
+    "normalize_backend_turn_payload_for_realism",
 ]

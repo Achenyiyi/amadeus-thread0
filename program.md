@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Living Loop Runtime Realism Phase 1` causal north-star realism gate after residual living-loop traceability
+- Mainline phase: `Living Loop Runtime Realism Phase 2` backend-payload realism gate after Phase 1 causal north-star realism
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -34,6 +34,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase2_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
+  - preserve `living_loop_runtime_realism_phase2_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -54,6 +55,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - visible living-loop stages must causally align across appraisal, internal state, motive/behavior, consequence, reconsolidation, and final semantics
   - Chinese semantic de-scaffolding now includes deterministic replacement guidance and conservative safe-surface floors, not broad prompt-sprawl rewrites
   - `living_loop_runtime_realism_phase1_ready` does not open live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
+  - `living_loop_runtime_realism_phase2_ready` means real `assistant_turn` and `event_round` backend payloads now carry the same causal readback through `living_loop_realism`
+  - Phase 2 still does not change graph generation, persona core, memory-write authority, browser/tool/sandbox execution, frontend-owned semantics, Chinese prompt constraints, live capture, or external mutation authority
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:
@@ -11677,3 +11680,85 @@ This file is the live development ledger for `amadeus-thread0`.
   - all plan checkboxes in `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase1.md` are marked complete
 - Next:
   - select the next bounded phase only after checking whether any remaining roadmap item needs runtime work rather than another readback/audit layer
+
+## 2026-05-06 Run 262
+
+- Focus:
+  - implement `Living Loop Runtime Realism Phase 2` after Phase 1 causal realism
+  - move from deterministic fixture-only realism to real backend/session payload realism
+  - attach one `living_loop_realism` readback to both `assistant_turn` and `event_round`
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/living_loop_realism.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `evals/run_living_loop_realism_phase2_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_living_loop_realism.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_living_loop_realism_phase2_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase2.md`
+  - `program.md`
+- Key changes:
+  - added backend-payload realism helpers:
+    - `normalize_backend_turn_payload_for_realism`
+    - `build_backend_payload_realism_readback`
+    - `compact_backend_payload_realism_line`
+  - added readiness:
+    - `living_loop_runtime_realism_phase2_ready`
+  - attached `living_loop_realism` to real backend `assistant_turn` and `event_round` payloads
+  - preserved explicit `values["writeback_trace"]` in `BackendAPI` when tests or callers provide a current-turn trace without a memory store
+  - added `evals/run_living_loop_realism_phase2_audit.py` reporting backend-payload readiness under `living-loop-realism-phase2-audit-*`
+  - folded Phase 2 into preserved baselines under the existing `living_loop_realism` category
+  - kept the phase non-widening:
+    - no graph generation change
+    - no persona-core mutation
+    - no memory-write authority change
+    - no browser/tool/sandbox execution change
+    - no frontend-owned semantics
+    - no Chinese prompt-sprawl or reply-tone micro-polish
+    - no live capture
+    - no unapproved external mutation
+- Validation:
+  - initial RED checks:
+    - `python -m pytest tests/test_living_loop_realism.py -q`
+      - failed because Phase 2 constants and backend-payload helpers did not exist
+    - `python -m pytest tests/test_backend_api.py -k living_loop_realism -q`
+      - failed because `living_loop_realism` was not attached to backend payloads
+    - `python -m pytest tests/test_living_loop_realism_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because the Phase 2 audit entrypoint and preserved-baseline row did not exist
+  - focused green checks:
+    - `python -m pytest tests/test_living_loop_realism.py -q`
+      - passed: `9 passed`
+    - `python -m pytest tests/test_backend_api.py -k living_loop_realism -q`
+      - passed: `1 passed, 46 deselected`
+    - `python -m pytest tests/test_living_loop_realism_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `10 passed`
+  - final verification:
+    - `python -m pytest tests/test_living_loop_realism.py tests/test_living_loop_realism_audit.py tests/test_living_loop_realism_phase2_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `22 passed`
+    - `python -m pytest tests/test_backend_api.py -k "living_loop_realism or turn_and_event_responses_attach_operator_readback" -q`
+      - passed: `2 passed, 45 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `181 passed, 17 subtests passed`
+    - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+      - passed: `14 passed, 9 subtests passed`
+    - `python evals/run_living_loop_realism_phase2_audit.py --run-tag phase2-final`
+      - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+    - `python evals/run_living_loop_realism_audit.py --run-tag phase2-regression`
+      - passed with `readiness=living_loop_runtime_realism_phase1_ready`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/living_loop_realism.py amadeus_thread0/runtime/backend_api.py evals/run_living_loop_realism_phase2_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - placeholder scan over the Phase 2 plan/code/test set
+      - passed with no matches
+- Result:
+  - `Living Loop Runtime Realism Phase 2` is implemented and ready in branch `codex/living-loop-runtime-realism-phase2`
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase2.md` are marked complete
+- Next:
+  - run final verification, commit, fast-forward merge to `main`, rerun post-merge audits, and push
