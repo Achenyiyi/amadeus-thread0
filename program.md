@@ -11171,3 +11171,25 @@ This file is the live development ledger for `amadeus-thread0`.
   - no arbitrary host shell, package install, unapproved browser mutation, secret capture, persona-core rewrite, second memory store, or alternate body truth was introduced
 - Next:
   - after merge, begin the next implementation lane in order: `Multimodal Capture Phase 1`, with consent/source-artifact identity/read-only perception as the first bounded target
+
+## 2026-05-06 Run 255
+
+- Focus:
+  - write the post-unlock master roadmap for all `unlocked_planned` lanes
+  - keep the roadmap in a dedicated worktree before any lane-level implementation starts
+- Files changed:
+  - `docs/superpowers/plans/2026-05-06-post-unlock-roadmap.md`
+  - `docs/superpowers/specs/2026-05-06-post-unlock-roadmap-design.md`
+  - `program.md`
+- Validation:
+  - docs-only planning pass in an isolated worktree
+  - placeholder scan:
+    - `rg -n -e "T[B]D" -e "T[O]DO" -e "f[i]ll in" -e "implement la[t]er" -e "appropriate error handl[i]ng" -e "similar to T[a]sk" -e "Similar to T[a]sk" docs\superpowers\plans\2026-05-06-post-unlock-roadmap.md docs\superpowers\specs\2026-05-06-post-unlock-roadmap-design.md`
+    - passed with no matches
+  - diff check:
+    - `git diff --check -- docs\superpowers\plans\2026-05-06-post-unlock-roadmap.md docs\superpowers\specs\2026-05-06-post-unlock-roadmap-design.md program.md`
+    - passed with only the existing Windows LF-to-CRLF warning for `program.md`
+- Result:
+  - post-unlock work is organized into lane-specific phase gates with dependency order and shared guardrails
+- Next:
+  - start with `Multimodal Capture Phase 1` in its own worktree
