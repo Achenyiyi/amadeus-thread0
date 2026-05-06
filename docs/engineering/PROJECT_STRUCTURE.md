@@ -152,6 +152,7 @@ Rule:
 - `dynamic_skill_candidates.py`
 - `multimodal_sources.py`
 - `post_baseline_closure.py`
+- `runtime_productization.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
 - `access_negotiation.py`
@@ -274,6 +275,13 @@ Rule:
 - upgrades lane status from the post-unlock roadmap audit while keeping blocked surfaces explicit
 - keeps "ready" lane status separate from blanket runtime authority when a lane remains proposal-only, diagnostic-only, advisory-only, or fail-closed
 
+`runtime_productization.py` holds the Runtime Productization Phase 1 operator readback contract:
+
+- composes post-baseline closure, post-unlock roadmap, preserved-baseline, and current-turn readback into one `operator_readback` surface
+- exposes authority-boundary booleans that keep external mutation approval, persona-core immutability, frontend consumer-only semantics, dynamic skill registry approval, and fail-closed harness behavior explicit
+- formats compact operator readback lines for CLI summaries
+- must remain readback-only; it does not execute tools, mutate memory, change persona state, install skills, run browser actions, or enable external executor harnesses
+
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
 - profile correction / undo workflows
@@ -361,6 +369,7 @@ Rule:
   - `run_post_baseline_closure_audit.py`
   - `run_preserved_baselines_audit.py`
   - `run_post_unlock_roadmap_audit.py`
+  - `run_runtime_productization_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`

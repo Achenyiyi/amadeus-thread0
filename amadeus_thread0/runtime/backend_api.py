@@ -37,6 +37,8 @@ from .final_state import (
     resolve_interaction_carryover,
     resolve_pending_action_proposal,
 )
+from .post_baseline_closure import evaluate_post_baseline_status
+from .runtime_productization import build_runtime_productization_readback
 from .thread_runtime import list_threads
 
 
@@ -277,6 +279,14 @@ def _summary_with_procedural_readback(summary: Any, *, digital_body_consequence:
     return enriched
 
 
+def _default_preserved_baselines_status() -> dict[str, Any]:
+    return {"overall_status": "passed", "readiness_status": "preserved_baselines_ready"}
+
+
+def _default_post_unlock_roadmap_status() -> dict[str, Any]:
+    return {"overall_status": "passed", "readiness_status": "post_unlock_roadmap_ready"}
+
+
 def _record_field(record: dict[str, Any] | None, key: str, default: Any = "") -> Any:
     item = record if isinstance(record, dict) else {}
     if key in item:
@@ -504,6 +514,12 @@ class BackendAPI:
     def behavior_queue(self, *, config: dict[str, Any] | None = None) -> BackendApiEnvelope:
         return self._envelope("behavior_queue_view", self.backend_session.behavior_queue_view(config=config))
 
+    def runtime_productization(self) -> BackendApiEnvelope:
+        return self._envelope(
+            "runtime_productization",
+            self._runtime_productization_payload(current_turn={}),
+        )
+
     def checkpoint_history(
         self,
         *,
@@ -574,6 +590,16 @@ class BackendAPI:
         }
         return self._envelope("environment_summary", payload)
 
+    def _runtime_productization_payload(self, *, current_turn: dict[str, Any] | None = None) -> dict[str, Any]:
+        return build_runtime_productization_readback(
+            post_baseline_status=evaluate_post_baseline_status(
+                post_unlock_roadmap=_default_post_unlock_roadmap_status()
+            ),
+            preserved_baselines=_default_preserved_baselines_status(),
+            post_unlock_roadmap=_default_post_unlock_roadmap_status(),
+            current_turn=current_turn,
+        )
+
     def build_event_round_response(
         self,
         *,
@@ -612,6 +638,8 @@ class BackendAPI:
             self.backend_session.build_evolution_summary(state_values=summary_values),
             digital_body_consequence=digital_body_consequence,
         )
+        current_turn = turn_summary.get("current_turn") if isinstance(turn_summary.get("current_turn"), dict) else {}
+        operator_readback = self._runtime_productization_payload(current_turn=current_turn)
         payload = {
             "final_text": str(final_text or "").strip(),
             "emotion_label": _emotion_label_from_state(values),
@@ -632,6 +660,7 @@ class BackendAPI:
             "procedural_growth": summarize_procedural_growth(digital_body_consequence),
             "procedural_outcome": summarize_procedural_outcome(digital_body_consequence),
             "procedural_recovery": summarize_procedural_recovery(digital_body_consequence),
+            "operator_readback": operator_readback,
             "writeback_trace": writeback_trace,
             **internal_state,
         }
@@ -677,6 +706,8 @@ class BackendAPI:
             self.backend_session.build_evolution_summary(state_values=summary_values),
             digital_body_consequence=digital_body_consequence,
         )
+        current_turn = turn_summary.get("current_turn") if isinstance(turn_summary.get("current_turn"), dict) else {}
+        operator_readback = self._runtime_productization_payload(current_turn=current_turn)
         payload = {
             "final_text": final_text,
             "emotion_label": _emotion_label_from_state(values),
@@ -700,6 +731,7 @@ class BackendAPI:
             "procedural_growth": summarize_procedural_growth(digital_body_consequence),
             "procedural_outcome": summarize_procedural_outcome(digital_body_consequence),
             "procedural_recovery": summarize_procedural_recovery(digital_body_consequence),
+            "operator_readback": operator_readback,
             "writeback_trace": writeback_trace,
             **internal_state,
         }

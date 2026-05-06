@@ -237,6 +237,53 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(session.checkpoint_history_args, (5, config))
             self.assertEqual(session.current_checkpoint_config, config)
 
+    def test_runtime_productization_envelope_reports_operator_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+
+            payload = api.runtime_productization().payload
+
+            self.assertEqual(payload["readiness_status"], "runtime_productization_phase1_ready")
+            self.assertFalse(payload["authority_boundary"]["persona_core_mutation_allowed"])
+            self.assertEqual(payload["inputs"]["post_baseline"]["readiness_status"], "post_baseline_closure_ready")
+            self.assertEqual(payload["inputs"]["post_unlock_roadmap"]["readiness_status"], "post_unlock_roadmap_ready")
+
+    def test_turn_and_event_responses_attach_operator_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            state_values = {
+                "autonomy_intent": {"mode": "assist", "origin": "motive_goal"},
+                "action_packets": [
+                    {
+                        "proposal_id": "ap-runtime-productization",
+                        "intent": "sandbox:execute_workspace_command",
+                        "status": "completed",
+                        "risk": "external_mutation",
+                        "requires_approval": True,
+                    }
+                ],
+                "digital_body_consequence": {"kind": "sandbox_execution_completed"},
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text="done",
+            ).payload
+
+            self.assertEqual(turn_payload["operator_readback"]["readiness_status"], "runtime_productization_phase1_ready")
+            self.assertEqual(
+                turn_payload["operator_readback"]["operator_snapshot"]["digital_body_consequence_kind"],
+                "sandbox_execution_completed",
+            )
+            self.assertEqual(event_payload["operator_readback"]["readiness_status"], "runtime_productization_phase1_ready")
+
     def test_memory_snapshot_normalizes_revision_trace_exports(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
