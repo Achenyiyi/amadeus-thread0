@@ -47,6 +47,12 @@ BASELINE_SPECS = [
         "category": "skills",
     },
     {
+        "id": "frontend_runtime_shell_phase2",
+        "prefix": "frontend-runtime-shell-phase2-audit-",
+        "expected_readiness": "frontend_runtime_shell_phase2_ready",
+        "category": "frontend",
+    },
+    {
         "id": "live_browser_runtime",
         "prefix": "live-browser-runtime-audit-",
         "expected_readiness": "live_browser_runtime_phase1_ready",
