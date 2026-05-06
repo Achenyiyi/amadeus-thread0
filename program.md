@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Runtime Productization Phase 1` readback/productization gate after the post-unlock roadmap
+- Mainline phase: `Runtime Productization Phase 2` operator-console readback gate after the post-unlock roadmap
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -31,6 +31,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `procedural_growth_phase4_ready`
   - preserve `post_unlock_roadmap_ready`
   - preserve `runtime_productization_phase1_ready`
+  - preserve `runtime_productization_phase2_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -41,8 +42,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - post-unlock lanes have ready phase gates, but their blocked surfaces and approval semantics remain in force
   - keep reply-tone / naturalness micro-polish inside the Chinese semantic de-scaffolding phase or only when it blocks runtime correctness
 - Current productization focus:
-  - runtime surfaces should expose one operator-readable readback over backend/post-unlock/preserved-baseline truth
-  - `operator_readback.v1` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
+  - runtime surfaces should expose one operator-console readback over backend/post-unlock/preserved-baseline truth
+  - `operator_readback.v2` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
@@ -11383,3 +11384,88 @@ This file is the live development ledger for `amadeus-thread0`.
   - no persona-core mutation, memory write, tool/browser/sandbox execution, external executor harness enablement, automatic dynamic skill registry write, frontend-owned backend semantics, or live capture was introduced
 - Next:
   - commit and fast-forward merge `codex/runtime-productization-phase1` to `main`
+
+## 2026-05-06 Run 259
+
+- Focus:
+  - push local `main` to `origin/main`
+  - implement `Runtime Productization Phase 2` as an operator-console readback gate
+  - upgrade `operator_readback` from v1 to v2 without widening execution, memory, persona, browser, skill, frontend, or external harness authority
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/runtime_productization.py`
+  - `evals/run_runtime_productization_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_runtime_productization.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_backend_session.py`
+  - `tests/test_cli_views.py`
+  - `tests/test_runtime_productization_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-runtime-productization-phase2.md`
+  - `program.md`
+- Key changes:
+  - pushed `main` to `origin/main` after Phase 1 closeout
+  - added `runtime_productization_phase2_ready` as the current productization readiness
+  - upgraded `operator_readback` schema to `operator_readback.v2`
+  - added `console_summary`:
+    - `health`
+    - `mode=readback_only`
+    - `next_action`
+    - `pending_approval_count`
+  - added `evidence_summary` with ready/missing input counts
+  - added `safe_routes.read_only_routes` for operator-console route discovery
+  - updated compact CLI readback with `console=<health>`, `next=<next_action>`, and pending approval counts
+  - changed runtime productization audit output prefix to `runtime-productization-phase2-audit-`
+  - preserved both phase 1 and phase 2 productization gates in the preserved-baselines meta-audit
+- Validation:
+  - baseline focused tests before edits:
+    - `python -m pytest tests/test_runtime_productization.py tests/test_runtime_productization_audit.py -q`
+    - passed: `6 passed`
+  - TDD red checks:
+    - `python -m pytest tests/test_runtime_productization.py -q`
+      - failed on missing `RUNTIME_PRODUCTIZATION_PHASE1_READINESS`
+    - `python -m pytest tests/test_backend_api.py -k runtime_productization -q`
+      - failed because schema was still `operator_readback.v1`
+    - `python -m pytest tests/test_backend_session.py -k operator_readback -q`
+      - failed because schema was still `operator_readback.v1`
+    - `python -m pytest tests/test_cli_views.py -k operator_readback -q`
+      - failed because the compact line did not include `console=ready`
+    - `python -m pytest tests/test_runtime_productization_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because audit/preserved-baseline readiness still targeted phase 1 only
+  - focused green checks:
+    - `python -m pytest tests/test_runtime_productization.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_backend_api.py -k runtime_productization -q`
+      - passed: `1 passed, 45 deselected`
+    - `python -m pytest tests/test_backend_session.py -k operator_readback -q`
+      - passed: `1 passed, 68 deselected`
+    - `python -m pytest tests/test_cli_views.py -k operator_readback -q`
+      - passed: `1 passed, 51 deselected`
+    - `python -m pytest tests/test_runtime_productization_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `10 passed`
+  - final verification:
+    - `python -m pytest tests/test_runtime_productization.py tests/test_runtime_productization_audit.py tests/test_preserved_baselines_audit.py tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_transport_adapter.py -q`
+      - passed: `187 passed, 17 subtests passed`
+    - `python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `18 passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/runtime_productization.py evals/run_runtime_productization_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_runtime_productization_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=runtime_productization_phase2_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=preserved_baselines_ready`
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - placeholder scan over the touched Phase 2 plan/code/test/doc set
+      - passed with no matches
+- Result:
+  - `Runtime Productization Phase 2` is implemented and ready in branch `codex/runtime-productization-phase2`
+  - all plan checkboxes in `docs/superpowers/plans/2026-05-06-runtime-productization-phase2.md` are marked complete
+  - no persona-core mutation, memory write, tool/browser/sandbox execution, external executor harness enablement, automatic dynamic skill registry write, frontend-owned backend semantics, or live capture was introduced
+- Next:
+  - commit and fast-forward merge `codex/runtime-productization-phase2` to `main`

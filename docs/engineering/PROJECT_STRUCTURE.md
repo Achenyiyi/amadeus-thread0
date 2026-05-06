@@ -275,9 +275,10 @@ Rule:
 - upgrades lane status from the post-unlock roadmap audit while keeping blocked surfaces explicit
 - keeps "ready" lane status separate from blanket runtime authority when a lane remains proposal-only, diagnostic-only, advisory-only, or fail-closed
 
-`runtime_productization.py` holds the Runtime Productization Phase 1 operator readback contract:
+`runtime_productization.py` holds the Runtime Productization operator readback contract:
 
 - composes post-baseline closure, post-unlock roadmap, preserved-baseline, and current-turn readback into one `operator_readback` surface
+- emits `operator_readback.v2` with console health, evidence summary, read-only route inventory, and next-action hints for operator-console consumption
 - exposes authority-boundary booleans that keep external mutation approval, persona-core immutability, frontend consumer-only semantics, dynamic skill registry approval, and fail-closed harness behavior explicit
 - formats compact operator readback lines for CLI summaries
 - must remain readback-only; it does not execute tools, mutate memory, change persona state, install skills, run browser actions, or enable external executor harnesses

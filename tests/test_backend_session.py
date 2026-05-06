@@ -4623,7 +4623,9 @@ class BackendSessionTests(unittest.TestCase):
 
         readback = session.operator_readback_view()
 
-        self.assertEqual(readback["readiness_status"], "runtime_productization_phase1_ready")
+        self.assertEqual(readback["schema"], "operator_readback.v2")
+        self.assertEqual(readback["readiness_status"], "runtime_productization_phase2_ready")
+        self.assertEqual(readback["console_summary"]["mode"], "readback_only")
         self.assertEqual(readback["operator_snapshot"]["autonomy_mode"], "assist")
         self.assertEqual(readback["operator_snapshot"]["action_packet_count"], 1)
         self.assertEqual(readback["operator_snapshot"]["digital_body_consequence_kind"], "browser_takeover_requested")

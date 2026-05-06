@@ -246,7 +246,9 @@ class BackendApiTests(unittest.TestCase):
 
             payload = api.runtime_productization().payload
 
-            self.assertEqual(payload["readiness_status"], "runtime_productization_phase1_ready")
+            self.assertEqual(payload["schema"], "operator_readback.v2")
+            self.assertEqual(payload["readiness_status"], "runtime_productization_phase2_ready")
+            self.assertEqual(payload["console_summary"]["mode"], "readback_only")
             self.assertFalse(payload["authority_boundary"]["persona_core_mutation_allowed"])
             self.assertEqual(payload["inputs"]["post_baseline"]["readiness_status"], "post_baseline_closure_ready")
             self.assertEqual(payload["inputs"]["post_unlock_roadmap"]["readiness_status"], "post_unlock_roadmap_ready")
@@ -277,12 +279,13 @@ class BackendApiTests(unittest.TestCase):
                 final_text="done",
             ).payload
 
-            self.assertEqual(turn_payload["operator_readback"]["readiness_status"], "runtime_productization_phase1_ready")
+            self.assertEqual(turn_payload["operator_readback"]["schema"], "operator_readback.v2")
+            self.assertEqual(turn_payload["operator_readback"]["readiness_status"], "runtime_productization_phase2_ready")
             self.assertEqual(
                 turn_payload["operator_readback"]["operator_snapshot"]["digital_body_consequence_kind"],
                 "sandbox_execution_completed",
             )
-            self.assertEqual(event_payload["operator_readback"]["readiness_status"], "runtime_productization_phase1_ready")
+            self.assertEqual(event_payload["operator_readback"]["readiness_status"], "runtime_productization_phase2_ready")
 
     def test_memory_snapshot_normalizes_revision_trace_exports(self):
         with tempfile.TemporaryDirectory() as tmp:

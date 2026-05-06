@@ -21,10 +21,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - The unlocked lanes are multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth beyond phase 4, natural long-horizon calibration, external executor harness adapters, and a frontend runtime shell.
 - `Post-Unlock Roadmap` is now implemented as a bounded release gate: all seven lanes have phase specs, implementation slices, tests, smoke/audit runners, and ready reports, while each lane's blocked surfaces remain in force.
 - `Runtime Productization Phase 1` is now implemented as a readback/productization gate: backend API, backend session, transport adapter, CLI summary, and audit surfaces expose one operator readback without adding runtime authority.
+- `Runtime Productization Phase 2` is now implemented as an operator-console readback gate: `operator_readback.v2` adds console health, evidence summary, read-only route inventory, and next-action hints without adding runtime authority.
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -82,11 +83,12 @@ For backend purposes, the structural decisions in this document are now split in
     - `natural_long_horizon_calibration_phase1_ready`: deterministic offline packs evaluate the lived-loop surface without scene scripts
   - current runtime productization posture is:
     - `runtime_productization_phase1_ready`: `amadeus_thread0.runtime.runtime_productization` composes existing post-baseline, post-unlock, preserved-baseline, and current-turn readbacks into one operator surface
+    - `runtime_productization_phase2_ready`: the same module now emits `operator_readback.v2` with console health, evidence summary, read-only route inventory, and next-action hints
     - `BackendAPI.runtime_productization()` and `BackendSession.operator_readback_view()` expose the same readback family to runtime consumers
     - `assistant_turn` and `event_round` payloads now include `operator_readback`
     - `BackendTransportAdapter` exposes `GET /api/runtime-productization`
-    - CLI compact summaries may render `productization=runtime_productization_phase1_ready`
-    - the phase is readback-only and does not enable live capture, automatic skill registry writes, external harness execution, frontend-owned backend semantics, persona-core mutation, or unapproved external mutation
+    - CLI compact summaries may render `productization=runtime_productization_phase2_ready`, `console=ready`, and `next=monitor_runtime_readback`
+    - the productization phases are readback-only and do not enable live capture, automatic skill registry writes, external harness execution, frontend-owned backend semantics, persona-core mutation, memory writes, or unapproved external mutation
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias

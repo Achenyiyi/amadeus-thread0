@@ -12,6 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from amadeus_thread0.runtime.runtime_productization import (
+    RUNTIME_PRODUCTIZATION_READINESS,
     build_runtime_productization_readback,
     evaluate_runtime_productization_contract,
 )
@@ -93,7 +94,7 @@ def evaluate_runtime_productization_audit(inputs: dict[str, dict[str, Any]] | No
             "id": "runtime_productization_contract",
             "status": str(contract.get("overall_status") or ""),
             "readiness_status": str(contract.get("readiness_status") or ""),
-            "expected_readiness": "runtime_productization_phase1_ready",
+            "expected_readiness": RUNTIME_PRODUCTIZATION_READINESS,
             "failure_reasons": list(contract.get("failure_reasons") or []),
         },
     ]
@@ -119,7 +120,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     readback = report.get("operator_readback") if isinstance(report.get("operator_readback"), dict) else {}
     boundary = readback.get("authority_boundary") if isinstance(readback.get("authority_boundary"), dict) else {}
     lines = [
-        "# Runtime Productization Phase 1 Audit",
+        "# Runtime Productization Phase 2 Audit",
         "",
         f"Generated at: {report.get('generated_at', '')}",
         f"Overall Status: `{report.get('overall_status', 'unknown')}`",
@@ -160,15 +161,15 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run runtime productization phase 1 audit.")
+    parser = argparse.ArgumentParser(description="Run runtime productization phase 2 audit.")
     parser.add_argument("--reports-dir", default=str(REPORT_DIR))
     args = parser.parse_args()
     report_dir = Path(args.reports_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
     report = evaluate_runtime_productization_audit(load_input_reports(report_dir))
     run_id = time.strftime("%Y%m%d-%H%M%S")
-    json_path = report_dir / f"runtime-productization-audit-{run_id}.json"
-    md_path = report_dir / f"runtime-productization-audit-{run_id}.md"
+    json_path = report_dir / f"runtime-productization-phase2-audit-{run_id}.json"
+    md_path = report_dir / f"runtime-productization-phase2-audit-{run_id}.md"
     json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     md_path.write_text(render_markdown(report), encoding="utf-8")
     print(f"[runtime-productization] json={json_path}")

@@ -28,7 +28,8 @@ def test_evaluate_runtime_productization_audit_passes_with_ready_inputs():
     )
 
     assert report["overall_status"] == "passed"
-    assert report["readiness_status"] == "runtime_productization_phase1_ready"
+    assert report["readiness_status"] == "runtime_productization_phase2_ready"
+    assert report["operator_readback"]["schema"] == "operator_readback.v2"
     assert report["operator_readback"]["lanes"]["dynamic_skill_generation"]["runtime_available"] is False
 
 
@@ -52,7 +53,7 @@ def test_evaluate_runtime_productization_audit_fails_when_input_regresses():
     )
 
     assert report["overall_status"] == "failed"
-    assert report["readiness_status"] == "runtime_productization_phase1_in_progress"
+    assert report["readiness_status"] == "runtime_productization_phase2_in_progress"
     assert "preserved_baselines_ready" in report["contract"]["failure_reasons"][0]
 
 
@@ -77,6 +78,7 @@ def test_render_markdown_includes_runtime_productization_readiness():
 
     rendered = render_markdown(report)
 
-    assert "# Runtime Productization Phase 1 Audit" in rendered
-    assert "runtime_productization_phase1_ready" in rendered
+    assert "# Runtime Productization Phase 2 Audit" in rendered
+    assert "runtime_productization_phase2_ready" in rendered
+    assert "| `runtime_productization_contract` | `passed` | `runtime_productization_phase2_ready` | `runtime_productization_phase2_ready` |" in rendered
     assert "| `external_mutation_requires_approval` | `True` |" in rendered
