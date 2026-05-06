@@ -11,9 +11,9 @@ This file is the live development ledger for `amadeus-thread0`.
 
 ## Current State
 
-- Date: `2026-05-05`
-- Product boundary: `backend-first`, `CLI + TTS + evals`, frontend still paused behind a stable handoff contract
-- Mainline phase: preserved baseline maintenance after `Sandbox Embodied Execution Phase 2` closeout
+- Date: `2026-05-06`
+- Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
+- Mainline phase: `Complete Closeout Unlock` control-plane after `Procedural Growth Phase 4`
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -23,6 +23,12 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `skills_ecosystem_ready`
   - preserve `live_browser_runtime_phase1_ready`
   - preserve `sandbox_embodied_execution_phase2_ready` without opening arbitrary host shell, networked containers, package-install surfaces, or a second body/execution truth model
+  - preserve `post_baseline_closure_ready`
+  - preserve `tts_presence_timing_ready`
+  - preserve `procedural_growth_phase1_ready`
+  - preserve `procedural_growth_phase2_ready`
+  - preserve `procedural_growth_phase3_ready`
+  - preserve `procedural_growth_phase4_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -30,9 +36,11 @@ This file is the live development ledger for `amadeus-thread0`.
     - explicit approval for repo-root attachment
   - keep `Access Negotiation Persona Closure` and all previously closed baselines preserved after phase 2 closeout
   - keep `search_web + source_ref` continuity and live browser continuity as preserved external-world surfaces
-  - keep reply-tone / naturalness micro-polish and Chinese lexical-rule replacement off the mainline unless they block runtime correctness
-- Current frontend-handoff focus:
-  - frontend remains frozen
+  - newly unlocked lanes are `unlocked_planned`, not runtime-available
+  - keep reply-tone / naturalness micro-polish inside the Chinese semantic de-scaffolding phase or only when it blocks runtime correctness
+- Current unlock focus:
+  - unlocked planned lanes: multimodal capture, dynamic skills, external executor harnesses, frontend runtime shell, Chinese semantic de-scaffolding, capability growth phase 5, natural long-horizon calibration
+  - each lane still needs a fresh bounded spec, tests, approval semantics, and audit gate before runtime authority is exposed
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
@@ -11092,3 +11100,74 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - if approved, write a fresh spec for `procedural-growth-consolidation-and-gate-hardening`
   - only after that spec is approved, write a detailed implementation plan and run the appropriate preserved baseline audit set
+
+## 2026-05-06 Run 254
+
+- Focus:
+  - execute `Complete Closeout Unlock` in an isolated worktree
+  - move all remaining deferred/tracked lanes into bounded `unlocked_planned` status while preserving closed baselines
+  - add a current cross-gate preserved-baselines meta-audit after procedural growth phase 4
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/post_baseline_closure.py`
+  - `evals/run_post_baseline_closure_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_post_baseline_closure.py`
+  - `tests/test_post_baseline_closure_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/specs/2026-05-06-complete-closeout-unlock-design.md`
+  - `docs/superpowers/plans/2026-05-06-complete-closeout-unlock.md`
+  - `program.md`
+- Key changes:
+  - added `unlocked_planned` as the explicit post-baseline status for lanes that are allowed to start but are not runtime-available yet
+  - unlocked planned lanes:
+    - multimodal input capture
+    - dynamic skill generation
+    - Chinese semantic de-scaffolding
+    - bounded capability growth beyond procedural phase 4
+    - natural long-horizon calibration
+    - external executor harness adapters
+    - frontend runtime shell
+  - preserved required runtime-ready items:
+    - callable transport adapter
+    - TTS presence timing
+    - executor adapter
+  - expanded `run_preserved_baselines_audit.py` to cover the current closed gate chain through procedural growth phase 4, with explicit missing-report failures and category summaries
+  - fixed preserved-baseline report selection so a later failed probe report does not override an authoritative `passed` + expected-readiness baseline artifact
+  - updated operating and architecture docs so "unlock" means fresh bounded implementation specs, approval semantics, and audit gates rather than silent runtime authority widening
+- Validation:
+  - `python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py -q`
+    - passed earlier in this worktree: `9 passed`
+  - `python -m pytest tests/test_preserved_baselines_audit.py -q`
+    - passed earlier in this worktree: `7 passed`
+  - final worktree verification:
+    - targeted closeout tests: `python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `16 passed`
+    - py_compile for changed runtime/eval modules:
+      - passed: `python -m py_compile amadeus_thread0/runtime/post_baseline_closure.py evals/run_post_baseline_closure_audit.py evals/run_preserved_baselines_audit.py`
+    - post-baseline closure audit:
+      - passed: `python evals/run_post_baseline_closure_audit.py --run-tag complete-closeout-unlock-postfix`
+      - readiness: `post_baseline_closure_ready`
+    - preserved-baselines meta-audit against available report artifacts:
+      - initial run exposed a report-selection bug where a later failed sandbox phase-1 probe overrode older authoritative ready evidence
+      - fixed and reran: `python evals/run_preserved_baselines_audit.py --reports-dir 'E:\桌面\amadeus-thread0\evals\reports'`
+      - passed with readiness: `preserved_baselines_ready`
+    - diff check:
+      - passed with only Windows LF-to-CRLF warnings
+  - merge verification on `main` after fast-forward merge:
+    - `python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `16 passed`
+    - `python -m py_compile amadeus_thread0/runtime/post_baseline_closure.py evals/run_post_baseline_closure_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with readiness: `preserved_baselines_ready`
+    - `python evals/run_post_baseline_closure_audit.py --run-tag complete-closeout-unlock-merged`
+      - passed with readiness: `post_baseline_closure_ready`
+- Result:
+  - complete closeout unlock is now the active control-plane posture
+  - merged into `main` via fast-forward commit `a3ab6058`
+  - no arbitrary host shell, package install, unapproved browser mutation, secret capture, persona-core rewrite, second memory store, or alternate body truth was introduced
+- Next:
+  - after merge, begin the next implementation lane in order: `Multimodal Capture Phase 1`, with consent/source-artifact identity/read-only perception as the first bounded target

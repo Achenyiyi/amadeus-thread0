@@ -39,19 +39,31 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
 
 - backend-first
 - `CLI + TTS + evals`
-- no new desktop UI in the current phase
+- frontend runtime shell work is unlocked only as a `backend.v1` contract consumer; it must not invent a second schema or own backend semantics
 - canonical shell remains `Amadeus 牧濑红莉栖`
 
-## Current Phase Lock
+## Current Phase / Unlock Contract
 
 - `Digital Embodiment Convergence Phase 2` is formally closed and preserved as a baseline.
 - `Sandbox Embodied Execution Phase 1` is now also closed and preserved as the current execution baseline.
 - `Skills Ecosystem Formal Closure` is now also closed and preserved as the current capability-ecology baseline.
 - `Live Browser Runtime Closure Phase 1` is now also closed and preserved as the current live-environment baseline.
 - `Sandbox Embodied Execution Phase 2` is now also closed and preserved as the current Docker-isolated execution baseline.
-- Frontend work stays frozen unless it is strictly needed for backend contract handoff artifacts.
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, and `sandbox_embodied_execution_phase2_ready` are preserved baselines.
-- While the future Chinese-rule replacement track is still deferred, do not spend mainline time on reply-tone or naturalness micro-polish unless it blocks runtime correctness, contract stability, or architecture closure.
+- `Post-Baseline Closure`, `TTS Presence Timing`, and `Procedural Growth Phases 1-4` are also preserved as current backend baselines.
+- `Complete Closeout Unlock` is now the active control-plane posture:
+  - formerly deferred or tracked lanes are unlocked as `unlocked_planned`
+  - `unlocked_planned` means implementation may begin behind a fresh bounded spec, tests, approval semantics, and audit gate
+  - it does not mean the runtime already exposes the capability
+- Newly unlocked planned lanes:
+  - multimodal input capture
+  - dynamic skill generation
+  - Chinese semantic de-scaffolding
+  - bounded capability growth beyond procedural phase 4
+  - natural long-horizon calibration
+  - external executor harness adapters
+  - frontend runtime shell
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, and `procedural_growth_phase4_ready` are preserved baselines.
+- Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona
   - one unified memory substrate
@@ -448,7 +460,7 @@ Live browser runtime work is not considered closed until all of the following ar
 - Missing access, cookies, accounts, or permissions are not only hard stops; they are world conditions she may reason about, work around, ask about, or explicitly request help for.
 - Do not reduce future capability growth to a fixed tool suite. The long-term target is embodied experimentation, procedural learning, and bounded capability formation inside approved environments.
 - Do not hard-script persona behavior with keyword rules unless it is strictly for safety, auditability, or tool routing.
-- Do not treat current Chinese reply-surface polish as a mainline goal while the lexical replacement track is still deferred; prioritize runnable architecture and correct state/writeback contracts first.
+- Treat Chinese semantic de-scaffolding as its own bounded phase; outside that phase, prioritize runnable architecture and correct state/writeback contracts over ad hoc reply-surface polish.
 - Prefer model judgment plus explicit state updates over brittle prompt micromanagement.
 - Text and TTS must share one final utterance.
 - Root-cause fixes are preferred over patchy fallbacks.
@@ -567,6 +579,14 @@ python -m pytest tests/test_browser_runner.py tests/test_browser_runtime.py test
 python -m pytest tests/test_live_browser_runtime_smokes.py tests/test_live_browser_runtime_audit.py
 python evals/run_live_browser_runtime_smokes.py
 python evals/run_live_browser_runtime_audit.py
+```
+
+For `complete closeout unlock / post-baseline status / preserved-baseline meta-audit` edits, also verify:
+
+```powershell
+python -m pytest tests/test_post_baseline_closure.py tests/test_post_baseline_closure_audit.py tests/test_preserved_baselines_audit.py
+python evals/run_post_baseline_closure_audit.py
+python evals/run_preserved_baselines_audit.py
 ```
 
 ## Documentation Map

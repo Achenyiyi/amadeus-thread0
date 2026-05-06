@@ -232,6 +232,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Checks failed: `{summary.get('checks_failed', 0)}`",
         f"- Implemented ready: `{summary.get('implemented_ready', 0)}`",
         f"- Preserved ready: `{summary.get('preserved_ready', 0)}`",
+        f"- Unlocked planned: `{summary.get('unlocked_planned', 0)}`",
         f"- Deferred fail closed: `{summary.get('deferred_fail_closed', 0)}`",
         f"- Tracked not mainline: `{summary.get('tracked_not_mainline', 0)}`",
         f"- Quality backlog tracked: `{summary.get('quality_backlog_tracked', 0)}`",

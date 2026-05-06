@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 
 from evals.run_preserved_baselines_audit import (
+    BASELINES,
     EXPECTED_READY,
     evaluate_preserved_baselines,
+    load_statuses,
     load_latest_report,
     render_markdown,
     status_from_report,
@@ -13,20 +15,64 @@ from evals.run_preserved_baselines_audit import (
 
 
 class PreservedBaselinesAuditTests(unittest.TestCase):
-    def test_load_latest_report_uses_lexical_filename_order(self):
+    def test_expected_ready_covers_current_preserved_backend_chain(self):
+        expected_ids = {
+            "backend_freeze_gate",
+            "companion_autonomy",
+            "digital_embodiment",
+            "sandbox_embodied_execution",
+            "skills_ecosystem",
+            "live_browser_runtime",
+            "sandbox_phase2",
+            "post_baseline_closure",
+            "tts_presence_timing",
+            "procedural_growth_phase1",
+            "procedural_growth_phase2",
+            "procedural_growth_phase3",
+            "procedural_growth_phase4",
+        }
+
+        self.assertEqual(set(EXPECTED_READY), expected_ids)
+        self.assertEqual(set(BASELINES), expected_ids)
+
+    def test_load_latest_report_uses_latest_ready_report_when_later_failed_probe_exists(self):
         with tempfile.TemporaryDirectory() as td:
             report_dir = Path(td)
-            older = report_dir / "skills-ecosystem-audit-20260405-130543-closeout-fix-c.json"
-            latest = report_dir / "skills-ecosystem-audit-20260405-130706-closeout-fix-e.json"
-            non_json = report_dir / "skills-ecosystem-audit-20260405-130800-closeout-fix-f.md"
-            older.write_text(json.dumps({"run_id": "older"}, ensure_ascii=False), encoding="utf-8")
-            latest.write_text(json.dumps({"run_id": "latest"}, ensure_ascii=False), encoding="utf-8")
+            older_ready = report_dir / "sandbox-embodied-execution-audit-20260404-233428-phase1-closeout-d.json"
+            later_failed = report_dir / "sandbox-embodied-execution-audit-20260405-123556-baseline.json"
+            non_json = report_dir / "sandbox-embodied-execution-audit-20260405-130800-closeout-fix-f.md"
+            older_ready.write_text(
+                json.dumps(
+                    {
+                        "run_id": "older-ready",
+                        "overall_status": "passed",
+                        "readiness_status": "sandbox_embodied_execution_phase1_ready",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            later_failed.write_text(
+                json.dumps(
+                    {
+                        "run_id": "later-failed-probe",
+                        "overall_status": "failed",
+                        "readiness_status": "sandbox_embodied_execution_phase1_in_progress",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
             non_json.write_text("# not json\n", encoding="utf-8")
 
-            selected = load_latest_report(report_dir, "skills-ecosystem-audit-")
+            selected = load_latest_report(
+                report_dir,
+                "sandbox-embodied-execution-audit-",
+                expected_readiness="sandbox_embodied_execution_phase1_ready",
+            )
 
-        self.assertEqual(selected["run_id"], "latest")
-        self.assertEqual(selected["report_path"], str(latest))
+        self.assertEqual(selected["run_id"], "older-ready")
+        self.assertEqual(selected["report_path"], str(older_ready))
 
     def test_status_from_report_extracts_status_and_readiness_variants(self):
         readiness_status = status_from_report(
@@ -69,9 +115,10 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
 
         self.assertEqual(summary["overall_status"], "failed")
         self.assertEqual(summary["readiness_status"], "preserved_baselines_regressed")
-        self.assertEqual(summary["summary"]["total"], 4)
+        self.assertEqual(summary["summary"]["total"], len(EXPECTED_READY))
         self.assertEqual(summary["summary"]["failed"], 1)
         self.assertEqual(summary["baselines"]["sandbox_phase2"]["status"], "failed")
+        self.assertEqual(summary["baselines"]["sandbox_phase2"]["category"], "sandbox")
         self.assertIn("overall_status=failed", summary["baselines"]["sandbox_phase2"]["failure_reasons"])
         self.assertIn(
             "readiness=sandbox_embodied_execution_phase2_in_progress expected=sandbox_embodied_execution_phase2_ready",
@@ -92,17 +139,37 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
 
         self.assertEqual(summary["overall_status"], "passed")
         self.assertEqual(summary["readiness_status"], "preserved_baselines_ready")
-        self.assertEqual(summary["summary"]["passed"], 4)
+        self.assertEqual(summary["summary"]["passed"], len(EXPECTED_READY))
         self.assertEqual(summary["summary"]["failed"], 0)
+        self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["passed"], 4)
+        self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["failed"], 0)
+
+    def test_load_statuses_marks_missing_reports_explicitly(self):
+        with tempfile.TemporaryDirectory() as td:
+            statuses = load_statuses(Path(td))
+
+        first_baseline = next(iter(BASELINES))
+        first_prefix = BASELINES[first_baseline]
+        self.assertEqual(statuses[first_baseline]["overall_status"], "missing")
+        self.assertIn(f"missing_report:{first_prefix}", statuses[first_baseline]["failure_reasons"])
 
     def test_render_markdown_includes_compact_baseline_table(self):
         summary = {
             "generated_at": "2026-05-04 12:00:00",
             "overall_status": "failed",
             "readiness_status": "preserved_baselines_regressed",
-            "summary": {"total": 2, "passed": 1, "failed": 1},
+            "summary": {
+                "total": 2,
+                "passed": 1,
+                "failed": 1,
+                "categories": {
+                    "embodiment": {"total": 1, "passed": 1, "failed": 0},
+                    "skills": {"total": 1, "passed": 0, "failed": 1},
+                },
+            },
             "baselines": {
                 "digital_embodiment": {
+                    "category": "embodiment",
                     "status": "passed",
                     "overall_status": "passed",
                     "readiness": "digital_embodiment_phase2_ready",
@@ -111,6 +178,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
                     "failure_reasons": [],
                 },
                 "skills_ecosystem": {
+                    "category": "skills",
                     "status": "failed",
                     "overall_status": "passed",
                     "readiness": "skills_ecosystem_in_progress",
@@ -126,9 +194,10 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         rendered = render_markdown(summary)
 
         self.assertIn("# Preserved Baselines Audit", rendered)
-        self.assertIn("| Baseline | Status | Overall | Readiness | Expected | Report |", rendered)
-        self.assertIn("| `digital_embodiment` | `passed` | `passed` | `digital_embodiment_phase2_ready`", rendered)
-        self.assertIn("| `skills_ecosystem` | `failed` | `passed` | `skills_ecosystem_in_progress`", rendered)
+        self.assertIn("| Baseline | Category | Status | Overall | Readiness | Expected | Report |", rendered)
+        self.assertIn("| `embodiment` | `1` | `1` | `0` |", rendered)
+        self.assertIn("| `digital_embodiment` | `embodiment` | `passed` | `passed` | `digital_embodiment_phase2_ready`", rendered)
+        self.assertIn("| `skills_ecosystem` | `skills` | `failed` | `passed` | `skills_ecosystem_in_progress`", rendered)
         self.assertIn("readiness=skills_ecosystem_in_progress expected=skills_ecosystem_ready", rendered)
 
 

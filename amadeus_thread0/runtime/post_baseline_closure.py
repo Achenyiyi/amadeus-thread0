@@ -8,10 +8,12 @@ POST_BASELINE_ITEMS = [
     "tts_presence_timing",
     "multimodal_input_capture",
     "executor_adapter",
+    "external_executor_harnesses",
     "dynamic_skill_generation",
     "chinese_de_scaffolding",
     "bounded_capability_growth",
     "natural_long_horizon_calibration",
+    "frontend_runtime_shell",
 ]
 
 REQUIRED_RUNTIME_ITEMS = {
@@ -26,6 +28,7 @@ ACCEPTED_STATUSES = {
     "deferred_fail_closed",
     "tracked_not_mainline",
     "quality_backlog_tracked",
+    "unlocked_planned",
 }
 
 
@@ -50,14 +53,14 @@ def describe_post_baseline_item(item_id: str) -> dict[str, Any]:
     if item == "multimodal_input_capture":
         return {
             "id": item,
-            "status": "deferred_fail_closed",
+            "status": "unlocked_planned",
             "runtime_available": False,
-            "summary": "True audio/image/screen capture is not opened in this backend phase.",
+            "summary": "Audio/image/screen capture is unlocked for a bounded implementation phase, but no capture runtime is active in this closure layer.",
             "blocked_surfaces": [
-                "audio_input",
-                "image_observation",
-                "screen_observation",
-                "live_browser_plus_capture",
+                "capture_without_consent",
+                "secret_recording",
+                "browser_capture_without_existing_runtime_profile",
+                "writeback_without_source_artifact",
             ],
         }
     if item == "executor_adapter":
@@ -65,49 +68,81 @@ def describe_post_baseline_item(item_id: str) -> dict[str, Any]:
             "id": item,
             "status": "implemented_ready",
             "runtime_available": True,
-            "summary": "Executor adapter exposes the existing sandbox runner as the only enabled harness.",
+            "summary": "Executor adapter exposes the existing sandbox runner as the enabled harness surface.",
             "blocked_surfaces": [
-                "deep_agents_executor",
-                "codex_harness",
-                "claude_harness",
-                "openclaw_harness",
+                "arbitrary_host_shell",
+                "privileged_container",
+                "host_secret_passthrough",
+            ],
+        }
+    if item == "external_executor_harnesses":
+        return {
+            "id": item,
+            "status": "unlocked_planned",
+            "runtime_available": False,
+            "summary": "External harness integration is unlocked as a future adapter family, but each harness must remain approval-gated and result-only until separately audited.",
+            "blocked_surfaces": [
+                "arbitrary_host_shell",
+                "git_mutation_without_packet_approval",
+                "networked_execution_without_policy",
+                "persona_memory_write_by_harness",
             ],
         }
     if item == "dynamic_skill_generation":
         return {
             "id": item,
-            "status": "deferred_fail_closed",
+            "status": "unlocked_planned",
             "runtime_available": False,
-            "summary": "Runtime skill generation remains disabled; skill mutations stay approval-gated registry operations.",
+            "summary": "Dynamic skill generation is unlocked for a bounded registry-backed design, but runtime skill authoring is not active here.",
             "blocked_surfaces": [
-                "runtime_skill_authoring",
-                "autonomous_skill_install",
+                "autonomous_skill_install_without_proposal",
                 "persona_core_skill_patch",
+                "registry_write_without_hash_verification",
             ],
         }
     if item == "chinese_de_scaffolding":
         return {
             "id": item,
-            "status": "tracked_not_mainline",
+            "status": "unlocked_planned",
             "runtime_available": False,
-            "summary": "Chinese lexical replacement is tracked by diagnostics but remains off the mainline closure path.",
-            "blocked_surfaces": [],
+            "summary": "Chinese lexical de-scaffolding is unlocked as a semantic-replacement phase, not as ad hoc reply-tone micro-polish.",
+            "blocked_surfaces": [
+                "prompt_sprawl_rewrite",
+                "persona_core_redefinition",
+            ],
         }
     if item == "bounded_capability_growth":
         return {
             "id": item,
-            "status": "quality_backlog_tracked",
+            "status": "unlocked_planned",
             "runtime_available": False,
-            "summary": "Capability self-growth remains a bounded procedural-learning backlog, not a widened executor surface.",
-            "blocked_surfaces": [],
+            "summary": "Capability growth beyond procedural phase 4 is unlocked for the next bounded slice, while preserving packet-owned execution and one memory substrate.",
+            "blocked_surfaces": [
+                "second_capability_memory_store",
+                "unbounded_tool_suite_expansion",
+            ],
         }
     if item == "natural_long_horizon_calibration":
         return {
             "id": item,
-            "status": "quality_backlog_tracked",
+            "status": "unlocked_planned",
             "runtime_available": False,
-            "summary": "Natural long-horizon behavior calibration remains a quality lane over preserved backend contracts.",
-            "blocked_surfaces": [],
+            "summary": "Natural long-horizon calibration is unlocked as an evaluation-backed behavior phase over existing state/writeback contracts.",
+            "blocked_surfaces": [
+                "keyword_scene_script_sprawl",
+                "final_text_tts_drift",
+            ],
+        }
+    if item == "frontend_runtime_shell":
+        return {
+            "id": item,
+            "status": "unlocked_planned",
+            "runtime_available": False,
+            "summary": "Frontend runtime work is unlocked for a contract-consuming shell, but it must consume backend.v1 envelopes rather than invent a second state schema.",
+            "blocked_surfaces": [
+                "frontend_owned_backend_semantics",
+                "alternate_memory_or_body_truth",
+            ],
         }
     return {
         "id": item,

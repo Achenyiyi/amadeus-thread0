@@ -17,7 +17,8 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Procedural Growth Phase 2` is now implemented as the next advisory planning slice: resurfaced procedural traces may bias autonomy planning, but execution remains packet-owned and approval-gated.
 - `Procedural Growth Phase 3` is now implemented as outcome-calibrated procedural learning: final action-packet results adjust procedural trace confidence and boundary/recovery readback without widening execution, browser, skill, frontend, persona-core, or memory authority.
 - `Procedural Growth Phase 4` is now implemented as recovery-oriented procedural adaptation: failed, blocked, manual-takeover, stale, and unexecuted outcomes produce bounded recovery guidance without becoming new capability facts.
-- No broader backend expansion phase is selected in this document; preserve the closed baselines and the procedural-growth phase-4 contract until a separate architecture decision opens the next bounded slice.
+- `Complete Closeout Unlock` is now active as the control-plane decision after procedural growth phase 4: formerly deferred or tracked lanes may enter bounded implementation phases as `unlocked_planned`, but no lane gains runtime authority until its own spec, tests, approval semantics, and audit gate close.
+- The unlocked lanes are multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth beyond phase 4, natural long-horizon calibration, external executor harness adapters, and a frontend runtime shell.
 
 ## Backend Status
 
@@ -37,8 +38,9 @@ For backend purposes, the structural decisions in this document are now split in
 - procedural growth phase 2 gate: `python evals/run_procedural_growth_phase2_audit.py`
 - procedural growth phase 3 gate: `python evals/run_procedural_growth_phase3_audit.py`
 - procedural growth phase 4 gate: `python evals/run_procedural_growth_phase4_audit.py`
+- preserved-baselines meta-gate: `python evals/run_preserved_baselines_audit.py`
 - current handoff posture:
-  - frontend remains frozen
+  - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
   - autonomy contract is baseline-complete
   - digital embodiment phase 1 remains the preserved workspace/access/resource baseline
@@ -63,8 +65,9 @@ For backend purposes, the structural decisions in this document are now split in
     - executor adapter exists as `amadeus_thread0.runtime.executor_adapter`
     - the only enabled executor adapter is `sandbox_runner`
     - Deep Agents, Codex, Claude, and OpenClaw executor harnesses are documented but fail closed
-    - multimodal input capture and dynamic skill generation remain `deferred_fail_closed`
-    - Chinese de-scaffolding, bounded capability growth, and natural long-horizon calibration remain tracked quality/future lanes rather than runtime expansion
+    - formerly deferred or tracked lanes are now `unlocked_planned`
+    - `unlocked_planned` means the lane may begin a bounded implementation phase, not that the runtime already exposes the capability
+    - blocked surfaces remain explicit for multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth, natural long-horizon calibration, external executor harnesses, and frontend runtime shell work
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias
@@ -242,12 +245,15 @@ Post-Baseline Closure Pack preserved contract:
   - external harness candidates are disabled and may not own persona memory or writeback facts
   - closeout report:
     - `evals/reports/executor-adapter-audit-20260506-015758-post-baseline-closure.{json,md}`
-- Deferred / tracked lanes:
-  - multimodal input capture: `deferred_fail_closed`
-  - dynamic skill generation: `deferred_fail_closed`
-  - Chinese lexical de-scaffolding: `tracked_not_mainline`
-  - bounded capability growth: `quality_backlog_tracked`
-  - natural long-horizon calibration: `quality_backlog_tracked`
+- Complete closeout unlock lanes:
+  - multimodal input capture: `unlocked_planned`
+  - dynamic skill generation: `unlocked_planned`
+  - Chinese semantic de-scaffolding: `unlocked_planned`
+  - bounded capability growth: `unlocked_planned`
+  - natural long-horizon calibration: `unlocked_planned`
+  - external executor harness adapters: `unlocked_planned`
+  - frontend runtime shell: `unlocked_planned`
+  - these statuses unlock bounded implementation specs; they do not mark the runtime capability as available yet
 - Final closure evidence:
   - `evals/reports/post-baseline-closure-audit-20260506-020030-final.{json,md}`
   - `overall_status=passed`
@@ -878,19 +884,21 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 
 ## P2 Decisions
 
-### 11. Cross-Surface Continuity Comes Later
+### 11. Cross-Surface Continuity Is Unlocked
 
 - Future frontend, voice, and multimodal surfaces should share one life-thread runtime.
-- This is not needed before the backend loop is structurally complete.
+- Complete closeout unlock opens the next bounded surface phases.
+- Each surface must consume the existing backend/body/memory truth instead of creating a parallel schema or interaction brain.
 
 ### 12. Subagents Stay Peripheral
 
 - Subagents / workers may support retrieval, synthesis, or bounded packet execution.
 - Subagents must not own persona-core decisions or identity judgment.
 
-### 13. Dynamic Skill Generation Is Deferred
+### 13. Dynamic Skill Generation Is Unlocked As A Bounded Phase
 
-- Host-side arbitrary skill/tool generation remains deferred.
+- Host-side arbitrary skill/tool generation remains blocked.
+- Bounded dynamic skill generation is unlocked for registry-backed proposals only.
 - This does not block a managed skills ecosystem:
   - authored `SKILL.md` packages
   - controlled remote install/update
@@ -898,24 +906,24 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 - In the near term, only explicit capability-upgrade proposals are allowed.
 - Long-term digital-embodiment convergence may include bounded helper creation or workflow synthesis, but only inside sandboxed / approval-gated execution surfaces.
 
-### 14. Chinese Lexical De-Scaffolding Is Deferred
+### 14. Chinese Semantic De-Scaffolding Is Unlocked
 
-- Replacing most Chinese lexical heuristics is a valid future architecture move, but it is not the active mainline slice.
-- The current mainline remains `digital body / access / unified experience` convergence.
-- Until that deferred replacement phase is explicitly opened, output naturalness / tone micro-polish is not a structural success metric by itself.
+- Replacing brittle Chinese lexical heuristics is now unlocked as a separate semantic-replacement phase.
+- The phase should replace lexical scaffolding with typed diagnostics and semantic classifiers before broad behavior rewrites.
+- Output naturalness / tone micro-polish is not a structural success metric by itself unless it is inside that phase or blocks runtime correctness.
 - Current quality bar is:
   - runtime is runnable
   - state contracts are correct
   - writeback provenance is correct
   - digital-body / autonomy / reconsolidation architecture keeps closing
-- When this replacement phase is opened, the candidate mechanisms are:
+- Candidate mechanisms are:
   - structured state extractors
   - small semantic classifiers
   - CrossEncoder semantic scorers / rerankers
   - preference optimization / DPO-style tuning
   - PEFT / LoRA / QLoRA-style role tuning
-- The exact choice remains intentionally undecided until the digital-body phase is stable enough to avoid solving the wrong layer first.
-- Until then, only the most brittle Chinese-heavy zones should be audited and documented, not proactively rewritten without a replacement contract.
+- The exact choice remains intentionally undecided until a phase spec selects the smallest auditable mechanism.
+- Outside that phase, only the most brittle Chinese-heavy zones should be audited and documented, not proactively rewritten without a replacement contract.
 
 ## Explicit Rejections
 
@@ -965,5 +973,12 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 10. `Live Browser Runtime Closure Phase 1` - `baseline-closed`
 11. `Sandbox Embodied Execution Phase 2` - `baseline-closed`
 12. `Post-Baseline Closure Pack` - `baseline-closed`
-13. `Chinese lexical de-scaffolding with semantic replacements` - `tracked future deferred track`
-14. later frontend / multimodal integration - `intentionally deferred`
+13. `Procedural Growth Phases 1-4` - `baseline-closed through recovery-oriented adaptation`
+14. `Complete Closeout Unlock` - `active control-plane status`
+15. `Multimodal Capture Phase 1` - `unlocked_planned`
+16. `Dynamic Skills Phase 1` - `unlocked_planned`
+17. `External Executor Harness Phase 1` - `unlocked_planned`
+18. `Frontend Runtime Shell` - `unlocked_planned`
+19. `Chinese semantic de-scaffolding` - `unlocked_planned`
+20. `Capability Growth Phase 5` - `unlocked_planned`
+21. `Natural Long-Horizon Calibration` - `unlocked_planned`

@@ -16,7 +16,7 @@ The target is not arbitrary cleanliness. The target is:
 ```text
 amadeus-thread0/
 ├── amadeus_thread0/        # primary Python package
-├── frontend/               # frozen frontend workspace; not the active implementation phase
+├── frontend/               # unlocked contract-consuming runtime shell workspace
 ├── skills/                 # authored local SKILL.md packages
 ├── docs/                   # architecture, evaluation, defense, maintenance docs
 ├── evals/                  # evaluation entrypoints and reports
@@ -245,8 +245,8 @@ Rule:
 `post_baseline_closure.py` holds the post-baseline closure status policy:
 
 - marks callable transport, TTS presence timing, and executor adapter readiness
-- marks multimodal input capture and dynamic skill generation as `deferred_fail_closed`
-- tracks Chinese de-scaffolding, bounded capability growth, and natural long-horizon calibration without widening runtime surfaces
+- marks multimodal input capture, dynamic skill generation, Chinese semantic de-scaffolding, bounded capability growth, natural long-horizon calibration, external executor harnesses, and the frontend runtime shell as `unlocked_planned`
+- keeps each unlocked lane's blocked surfaces explicit so "unlocked" does not widen runtime authority before a lane-specific spec and audit close it
 
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
@@ -332,6 +332,8 @@ Rule:
   - `run_sandbox_embodied_execution_audit.py`
   - `run_sandbox_phase2_audit.py`
   - `run_skills_ecosystem_audit.py`
+  - `run_post_baseline_closure_audit.py`
+  - `run_preserved_baselines_audit.py`
 - manual smoke packs:
   - `run_freeze_gate_smokes.py`
   - `run_companion_autonomy_smokes.py`
@@ -370,7 +372,7 @@ Current skills closure coverage lives in:
 - It should render frozen `backend.v1` envelopes rather than inventing an alternative state schema.
 - Contract copies and mock fixtures should stay close to the frontend shell so UI work can proceed without touching backend internals.
 - Any future transport adapter should remain thin and delegate semantics to `amadeus_thread0/runtime/backend_api.py` and `backend_session.py`.
-- It remains frozen during the current backend phase unless a handoff artifact requires direct UI consumption proof.
+- It is now unlocked as a runtime shell lane, but only as a consumer of the existing backend contract; it must not own memory, body, autonomy, or graph semantics.
 
 ## Entry Points
 
@@ -390,6 +392,10 @@ Current skills closure coverage lives in:
   `python evals/run_skills_ecosystem_audit.py`
 - skills ecosystem manual smokes:
   `python evals/run_skills_ecosystem_smokes.py`
+- post-baseline closure audit:
+  `python evals/run_post_baseline_closure_audit.py`
+- preserved-baselines meta-audit:
+  `python evals/run_preserved_baselines_audit.py`
 - frontend dev shell:
   `cd frontend && npm run dev`
 - deployment config:

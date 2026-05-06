@@ -47,8 +47,8 @@ class PostBaselineClosureAuditTests(unittest.TestCase):
 
         self.assertEqual(report["overall_status"], "passed")
         self.assertEqual(report["readiness_status"], "post_baseline_closure_ready")
-        self.assertGreaterEqual(report["summary"]["deferred_fail_closed"], 2)
-        self.assertEqual(report["closure_items"]["chinese_de_scaffolding"]["status"], "tracked_not_mainline")
+        self.assertGreaterEqual(report["summary"]["unlocked_planned"], 5)
+        self.assertEqual(report["closure_items"]["chinese_de_scaffolding"]["status"], "unlocked_planned")
 
     def test_aggregate_report_fails_when_required_runtime_check_fails(self):
         report = _aggregate_report(
@@ -77,13 +77,11 @@ class PostBaselineClosureAuditTests(unittest.TestCase):
                     "checks_failed": 0,
                     "implemented_ready": 2,
                     "preserved_ready": 1,
-                    "deferred_fail_closed": 2,
-                    "tracked_not_mainline": 1,
-                    "quality_backlog_tracked": 2,
+                    "unlocked_planned": 5,
                 },
                 "closure_items": {
                     "callable_transport_adapter": {"status": "implemented_ready", "runtime_available": True},
-                    "multimodal_input_capture": {"status": "deferred_fail_closed", "runtime_available": False},
+                    "multimodal_input_capture": {"status": "unlocked_planned", "runtime_available": False},
                 },
                 "checks": [
                     {"id": "post_baseline_unit_contract", "title": "Unit", "status": "passed", "blocking": True, "duration_s": 0.1, "command": "python -m pytest"}
@@ -93,7 +91,8 @@ class PostBaselineClosureAuditTests(unittest.TestCase):
 
         self.assertIn("# Post-Baseline Closure Audit", rendered)
         self.assertIn("| Item | Status | Runtime Available |", rendered)
-        self.assertIn("| `multimodal_input_capture` | `deferred_fail_closed` | `False` |", rendered)
+        self.assertIn("- Unlocked planned: `5`", rendered)
+        self.assertIn("| `multimodal_input_capture` | `unlocked_planned` | `False` |", rendered)
 
 
 if __name__ == "__main__":
