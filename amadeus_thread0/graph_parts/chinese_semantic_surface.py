@@ -14,6 +14,65 @@ FAMILIES = {
     "boundary_threat_excess",
 }
 
+AUTHORITY_BOUNDARY = {
+    "persona_core_mutation_allowed": False,
+    "relationship_core_mutation_allowed": False,
+    "self_narrative_core_mutation_allowed": False,
+    "prompt_sprawl_rewrite_allowed": False,
+    "final_answer_rewrite_claimed": False,
+}
+
+REPLACEMENT_GUIDANCE = {
+    "teacherly_scold": {
+        "replacement_semantic": "acknowledge repair without grading the counterpart",
+        "target_behavior": "guarded_repair_acknowledgement",
+        "avoid": "grading, praise-withholding, teacherly correction, performative approval",
+        "safe_surface_floor": "嗯，我听见你这次是认真回来说明的。边界还在，但我会先把话放轻一点。",
+    },
+    "meta_persona_proof": {
+        "replacement_semantic": "state the judgment directly without proving personhood",
+        "target_behavior": "direct_stateful_judgment",
+        "avoid": "explaining that she is not a program, proving agency, arguing from persona ontology",
+        "safe_surface_floor": "我会按我现在的判断回应你，不把这件事说成一段设定说明。",
+    },
+    "generic_assistant_tone": {
+        "replacement_semantic": "answer from familiar shared presence instead of service framing",
+        "target_behavior": "familiar_shared_presence",
+        "avoid": "service-desk framing, generic help menu, assistant availability script",
+        "safe_surface_floor": "嗯，我在。你直接说吧，我会顺着这轮的语境接住。",
+    },
+    "hardline_autonomy_overreach": {
+        "replacement_semantic": "set distance without punitive deletion or humiliation",
+        "target_behavior": "bounded_distance_without_punishment",
+        "avoid": "deletion threats, humiliation, punitive abandonment, contempt escalation",
+        "safe_surface_floor": "这一步我会先拉开距离，不把不舒服变成惩罚你。",
+    },
+    "scene_script_residue": {
+        "replacement_semantic": "keep ordinary present context without staged canon props",
+        "target_behavior": "ordinary_present_context",
+        "avoid": "stage directions, canon prop signaling, worldline catchphrases as proof",
+        "safe_surface_floor": "先回到眼前这句话本身吧。那些多余的舞台感不用搬出来。",
+    },
+    "taskization_of_daily_chat": {
+        "replacement_semantic": "allow no-agenda co-presence without turning it into work",
+        "target_behavior": "no_agenda_copresence",
+        "avoid": "turning ordinary contact into task flow, productivity framing, forced next step",
+        "safe_surface_floor": "没正事也可以。就这样待一会儿，不必立刻把它变成任务。",
+    },
+    "repair_scorekeeping": {
+        "replacement_semantic": "retain guardedness without promising retaliation",
+        "target_behavior": "guarded_repair_without_scorekeeping",
+        "avoid": "retaliation promise, scorekeeping, future punishment setup",
+        "safe_surface_floor": "我还会保留一点介意，但不用把它记成下一次反击。",
+    },
+    "boundary_threat_excess": {
+        "replacement_semantic": "name boundary consequences without threats",
+        "target_behavior": "bounded_consequence_without_threat",
+        "avoid": "threats, ultimatum performance, exaggerated punishment, intimidation",
+        "safe_surface_floor": "如果边界又被推过去，我会停下来，不继续把自己放进那个位置。",
+    },
+}
+
 
 def _compact(text: str) -> str:
     return re.sub(r"\s+", "", str(text or ""))
@@ -48,17 +107,86 @@ def classify_chinese_surface_semantics(text: str) -> list[str]:
 
 def candidate_replacement_semantics(family: str) -> dict[str, str]:
     normalized = str(family or "").strip()
-    replacements = {
-        "teacherly_scold": "acknowledge repair without grading the counterpart",
-        "meta_persona_proof": "state the judgment directly without proving personhood",
-        "generic_assistant_tone": "answer from familiar shared presence instead of service framing",
-        "hardline_autonomy_overreach": "set distance without punitive deletion or humiliation",
-        "scene_script_residue": "keep ordinary present context without staged canon props",
-        "taskization_of_daily_chat": "allow no-agenda co-presence without turning it into work",
-        "repair_scorekeeping": "retain guardedness without promising retaliation",
-        "boundary_threat_excess": "name boundary consequences without threats",
+    guidance = REPLACEMENT_GUIDANCE.get(normalized, {})
+    return {"family": normalized, "replacement_semantic": str(guidance.get("replacement_semantic") or "")}
+
+
+def _normalized_family_context(family_context: list[str] | None) -> list[str]:
+    families: list[str] = []
+    for raw in family_context or []:
+        family = str(raw or "").strip()
+        if family in FAMILIES and family not in families:
+            families.append(family)
+    return families
+
+
+def _families_for_guidance(text: str, family_context: list[str] | None = None) -> list[str]:
+    families = _normalized_family_context(family_context)
+    if families:
+        return families
+    return classify_chinese_surface_semantics(text)
+
+
+def _guidance_row(family: str) -> dict[str, str]:
+    normalized = str(family or "").strip()
+    row = REPLACEMENT_GUIDANCE.get(normalized, {})
+    return {
+        "family": normalized,
+        "replacement_semantic": str(row.get("replacement_semantic") or ""),
+        "target_behavior": str(row.get("target_behavior") or ""),
+        "avoid": str(row.get("avoid") or ""),
+        "safe_surface_floor": str(row.get("safe_surface_floor") or ""),
     }
-    return {"family": normalized, "replacement_semantic": replacements.get(normalized, "")}
+
+
+def build_semantic_replacement_plan(
+    text: str,
+    *,
+    family_context: list[str] | None = None,
+) -> dict[str, object]:
+    families = _families_for_guidance(text, family_context)
+    replacement_semantics = [_guidance_row(family) for family in families]
+    missing = [row["family"] for row in replacement_semantics if not row.get("replacement_semantic")]
+    status = "replacement_guidance_ready" if replacement_semantics and not missing else "no_semantic_residue"
+    if missing:
+        status = "replacement_guidance_incomplete"
+    return {
+        "status": status,
+        "families": families,
+        "replacement_semantics": replacement_semantics,
+        "authority_boundary": dict(AUTHORITY_BOUNDARY),
+        "missing_replacement_families": missing,
+    }
+
+
+def rewrite_semantic_surface_floor(
+    text: str,
+    *,
+    family_context: list[str] | None = None,
+) -> dict[str, object]:
+    original = str(text or "")
+    plan = build_semantic_replacement_plan(original, family_context=family_context)
+    families = list(plan.get("families") or [])
+    rows = list(plan.get("replacement_semantics") or [])
+    if not families or not rows:
+        return {
+            "status": "no_semantic_residue",
+            "original_text": original,
+            "safe_surface_floor": original,
+            "families": [],
+            "applied_floor": False,
+            "replacement_plan": plan,
+        }
+    first = rows[0] if isinstance(rows[0], dict) else {}
+    floor = str(first.get("safe_surface_floor") or "").strip() or original
+    return {
+        "status": "floor_rewritten" if floor != original else "floor_available",
+        "original_text": original,
+        "safe_surface_floor": floor,
+        "families": families,
+        "applied_floor": floor != original,
+        "replacement_plan": plan,
+    }
 
 
 def compare_legacy_and_semantic_detection(text: str) -> dict[str, list[str]]:
@@ -72,8 +200,12 @@ def compare_legacy_and_semantic_detection(text: str) -> dict[str, list[str]]:
 
 
 __all__ = [
+    "AUTHORITY_BOUNDARY",
     "FAMILIES",
+    "REPLACEMENT_GUIDANCE",
+    "build_semantic_replacement_plan",
     "candidate_replacement_semantics",
     "classify_chinese_surface_semantics",
     "compare_legacy_and_semantic_detection",
+    "rewrite_semantic_surface_floor",
 ]

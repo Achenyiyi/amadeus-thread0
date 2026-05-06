@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-06`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Residual Living Loop Closure Phase 1` north-star residual traceability gate after runtime productization phase 2
+- Mainline phase: `Living Loop Runtime Realism Phase 1` causal north-star realism gate after residual living-loop traceability
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -33,6 +33,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `residual_living_loop_phase1_ready`
+  - preserve `living_loop_runtime_realism_phase1_ready`
   - keep preserved phase-2 execution scope bounded to:
     - Docker-isolated local execution
     - `python` / `pytest` / `rg` / read-only `git`
@@ -49,6 +50,10 @@ This file is the live development ledger for `amadeus-thread0`.
 - Current residual closure focus:
   - the remaining post-unlock lanes are assessed as one traceable living-loop contract rather than as disconnected small cleanup items
   - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
+- Current runtime realism focus:
+  - visible living-loop stages must causally align across appraisal, internal state, motive/behavior, consequence, reconsolidation, and final semantics
+  - Chinese semantic de-scaffolding now includes deterministic replacement guidance and conservative safe-surface floors, not broad prompt-sprawl rewrites
+  - `living_loop_runtime_realism_phase1_ready` does not open live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
   - authoritative ready reports:
@@ -11573,3 +11578,93 @@ This file is the live development ledger for `amadeus-thread0`.
   - all plan checkboxes in `docs/superpowers/plans/2026-05-06-residual-living-loop-closure-phase1.md` are marked complete
 - Next:
   - commit, fast-forward merge to `main`, and push
+
+## 2026-05-06 Run 261
+
+- Focus:
+  - implement `Living Loop Runtime Realism Phase 1` after `Residual Living Loop Closure Phase 1`
+  - move from north-star stage visibility to causal runtime alignment
+  - move Chinese semantic de-scaffolding from diagnostic-only classification to deterministic replacement guidance and conservative safe-surface floors
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/living_loop_realism.py`
+  - `amadeus_thread0/graph_parts/chinese_semantic_surface.py`
+  - `evals/run_living_loop_realism_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_living_loop_realism.py`
+  - `tests/test_living_loop_realism_audit.py`
+  - `tests/test_chinese_semantic_surface_phase2.py`
+  - `tests/test_chinese_surface_de_scaffold_audit.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/superpowers/plans/2026-05-06-living-loop-runtime-realism-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.living_loop_realism` as a pure readback module for causal loop realism
+  - checks now cover:
+    - `appraisal_to_motive`
+    - `state_to_behavior`
+    - `action_plan_alignment`
+    - `consequence_reconsolidation_alignment`
+    - `final_semantics_alignment`
+  - added `evals/run_living_loop_realism_audit.py` reporting `living_loop_runtime_realism_phase1_ready`
+  - extended Chinese semantic surface helpers with:
+    - `build_semantic_replacement_plan`
+    - `rewrite_semantic_surface_floor`
+    - replacement targets, avoid lists, and conservative safe-surface floors for all existing families
+  - folded `living_loop_runtime_realism_phase1_ready` into the preserved-baselines meta-audit as the `living_loop_realism` category
+  - kept the phase non-widening:
+    - no live capture
+    - no automatic skill registry writes
+    - no external harness runtime enablement
+    - no frontend-owned semantics
+    - no persona-core mutation
+    - no memory writes
+    - no unapproved external mutation
+    - no broad prompt-sprawl rewrite
+- Validation:
+  - baseline before edits:
+    - `python -m pytest tests/test_residual_living_loop.py tests/test_chinese_surface_de_scaffold_audit.py tests/test_behavior_runtime_alignment.py -q`
+      - passed: `20 passed, 7 subtests passed`
+  - initial RED checks:
+    - `python -m pytest tests/test_living_loop_realism.py -q`
+      - failed because `amadeus_thread0.runtime.living_loop_realism` did not exist
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py -q`
+      - failed because semantic replacement helpers did not exist
+    - `python -m pytest tests/test_living_loop_realism_audit.py -q`
+      - failed because `evals.run_living_loop_realism_audit` did not exist
+    - `python -m pytest tests/test_preserved_baselines_audit.py -q`
+      - failed because the new preserved-baseline id was not registered
+  - focused green checks so far:
+    - `python -m pytest tests/test_living_loop_realism.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_chinese_semantic_surface_phase2.py tests/test_chinese_surface_de_scaffold_audit.py -q`
+      - passed: `11 passed`
+    - `python -m pytest tests/test_living_loop_realism_audit.py -q`
+      - passed: `3 passed`
+    - `python evals/run_living_loop_realism_audit.py --run-tag phase1-dev`
+      - passed with `readiness=living_loop_runtime_realism_phase1_ready`
+    - `python -m pytest tests/test_preserved_baselines_audit.py -q`
+      - passed: `7 passed`
+  - final focused verification:
+    - `python -m pytest tests/test_living_loop_realism.py tests/test_living_loop_realism_audit.py tests/test_chinese_semantic_surface_phase2.py tests/test_chinese_surface_de_scaffold_audit.py tests/test_preserved_baselines_audit.py tests/test_residual_living_loop.py -q`
+      - passed: `30 passed`
+    - `python evals/run_living_loop_realism_audit.py --run-tag phase1-final`
+      - passed with `readiness=living_loop_runtime_realism_phase1_ready`
+    - `python evals/run_chinese_surface_de_scaffold_audit.py --run-tag realism-phase1-final`
+      - passed with `readiness=chinese_semantic_descaffolding_phase1_ready`
+    - `python -m py_compile amadeus_thread0/runtime/living_loop_realism.py amadeus_thread0/graph_parts/chinese_semantic_surface.py evals/run_living_loop_realism_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - placeholder scan over the living-loop realism plan/code/test set
+      - passed with no matches
+  - isolated-worktree note:
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - failed because this fresh worktree only had the newly generated living-loop realism report and lacked the historical baseline report artifacts
+      - the new `living_loop_realism` row itself passed with `living_loop_runtime_realism_phase1_ready`; full report-backed meta-audit must be rerun after merge in the primary workspace report directory
+- Result:
+  - implementation is complete in branch `codex/living-loop-runtime-realism-phase1`; final verification, commit, main merge, and push remain
+- Next:
+  - run final verification pack, commit, fast-forward merge to `main`, run post-merge checks, and push

@@ -23,10 +23,11 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Runtime Productization Phase 1` is now implemented as a readback/productization gate: backend API, backend session, transport adapter, CLI summary, and audit surfaces expose one operator readback without adding runtime authority.
 - `Runtime Productization Phase 2` is now implemented as an operator-console readback gate: `operator_readback.v2` adds console health, evidence summary, read-only route inventory, and next-action hints without adding runtime authority.
 - `Residual Living Loop Closure Phase 1` is now implemented as a north-star residual closure gate: post-unlock residuals are evaluated against one traceable loop from perception through self-narrative update, without opening live capture, automatic skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation.
+- `Living Loop Runtime Realism Phase 1` is now implemented as a causal/north-star realism gate: visible loop stages must align across appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final semantics, while Chinese semantic de-scaffolding gains deterministic replacement guidance and conservative safe-surface floors without broad prompt rewrites.
 
 ## Backend Status
 
-Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready`
+Status as of `2026-05-06`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -46,6 +47,7 @@ For backend purposes, the structural decisions in this document are now split in
 - post-unlock roadmap gate: `python evals/run_post_unlock_roadmap_audit.py`
 - runtime productization gate: `python evals/run_runtime_productization_audit.py`
 - residual living-loop gate: `python evals/run_residual_living_loop_audit.py`
+- living-loop runtime realism gate: `python evals/run_living_loop_realism_audit.py`
 - current handoff posture:
   - frontend runtime shell work is unlocked only as a `backend.v1` contract consumer
   - backend contract is stable enough to consume
@@ -96,6 +98,11 @@ For backend purposes, the structural decisions in this document are now split in
     - `evals/run_residual_living_loop_audit.py` emits deterministic json/md reports under `residual-living-loop-audit-*`
     - optional operator readback can include the residual block, but productization readiness remains governed by the existing post-baseline/post-unlock/preserved-baseline inputs
     - this phase is a closure/audit layer, not a capability widening layer
+  - current living-loop runtime realism posture is:
+    - `living_loop_runtime_realism_phase1_ready`: `amadeus_thread0.runtime.living_loop_realism` evaluates causal alignment between visible loop stages rather than mere field presence
+    - `evals/run_living_loop_realism_audit.py` emits deterministic json/md reports under `living-loop-realism-audit-*`
+    - `amadeus_thread0.graph_parts.chinese_semantic_surface` now returns replacement guidance and conservative safe-surface floors for brittle Chinese surface families
+    - this phase is readback/guidance-only and does not enable prompt-sprawl rewrites, live capture, skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
   - current procedural-growth posture is:
     - `amadeus_thread0.graph_parts.procedural_growth` owns reusable procedural trace normalization and hinting
     - `amadeus_thread0.graph_parts.procedural_planning` owns advisory procedure-guided planning bias
@@ -1011,3 +1018,6 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 20. `Capability Growth Phase 5` - `phase5-ready`
 21. `Natural Long-Horizon Calibration` - `phase1-ready`
 22. `Post-Unlock Roadmap Integration Gate` - `ready`
+23. `Runtime Productization Phases 1-2` - `baseline-closed`
+24. `Residual Living Loop Closure Phase 1` - `baseline-closed`
+25. `Living Loop Runtime Realism Phase 1` - `baseline-closed`

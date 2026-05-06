@@ -87,7 +87,7 @@ amadeus_thread0/
 - `capability_growth.py`
   phase-5 workflow-candidate helpers over completed procedural evidence; advisory planning metadata only, with no new tool grant, skill install, or persona-core authority.
 - `chinese_semantic_surface.py`
-  semantic diagnostic helpers for Chinese surface de-scaffolding; classifies brittle surface families and candidate replacement semantics before any broad runtime rewrite.
+  semantic diagnostic and replacement-guidance helpers for Chinese surface de-scaffolding; classifies brittle surface families, returns candidate replacement semantics, and provides conservative safe-surface floors before any broad runtime rewrite.
 - `browser_runtime.py`
   live-browser state shaping, browser packet preview/result normalization, and body-surface continuity helpers.
 - `autonomy_runtime.py`
@@ -154,6 +154,7 @@ Rule:
 - `post_baseline_closure.py`
 - `runtime_productization.py`
 - `residual_living_loop.py`
+- `living_loop_realism.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
 - `access_negotiation.py`
@@ -292,6 +293,13 @@ Rule:
 - keeps live capture, auto skill registry writes, external harness enablement, frontend-owned semantics, and persona-core mutation explicitly blocked
 - remains pure readback/audit logic with no execution, memory-write, browser, sandbox, skill-install, or frontend authority
 
+`living_loop_realism.py` holds the Living Loop Runtime Realism readback contract:
+
+- evaluates whether visible north-star stages causally constrain each other instead of merely appearing in one packet
+- checks appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final-semantics alignment
+- exposes `living_loop_runtime_realism_phase1_ready` as a deterministic audit/readback gate
+- remains pure readback/audit logic with no execution, memory-write, browser, sandbox, skill-install, frontend, prompt-sprawl, or persona-core authority
+
 `memory_admin.py` holds direct memory-management and reflection-admin surfaces:
 
 - profile correction / undo workflows
@@ -381,6 +389,7 @@ Rule:
   - `run_post_unlock_roadmap_audit.py`
   - `run_runtime_productization_audit.py`
   - `run_residual_living_loop_audit.py`
+  - `run_living_loop_realism_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_external_executor_harness_audit.py`
