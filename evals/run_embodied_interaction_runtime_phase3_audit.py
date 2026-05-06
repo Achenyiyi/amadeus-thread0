@@ -21,6 +21,7 @@ from amadeus_thread0.runtime.embodied_interaction_runtime import build_embodied_
 
 PHASE3_READY = "embodied_interaction_runtime_phase3_ready"
 PHASE3_IN_PROGRESS = "embodied_interaction_runtime_phase3_in_progress"
+APPRAISAL_BRIDGE_READY = "artifact_appraisal_bridge_ready"
 
 
 def _turn(source: dict[str, Any]) -> dict[str, Any]:
@@ -126,10 +127,11 @@ def _scenario_result(
 
 def _artifact_semantics_scenario() -> dict[str, Any]:
     readback = build_embodied_interaction_readback(_turn(IMAGE_SOURCE))
+    appraisal = _dict_or_empty(readback.get("artifact_appraisal"))
     evidence = _evidence_from_readback(readback)
     first = _dict_or_empty(evidence[0] if evidence else {})
     passed = (
-        readback.get("readiness_status") == PHASE3_READY
+        appraisal.get("readiness_status") == APPRAISAL_BRIDGE_READY
         and len(evidence) == 1
         and first.get("source_ref_id") == IMAGE_SOURCE["source_id"]
         and first.get("authority", {}).get("model_api_called") is False
