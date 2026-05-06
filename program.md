@@ -12248,5 +12248,26 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `9 passed`
     - `python evals/run_living_loop_realism_phase3_audit.py --run-tag phase3-dev`
       - passed with `readiness=living_loop_runtime_realism_phase3_ready`
+  - final verification:
+    - `python -m pytest tests/test_living_loop_realism.py tests/test_living_loop_realism_phase2_audit.py tests/test_living_loop_realism_phase3_audit.py tests/test_embodied_interaction_runtime.py tests/test_artifact_behavior_alignment.py -q`
+      - passed: `30 passed`
+    - `python -m pytest tests/test_backend_api.py -k "living_loop_realism or artifact_behavior_alignment or embodied_interaction" -q`
+      - passed: `3 passed, 51 deselected`
+    - `python -m pytest tests/test_backend_api.py tests/test_backend_session.py tests/test_cli_views.py tests/test_tool_approval_policy.py -q`
+      - passed: `188 passed, 17 subtests passed`
+    - `python -m pytest tests/test_memory_guard.py tests/test_session_orchestrator.py -q`
+      - passed: `14 passed, 9 subtests passed`
+    - `python -m py_compile amadeus_thread0/agent.py amadeus_thread0/graph.py amadeus_thread0/runtime/living_loop_realism.py amadeus_thread0/runtime/embodied_interaction_runtime.py evals/run_living_loop_realism_phase2_audit.py evals/run_living_loop_realism_phase3_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `python -c "from amadeus_thread0.agent import agent; print(type(agent).__name__)"`
+      - printed `CompiledStateGraph`
+    - `python evals/run_living_loop_realism_phase2_audit.py --run-tag phase3-regression`
+      - passed with `readiness=living_loop_runtime_realism_phase2_ready`
+    - `python evals/run_living_loop_realism_phase3_audit.py --run-tag phase3-final`
+      - passed with `readiness=living_loop_runtime_realism_phase3_ready`
+    - `python evals/run_embodied_interaction_runtime_phase5_audit.py --run-tag living-loop-phase3-regression`
+      - passed with `readiness=embodied_interaction_runtime_phase5_ready`
+    - `git diff --check`
+      - passed
 - Next:
   - run full Phase 3 final verification, fast-forward merge to `main`, run post-merge verification, push `main`, then move to `Chinese Semantic De-Scaffolding Phase 2`
