@@ -37,6 +37,7 @@ from .final_state import (
     resolve_interaction_carryover,
     resolve_pending_action_proposal,
 )
+from .embodied_interaction_runtime import apply_embodied_interaction_readback_to_payload
 from .living_loop_realism import build_backend_payload_realism_readback
 from .post_baseline_closure import evaluate_post_baseline_status
 from .runtime_productization import build_runtime_productization_readback
@@ -670,6 +671,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload = apply_embodied_interaction_readback_to_payload(payload)
         payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("event_round", payload, meta=meta)
 
@@ -742,6 +744,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload = apply_embodied_interaction_readback_to_payload(payload)
         payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("assistant_turn", payload, meta=meta)
 
