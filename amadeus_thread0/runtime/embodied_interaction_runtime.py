@@ -6,11 +6,12 @@ from ..graph_parts.chinese_semantic_surface import (
     build_runtime_replacement_policy,
     rewrite_semantic_surface_floor,
 )
+from ..graph_parts.action_packets import normalize_action_packets
 from .artifact_appraisal_bridge import build_artifact_appraisal_readback
 from .artifact_behavior_alignment import build_artifact_behavior_alignment_readback
 from .artifact_motive_bridge import build_artifact_motive_readback
 from .artifact_perception_semantics import build_artifact_semantics_readback
-from .multimodal_sources import normalize_multimodal_source
+from .multimodal_sources import normalize_multimodal_inspection_result, normalize_multimodal_source
 
 
 EMBODIED_INTERACTION_PHASE1_READINESS = "embodied_interaction_runtime_phase1_ready"
@@ -102,6 +103,41 @@ def _candidate_sources(turn: dict[str, Any]) -> list[dict[str, Any]]:
                 row["source_id"] = row.get("source_ref_id")
             rows.append(row)
     return rows
+
+
+def _inspection_result_sources(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for packet in normalize_action_packets(turn.get("action_packets")):
+        if _clean(packet.get("intent")).lower() != "artifact:inspect_multimodal":
+            continue
+        if _clean(packet.get("status")).lower() != "completed":
+            continue
+        result = normalize_multimodal_inspection_result(packet.get("multimodal_inspection_result"))
+        if not result:
+            continue
+        if result.get("status") != "completed" or result.get("approval_status") != "approved":
+            continue
+        spec = _dict_or_empty(packet.get("multimodal_inspection_spec"))
+        source_ref_id = _clean(result.get("source_ref_id") or spec.get("source_ref_id"))
+        if not source_ref_id:
+            continue
+        rows.append(
+            {
+                "source_id": source_ref_id,
+                "modality": result.get("modality") or spec.get("modality"),
+                "artifact_ref": result.get("artifact_ref") or spec.get("artifact_ref"),
+                "artifact_label": result.get("artifact_label") or spec.get("artifact_label"),
+                "label": result.get("artifact_label") or spec.get("artifact_label"),
+                "consent_scope": spec.get("consent_scope") or "single_turn",
+                "capture_method": spec.get("capture_method") or "operator_attached_file",
+                "multimodal_inspection_result": result,
+            }
+        )
+    return rows
+
+
+def _semantic_candidate_sources(turn: dict[str, Any]) -> list[dict[str, Any]]:
+    return [*_candidate_sources(turn), *_inspection_result_sources(turn)]
 
 
 def normalize_embodied_interaction_sources(turn: dict[str, Any] | None) -> dict[str, Any]:
@@ -341,7 +377,7 @@ def _semantic_runtime_floor(turn: dict[str, Any]) -> dict[str, Any]:
 def build_embodied_interaction_readback(turn: dict[str, Any] | None) -> dict[str, Any]:
     data = _dict_or_empty(turn)
     sources = normalize_embodied_interaction_sources(data)
-    artifact_semantics = build_artifact_semantics_readback(_candidate_sources(data))
+    artifact_semantics = build_artifact_semantics_readback(_semantic_candidate_sources(data))
     artifact_appraisal = build_artifact_appraisal_readback(artifact_semantics)
     artifact_motive = build_artifact_motive_readback(artifact_appraisal)
     artifact_behavior_alignment = build_artifact_behavior_alignment_readback(

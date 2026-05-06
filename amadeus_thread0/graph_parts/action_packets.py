@@ -11,6 +11,11 @@ from .browser_runtime import (
     normalize_browser_execution_result,
     normalize_browser_execution_spec,
 )
+from ..runtime.multimodal_sources import (
+    normalize_multimodal_inspection_preview,
+    normalize_multimodal_inspection_result,
+    normalize_multimodal_inspection_spec,
+)
 from .tool_policies import MEMORY_WRITE_TOOLS
 
 _VALID_ORIGINS = {"motive_goal", "own_rhythm", "counterpart_request", "capability_upgrade"}
@@ -562,6 +567,12 @@ def action_packet_has_signal(packet: Any) -> bool:
         return True
     if normalize_browser_execution_result(packet.get("browser_execution_result")):
         return True
+    if normalize_multimodal_inspection_spec(packet.get("multimodal_inspection_spec")):
+        return True
+    if normalize_multimodal_inspection_preview(packet.get("multimodal_inspection_preview")):
+        return True
+    if normalize_multimodal_inspection_result(packet.get("multimodal_inspection_result")):
+        return True
     if _normalize_tool_args(packet.get("tool_args")):
         return True
     return bool(normalize_capability_steps(packet.get("capability_steps")))
@@ -597,6 +608,9 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
     browser_execution_spec = normalize_browser_execution_spec(row.get("browser_execution_spec"))
     browser_execution_preview = normalize_browser_execution_preview(row.get("browser_execution_preview"))
     browser_execution_result = normalize_browser_execution_result(row.get("browser_execution_result"))
+    multimodal_inspection_spec = normalize_multimodal_inspection_spec(row.get("multimodal_inspection_spec"))
+    multimodal_inspection_preview = normalize_multimodal_inspection_preview(row.get("multimodal_inspection_preview"))
+    multimodal_inspection_result = normalize_multimodal_inspection_result(row.get("multimodal_inspection_result"))
     tool_args = _normalize_tool_args(row.get("tool_args"))
     requires_approval = _coerce_bool(row.get("requires_approval"), risk != "read")
     writeback_ready = _coerce_bool(row.get("writeback_ready"), status == "completed")
@@ -633,6 +647,9 @@ def normalize_action_packet(packet: Any) -> dict[str, Any]:
         "browser_execution_spec": browser_execution_spec,
         "browser_execution_preview": browser_execution_preview,
         "browser_execution_result": browser_execution_result,
+        "multimodal_inspection_spec": multimodal_inspection_spec,
+        "multimodal_inspection_preview": multimodal_inspection_preview,
+        "multimodal_inspection_result": multimodal_inspection_result,
     }
 
 
@@ -830,6 +847,9 @@ def build_tool_action_packet(
     browser_execution_spec: dict[str, Any] | None = None,
     browser_execution_preview: dict[str, Any] | None = None,
     browser_execution_result: dict[str, Any] | None = None,
+    multimodal_inspection_spec: dict[str, Any] | None = None,
+    multimodal_inspection_preview: dict[str, Any] | None = None,
+    multimodal_inspection_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     name = _clean_text(tool_name)
     risk = risk_from_tool_name(name)
@@ -879,6 +899,9 @@ def build_tool_action_packet(
             "browser_execution_spec": normalize_browser_execution_spec(browser_execution_spec),
             "browser_execution_preview": normalize_browser_execution_preview(browser_execution_preview),
             "browser_execution_result": normalize_browser_execution_result(browser_execution_result),
+            "multimodal_inspection_spec": normalize_multimodal_inspection_spec(multimodal_inspection_spec),
+            "multimodal_inspection_preview": normalize_multimodal_inspection_preview(multimodal_inspection_preview),
+            "multimodal_inspection_result": normalize_multimodal_inspection_result(multimodal_inspection_result),
         }
     )
 
@@ -918,6 +941,9 @@ __all__ = [
     "normalize_execution_result",
     "normalize_execution_spec",
     "normalize_mutation_preview",
+    "normalize_multimodal_inspection_preview",
+    "normalize_multimodal_inspection_result",
+    "normalize_multimodal_inspection_spec",
     "risk_from_tool_name",
     "upsert_action_packet",
 ]

@@ -296,6 +296,50 @@ class ActionPacketContractTests(unittest.TestCase):
         self.assertTrue(packet["requires_approval"])
         self.assertEqual(packet["execution_spec"]["profile"], "python_script")
 
+    def test_normalize_action_packet_preserves_multimodal_inspection_contract(self):
+        packet = normalize_action_packet(
+            {
+                "proposal_id": "ap-mm-inspect-1",
+                "origin": "counterpart_request",
+                "intent": "artifact:inspect_multimodal",
+                "status": "awaiting_approval",
+                "risk": "external_mutation",
+                "requires_approval": True,
+                "tool_name": "inspect_multimodal_artifact",
+                "multimodal_inspection_spec": {
+                    "source_ref_id": "img-contract-1",
+                    "modality": "image",
+                    "artifact_ref": "fixtures/panel.png",
+                    "artifact_label": "panel.png",
+                    "consent_scope": "single_turn",
+                    "capture_method": "operator_attached_file",
+                    "approved_result_required": True,
+                    "model_api_call_allowed": True,
+                    "live_capture_allowed": True,
+                },
+                "multimodal_inspection_preview": {
+                    "source_ref_id": "img-contract-1",
+                    "modality": "image",
+                    "artifact_ref": "fixtures/panel.png",
+                    "artifact_label": "panel.png",
+                    "requires_approval": True,
+                    "auto_execute": True,
+                    "model_api_call_planned": True,
+                    "live_capture_allowed": True,
+                },
+            }
+        )
+
+        self.assertEqual(packet["intent"], "artifact:inspect_multimodal")
+        self.assertEqual(packet["risk"], "external_mutation")
+        self.assertTrue(packet["requires_approval"])
+        self.assertEqual(packet["multimodal_inspection_spec"]["source_ref_id"], "img-contract-1")
+        self.assertFalse(packet["multimodal_inspection_spec"]["model_api_call_allowed"])
+        self.assertFalse(packet["multimodal_inspection_spec"]["live_capture_allowed"])
+        self.assertFalse(packet["multimodal_inspection_preview"]["auto_execute"])
+        self.assertFalse(packet["multimodal_inspection_preview"]["model_api_call_planned"])
+        self.assertFalse(packet["multimodal_inspection_preview"]["live_capture_allowed"])
+
     def test_normalize_action_packets_deduplicates_by_proposal_id(self):
         packets = normalize_action_packets(
             [

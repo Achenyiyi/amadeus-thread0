@@ -110,3 +110,69 @@ def test_blocked_live_capture_does_not_emit_semantic_observation():
     assert readback["blocked_source_count"] == 1
     assert readback["authority_boundary"]["multimodal_model_api_called"] is False
     assert readback["authority_boundary"]["memory_write_allowed"] is False
+
+
+def test_completed_approved_multimodal_inspection_result_becomes_semantic_observation():
+    readback = build_artifact_semantics_readback(
+        [
+            {
+                "source_id": "img-approved-artifact-1",
+                "modality": "image",
+                "path": "fixtures/panel.png",
+                "consent_scope": "single_turn",
+                "capture_method": "operator_attached_file",
+                "multimodal_inspection_result": {
+                    "status": "completed",
+                    "approval_status": "approved",
+                    "source_ref_id": "img-approved-artifact-1",
+                    "semantic_summary": "The panel shows a failed login message.",
+                    "tags": ["login", "failure"],
+                    "confidence": 0.83,
+                },
+            }
+        ]
+    )
+
+    observation = readback["semantic_observations"][0]
+    assert readback["status"] == "ready"
+    assert observation["source"] == "approved_inspection_result"
+    assert observation["source_ref_id"] == "img-approved-artifact-1"
+    assert observation["summary"] == "The panel shows a failed login message."
+    assert observation["tags"] == ["login", "failure"]
+    assert observation["confidence"] == 0.83
+    assert observation["model_api_called"] is False
+    assert observation["writeback_ready"] is False
+
+
+def test_pending_or_rejected_multimodal_inspection_results_do_not_emit_semantic_observation():
+    readback = build_artifact_semantics_readback(
+        [
+            {
+                "source_id": "img-pending-artifact-1",
+                "modality": "image",
+                "path": "fixtures/pending.png",
+                "consent_scope": "single_turn",
+                "capture_method": "operator_attached_file",
+                "multimodal_inspection_result": {
+                    "status": "awaiting_approval",
+                    "approval_status": "pending",
+                    "semantic_summary": "Should not be admitted.",
+                },
+            },
+            {
+                "source_id": "img-rejected-artifact-1",
+                "modality": "image",
+                "path": "fixtures/rejected.png",
+                "consent_scope": "single_turn",
+                "capture_method": "operator_attached_file",
+                "multimodal_inspection_result": {
+                    "status": "rejected",
+                    "approval_status": "rejected",
+                    "semantic_summary": "Should not be admitted.",
+                },
+            },
+        ]
+    )
+
+    assert readback["status"] == "empty"
+    assert readback["semantic_observations"] == []

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .multimodal_sources import normalize_multimodal_source
+from .multimodal_sources import normalize_multimodal_inspection_result, normalize_multimodal_source
 
 
 ARTIFACT_PERCEPTION_SEMANTICS_READY = "artifact_perception_semantics_ready"
@@ -104,6 +104,47 @@ def _observation(raw: dict[str, Any], normalized: dict[str, Any]) -> dict[str, A
     }
 
 
+def _approved_inspection_observation(
+    raw: dict[str, Any],
+    normalized: dict[str, Any],
+) -> dict[str, Any] | None:
+    result = normalize_multimodal_inspection_result(raw.get("multimodal_inspection_result"))
+    if not result:
+        return None
+    if result.get("status") != "completed" or result.get("approval_status") != "approved":
+        return None
+    if bool(result.get("model_api_called", False)):
+        return None
+    field, text = _semantic_field(result)
+    if not field or not text:
+        return None
+    modality = _clean(result.get("modality") or normalized.get("modality"))
+    source_id = _clean(result.get("source_ref_id") or normalized.get("source_id") or raw.get("source_ref_id"), limit=120)
+    observed_text = text if field in TEXT_FIELDS else _clean(result.get("observed_text"))
+    semantic_label = _clean(
+        result.get("semantic_label")
+        or result.get("artifact_label")
+        or raw.get("semantic_label")
+        or raw.get("label")
+        or normalized.get("artifact_label"),
+        limit=160,
+    )
+    return {
+        "source_ref_id": source_id,
+        "source_kind": SOURCE_KIND_BY_MODALITY.get(modality, modality or "unknown"),
+        "modality": modality,
+        "observation_kind": KIND_BY_FIELD.get(field, "operator_provided_artifact_semantics"),
+        "semantic_label": semantic_label,
+        "summary": text,
+        "observed_text": observed_text,
+        "tags": _tags(result.get("semantic_tags") or result.get("tags")),
+        "confidence": _confidence(result.get("confidence")),
+        "source": "approved_inspection_result",
+        "model_api_called": False,
+        "writeback_ready": False,
+    }
+
+
 def build_artifact_semantics_readback(raw_sources: list[dict[str, Any]] | None) -> dict[str, Any]:
     observations: list[dict[str, Any]] = []
     blocked_reasons: list[str] = []
@@ -121,7 +162,7 @@ def build_artifact_semantics_readback(raw_sources: list[dict[str, Any]] | None) 
                 if text:
                     blocked_reasons.append(text)
             continue
-        observation = _observation(raw, normalized)
+        observation = _approved_inspection_observation(raw, normalized) or _observation(raw, normalized)
         if not observation:
             continue
         key = (
