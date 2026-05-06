@@ -50,7 +50,7 @@
 - Modify: `tests/test_chinese_semantic_surface_phase2.py`
 - Modify: `amadeus_thread0/graph_parts/chinese_semantic_surface.py`
 
-- [ ] **Step 1: Write failing policy tests**
+- [x] **Step 1: Write failing policy tests**
 
 Add tests requiring a policy envelope:
 
@@ -87,7 +87,7 @@ def test_runtime_policy_noop_preserves_text_without_claiming_rewrite():
     assert policy["runtime_final_text"] == "嗯，我听见了。"
 ```
 
-- [ ] **Step 2: Run tests to verify RED**
+- [x] **Step 2: Run tests to verify RED**
 
 Run:
 
@@ -97,7 +97,7 @@ python -m pytest tests/test_chinese_semantic_surface_phase2.py -q
 
 Expected: fails because `build_runtime_replacement_policy` does not exist.
 
-- [ ] **Step 3: Implement minimal policy builder**
+- [x] **Step 3: Implement minimal policy builder**
 
 Add:
 
@@ -145,7 +145,7 @@ The function returns one envelope with:
 - `authority_boundary`
 - `failure_reasons`
 
-- [ ] **Step 4: Run policy tests to verify GREEN**
+- [x] **Step 4: Run policy tests to verify GREEN**
 
 Run:
 
@@ -155,7 +155,7 @@ python -m pytest tests/test_chinese_semantic_surface_phase2.py -q
 
 Expected: all Chinese semantic surface Phase 2 tests pass.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -173,7 +173,7 @@ git commit -m "feat: add chinese semantic runtime policy"
 - Modify: `tests/test_backend_api.py`
 - Modify: `amadeus_thread0/runtime/embodied_interaction_runtime.py`
 
-- [ ] **Step 1: Write failing runtime tests**
+- [x] **Step 1: Write failing runtime tests**
 
 Add a test requiring `build_embodied_interaction_readback()` to expose the policy:
 
@@ -210,7 +210,7 @@ def test_turn_response_exposes_chinese_runtime_policy_and_text_parity(self):
     assert payload["reconsolidation_snapshot"]["final_text"] == payload["final_text"]
 ```
 
-- [ ] **Step 2: Run runtime/backend tests to verify RED**
+- [x] **Step 2: Run runtime/backend tests to verify RED**
 
 Run:
 
@@ -220,7 +220,7 @@ python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_a
 
 Expected: fails because runtime policy, `tts_text`, and `text_tts_drift` are not attached.
 
-- [ ] **Step 3: Attach policy to embodied interaction runtime**
+- [x] **Step 3: Attach policy to embodied interaction runtime**
 
 Modify `_semantic_runtime_floor()` so it calls `build_runtime_replacement_policy(final_text)` and returns:
 
@@ -237,7 +237,7 @@ Keep existing fields:
 - `runtime_final_text`
 - `replacement_plan`
 
-- [ ] **Step 4: Run runtime/backend tests to verify GREEN**
+- [x] **Step 4: Run runtime/backend tests to verify GREEN**
 
 Run:
 
@@ -247,7 +247,7 @@ python -m pytest tests/test_embodied_interaction_runtime.py tests/test_backend_a
 
 Expected: selected runtime/backend tests pass.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -266,7 +266,7 @@ git commit -m "feat: attach chinese semantic policy to runtime"
 - Modify: `evals/run_preserved_baselines_audit.py`
 - Modify: `tests/test_preserved_baselines_audit.py`
 
-- [ ] **Step 1: Write failing audit tests**
+- [x] **Step 1: Write failing audit tests**
 
 Create tests requiring:
 
@@ -278,7 +278,7 @@ Create tests requiring:
 - no text/TTS drift;
 - no model API calls, memory writes, behavior mutation, persona-core mutation, live capture, skill registry writes, frontend-owned semantics, or external mutation.
 
-- [ ] **Step 2: Run audit tests to verify RED**
+- [x] **Step 2: Run audit tests to verify RED**
 
 Run:
 
@@ -288,7 +288,7 @@ python -m pytest tests/test_chinese_semantic_descaffolding_phase2_audit.py tests
 
 Expected: fails because the Phase 2 audit module and preserved-baseline row do not exist.
 
-- [ ] **Step 3: Implement audit and baseline row**
+- [x] **Step 3: Implement audit and baseline row**
 
 The audit should call `build_runtime_replacement_policy()` and `build_embodied_interaction_readback()` for deterministic fixtures. It should write reports under:
 
@@ -308,7 +308,7 @@ Add preserved baseline:
 }
 ```
 
-- [ ] **Step 4: Run audit tests and audit**
+- [x] **Step 4: Run audit tests and audit**
 
 Run:
 
@@ -319,7 +319,7 @@ python evals/run_chinese_semantic_descaffolding_phase2_audit.py --run-tag phase2
 
 Expected: tests pass and audit prints `readiness=chinese_semantic_descaffolding_phase2_ready`.
 
-- [ ] **Step 5: Commit task slice**
+- [x] **Step 5: Commit task slice**
 
 Run:
 
@@ -339,7 +339,7 @@ git commit -m "test: audit chinese semantic phase 2"
 - Modify: `program.md`
 - Modify: `docs/superpowers/plans/2026-05-07-chinese-semantic-descaffolding-phase2.md`
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 Document that Phase 2:
 
@@ -349,7 +349,7 @@ Document that Phase 2:
 - keeps `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` aligned;
 - does not mutate persona core, memory, behavior motives, prompts, browser/tool/sandbox authority, frontend semantics, skill registry state, live capture, model APIs, or external state.
 
-- [ ] **Step 2: Commit docs**
+- [x] **Step 2: Commit docs**
 
 Run:
 

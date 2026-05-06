@@ -87,7 +87,7 @@ amadeus_thread0/
 - `capability_growth.py`
   phase-5 workflow-candidate helpers over completed procedural evidence; advisory planning metadata only, with no new tool grant, skill install, or persona-core authority.
 - `chinese_semantic_surface.py`
-  semantic diagnostic and replacement-guidance helpers for Chinese surface de-scaffolding; classifies brittle surface families, returns candidate replacement semantics, and provides conservative safe-surface floors before any broad runtime rewrite.
+  semantic diagnostic, replacement-guidance, and typed runtime replacement-policy helpers for Chinese surface de-scaffolding; classifies brittle surface families, returns candidate replacement semantics, provides conservative safe-surface floors, and exposes authority-bound policy envelopes before any broad runtime rewrite.
 - `browser_runtime.py`
   live-browser state shaping, browser packet preview/result normalization, and body-surface continuity helpers.
 - `autonomy_runtime.py`
@@ -274,7 +274,7 @@ Rule:
 - keeps every alignment item sourced from `artifact_motive_hint` with `model_api_called=false`, `memory_write_allowed=false`, `behavior_mutation_allowed=false`, `behavior_mutation_applied=false`, and `writeback_ready=false`
 - does not call model APIs, capture live media, mutate memory, execute tools, install skills, change persona core, own frontend semantics, or widen execution/browser/sandbox authority
 
-`embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1, Phase 2, Phase 3, and Phase 4 integration contract:
+`embodied_interaction_runtime.py` holds the Embodied Interaction Runtime Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5 integration contract:
 
 - attaches consent-bound multimodal source artifacts to current-turn backend surfaces
 - mirrors source refs through `current_event.perception_sources`, `digital_body.resource_state.multimodal_source_refs`, and `interaction_carryover.embodied_context.multimodal_sources`
@@ -284,6 +284,7 @@ Rule:
 - attaches approved artifact motive-to-behavior alignment readback through `embodied_interaction.artifact_behavior_alignment`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
 - preserves existing `behavior_action.primary_motive` and `behavior_plan.primary_motive`; Phase 4 hints are readback/advisory only
 - applies deterministic Chinese semantic runtime floors to `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
+- exposes `chinese_semantic_surface.runtime_policy` with typed family / semantic intent / deterministic safe-floor strategy / authority-boundary readback, and keeps `tts_text` aligned with the final runtime text
 - exposes `embodied_interaction_runtime_phase1_ready` through a deterministic audit/readback gate
 - exposes `embodied_interaction_runtime_phase2_ready` when approved artifact metadata reaches perception/appraisal/carryover semantic surfaces without widening authority
 - exposes `embodied_interaction_runtime_phase3_ready` when approved artifact semantic observations become read-only appraisal-facing evidence without becoming memory facts
@@ -522,6 +523,8 @@ Current skills closure coverage lives in:
   `python evals/run_post_baseline_closure_audit.py`
 - preserved-baselines meta-audit:
   `python evals/run_preserved_baselines_audit.py`
+- Chinese semantic de-scaffolding phase-2 audit:
+  `python evals/run_chinese_semantic_descaffolding_phase2_audit.py`
 - living-loop realism phase-3 audit:
   `python evals/run_living_loop_realism_phase3_audit.py`
 - frontend dev shell:

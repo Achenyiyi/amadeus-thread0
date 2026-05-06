@@ -26,6 +26,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Living Loop Runtime Realism Phase 1` is now implemented as a causal/north-star realism gate: visible loop stages must align across appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final semantics, while Chinese semantic de-scaffolding gains deterministic replacement guidance and conservative safe-surface floors without broad prompt rewrites.
 - `Living Loop Runtime Realism Phase 2` is now implemented as a backend-payload realism gate: `assistant_turn` and `event_round` payloads carry `living_loop_realism`, proving the same causal readback consumes backend-style `turn_summary` / `writeback_trace` payloads without changing generation or authority boundaries.
 - `Living Loop Runtime Realism Phase 3` is now implemented as an artifact-alignment realism gate: backend payloads carrying Phase 5 `embodied_interaction.artifact_behavior_alignment` are promoted to `living_loop_runtime_realism_phase3_ready`, while payloads without alignment remain Phase 2 ready and unsafe or mutating alignment evidence fails closed without memory writes, behavior mutation, persona-core mutation, model API calls, frontend semantics, or authority widening.
+- `Chinese Semantic De-Scaffolding Phase 2` is now implemented as a typed runtime replacement policy gate: deterministic Chinese safe floors expose `chinese_semantic_surface.runtime_policy` with family, semantic intent, replacement strategy, applied floor, and authority boundaries, while `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` remain aligned and prompt sprawl, model calls, persona-core mutation, memory writes, behavior mutation, frontend-owned semantics, skill registry writes, live capture, and external mutation stay blocked.
 - `Embodied Interaction Runtime Phase 1` is now implemented as the first runtime integration gate over the unlocked multimodal and Chinese semantic lanes: `assistant_turn` and `event_round` payloads carry `embodied_interaction`, consent-bound source artifacts enter current-turn/body/carryover surfaces, and deterministic Chinese semantic floors update final/snapshot text together without opening live capture, multimodal model API calls, persona-core mutation, memory writes, external execution, skill registry writes, frontend-owned semantics, or unapproved external mutation.
 - `Embodied Interaction Runtime Phase 2` is now implemented as approved artifact perception semantics: already-approved artifact metadata may enter perception/appraisal/carryover semantic observation surfaces while keeping live capture, multimodal model API calls, persona-core mutation, memory writes, execution authority, skill registry writes, frontend-owned semantics, and unapproved external mutation blocked.
 - `Embodied Interaction Runtime Phase 3` is now implemented as approved artifact appraisal evidence coupling: Phase 2 semantic observations may become read-only appraisal-facing evidence and influence hints while still avoiding memory facts, persona-core mutation, live capture, multimodal model API calls, execution authority changes, skill registry writes, frontend-owned semantics, and unapproved external mutation.
@@ -34,7 +35,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 
 ## Backend Status
 
-Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
+Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, chinese-semantic-descaffolding-phase2-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -52,6 +53,7 @@ For backend purposes, the structural decisions in this document are now split in
 - procedural growth phase 4 gate: `python evals/run_procedural_growth_phase4_audit.py`
 - preserved-baselines meta-gate: `python evals/run_preserved_baselines_audit.py`
 - post-unlock roadmap gate: `python evals/run_post_unlock_roadmap_audit.py`
+- Chinese semantic de-scaffolding phase 2 gate: `python evals/run_chinese_semantic_descaffolding_phase2_audit.py`
 - runtime productization gate: `python evals/run_runtime_productization_audit.py`
 - residual living-loop gate: `python evals/run_residual_living_loop_audit.py`
 - living-loop runtime realism gate: `python evals/run_living_loop_realism_audit.py`
@@ -97,6 +99,7 @@ For backend purposes, the structural decisions in this document are now split in
     - `external_executor_harness_phase1_ready`: external harness families are represented as disabled result-only metadata; only `sandbox_runner` is enabled
     - `frontend_runtime_shell_phase1_ready`: the React/Vite shell builds against `backend.v1` fixtures and does not own backend semantics
     - `chinese_semantic_descaffolding_phase1_ready`: semantic diagnostics exist before any broad runtime rewrite; legacy post-baseline tracking remains compatible
+    - `chinese_semantic_descaffolding_phase2_ready`: deterministic typed runtime policy envelopes are implemented for known scaffold families, with final/snapshot/TTS parity and no prompt/model/persona/memory/behavior/frontend/skill/external authority widening
     - `capability_growth_phase5_ready`: workflow candidates are advisory continuity over completed traces, not capability claims
     - `natural_long_horizon_calibration_phase1_ready`: deterministic offline packs evaluate the lived-loop surface without scene scripts
   - current runtime productization posture is:
@@ -120,8 +123,9 @@ For backend purposes, the structural decisions in this document are now split in
     - `living_loop_runtime_realism_phase3_ready`: the same module consumes existing Phase 5 `embodied_interaction.artifact_behavior_alignment` readback from backend payloads, proves alignment visibility, and keeps payloads without alignment at Phase 2 readiness
     - `evals/run_living_loop_realism_phase3_audit.py` emits artifact-alignment json/md reports under `living-loop-realism-phase3-audit-*`
     - Phase 3 preserves `advisory_not_reflected` as truthful readback, fails closed on unsafe or mutating alignment claims, and does not recalculate alignment from raw artifacts
-    - `amadeus_thread0.graph_parts.chinese_semantic_surface` now returns replacement guidance and conservative safe-surface floors for brittle Chinese surface families
-    - this phase is readback/guidance-only and does not enable prompt-sprawl rewrites, live capture, skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
+    - `amadeus_thread0.graph_parts.chinese_semantic_surface` now returns replacement guidance, conservative safe-surface floors, and typed runtime replacement policies for brittle Chinese surface families
+    - `chinese_semantic_descaffolding_phase2_ready` means these policies are audited across everyday, repair, self-rhythm, and technical-task cases for duplicate output, scaffold residue leaks, and text/TTS drift
+    - this phase is readback/guidance/runtime-floor policy only and does not enable prompt-sprawl rewrites, live capture, model API calls, skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, behavior mutation, memory writes, or unapproved external mutation
   - current embodied interaction runtime posture is:
     - `embodied_interaction_runtime_phase1_ready`: `amadeus_thread0.runtime.embodied_interaction_runtime` connects unlocked multimodal source artifacts and Chinese semantic floors to real backend turn/event payloads
     - `embodied_interaction_runtime_phase2_ready`: `amadeus_thread0.runtime.artifact_perception_semantics` converts approved artifact metadata into bounded semantic observations, and `embodied_interaction_runtime` mirrors those observations into perception, appraisal, and carryover surfaces
@@ -135,7 +139,7 @@ For backend purposes, the structural decisions in this document are now split in
     - approved artifact motive/goal hints surface through `embodied_interaction.artifact_motive.motive_hints`, `current_event.perception.motive_hints`, `turn_appraisal.motive_evidence`, `turn_appraisal.perception_semantics.motive_hints`, `interaction_carryover.embodied_context.artifact_motive_hints`, and advisory `behavior_plan.artifact_motive_hints`
     - approved artifact behavior alignment surfaces through `embodied_interaction.artifact_behavior_alignment.alignment_items`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
     - Phase 4 and Phase 5 keep `behavior_action.primary_motive` and `behavior_plan.primary_motive` intact; hints and alignment may guide readback but are not behavior mutations
-    - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
+    - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families, with Phase 2 `tts_text` parity inside `chinese_semantic_surface.runtime_policy`
     - `evals/run_embodied_interaction_runtime_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-audit-*`
     - `evals/run_embodied_interaction_runtime_phase2_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase2-audit-*`
     - `evals/run_embodied_interaction_runtime_phase3_audit.py` emits deterministic json/md reports under `embodied-interaction-runtime-phase3-audit-*`
@@ -1053,7 +1057,7 @@ Live Browser Runtime Closure Phase 1 preserved contract:
 16. `Dynamic Skills Phase 1` - `phase1-ready`
 17. `External Executor Harness Phase 1` - `phase1-ready`
 18. `Frontend Runtime Shell` - `phase1-ready`
-19. `Chinese semantic de-scaffolding` - `phase1-ready`
+19. `Chinese semantic de-scaffolding` - `baseline-closed through phase 2 typed runtime policy`
 20. `Capability Growth Phase 5` - `phase5-ready`
 21. `Natural Long-Horizon Calibration` - `phase1-ready`
 22. `Post-Unlock Roadmap Integration Gate` - `ready`
