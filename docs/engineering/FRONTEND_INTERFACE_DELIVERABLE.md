@@ -7,7 +7,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 - It is based on the current Python runtime surface plus the Phase 1 WSGI thin wrapper over the existing route adapter.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
-- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, Chinese Semantic Naturalness Phase 1 adds deterministic naturalness diagnostics, Dynamic Skill Candidate Runtime Phase 1 adds candidate lifecycle readback, and Technical Preview RC Phase 1 adds a release-candidate evidence gate, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, Chinese Semantic Naturalness Phase 1 adds deterministic naturalness diagnostics, Dynamic Skill Candidate Runtime Phase 1 adds candidate lifecycle readback, Technical Preview RC Phase 1 adds a release-candidate evidence gate, and Operator Console RC Phase 1 adds a read-only console route over that evidence, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
 
 ## Freeze Status
 
@@ -21,6 +21,7 @@ Frontend work should therefore treat:
 - `worldline_view`
 - `bond_view`
 - `runtime_productization`
+- `operator_console_rc`
 
 as the canonical readback surfaces for current runtime semantics.
 
@@ -38,6 +39,8 @@ Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a b
 
 Technical Preview RC Phase 1 exposes `technical_preview_rc.v1` as an evidence-complete release-candidate gate. Frontend/operator tools may render the RC status and report paths, but must not treat it as permission to enable live capture, multimodal model calls, automatic skill registry writes, external executor harnesses, memory writes, persona mutation, or frontend-owned backend semantics.
 
+Operator Console RC Phase 1 exposes `operator_console_rc.v1` as a route-level, read-only console packet over `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2`. Frontend/operator tools may render the console panels and next actions, but must not treat them as authority to mutate memory, persona, skills, browser/sandbox execution, external harnesses, live capture, or backend semantics.
+
 ## Authoritative Python Entry Points
 
 Runtime assembly:
@@ -53,6 +56,7 @@ Transport-neutral API surface:
 - `amadeus_thread0.runtime.http_transport.create_http_transport_app(...)`
 - `amadeus_thread0.runtime.http_transport.build_wsgi_app(...)`
 - `amadeus_thread0.runtime.technical_preview_rc.build_technical_preview_rc_readiness(...)`
+- `amadeus_thread0.runtime.operator_console_rc.build_operator_console_rc_readback(...)`
 - `amadeus_thread0.runtime.approved_artifact_multimodal_runtime.apply_approved_artifact_multimodal_runtime_to_payload(...)`
 - `amadeus_thread0.runtime.chinese_semantic_naturalness.build_chinese_semantic_naturalness_readback(...)`
 
@@ -122,6 +126,9 @@ Field meanings:
 - `runtime_productization`
   - source: `BackendAPI.runtime_productization()`
   - purpose: read-only operator console/productization readback, including readiness, console health, evidence summary, route inventory, and next-action hints
+- `operator_console_rc`
+  - source: `BackendAPI.operator_console_rc()`
+  - purpose: read-only release-candidate console over Technical Preview RC evidence, runtime dashboard, route inventory, and authority boundaries
 
 ### Inspector and continuity kinds
 
@@ -289,6 +296,29 @@ Key fields:
 Boundary rule:
 
 - this payload is readback-only and does not authorize execution, memory writes, persona mutation, frontend-owned semantics, live capture, skill registry writes, browser/sandbox widening, or external mutation
+
+### `operator_console_rc.payload`
+
+Use this as the route-level release-candidate console readback, not as a command surface.
+
+Key fields:
+
+- `schema`
+- `overall_status`
+- `readiness_status`
+- `console_mode`
+- `release_posture`
+- `summary`
+- `readback_refs`
+- `operator_panels`
+- `route_inventory`
+- `authority_boundary`
+- `next_actions`
+- `failure_reasons`
+
+Boundary rule:
+
+- this payload is readback-only and does not authorize execution, memory writes, persona mutation, frontend-owned semantics, live capture, skill registry writes, browser/sandbox widening, HTTP-server ownership, multimodal model calls, or external mutation
 
 ### `approved_artifact_multimodal_runtime`
 
@@ -618,6 +648,7 @@ Callable read routes:
 - `GET /api/runtime-layout` -> `BackendAPI.runtime_layout()`
 - `GET /api/environment-summary` -> `BackendAPI.environment_summary()`
 - `GET /api/runtime-productization` -> `BackendAPI.runtime_productization()`
+- `GET /api/operator-console-rc` -> `BackendAPI.operator_console_rc()`
 - `GET /api/persona-view` -> `BackendAPI.persona()`
 - `GET /api/worldline-view` -> `BackendAPI.worldline()`
 - `GET /api/bond-view` -> `BackendAPI.bond()`
@@ -659,6 +690,7 @@ On session startup:
    - `runtime_layout`
    - `environment_summary`
    - `runtime_productization`
+   - `operator_console_rc`
 3. Fetch inspector defaults:
    - `persona_view`
    - `worldline_view`
@@ -667,6 +699,7 @@ On session startup:
    - `behavior_queue_view`
    - `current_checkpoint`
    - `runtime_productization`
+   - `operator_console_rc`
 4. Fetch `checkpoint_history` lazily when a rewind/history panel is opened.
 
 After every completed user turn or event round:

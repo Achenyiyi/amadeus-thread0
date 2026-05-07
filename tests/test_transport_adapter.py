@@ -27,6 +27,13 @@ class _FakeBackendApi:
             payload={"readiness_status": "runtime_productization_phase1_ready"},
         )
 
+    def operator_console_rc(self):
+        return BackendApiEnvelope(
+            kind="operator_console_rc",
+            thread_id="thread-a",
+            payload={"readiness_status": "operator_console_rc_phase1_ready"},
+        )
+
     def persona(self):
         return BackendApiEnvelope(kind="persona_view", thread_id="thread-a", payload={"persona_state": {"mood": "focused"}})
 
@@ -94,6 +101,17 @@ def test_transport_adapter_runtime_productization_route_delegates_to_backend_api
     assert response["status"] == 200
     assert response["body"]["kind"] == "runtime_productization"
     assert response["body"]["payload"]["readiness_status"] == "runtime_productization_phase1_ready"
+
+
+def test_transport_adapter_operator_console_rc_route_delegates_to_backend_api():
+    adapter = BackendTransportAdapter(backend_api=_FakeBackendApi())
+
+    response = adapter.handle("GET", "/api/operator-console-rc")
+
+    assert response["status"] == 200
+    assert response["body"]["schema_version"] == "backend.v1"
+    assert response["body"]["kind"] == "operator_console_rc"
+    assert response["body"]["payload"]["readiness_status"] == "operator_console_rc_phase1_ready"
 
 
 def test_transport_adapter_event_route_delegates_to_backend_api():

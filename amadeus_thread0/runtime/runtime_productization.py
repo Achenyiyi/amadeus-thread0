@@ -25,6 +25,7 @@ AUTHORITY_BOUNDARY = {
 
 READ_ONLY_ROUTES = [
     "/api/runtime-productization",
+    "/api/operator-console-rc",
     "/api/environment-summary",
     "/api/runtime-layout",
 ]

@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Technical Preview RC Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Operator Console RC Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, Technical Preview RC Phase 1, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -41,6 +41,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase2_ready`
   - preserve `runtime_productization_phase3_ready`
   - preserve `technical_preview_rc_phase1_ready`
+  - preserve `operator_console_rc_phase1_ready`
   - preserve `http_transport_thin_wrapper_phase1_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
@@ -67,7 +68,12 @@ This file is the live development ledger for `amadeus-thread0`.
   - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, ready readback lanes, and the current next-spec list visible without treating gitignored report absence as hidden code regression
   - current dashboard `NEXT_SPECS` is empty after Dynamic Skill Candidate Runtime Phase 1
   - `technical_preview_rc.v1` should compose current preserved/productized/ready-lane evidence into one RC gate without opening runtime authority
+  - `operator_console_rc.v1` should present that RC evidence as one operator-facing read-only console over `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2`
   - Phase 3 product smokes should prove `BackendTransportAdapter` consumes backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries without introducing HTTP server ownership
+- Current operator console RC focus:
+  - `operator_console_rc_phase1_ready` means the backend can expose a release-candidate console packet through `BackendAPI.operator_console_rc()` and `GET /api/operator-console-rc`
+  - the console is readback-only and fails closed if Technical Preview RC evidence regresses, `NEXT_SPECS` is non-empty, mutation routes appear, or blocked authority widens
+  - frontend may render the packet as a backend-owned record; it must not treat it as authority to mutate memory, persona, skills, browser/sandbox execution, external harnesses, live capture, or backend semantics
 - Current HTTP transport focus:
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
   - HTTP returns the same backend-owned `backend.v1` envelopes and structured adapter errors; it does not create a second truth model
@@ -12906,3 +12912,70 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `7 passed`
 - Next:
   - run focused verification, run RC audit against current reports, merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 280
+
+- Focus:
+  - implement `Operator Console RC Phase 1` on top of `technical_preview_rc_phase1_ready`
+  - turn the current RC evidence into one route-consumable, operator-facing read-only console packet
+  - keep the new console evidence/readback/audit-only rather than opening live capture, model calls, skill registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, HTTP server ownership, or external mutation
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/operator_console_rc.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/transport_adapter.py`
+  - `amadeus_thread0/runtime/runtime_productization.py`
+  - `evals/run_operator_console_rc_phase1_audit.py`
+  - `tests/test_operator_console_rc.py`
+  - `tests/test_operator_console_rc_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_transport_adapter.py`
+  - `tests/test_http_transport.py`
+  - `tests/test_runtime_productization.py`
+  - `tests/test_frontend_runtime_shell_phase2.py`
+  - `frontend/src/contracts/backend.ts`
+  - `docs/engineering/frontend_contract/backend_api.types.ts`
+  - `frontend/src/data/mockBackend.ts`
+  - `frontend/src/runtime/backendClient.ts`
+  - `frontend/src/App.tsx`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/FINAL_DELIVERY_MANIFEST.md`
+  - `docs/TECHNICAL_PREVIEW_CHECKLIST.md`
+  - `docs/ADVISOR_REPRO_RUNBOOK.md`
+  - `docs/superpowers/specs/2026-05-07-operator-console-rc-phase1-design.md`
+  - `docs/superpowers/plans/2026-05-07-operator-console-rc-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `operator_console_rc.v1` as a read-only release-candidate console over `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2`
+  - added `BackendAPI.operator_console_rc()` and `GET /api/operator-console-rc` without changing `backend.v1` envelope ownership
+  - updated frontend contract and route client so the shell may render `Operator console RC` as a backend-owned read-only record
+  - added `evals/run_operator_console_rc_phase1_audit.py` to emit JSON/Markdown RC console evidence reports
+  - extended `operator_readback.v2.safe_routes.read_only_routes` with `/api/operator-console-rc`
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_operator_console_rc.py -q`
+      - failed because `amadeus_thread0.runtime.operator_console_rc` did not exist
+    - `python -m pytest tests/test_operator_console_rc_audit.py -q`
+      - failed because `evals.run_operator_console_rc_phase1_audit` did not exist
+    - `python -m pytest tests/test_transport_adapter.py tests/test_http_transport.py -q`
+      - failed because `/api/operator-console-rc` returned 404
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2.py tests/test_frontend_contract_sync.py -q`
+      - failed because frontend contract/client/UI did not include `operator_console_rc`
+    - `python -m pytest tests/test_runtime_productization.py::test_readback_reports_ready_lanes_without_widening_authority -q`
+      - failed because `operator_readback.v2.safe_routes` did not yet list `/api/operator-console-rc`
+  - GREEN:
+    - `python -m pytest tests/test_operator_console_rc.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_operator_console_rc_audit.py tests/test_operator_console_rc.py -q`
+      - passed: `7 passed`
+    - `python -m pytest tests/test_transport_adapter.py tests/test_http_transport.py tests/test_operator_console_rc.py -q`
+      - passed: `17 passed`
+    - `python -m pytest tests/test_frontend_runtime_shell_phase2.py tests/test_frontend_contract_sync.py -q`
+      - passed: `7 passed`
+    - `python -m pytest tests/test_runtime_productization.py tests/test_backend_api.py::BackendApiTests::test_operator_console_rc_envelope_reports_release_candidate_readback tests/test_operator_console_rc.py -q`
+      - passed: `10 passed`
+- Next:
+  - run focused verification, run operator console RC audit, run frontend build and py_compile, merge to `main`, verify again, push, and clean up the worktree

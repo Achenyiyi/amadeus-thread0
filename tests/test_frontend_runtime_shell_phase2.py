@@ -16,7 +16,9 @@ def test_frontend_phase2_contract_types_include_live_readback_surfaces():
 
     for content in (types, docs_types):
         assert '| "runtime_productization"' in content
+        assert '| "operator_console_rc"' in content
         assert "RuntimeProductizationPayload" in content
+        assert "OperatorConsoleRcPayload" in content
         assert "operator_readback?: JsonRecord" in content
         assert "living_loop_realism?: JsonRecord" in content
         assert "embodied_interaction?: JsonRecord" in content
@@ -29,6 +31,7 @@ def test_frontend_phase2_client_exposes_route_transport_without_backend_semantic
     assert "RouteBackendClient" in client
     assert 'schema_version !== "backend.v1"' in client
     assert "createSessionSnapshotFromEnvelopes" in client
+    assert '"/api/operator-console-rc"' in client
 
     forbidden = ["memoryReducer", "personaReducer", "autonomyReducer", "digitalBodyReducer"]
     for term in forbidden:
@@ -42,6 +45,7 @@ def test_frontend_phase2_ui_renders_backend_owned_readback_blocks():
     assert "Living loop realism" in app
     assert "Embodied interaction" in app
     assert "Runtime productization" in app
+    assert "Operator console RC" in app
     assert "session.transportMode" in app
 
 

@@ -40,8 +40,11 @@ from .final_state import (
 )
 from .embodied_interaction_runtime import apply_embodied_interaction_readback_to_payload
 from .living_loop_realism import build_backend_payload_realism_readback
+from .operator_console_rc import build_operator_console_rc_readback
 from .post_baseline_closure import evaluate_post_baseline_status
 from .runtime_productization import build_runtime_productization_readback
+from .runtime_status_dashboard import build_runtime_status_dashboard
+from .technical_preview_rc import build_technical_preview_rc_readiness
 from .thread_runtime import list_threads
 
 
@@ -290,6 +293,14 @@ def _default_post_unlock_roadmap_status() -> dict[str, Any]:
     return {"overall_status": "passed", "readiness_status": "post_unlock_roadmap_ready"}
 
 
+def _embedded_ready_status(readiness_status: str) -> dict[str, Any]:
+    return {
+        "overall_status": "passed",
+        "readiness_status": str(readiness_status),
+        "report_path": f"embedded:{readiness_status}",
+    }
+
+
 def _record_field(record: dict[str, Any] | None, key: str, default: Any = "") -> Any:
     item = record if isinstance(record, dict) else {}
     if key in item:
@@ -526,6 +537,46 @@ class BackendAPI:
         return self._envelope(
             "runtime_productization",
             self._runtime_productization_payload(current_turn={}),
+        )
+
+    def operator_console_rc(self) -> BackendApiEnvelope:
+        operator_readback = self._runtime_productization_payload(current_turn={})
+        runtime_status_dashboard = build_runtime_status_dashboard(
+            preserved_baselines=_default_preserved_baselines_status(),
+            post_unlock_roadmap=_default_post_unlock_roadmap_status(),
+            runtime_productization={
+                "overall_status": str(operator_readback.get("overall_status") or ""),
+                "readiness_status": str(operator_readback.get("readiness_status") or ""),
+            },
+            source_reports={
+                "preserved_baselines": "embedded:preserved_baselines_ready",
+                "post_unlock_roadmap": "embedded:post_unlock_roadmap_ready",
+                "runtime_productization": "embedded:runtime_productization_phase2_ready",
+            },
+        )
+        technical_preview_rc = build_technical_preview_rc_readiness(
+            preserved_baselines=_embedded_ready_status("preserved_baselines_ready"),
+            runtime_status_dashboard=runtime_status_dashboard,
+            runtime_productization_phase3=_embedded_ready_status("runtime_productization_phase3_ready"),
+            http_transport=_embedded_ready_status("http_transport_thin_wrapper_phase1_ready"),
+            approved_artifact_multimodal_runtime=_embedded_ready_status(
+                "approved_artifact_multimodal_runtime_phase1_ready"
+            ),
+            chinese_semantic_naturalness=_embedded_ready_status(
+                "chinese_semantic_naturalness_phase1_ready"
+            ),
+            dynamic_skill_candidate_runtime=_embedded_ready_status(
+                "dynamic_skill_candidate_runtime_phase1_ready"
+            ),
+        )
+        technical_preview_rc["runtime_status_dashboard"] = runtime_status_dashboard
+        return self._envelope(
+            "operator_console_rc",
+            build_operator_console_rc_readback(
+                technical_preview_rc=technical_preview_rc,
+                runtime_status_dashboard=runtime_status_dashboard,
+                operator_readback=operator_readback,
+            ),
         )
 
     def checkpoint_history(

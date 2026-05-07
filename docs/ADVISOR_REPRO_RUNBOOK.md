@@ -6,13 +6,14 @@ This runbook is the shortest path for an advisor, reviewer, or demo operator to 
 
 ## Goal
 
-Verify four things in order:
+Verify six things in order:
 
 1. the CLI starts cleanly
 2. the Technical Preview RC evidence gate is reproducible
-3. the official baseline reports are reproducible
-4. the thesis probe variance report is reproducible
-5. the live demo script can be followed without improvisation
+3. the Operator Console RC readback gate is reproducible
+4. the official baseline reports are reproducible
+5. the thesis probe variance report is reproducible
+6. the live demo script can be followed without improvisation
 
 ## Environment
 
@@ -51,6 +52,7 @@ Run:
 ```powershell
 python evals\run_runtime_productization_phase3_audit.py
 python evals\run_technical_preview_rc_phase1_audit.py --run-tag advisor-repro
+python evals\run_operator_console_rc_phase1_audit.py --run-tag advisor-repro
 python evals\run_preserved_baselines_audit.py --reports-dir evals\reports
 ```
 
@@ -58,6 +60,8 @@ Check:
 
 - `technical-preview-rc-phase1-audit-*.json` reports `overall_status=passed`
 - readiness is `technical_preview_rc_phase1_ready`
+- `operator-console-rc-phase1-audit-*.json` reports `operator_console_rc_phase1_ready`
+- operator console mode is `readback_only`
 - the embedded runtime status line reports `next_specs=0`
 - blocked authority remains closed for live capture, external executor auto-enablement, automatic dynamic skill registry writes, and multimodal model auto-calls
 

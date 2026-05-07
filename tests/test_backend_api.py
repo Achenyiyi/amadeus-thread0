@@ -259,6 +259,24 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(payload["inputs"]["post_baseline"]["readiness_status"], "post_baseline_closure_ready")
             self.assertEqual(payload["inputs"]["post_unlock_roadmap"]["readiness_status"], "post_unlock_roadmap_ready")
 
+    def test_operator_console_rc_envelope_reports_release_candidate_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+
+            envelope = api.operator_console_rc()
+            payload = envelope.payload
+
+            self.assertEqual(envelope.kind, "operator_console_rc")
+            self.assertEqual(payload["schema"], "operator_console_rc.v1")
+            self.assertEqual(payload["readiness_status"], "operator_console_rc_phase1_ready")
+            self.assertEqual(payload["console_mode"], "readback_only")
+            self.assertTrue(payload["summary"]["demo_ready"])
+            self.assertFalse(payload["authority_boundary"]["live_capture_enabled"])
+            self.assertEqual(payload["operator_panels"]["route_inventory"]["status"], "passed")
+
     def test_turn_and_event_responses_attach_operator_readback(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

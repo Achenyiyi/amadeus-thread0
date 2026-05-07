@@ -24,6 +24,7 @@ export interface SessionEnvelopeSet {
   bond: BackendEnvelopeFor<"bond_view">;
   sourcesView?: BackendEnvelopeFor<"sources_view">;
   runtimeProductization?: BackendEnvelopeFor<"runtime_productization">;
+  operatorConsoleRc?: BackendEnvelopeFor<"operator_console_rc">;
 }
 
 export interface RuntimeSession {
@@ -35,6 +36,7 @@ export interface RuntimeSession {
   worldline: BackendEnvelopeFor<"worldline_view">;
   bond: BackendEnvelopeFor<"bond_view">;
   runtimeProductization?: BackendEnvelopeFor<"runtime_productization">;
+  operatorConsoleRc?: BackendEnvelopeFor<"operator_console_rc">;
   sources: SourceRef[];
   claimLinks: ClaimLink[];
 }
@@ -78,6 +80,7 @@ export function createSessionSnapshotFromEnvelopes(
     worldline: envelopes.worldline,
     bond: envelopes.bond,
     runtimeProductization: envelopes.runtimeProductization,
+    operatorConsoleRc: envelopes.operatorConsoleRc,
     sources: sources as SourceRef[],
     claimLinks: claimLinks as ClaimLink[],
   };

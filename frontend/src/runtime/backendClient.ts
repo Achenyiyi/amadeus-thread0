@@ -12,6 +12,7 @@ export interface BackendClient {
 
 export type BackendRoute =
   | "/api/runtime-productization"
+  | "/api/operator-console-rc"
   | "/api/persona-view"
   | "/api/worldline-view"
   | "/api/bond-view"
@@ -81,12 +82,13 @@ export class RouteBackendClient implements BackendClient {
   }
 
   async loadSessionSnapshot(): Promise<RuntimeSession> {
-    const [persona, worldline, bond, sourcesView, runtimeProductization] = await Promise.all([
+    const [persona, worldline, bond, sourcesView, runtimeProductization, operatorConsoleRc] = await Promise.all([
       this.fetchEnvelope("/api/persona-view", "persona_view"),
       this.fetchEnvelope("/api/worldline-view", "worldline_view"),
       this.fetchEnvelope("/api/bond-view", "bond_view"),
       this.fetchEnvelope("/api/sources-view", "sources_view"),
       this.fetchEnvelope("/api/runtime-productization", "runtime_productization"),
+      this.fetchEnvelope("/api/operator-console-rc", "operator_console_rc"),
     ]);
 
     const transcript =
@@ -105,6 +107,7 @@ export class RouteBackendClient implements BackendClient {
         bond,
         sourcesView,
         runtimeProductization,
+        operatorConsoleRc,
       },
       "route",
     );

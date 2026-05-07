@@ -1076,6 +1076,14 @@ function App() {
                 </DetailCard>
               </div>
             ) : null}
+            {session.operatorConsoleRc ? (
+              <div className="single-card">
+                <DetailCard title="Operator console RC" eyebrow="Release-candidate route readback">
+                  <RecordGrid record={session.operatorConsoleRc.payload} />
+                  <JsonDump value={session.operatorConsoleRc.payload} label="Raw operator console RC" />
+                </DetailCard>
+              </div>
+            ) : null}
             <InspectorTabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
           </div>
         </aside>
