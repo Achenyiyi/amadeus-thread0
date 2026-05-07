@@ -7,7 +7,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 - It is based on the current Python runtime surface plus the Phase 1 WSGI thin wrapper over the existing route adapter.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
-- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, Chinese Semantic Naturalness Phase 1 adds deterministic naturalness diagnostics, and Dynamic Skill Candidate Runtime Phase 1 adds candidate lifecycle readback, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, Chinese Semantic Naturalness Phase 1 adds deterministic naturalness diagnostics, Dynamic Skill Candidate Runtime Phase 1 adds candidate lifecycle readback, and Technical Preview RC Phase 1 adds a release-candidate evidence gate, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
 
 ## Freeze Status
 
@@ -36,6 +36,8 @@ The frontend may render those blocks, but it must not recompute them.
 
 Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, and ready lanes such as approved artifact multimodal ingestion, Chinese semantic naturalness, and dynamic skill candidate runtime. It is not a frontend-owned store or reducer contract.
 
+Technical Preview RC Phase 1 exposes `technical_preview_rc.v1` as an evidence-complete release-candidate gate. Frontend/operator tools may render the RC status and report paths, but must not treat it as permission to enable live capture, multimodal model calls, automatic skill registry writes, external executor harnesses, memory writes, persona mutation, or frontend-owned backend semantics.
+
 ## Authoritative Python Entry Points
 
 Runtime assembly:
@@ -50,6 +52,7 @@ Transport-neutral API surface:
 - `amadeus_thread0.runtime.transport_adapter.BackendTransportAdapter`
 - `amadeus_thread0.runtime.http_transport.create_http_transport_app(...)`
 - `amadeus_thread0.runtime.http_transport.build_wsgi_app(...)`
+- `amadeus_thread0.runtime.technical_preview_rc.build_technical_preview_rc_readiness(...)`
 - `amadeus_thread0.runtime.approved_artifact_multimodal_runtime.apply_approved_artifact_multimodal_runtime_to_payload(...)`
 - `amadeus_thread0.runtime.chinese_semantic_naturalness.build_chinese_semantic_naturalness_readback(...)`
 

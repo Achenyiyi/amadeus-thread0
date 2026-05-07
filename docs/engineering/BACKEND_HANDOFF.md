@@ -23,6 +23,7 @@ For handoff purposes, the current backend should already be treated as:
 - HTTP-shaped through the Phase 1 WSGI wrapper when an in-process or server-hosted transport shell is useful
 - stable enough for a thin frontend adapter
 - product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
+- technical-preview RC status is available through the Technical Preview RC Phase 1 evidence/audit layer
 - dynamic skill candidate lifecycle readback is available on turn/event payloads without automatic registry writes
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
@@ -45,6 +46,7 @@ For handoff purposes, the current backend should already be treated as:
 - access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
+- technical preview RC gate: `amadeus_thread0.runtime.technical_preview_rc`
 - dynamic skill candidate runtime readback: `amadeus_thread0.runtime.dynamic_skill_candidate_runtime`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 - Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
@@ -60,6 +62,19 @@ Frontend and operator-console consumers should treat it as readback only:
 - it marks HTTP transport, approved artifact multimodal ingestion, Chinese semantic naturalness, and dynamic skill candidate runtime as ready readback lanes; current `NEXT_SPECS` is empty when all preserved source reports are present
 
 It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
+
+## Technical Preview RC Status
+
+Technical Preview RC Phase 1 adds `technical_preview_rc.v1` as the current release-candidate evidence gate.
+
+Use it as evidence/readback only:
+
+- it requires ready evidence from preserved baselines, runtime status dashboard, Runtime Productization Phase 3, HTTP Transport Thin Wrapper Phase 1, Approved Artifact Multimodal Runtime Phase 1, Chinese Semantic Naturalness Phase 1, and Dynamic Skill Candidate Runtime Phase 1
+- it requires the current dashboard `NEXT_SPECS` list to be empty
+- it preserves blocked authority for live capture, external executor auto-enablement, automatic dynamic skill registry writes, and multimodal model auto-calls
+- `evals/run_technical_preview_rc_phase1_audit.py` emits JSON/Markdown reports under `technical-preview-rc-phase1-audit-*`
+
+It does not add runtime authority, live capture, model calls, skill registry writes, memory writes, persona-core mutation, frontend-owned semantics, external harness execution, or HTTP server ownership.
 
 ## Dynamic Skill Candidate Runtime Status
 

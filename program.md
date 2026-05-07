@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Final Closeout Sweep Phase 1`; old rolling closure remains complete through Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Technical Preview RC Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -40,6 +40,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `runtime_productization_phase3_ready`
+  - preserve `technical_preview_rc_phase1_ready`
   - preserve `http_transport_thin_wrapper_phase1_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
@@ -65,6 +66,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
   - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, ready readback lanes, and the current next-spec list visible without treating gitignored report absence as hidden code regression
   - current dashboard `NEXT_SPECS` is empty after Dynamic Skill Candidate Runtime Phase 1
+  - `technical_preview_rc.v1` should compose current preserved/productized/ready-lane evidence into one RC gate without opening runtime authority
   - Phase 3 product smokes should prove `BackendTransportAdapter` consumes backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries without introducing HTTP server ownership
 - Current HTTP transport focus:
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
@@ -12862,3 +12864,45 @@ This file is the live development ledger for `amadeus-thread0`.
     - passed
 - Next:
   - merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 279
+
+- Focus:
+  - implement `Technical Preview RC Phase 1` after final closeout confirmed `NEXT_SPECS=[]`
+  - add one evidence-complete release-candidate gate over the current backend-first technical preview
+  - keep the RC gate readback/audit-only rather than opening live capture, model calls, skill registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, or HTTP server ownership
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/technical_preview_rc.py`
+  - `evals/run_technical_preview_rc_phase1_audit.py`
+  - `tests/test_technical_preview_rc.py`
+  - `tests/test_technical_preview_rc_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/FINAL_DELIVERY_MANIFEST.md`
+  - `docs/TECHNICAL_PREVIEW_CHECKLIST.md`
+  - `docs/ADVISOR_REPRO_RUNBOOK.md`
+  - `docs/superpowers/specs/2026-05-07-technical-preview-rc-phase1-design.md`
+  - `docs/superpowers/plans/2026-05-07-technical-preview-rc-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `technical_preview_rc.v1` as the current release-candidate evidence gate
+  - required ready evidence for preserved baselines, runtime dashboard, Runtime Productization Phase 3, HTTP transport, approved artifact multimodal runtime, Chinese semantic naturalness, and dynamic skill candidate runtime
+  - required `NEXT_SPECS=[]` and failed closed if blocked authority widens for live capture, external executor auto-enablement, automatic dynamic skill registry writes, or multimodal model auto-calls
+  - added `evals/run_technical_preview_rc_phase1_audit.py` to emit JSON/Markdown RC evidence reports
+  - updated handoff, project structure, manifest, checklist, and advisor runbook with the RC audit path
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_technical_preview_rc.py -q`
+      - failed because `amadeus_thread0.runtime.technical_preview_rc` did not exist
+    - `python -m pytest tests/test_technical_preview_rc_audit.py -q`
+      - failed because `evals.run_technical_preview_rc_phase1_audit` did not exist
+  - GREEN:
+    - `python -m pytest tests/test_technical_preview_rc.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_technical_preview_rc_audit.py tests/test_technical_preview_rc.py -q`
+      - passed: `7 passed`
+- Next:
+  - run focused verification, run RC audit against current reports, merge to `main`, verify again, push, and clean up the worktree

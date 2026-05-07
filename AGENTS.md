@@ -85,6 +85,11 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - it adds deterministic product runtime smokes proving the route adapter can consume backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries
   - it makes missing gitignored source reports explicit as evidence-source gaps instead of silently treating a clean worktree as product runtime regression
   - it remains readback/smoke/audit-only and does not add HTTP server ownership, execution authority, persona-core mutation, memory writes, automatic skill registry writes, frontend-owned semantics, live capture, multimodal model auto-calls, or external harness runtime enablement
+- `Technical Preview RC Phase 1` is now closed as an evidence-complete release-candidate gate:
+  - `technical_preview_rc_phase1_ready`
+  - it composes preserved-baseline, runtime-dashboard, runtime-productization phase 3, HTTP transport, approved artifact multimodal runtime, Chinese semantic naturalness, and dynamic skill candidate runtime evidence into `technical_preview_rc.v1`
+  - it requires current `NEXT_SPECS=[]` and fails closed if blocked authority widens for live capture, external executor auto-enablement, dynamic skill registry auto-write, or multimodal model auto-calls
+  - it remains evidence/readback/audit-only and does not add runtime authority, live capture, model calls, skill registry writes, memory writes, persona-core mutation, frontend-owned semantics, external harness execution, or HTTP server ownership
 - `HTTP Transport Thin Wrapper Phase 1` is now closed as a standard-library WSGI transport gate:
   - `http_transport_thin_wrapper_phase1_ready`
   - it exposes `build_wsgi_app`, `call_wsgi_app`, and `create_http_transport_app` over the existing `BackendTransportAdapter`
