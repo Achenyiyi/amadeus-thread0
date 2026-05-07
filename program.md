@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Advisor Demo Readiness Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, Technical Preview RC Phase 1, Operator Console RC Phase 1, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Advisor Demo Dry Run Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, Technical Preview RC Phase 1, Operator Console RC Phase 1, Advisor Demo Readiness Phase 1, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -43,6 +43,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `technical_preview_rc_phase1_ready`
   - preserve `operator_console_rc_phase1_ready`
   - preserve `advisor_demo_readiness_phase1_ready`
+  - preserve `advisor_demo_dry_run_phase1_ready`
   - preserve `http_transport_thin_wrapper_phase1_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
@@ -79,6 +80,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - `advisor_demo_readiness_phase1_ready` means the current advisor/demo package is reproducible from Operator Console RC evidence plus documented assets
   - the gate checks required docs, reproduction commands, demo scenario coverage, and closed authority boundaries
   - it is package readiness only, not live demo certification, and does not open live capture, model calls, registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, HTTP ownership, or external mutation
+- Current advisor/demo dry-run focus:
+  - `advisor_demo_dry_run_phase1_ready` means the scripted rehearsal path is checkable and archive-ready from Advisor Demo Readiness evidence plus demo/runbook/checklist/manifest docs
+  - the gate checks six scripted scenarios, runbook stage coverage, archive-marker coverage, and inherited closed authority boundaries
+  - it is scripted dry-run readiness only, not live demo certification, and does not open live capture, model calls, registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, HTTP ownership, or external mutation
 - Current HTTP transport focus:
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
   - HTTP returns the same backend-owned `backend.v1` envelopes and structured adapter errors; it does not create a second truth model
@@ -13029,6 +13034,56 @@ This file is the live development ledger for `amadeus-thread0`.
     - `python -m pytest tests/test_advisor_demo_readiness.py tests/test_advisor_demo_readiness_audit.py tests/test_operator_console_rc.py tests/test_technical_preview_rc.py -q`
       - passed: `15 passed`
     - `python -m py_compile amadeus_thread0/runtime/advisor_demo_readiness.py evals/run_advisor_demo_readiness_phase1_audit.py`
+      - passed
+    - `git diff --check`
+      - passed
+- Next:
+  - merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 282
+
+- Focus:
+  - implement `Advisor Demo Dry Run Phase 1` on top of `advisor_demo_readiness_phase1_ready`
+  - convert the scripted rehearsal path into one deterministic dry-run/archive-readiness gate
+  - distinguish scripted rehearsal readiness from live demo certification while preserving all blocked authority surfaces
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/advisor_demo_dry_run.py`
+  - `evals/run_advisor_demo_dry_run_phase1_audit.py`
+  - `tests/test_advisor_demo_dry_run.py`
+  - `tests/test_advisor_demo_dry_run_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/FINAL_DELIVERY_MANIFEST.md`
+  - `docs/TECHNICAL_PREVIEW_CHECKLIST.md`
+  - `docs/ADVISOR_REPRO_RUNBOOK.md`
+  - `docs/superpowers/specs/2026-05-07-advisor-demo-dry-run-phase1-design.md`
+  - `docs/superpowers/plans/2026-05-07-advisor-demo-dry-run-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `advisor_demo_dry_run.v1` as a read-only dry-run gate over ready Advisor Demo Readiness evidence plus demo/runbook/checklist/manifest docs
+  - required six scripted demo scenarios to retain headings, user input, expected signals, and representative text
+  - required runbook coverage for CLI smoke, RC evidence, Advisor Demo Readiness, Advisor Demo Dry Run, baselines, probe variance, live demo path, artifact capture, failure handling, and exit condition
+  - required archive coverage for RC reports, dry-run reports, eval JSON/Markdown reports, demo script, technical-preview checklist, and user-study assets
+  - added `evals/run_advisor_demo_dry_run_phase1_audit.py` to emit JSON/Markdown reports under `advisor-demo-dry-run-phase1-audit-*`
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_advisor_demo_dry_run.py -q`
+      - failed because `amadeus_thread0.runtime.advisor_demo_dry_run` did not exist
+    - `python -m pytest tests/test_advisor_demo_dry_run_audit.py -q`
+      - failed because `evals.run_advisor_demo_dry_run_phase1_audit` did not exist
+  - GREEN:
+    - `python -m pytest tests/test_advisor_demo_dry_run.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_advisor_demo_dry_run_audit.py tests/test_advisor_demo_dry_run.py -q`
+      - passed: `7 passed`
+    - `python evals/run_advisor_demo_dry_run_phase1_audit.py --run-tag advisor-demo-dry-run-phase1-dev`
+      - passed with `overall_status=passed` and `readiness=advisor_demo_dry_run_phase1_ready`
+  - FINAL:
+    - `python -m pytest tests/test_advisor_demo_dry_run.py tests/test_advisor_demo_dry_run_audit.py tests/test_advisor_demo_readiness.py tests/test_advisor_demo_readiness_audit.py -q`
+      - passed: `14 passed`
+    - `python -m py_compile amadeus_thread0/runtime/advisor_demo_dry_run.py evals/run_advisor_demo_dry_run_phase1_audit.py`
       - passed
     - `git diff --check`
       - passed

@@ -163,6 +163,7 @@ Rule:
 - `runtime_productization.py`
 - `operator_console_rc.py`
 - `advisor_demo_readiness.py`
+- `advisor_demo_dry_run.py`
 - `residual_living_loop.py`
 - `living_loop_realism.py`
 - `technical_preview_rc.py`
@@ -410,6 +411,13 @@ Rule:
 - composes `operator_console_rc.v1` evidence with required advisor/repro docs, reproduction-command coverage, and demo-script scenario coverage
 - exposes `advisor_demo_readiness.v1` with package readiness, asset inventory, command inventory, demo-signal inventory, and authority boundary
 - distinguishes package readiness from live demo certification with `readiness_scope=package_ready_not_live_demo_certification`, `live_demo_observed=false`, and `manual_demo_required=true`
+- remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
+
+`advisor_demo_dry_run.py` holds the Advisor Demo Dry Run Phase 1 scripted rehearsal gate:
+
+- composes `advisor_demo_readiness.v1` evidence with demo script, advisor runbook, technical-preview checklist, and delivery manifest text
+- exposes `advisor_demo_dry_run.v1` with dry-run readiness, scenario inventory, runbook inventory, archive inventory, and authority boundary
+- distinguishes scripted rehearsal readiness from live demo certification with `dry_run_scope=scripted_rehearsal_ready_not_live_demo_observed`, `live_demo_observed=false`, and `manual_demo_required=true`
 - remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
