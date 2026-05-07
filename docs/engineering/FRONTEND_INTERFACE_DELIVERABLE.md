@@ -4,10 +4,10 @@
 
 This document is the frontend-facing backend contract for `amadeus-thread0`.
 
-- It is based on the current Python runtime surface, not on hypothetical HTTP handlers.
+- It is based on the current Python runtime surface plus the Phase 1 WSGI thin wrapper over the existing route adapter.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
-- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity; it does not turn the callable adapter into an HTTP server.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
 
 ## Freeze Status
 
@@ -46,6 +46,8 @@ Transport-neutral API surface:
 - `amadeus_thread0.runtime.backend_api.BackendAPI`
 - `amadeus_thread0.runtime.backend_api.BackendApiEnvelope`
 - `amadeus_thread0.runtime.transport_adapter.BackendTransportAdapter`
+- `amadeus_thread0.runtime.http_transport.create_http_transport_app(...)`
+- `amadeus_thread0.runtime.http_transport.build_wsgi_app(...)`
 
 Turn / event execution surface:
 
@@ -526,11 +528,13 @@ envelope = backend_api.build_event_round_response(
 )
 ```
 
-## Callable Adapter Surface
+## Callable Adapter And HTTP Thin Wrapper
 
 A Python-callable route adapter now exists in-repo as `BackendTransportAdapter`.
 
-It is not an HTTP server and does not introduce FastAPI, Flask, Uvicorn, SSE, or WebSocket infrastructure. It maps method/path calls to the existing `BackendAPI` methods and returns the same `backend.v1` envelopes as dictionaries. Future HTTP/SSE/WebSocket work should wrap this adapter or the same `BackendAPI` methods without rebuilding backend state semantics.
+It maps method/path calls to the existing `BackendAPI` methods and returns the same `backend.v1` envelopes as dictionaries.
+
+HTTP Transport Thin Wrapper Phase 1 now adds `amadeus_thread0.runtime.http_transport` as standard-library WSGI glue around that adapter. It parses JSON request bodies and query strings, delegates to `BackendTransportAdapter.handle(...)`, and serializes the resulting backend-owned envelopes as JSON responses. It is not a second backend API and does not introduce FastAPI, Flask, Uvicorn, SSE, or WebSocket infrastructure.
 
 Callable read routes:
 
@@ -556,9 +560,11 @@ Callable finalize routes:
   - body: `state_values`, `final_text`, optional `meta`
   - delegates to `BackendAPI.build_event_round_response(...)`
 
-Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. A future HTTP adapter may add `POST /api/turns` as an execution route, but it must end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
+Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. A future streaming or execution HTTP phase may add `POST /api/turns` as an execution route, but it must end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
 
 Phase 3 product runtime smokes validate these callable adapter routes as backend-owned envelope consumption. They do not introduce FastAPI, Flask, Uvicorn, SSE, WebSocket, or frontend-owned state semantics.
+
+HTTP Phase 1 smokes validate the WSGI wrapper for runtime readback, finalize routes, malformed JSON, method boundaries, and closed authority metadata. They do not add HTTP-owned memory/body/autonomy/persona semantics, live capture, automatic skill registry writes, external harness enablement, frontend-owned semantics, or streaming.
 
 Streaming recommendation:
 

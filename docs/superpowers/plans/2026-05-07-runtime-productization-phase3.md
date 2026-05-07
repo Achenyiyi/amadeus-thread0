@@ -261,7 +261,7 @@ python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-t
 python -m py_compile amadeus_thread0/runtime/runtime_status_dashboard.py evals/run_runtime_productization_phase3_smokes.py evals/run_runtime_productization_phase3_audit.py evals/run_preserved_baselines_audit.py
 ```
 
-- [ ] **Step 4: Commit, merge to main, and push**
+- [x] **Step 4: Commit, merge to main, and push**
 
 ```powershell
 git status --short

@@ -20,6 +20,7 @@ For handoff purposes, the current backend should already be treated as:
 - final-state normalized
 - transport-neutral
 - callable through `BackendTransportAdapter` when a route-shaped Python adapter is useful
+- HTTP-shaped through the Phase 1 WSGI wrapper when an in-process or server-hosted transport shell is useful
 - stable enough for a thin frontend adapter
 - product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
 - autonomy-contract-first
@@ -34,6 +35,7 @@ For handoff purposes, the current backend should already be treated as:
 - runtime assembly: `amadeus_thread0.runtime.runtime_bundle`
 - transport-neutral API: `amadeus_thread0.runtime.backend_api`
 - Python-callable route adapter: `amadeus_thread0.runtime.transport_adapter`
+- HTTP thin wrapper: `amadeus_thread0.runtime.http_transport`
 - turn/event/readback execution: `amadeus_thread0.runtime.backend_session`
 - final-state normalization: `amadeus_thread0.runtime.final_state`
 - executor adapter boundary: `amadeus_thread0.runtime.executor_adapter`
@@ -51,9 +53,22 @@ Frontend and operator-console consumers should treat it as readback only:
 - it clarifies whether preserved gate evidence, post-unlock roadmap evidence, and productization evidence are present and ready
 - it distinguishes missing gitignored report artifacts from real runtime authority changes
 - it lists blocked lanes such as live capture and external executor auto-enablement
-- it lists next-spec lanes such as thin HTTP transport, approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate runtime
+- it marks HTTP transport as a ready thin-wrapper lane and lists next-spec lanes such as approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate runtime
 
 It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
+
+## HTTP Transport Status
+
+HTTP Transport Thin Wrapper Phase 1 adds `amadeus_thread0.runtime.http_transport` as a standard-library WSGI wrapper over the existing route adapter.
+
+Use it as transport glue only:
+
+- `build_wsgi_app(transport_adapter)` wraps an existing `BackendTransportAdapter`
+- `create_http_transport_app(backend_api)` builds that adapter from a `BackendAPI`-compatible object
+- `call_wsgi_app(...)` exists for deterministic in-process smokes and tests
+- responses are the same backend-owned `backend.v1` envelopes or structured JSON errors already defined by the adapter boundary
+
+It does not add FastAPI, Flask, Uvicorn, SSE, WebSocket streaming, full turn execution routes, live capture, automatic skill registry writes, external harness runtime enablement, persona-core mutation, memory writes, or frontend-owned backend semantics.
 
 ## Autonomy Envelope
 

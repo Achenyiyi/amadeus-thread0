@@ -203,6 +203,13 @@ Rule:
 - returns `backend.v1` envelope dictionaries without introducing FastAPI/Flask/Uvicorn
 - exists so a future HTTP/SSE/WebSocket server can wrap the same transport-neutral contract without rebuilding backend semantics
 
+`http_transport.py` is the HTTP Transport Thin Wrapper Phase 1 WSGI boundary:
+
+- exposes `build_wsgi_app(transport_adapter)`, `create_http_transport_app(backend_api)`, and test helper `call_wsgi_app(...)`
+- parses HTTP JSON bodies and query strings, then delegates every route to `BackendTransportAdapter.handle(...)`
+- serializes the same backend-owned `backend.v1` envelopes and structured adapter errors as JSON responses
+- remains standard-library transport glue only; it does not own backend semantics, execution, browser, sandbox, memory-write, skill-registry, frontend, multimodal model-call, live-capture, SSE/WebSocket, external harness, or persona-core authority
+
 `event_identity.py` holds shared readback identity normalization:
 
 - canonical `current_event` perception id hydration for backend envelopes and inspector summaries
@@ -350,7 +357,7 @@ Rule:
 
 - composes preserved-baseline, post-unlock-roadmap, and runtime-productization report status into `runtime_status_dashboard.v1`
 - distinguishes ready gates, missing gitignored source reports, blocked-by-contract lanes, and fresh next-spec lanes
-- keeps HTTP transport, approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate generation visible as future bounded specs
+- marks HTTP transport as `phase1_ready` / `thin_wrapper` while keeping approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate generation visible as future bounded specs
 - remains pure readback logic with no HTTP server, execution, browser, sandbox, memory-write, skill-registry, frontend, model-call, or persona-core authority
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:

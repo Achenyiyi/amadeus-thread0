@@ -13,11 +13,6 @@ EXPECTED_GATES = {
 
 NEXT_SPECS = [
     {
-        "id": "http_transport_thin_wrapper",
-        "status": "fresh_spec_required",
-        "boundary": "wrap BackendTransportAdapter or BackendAPI without owning backend semantics",
-    },
-    {
         "id": "approved_artifact_multimodal_runtime",
         "status": "fresh_spec_required",
         "boundary": "approved artifact inspection only; no live capture or automatic memory facts",
@@ -46,9 +41,9 @@ LANES = {
         "summary": "React/Vite shell consumes backend.v1 envelopes and does not own backend semantics.",
     },
     "http_transport": {
-        "status": "planned_next_spec",
-        "runtime_authority": "next_spec_required",
-        "summary": "Future HTTP/SSE/WebSocket work must wrap the transport-neutral adapter.",
+        "status": "phase1_ready",
+        "runtime_authority": "thin_wrapper",
+        "summary": "Standard-library WSGI wrapper delegates to BackendTransportAdapter without owning backend semantics.",
     },
     "multimodal_artifact_inspection": {
         "status": "planned_next_spec",
