@@ -23,6 +23,7 @@ from ..utils.turn_summary_export import (
     summarize_procedural_recovery,
 )
 from .access_negotiation import attach_assist_request_to_pending_approval, resolve_access_negotiation_context
+from .dynamic_skill_candidate_runtime import apply_dynamic_skill_candidate_runtime_to_payload
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -671,6 +672,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload = apply_dynamic_skill_candidate_runtime_to_payload(payload)
         payload = apply_embodied_interaction_readback_to_payload(payload)
         payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("event_round", payload, meta=meta)
@@ -744,6 +746,7 @@ class BackendAPI:
             "writeback_trace": writeback_trace,
             **internal_state,
         }
+        payload = apply_dynamic_skill_candidate_runtime_to_payload(payload)
         payload = apply_embodied_interaction_readback_to_payload(payload)
         payload["living_loop_realism"] = build_backend_payload_realism_readback(payload)
         return self._envelope("assistant_turn", payload, meta=meta)

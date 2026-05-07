@@ -12,11 +12,6 @@ EXPECTED_GATES = {
 }
 
 NEXT_SPECS = [
-    {
-        "id": "dynamic_skill_candidate_runtime",
-        "status": "fresh_spec_required",
-        "boundary": "candidate generation stays frozen/hash/approval gated; no automatic registry writes",
-    },
 ]
 
 LANES = {
@@ -51,9 +46,9 @@ LANES = {
         "summary": "Live microphone, camera, and background screen capture remain blocked.",
     },
     "dynamic_skill_generation": {
-        "status": "planned_next_spec",
-        "runtime_authority": "next_spec_required",
-        "summary": "Candidate generation may be specified, but registry writes remain approval gated.",
+        "status": "phase1_ready",
+        "runtime_authority": "readback_audit_only",
+        "summary": "Frozen dynamic skill candidates are visible in backend runtime readback without automatic registry writes.",
     },
     "external_executor_harness": {
         "status": "blocked_except_preserved_sandbox",

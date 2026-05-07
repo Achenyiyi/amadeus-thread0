@@ -58,6 +58,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - `multimodal_capture_phase1_ready`
   - `dynamic_skills_phase1_ready`
   - `dynamic_skills_phase2_ready`
+  - `dynamic_skill_candidate_runtime_phase1_ready`
   - `external_executor_harness_phase1_ready`
   - `frontend_runtime_shell_phase1_ready`
   - `frontend_runtime_shell_phase2_ready`
@@ -142,6 +143,14 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - pending, rejected, blocked, or drifted dynamic candidates never become active skills or completed capability facts
   - manual disable still overrides auto-match, pin still controls active-order precedence, and completed skill use is the only dynamic-skill path that may resurface as procedural continuity
   - it does not auto-write the skill registry from proposal, mutate persona core, widen memory/browser/tool/sandbox authority, create frontend-owned semantics, open live capture, call model APIs, or allow unapproved external mutation
+- `Dynamic Skill Candidate Runtime Phase 1` is now closed as a backend-payload candidate lifecycle readback gate:
+  - `dynamic_skill_candidate_runtime_phase1_ready`
+  - real `assistant_turn` and `event_round` backend payloads now expose `dynamic_skill_candidate_runtime.v1`
+  - the readback makes pending, blocked, approved-install, installed, active/inactive, and completed-use continuity evidence visible over existing `skills`, `autonomy`, and `digital_body_consequence` truth
+  - `skills.dynamic_candidate_runtime` and `operator_readback.dynamic_skill_candidate_runtime` mirror compact backend-owned readback for frontend/operator consumers
+  - pending, blocked, rejected, drifted, or proposal-only candidates remain non-facts and do not become active skills, memory facts, completed capability facts, or procedural continuity
+  - completed dynamic skill use remains the only path that may resurface as identity-safe procedural continuity
+  - it does not install skills, auto-write the registry, mutate persona core, write autobiographical memory, mutate behavior motives, widen browser/tool/sandbox authority, create frontend-owned semantics, open live capture, call model APIs, or allow unapproved external mutation
 - `Embodied Interaction Runtime Phase 1` is now closed as the first runtime integration gate over the unlocked multimodal and Chinese semantic lanes:
   - `embodied_interaction_runtime_phase1_ready`
   - it attaches `embodied_interaction` to real `assistant_turn` and `event_round` backend payloads
@@ -210,7 +219,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - Chinese semantic naturalness now has deterministic readback diagnostics over known scaffold families and no-op natural text, not ad hoc reply-tone polishing
   - capability growth remains advisory workflow continuity
   - long-horizon calibration remains offline deterministic evaluation
-- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `chinese_semantic_descaffolding_phase2_ready`, `chinese_semantic_naturalness_phase1_ready`, `multimodal_perception_phase2_ready`, `approved_artifact_multimodal_runtime_phase1_ready`, `dynamic_skills_phase2_ready`, `frontend_runtime_shell_phase2_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `runtime_productization_phase3_ready`, `http_transport_thin_wrapper_phase1_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `living_loop_runtime_realism_phase3_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
+- `freeze_gate_ready`, `companion_autonomy_ready`, `digital_embodiment_phase1_ready`, `digital_embodiment_phase2_ready`, `sandbox_embodied_execution_phase1_ready`, `skills_ecosystem_ready`, `live_browser_runtime_phase1_ready`, `sandbox_embodied_execution_phase2_ready`, `post_baseline_closure_ready`, `tts_presence_timing_ready`, `procedural_growth_phase1_ready`, `procedural_growth_phase2_ready`, `procedural_growth_phase3_ready`, `procedural_growth_phase4_ready`, `post_unlock_roadmap_ready`, `chinese_semantic_descaffolding_phase2_ready`, `chinese_semantic_naturalness_phase1_ready`, `multimodal_perception_phase2_ready`, `approved_artifact_multimodal_runtime_phase1_ready`, `dynamic_skills_phase2_ready`, `dynamic_skill_candidate_runtime_phase1_ready`, `frontend_runtime_shell_phase2_ready`, `runtime_productization_phase1_ready`, `runtime_productization_phase2_ready`, `runtime_productization_phase3_ready`, `http_transport_thin_wrapper_phase1_ready`, `residual_living_loop_phase1_ready`, `living_loop_runtime_realism_phase1_ready`, `living_loop_runtime_realism_phase2_ready`, `living_loop_runtime_realism_phase3_ready`, `embodied_interaction_runtime_phase1_ready`, `embodied_interaction_runtime_phase2_ready`, `embodied_interaction_runtime_phase3_ready`, `embodied_interaction_runtime_phase4_ready`, and `embodied_interaction_runtime_phase5_ready` are preserved baselines / release gates.
 - Chinese semantic de-scaffolding is unlocked as a separate bounded phase; do not spend mainline time on ad hoc reply-tone or naturalness micro-polish unless it belongs to that phase or blocks runtime correctness, contract stability, or architecture closure.
 - The active preserved backend target is:
   - one fixed persona

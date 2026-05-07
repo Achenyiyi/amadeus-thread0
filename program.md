@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Chinese Semantic Naturalness Phase 1`; old rolling closure remains complete through Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Dynamic Skill Candidate Runtime Phase 1`; old rolling closure remains complete through Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -35,6 +35,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `multimodal_perception_phase2_ready`
   - preserve `approved_artifact_multimodal_runtime_phase1_ready`
   - preserve `dynamic_skills_phase2_ready`
+  - preserve `dynamic_skill_candidate_runtime_phase1_ready`
   - preserve `frontend_runtime_shell_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
@@ -94,6 +95,13 @@ This file is the live development ledger for `amadeus-thread0`.
   - the gate checks known scaffold-family floors and already-natural no-op text for duplicate output, service framing, scaffold residue, text/TTS drift, and authority widening
   - it remains readback/audit-only, not ad hoc tone polishing or prompt rewriting
   - it does not call models, mutate persona core, write memory, mutate behavior motives, create frontend-owned semantics, open live capture, write the skill registry, or allow external mutation
+- Current dynamic skill candidate runtime focus:
+  - `dynamic_skill_candidate_runtime_phase1_ready` means frozen dynamic skill candidate lifecycle evidence is visible in real `assistant_turn` and `event_round` backend payloads as `dynamic_skill_candidate_runtime.v1`
+  - compact mirrors appear under `skills.dynamic_candidate_runtime` and `operator_readback.dynamic_skill_candidate_runtime` for frontend/operator consumers
+  - the readback distinguishes pending approval, blocked/rejected/drifted proposals, approved installs, installed-but-disabled skills, active dynamic skills, and completed-use continuity
+  - pending, blocked, rejected, drifted, or proposal-only candidates remain non-facts and do not become active skills, memory facts, completed capability facts, or procedural continuity
+  - completed dynamic skill use is still the only path that may resurface as identity-safe procedural continuity
+  - it remains readback/audit-only and does not install skills, auto-write the registry, mutate persona core, write autobiographical memory, mutate behavior motives, widen sandbox/browser/tool authority, create frontend-owned semantics, open live capture, call model APIs, or allow external mutation
 - Current multimodal perception focus:
   - `multimodal_perception_phase2_ready` means consent-bound source artifacts can produce approval-gated `artifact:inspect_multimodal` action packets
   - packet fields now include `multimodal_inspection_spec`, `multimodal_inspection_preview`, and optional `multimodal_inspection_result`
@@ -12748,7 +12756,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - `embodied_interaction_runtime` now mirrors the readback under `chinese_semantic_surface.naturalness` while preserving existing `runtime_policy`, final text, reconsolidation snapshot text, and TTS parity behavior
   - added deterministic Phase 1 audit scenarios for service-frame, repair, self-rhythm, no-agenda taskization, stage residue, and already-natural no-op text
   - folded the new gate into preserved baselines under `chinese_semantic`
-  - updated the runtime status dashboard so Chinese semantic naturalness is `phase1_ready` / `deterministic_readback_only`; next specs now only list `dynamic_skill_candidate_runtime`
+  - updated the runtime status dashboard so Chinese semantic naturalness is `phase1_ready` / `deterministic_readback_only`; next specs then only listed `dynamic_skill_candidate_runtime`
 - Validation so far:
   - RED:
     - `python -m pytest tests/test_chinese_semantic_naturalness.py -q`
@@ -12770,5 +12778,58 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `14 passed`
     - `python evals/run_chinese_semantic_naturalness_phase1_audit.py --run-tag phase1-dev`
       - passed with `readiness=chinese_semantic_naturalness_phase1_ready`
+- Next:
+  - run final focused verification, merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 277
+
+- Focus:
+  - implement `Dynamic Skill Candidate Runtime Phase 1` after Chinese Semantic Naturalness Phase 1
+  - close the dashboard's remaining `dynamic_skill_candidate_runtime` next spec as a backend-owned runtime readback gate
+  - keep the lane readback/audit-only rather than opening automatic skill generation or registry writes
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/dynamic_skill_candidate_runtime.py`
+  - `amadeus_thread0/runtime/backend_api.py`
+  - `amadeus_thread0/runtime/runtime_status_dashboard.py`
+  - `evals/run_dynamic_skill_candidate_runtime_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_dynamic_skill_candidate_runtime.py`
+  - `tests/test_dynamic_skill_candidate_runtime_audit.py`
+  - `tests/test_backend_api.py`
+  - `tests/test_runtime_status_dashboard.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/superpowers/plans/2026-05-07-dynamic-skill-candidate-runtime-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.dynamic_skill_candidate_runtime` with readiness `dynamic_skill_candidate_runtime_phase1_ready`
+  - attached `dynamic_skill_candidate_runtime.v1` to real `assistant_turn` and `event_round` payloads before embodied/living-loop readbacks
+  - mirrored compact readback under `skills.dynamic_candidate_runtime` and `operator_readback.dynamic_skill_candidate_runtime`
+  - added audit scenarios for pending candidate visibility, blocked non-writeback, approved install evidence, manual disable precedence, completed-use-only continuity, and authority boundary preservation
+  - folded the new gate into preserved baselines under `skills`
+  - updated the runtime status dashboard so dynamic skill generation is `phase1_ready` / `readback_audit_only`; `NEXT_SPECS` is now empty
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_dynamic_skill_candidate_runtime.py -q`
+      - failed because `amadeus_thread0.runtime.dynamic_skill_candidate_runtime` did not exist
+    - `python -m pytest tests/test_dynamic_skill_candidate_runtime_audit.py -q`
+      - failed because `evals.run_dynamic_skill_candidate_runtime_audit` did not exist
+    - `python -m pytest tests/test_backend_api.py -k dynamic_skill_candidate_runtime -q`
+      - failed because backend payloads did not yet include `dynamic_skill_candidate_runtime`
+    - `python -m pytest tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
+      - failed because dashboard and preserved-baseline wiring still treated the lane as the next spec
+  - GREEN:
+    - `python -m pytest tests/test_dynamic_skill_candidate_runtime.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_dynamic_skill_candidate_runtime_audit.py -q`
+      - passed: `1 passed`
+    - `python -m pytest tests/test_backend_api.py -k dynamic_skill_candidate_runtime -q`
+      - passed: `1 passed, 54 deselected`
+    - `python -m pytest tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `10 passed`
 - Next:
   - run final focused verification, merge to `main`, verify again, push, and clean up the worktree

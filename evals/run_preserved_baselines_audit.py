@@ -47,6 +47,12 @@ BASELINE_SPECS = [
         "category": "skills",
     },
     {
+        "id": "dynamic_skill_candidate_runtime_phase1",
+        "prefix": "dynamic-skill-candidate-runtime-audit-",
+        "expected_readiness": "dynamic_skill_candidate_runtime_phase1_ready",
+        "category": "skills",
+    },
+    {
         "id": "frontend_runtime_shell_phase2",
         "prefix": "frontend-runtime-shell-phase2-audit-",
         "expected_readiness": "frontend_runtime_shell_phase2_ready",

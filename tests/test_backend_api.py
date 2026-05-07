@@ -7,6 +7,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from amadeus_thread0.runtime.dynamic_skill_candidates import (
+    build_candidate_install_packet,
+    freeze_skill_candidate_payload,
+    propose_skill_candidate_from_trace,
+)
 from amadeus_thread0.runtime.backend_api import BackendAPI, BackendApiEnvelope
 from amadeus_thread0.runtime.memory_admin import MemoryAdminService
 
@@ -287,6 +292,75 @@ class BackendApiTests(unittest.TestCase):
                 "sandbox_execution_completed",
             )
             self.assertEqual(event_payload["operator_readback"]["readiness_status"], "runtime_productization_phase2_ready")
+
+    def test_turn_and_event_responses_attach_dynamic_skill_candidate_runtime_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, _ = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            candidate = propose_skill_candidate_from_trace(
+                {
+                    "trace_id": "trace-backend-runtime-candidate",
+                    "status": "completed",
+                    "summary": "Use rg to inspect pytest failures before editing.",
+                    "skill_id": "pytest-failure-review",
+                    "requested_permissions": ["filesystem_read"],
+                    "sandbox_profiles": ["docker_local_isolated"],
+                }
+            )
+            frozen = freeze_skill_candidate_payload(candidate)
+            packet = build_candidate_install_packet(frozen)
+            state_values = {
+                "final_text": "嗯，我会把这个候选技能先停在审批边界上。",
+                "autonomy_intent": {
+                    "mode": "propose_action",
+                    "origin": "capability_upgrade",
+                    "primary_proposal_id": packet["proposal_id"],
+                },
+                "pending_action_proposal": packet,
+                "action_packets": [packet],
+                "session_skill_state": {
+                    "catalog_entries": [],
+                    "active_skill_entries": [],
+                    "pending_skill_proposal": {
+                        "operation": "install_skill",
+                        "skill_id": frozen["skill_id"],
+                        "source": "dynamic_candidate",
+                        "candidate_id": frozen["candidate_id"],
+                        "candidate_hash": frozen["hash"],
+                        "dynamic_candidate": True,
+                    },
+                },
+            }
+
+            turn_payload = api.build_turn_response(state_values=state_values, streamed_text="ignored").payload
+            event_payload = api.build_event_round_response(
+                state_values=state_values,
+                final_text=state_values["final_text"],
+            ).payload
+
+            for payload in (turn_payload, event_payload):
+                readback = payload["dynamic_skill_candidate_runtime"]
+                self.assertEqual(readback["schema"], "dynamic_skill_candidate_runtime.v1")
+                self.assertEqual(
+                    readback["readiness_status"],
+                    "dynamic_skill_candidate_runtime_phase1_ready",
+                )
+                self.assertEqual(readback["candidates"][0]["candidate_id"], frozen["candidate_id"])
+                self.assertEqual(readback["candidates"][0]["candidate_state"], "pending_approval")
+                self.assertTrue(readback["candidates"][0]["requires_approval"])
+                self.assertFalse(readback["candidates"][0]["registry_written"])
+                self.assertFalse(readback["candidates"][0]["active_after_install"])
+                self.assertFalse(readback["authority_boundary"]["registry_auto_write_allowed"])
+                self.assertEqual(
+                    payload["skills"]["dynamic_candidate_runtime"]["readiness_status"],
+                    "dynamic_skill_candidate_runtime_phase1_ready",
+                )
+                self.assertEqual(
+                    payload["operator_readback"]["dynamic_skill_candidate_runtime"]["readiness_status"],
+                    "dynamic_skill_candidate_runtime_phase1_ready",
+                )
 
     def test_turn_and_event_responses_attach_living_loop_realism_readback(self):
         with tempfile.TemporaryDirectory() as tmp:

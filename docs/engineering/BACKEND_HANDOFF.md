@@ -23,6 +23,7 @@ For handoff purposes, the current backend should already be treated as:
 - HTTP-shaped through the Phase 1 WSGI wrapper when an in-process or server-hosted transport shell is useful
 - stable enough for a thin frontend adapter
 - product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
+- dynamic skill candidate lifecycle readback is available on turn/event payloads without automatic registry writes
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
 - explicit about current execution scope being:
@@ -44,6 +45,7 @@ For handoff purposes, the current backend should already be treated as:
 - access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
+- dynamic skill candidate runtime readback: `amadeus_thread0.runtime.dynamic_skill_candidate_runtime`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 - Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
 
@@ -55,9 +57,23 @@ Frontend and operator-console consumers should treat it as readback only:
 - it clarifies whether preserved gate evidence, post-unlock roadmap evidence, and productization evidence are present and ready
 - it distinguishes missing gitignored report artifacts from real runtime authority changes
 - it lists blocked lanes such as live capture and external executor auto-enablement
-- it marks HTTP transport, approved artifact multimodal ingestion, and Chinese semantic naturalness as ready readback lanes, and lists next-spec lanes such as dynamic skill candidate runtime
+- it marks HTTP transport, approved artifact multimodal ingestion, Chinese semantic naturalness, and dynamic skill candidate runtime as ready readback lanes; current `NEXT_SPECS` is empty when all preserved source reports are present
 
 It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
+
+## Dynamic Skill Candidate Runtime Status
+
+Dynamic Skill Candidate Runtime Phase 1 adds `amadeus_thread0.runtime.dynamic_skill_candidate_runtime` as the backend-owned readback gate for frozen dynamic skill candidate lifecycle evidence.
+
+Use it as readback only:
+
+- `assistant_turn.payload.dynamic_skill_candidate_runtime` and `event_round.payload.dynamic_skill_candidate_runtime` expose `dynamic_skill_candidate_runtime.v1`
+- `skills.dynamic_candidate_runtime` and `operator_readback.dynamic_skill_candidate_runtime` mirror compact summaries for frontend/operator views
+- pending, blocked, rejected, drifted, or proposal-only candidates remain non-facts
+- approved install evidence is visible only when the existing skills registry/session surfaces show the dynamic candidate as installed or active
+- completed dynamic skill use remains the only path that may resurface as identity-safe procedural continuity
+
+It does not install skills, auto-write the registry, mutate persona core, write autobiographical memory, mutate behavior motives, widen browser/tool/sandbox authority, call model APIs, open live capture, create frontend-owned semantics, or allow unapproved external mutation.
 
 ## HTTP Transport Status
 
