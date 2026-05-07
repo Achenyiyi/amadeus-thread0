@@ -125,6 +125,12 @@ BASELINE_SPECS = [
         "category": "multimodal_perception",
     },
     {
+        "id": "approved_artifact_multimodal_runtime_phase1",
+        "prefix": "approved-artifact-multimodal-runtime-phase1-audit-",
+        "expected_readiness": "approved_artifact_multimodal_runtime_phase1_ready",
+        "category": "multimodal_runtime",
+    },
+    {
         "id": "runtime_productization_phase1",
         "prefix": "runtime-productization-audit-",
         "expected_readiness": "runtime_productization_phase1_ready",

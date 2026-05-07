@@ -36,6 +36,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "post_unlock_roadmap",
             "chinese_semantic_descaffolding_phase2",
             "multimodal_perception_phase2",
+            "approved_artifact_multimodal_runtime_phase1",
             "runtime_productization_phase1",
             "runtime_productization_phase2",
             "runtime_productization_phase3",
@@ -165,6 +166,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["post_unlock"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["chinese_semantic"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["multimodal_perception"]["passed"], 1)
+        self.assertEqual(summary["summary"]["categories"]["multimodal_runtime"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["frontend"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["transport"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 3)
