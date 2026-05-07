@@ -24,6 +24,7 @@ For handoff purposes, the current backend should already be treated as:
 - stable enough for a thin frontend adapter
 - product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
 - technical-preview RC status is available through the Technical Preview RC Phase 1 evidence/audit layer
+- advisor/demo package readiness is available through the Advisor Demo Readiness Phase 1 audit layer
 - dynamic skill candidate lifecycle readback is available on turn/event payloads without automatic registry writes
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
@@ -48,6 +49,7 @@ For handoff purposes, the current backend should already be treated as:
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
 - technical preview RC gate: `amadeus_thread0.runtime.technical_preview_rc`
 - operator console RC gate: `amadeus_thread0.runtime.operator_console_rc`
+- advisor demo readiness gate: `amadeus_thread0.runtime.advisor_demo_readiness`
 - dynamic skill candidate runtime readback: `amadeus_thread0.runtime.dynamic_skill_candidate_runtime`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 - Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
@@ -90,6 +92,21 @@ Use it as operator/readback only:
 - `evals/run_operator_console_rc_phase1_audit.py` emits JSON/Markdown reports under `operator-console-rc-phase1-audit-*`
 
 It does not add runtime authority, live capture, model calls, skill registry writes, memory writes, persona-core mutation, frontend-owned semantics, external harness execution, HTTP server ownership, SSE/WebSocket streaming, or external mutation.
+
+## Advisor Demo Readiness Status
+
+Advisor Demo Readiness Phase 1 adds `advisor_demo_readiness.v1` as the reviewer-facing package-readiness gate over Operator Console RC evidence and the documented advisor/demo reproduction package.
+
+Use it as package/readback evidence only:
+
+- it consumes ready `operator_console_rc.v1` evidence
+- it checks required advisor, demo, evaluation, failure-taxonomy, and user-study docs exist
+- it checks the current reproduction commands are documented
+- it checks the demo script still covers role consistency, worldline commitment, conflict repair, source traceability, interruption recovery, and memory guard interception
+- it preserves the Operator Console RC authority boundary and fails closed if blocked authority widens
+- `evals/run_advisor_demo_readiness_phase1_audit.py` emits JSON/Markdown reports under `advisor-demo-readiness-phase1-audit-*`
+
+It is not live demo certification. It does not run an advisor session, open live capture, call models, write skills, execute external harnesses, mutate memory, mutate persona core, create frontend-owned semantics, own an HTTP server, or perform external mutation.
 
 ## Dynamic Skill Candidate Runtime Status
 
