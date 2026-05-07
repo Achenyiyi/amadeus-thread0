@@ -258,6 +258,14 @@ Rule:
 - keeps pending inspection preview-only with `auto_execute=false`, `model_api_call_planned=false`, `model_api_call_allowed=false`, and `live_capture_allowed=false`
 - accepts completed inspection semantics only from approved precomputed results; the helper itself does not call multimodal model APIs
 
+`approved_artifact_multimodal_runtime.py` holds the Approved Artifact Multimodal Runtime Phase 1 ingestion gate:
+
+- validates exact operator-approved precomputed results against a frozen `artifact:inspect_multimodal` packet
+- rejects proposal id drift, source/spec/result drift, model-called results, live-capture-derived results, pending results, rejected results, and blocked results
+- completes only the same frozen packet by preserving `proposal_id`, spec, preview, tool binding, and capability steps while setting `status=completed`, `requires_approval=false`, and `writeback_ready=true`
+- can attach backend-owned `approved_artifact_multimodal_runtime.v1` readback to a payload without mutating the original payload
+- remains an ingestion/readback gate; it does not call multimodal model APIs, open live capture, mutate memory, execute tools, install skills, change persona core, or own frontend semantics
+
 `artifact_perception_semantics.py` holds approved artifact semantic observation normalization:
 
 - converts already-approved artifact metadata such as summaries, captions, transcripts, OCR text, observed text, and tags into bounded `semantic_observations`
@@ -357,7 +365,7 @@ Rule:
 
 - composes preserved-baseline, post-unlock-roadmap, and runtime-productization report status into `runtime_status_dashboard.v1`
 - distinguishes ready gates, missing gitignored source reports, blocked-by-contract lanes, and fresh next-spec lanes
-- marks HTTP transport as `phase1_ready` / `thin_wrapper` while keeping approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate generation visible as future bounded specs
+- marks HTTP transport as `phase1_ready` / `thin_wrapper` and multimodal artifact inspection as `phase1_ready` / `approved_result_ingestion_only` while keeping Chinese semantic naturalness and dynamic skill candidate generation visible as future bounded specs
 - remains pure readback logic with no HTTP server, execution, browser, sandbox, memory-write, skill-registry, frontend, model-call, or persona-core authority
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
@@ -475,6 +483,7 @@ Rule:
   - `run_embodied_interaction_runtime_phase3_audit.py`
   - `run_embodied_interaction_runtime_phase4_audit.py`
   - `run_embodied_interaction_runtime_phase5_audit.py`
+  - `run_approved_artifact_multimodal_runtime_phase1_audit.py`
   - `run_multimodal_perception_phase2_audit.py`
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
@@ -559,6 +568,8 @@ Current skills closure coverage lives in:
   `python evals/run_chinese_semantic_descaffolding_phase2_audit.py`
 - multimodal perception phase-2 audit:
   `python evals/run_multimodal_perception_phase2_audit.py`
+- approved artifact multimodal runtime phase-1 audit:
+  `python evals/run_approved_artifact_multimodal_runtime_phase1_audit.py`
 - living-loop realism phase-3 audit:
   `python evals/run_living_loop_realism_phase3_audit.py`
 - frontend runtime shell phase-2 audit:

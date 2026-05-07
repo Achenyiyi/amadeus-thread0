@@ -13,11 +13,6 @@ EXPECTED_GATES = {
 
 NEXT_SPECS = [
     {
-        "id": "approved_artifact_multimodal_runtime",
-        "status": "fresh_spec_required",
-        "boundary": "approved artifact inspection only; no live capture or automatic memory facts",
-    },
-    {
         "id": "chinese_semantic_naturalness",
         "status": "fresh_spec_required",
         "boundary": "semantic policy and smoke banks, not ad hoc tone rewrites",
@@ -46,9 +41,9 @@ LANES = {
         "summary": "Standard-library WSGI wrapper delegates to BackendTransportAdapter without owning backend semantics.",
     },
     "multimodal_artifact_inspection": {
-        "status": "planned_next_spec",
-        "runtime_authority": "next_spec_required",
-        "summary": "Next multimodal step is approved artifact inspection, not live capture.",
+        "status": "phase1_ready",
+        "runtime_authority": "approved_result_ingestion_only",
+        "summary": "Already-approved precomputed artifact inspection results can complete frozen packets without live capture or model calls.",
     },
     "live_capture": {
         "status": "blocked",

@@ -44,6 +44,7 @@ For handoff purposes, the current backend should already be treated as:
 - access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
+- approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 
 ## Product Runtime Status
 
@@ -53,7 +54,7 @@ Frontend and operator-console consumers should treat it as readback only:
 - it clarifies whether preserved gate evidence, post-unlock roadmap evidence, and productization evidence are present and ready
 - it distinguishes missing gitignored report artifacts from real runtime authority changes
 - it lists blocked lanes such as live capture and external executor auto-enablement
-- it marks HTTP transport as a ready thin-wrapper lane and lists next-spec lanes such as approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate runtime
+- it marks HTTP transport as a ready thin-wrapper lane, marks approved artifact multimodal ingestion as ready, and lists next-spec lanes such as Chinese semantic naturalness and dynamic skill candidate runtime
 
 It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
 
@@ -69,6 +70,19 @@ Use it as transport glue only:
 - responses are the same backend-owned `backend.v1` envelopes or structured JSON errors already defined by the adapter boundary
 
 It does not add FastAPI, Flask, Uvicorn, SSE, WebSocket streaming, full turn execution routes, live capture, automatic skill registry writes, external harness runtime enablement, persona-core mutation, memory writes, or frontend-owned backend semantics.
+
+## Approved Artifact Multimodal Runtime Status
+
+Approved Artifact Multimodal Runtime Phase 1 adds `amadeus_thread0.runtime.approved_artifact_multimodal_runtime` as the approved-result ingestion gate for `artifact:inspect_multimodal` packets.
+
+Use it as packet completion/readback glue only:
+
+- `build_approved_artifact_multimodal_runtime_readback(...)` validates a frozen inspection packet, operator approval, and precomputed result before producing a completed packet
+- `apply_approved_artifact_multimodal_runtime_to_payload(...)` can complete matching packets and attach backend-owned `approved_artifact_multimodal_runtime.v1` readback without mutating the input payload
+- completion preserves the same `proposal_id`, spec, preview, tool binding, and capability steps
+- drifted approvals, source-mismatched results, model-called results, live-capture-derived results, pending results, rejected results, or blocked results fail closed
+
+It does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, widen browser/tool/sandbox authority, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation.
 
 ## Autonomy Envelope
 
