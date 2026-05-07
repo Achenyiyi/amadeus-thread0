@@ -150,6 +150,7 @@ Rule:
 - `executor_adapter.py`
 - `executor_harness_registry.py`
 - `dynamic_skill_candidates.py`
+- `dynamic_skill_candidate_runtime.py`
 - `multimodal_sources.py`
 - `approved_artifact_multimodal_runtime.py`
 - `chinese_semantic_naturalness.py`
@@ -250,6 +251,14 @@ Rule:
 - builds approval-gated `install_skill` action packets for those frozen payloads
 - verifies approval payloads before any registry mutation can happen
 - does not install, enable, or mutate the managed skills registry automatically from a proposal
+
+`dynamic_skill_candidate_runtime.py` holds the backend-owned runtime readback for frozen dynamic skill candidate lifecycle evidence:
+
+- emits `dynamic_skill_candidate_runtime.v1` with readiness `dynamic_skill_candidate_runtime_phase1_ready`
+- consumes existing `skills`, `autonomy`, action packet, and `digital_body_consequence` truth rather than installing or mutating skills itself
+- distinguishes pending approval, blocked/rejected/drifted candidates, approved installs, installed inactive skills, active skills, and completed-use-only procedural continuity
+- mirrors compact readback under `skills.dynamic_candidate_runtime` and `operator_readback.dynamic_skill_candidate_runtime`
+- keeps proposal-only candidates as non-facts and does not write memory, mutate persona core, auto-write the registry, call model APIs, open live capture, or create frontend-owned semantics
 
 `multimodal_sources.py` holds phase-1 multimodal source artifact normalization and phase-2 inspection packet helpers:
 
@@ -498,6 +507,7 @@ Rule:
   - `run_multimodal_capture_audit.py`
   - `run_dynamic_skills_audit.py`
   - `run_dynamic_skills_phase2_audit.py`
+  - `run_dynamic_skill_candidate_runtime_audit.py`
   - `run_external_executor_harness_audit.py`
   - `run_frontend_runtime_shell_audit.py`
   - `run_frontend_runtime_shell_phase2_audit.py`
@@ -538,6 +548,8 @@ Current skills closure coverage lives in:
 - `tests/test_skill_runtime.py`
 - `tests/test_dynamic_skills_phase2.py`
 - `tests/test_dynamic_skills_phase2_audit.py`
+- `tests/test_dynamic_skill_candidate_runtime.py`
+- `tests/test_dynamic_skill_candidate_runtime_audit.py`
 - `tests/test_skills_ecosystem_smokes.py`
 - `tests/test_skills_ecosystem_audit.py`
 

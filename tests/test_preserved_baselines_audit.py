@@ -23,6 +23,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "sandbox_embodied_execution",
             "skills_ecosystem",
             "dynamic_skills_phase2",
+            "dynamic_skill_candidate_runtime_phase1",
             "frontend_runtime_shell_phase2",
             "http_transport_thin_wrapper_phase1",
             "live_browser_runtime",
@@ -163,7 +164,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["failed"], 0)
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["passed"], 4)
         self.assertEqual(summary["summary"]["categories"]["procedural_growth"]["failed"], 0)
-        self.assertEqual(summary["summary"]["categories"]["skills"]["passed"], 2)
+        self.assertEqual(summary["summary"]["categories"]["skills"]["passed"], 3)
         self.assertEqual(summary["summary"]["categories"]["post_unlock"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["chinese_semantic"]["passed"], 2)
         self.assertEqual(summary["summary"]["categories"]["multimodal_perception"]["passed"], 1)

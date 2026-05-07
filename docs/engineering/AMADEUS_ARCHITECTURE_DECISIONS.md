@@ -110,6 +110,7 @@ For backend purposes, the structural decisions in this document are now split in
     - `approved_artifact_multimodal_runtime_phase1_ready`: exact approved precomputed inspection results may complete frozen `artifact:inspect_multimodal` packets after proposal/spec/source drift checks; unsafe or drifted result attempts fail closed
     - `dynamic_skills_phase1_ready`: completed procedural traces may propose hash-verified skill candidates; install/enable/registry writes remain approval-gated and manual
     - `dynamic_skills_phase2_ready`: exact frozen dynamic candidate payloads may be installed/enabled after approval through the existing managed skills registry; pending/rejected/drifted candidates never become active skills or memory facts
+    - `dynamic_skill_candidate_runtime_phase1_ready`: frozen dynamic skill candidate lifecycle evidence is visible on real backend payloads as readback only; proposals remain non-facts until approved install evidence and completed use are present
     - `external_executor_harness_phase1_ready`: external harness families are represented as disabled result-only metadata; only `sandbox_runner` is enabled
     - `frontend_runtime_shell_phase1_ready`: the React/Vite shell builds against `backend.v1` fixtures and does not own backend semantics
     - `frontend_runtime_shell_phase2_ready`: the same shell consumes route-like `backend.v1` envelopes through a thin adapter and renders runtime/productization, living-loop, and embodied readbacks without owning backend semantics
@@ -357,6 +358,7 @@ Post-Baseline Closure Pack preserved contract:
   - multimodal input capture: `multimodal_capture_phase1_ready`
   - dynamic skill generation: `dynamic_skills_phase1_ready`
   - approved dynamic skill candidate install/readback: `dynamic_skills_phase2_ready`
+  - dynamic skill candidate runtime readback: `dynamic_skill_candidate_runtime_phase1_ready`
   - Chinese semantic de-scaffolding: `chinese_semantic_descaffolding_phase1_ready`
   - bounded capability growth: `capability_growth_phase5_ready`
   - natural long-horizon calibration: `natural_long_horizon_calibration_phase1_ready`
