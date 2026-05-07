@@ -161,6 +161,7 @@ Rule:
 - `embodied_interaction_runtime.py`
 - `post_baseline_closure.py`
 - `runtime_productization.py`
+- `operator_console_rc.py`
 - `residual_living_loop.py`
 - `living_loop_realism.py`
 - `technical_preview_rc.py`
@@ -396,6 +397,13 @@ Rule:
 - fails closed if blocked authority widens for live capture, external executor auto-enablement, automatic dynamic skill registry writes, or multimodal model auto-calls
 - remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
 
+`operator_console_rc.py` holds the Operator Console RC Phase 1 readback gate:
+
+- composes `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2` into one `operator_console_rc.v1` packet
+- exposes demo readiness, evidence counts, runtime gates, read-only route inventory, authority boundary, stable operator panels, and next-action hints
+- fails closed if Technical Preview RC evidence regresses, `NEXT_SPECS` is non-empty, mutation routes appear, or blocked authority widens
+- remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
+
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
 
 - evaluates whether one final-turn packet exposes the north-star stages from perception through self-narrative update
@@ -569,7 +577,7 @@ Current skills closure coverage lives in:
 - It should render frozen `backend.v1` envelopes rather than inventing an alternative state schema.
 - Contract copies and mock fixtures should stay close to the frontend shell so UI work can proceed without touching backend internals.
 - The Phase 2 route client in `frontend/src/runtime/backendClient.ts` validates common envelope shape, consumes route-like backend responses, and groups them into the UI session without deriving backend semantics.
-- The shell can render backend-owned `operator_readback`, `living_loop_realism`, `embodied_interaction`, and `runtime_productization` payloads as read-only records.
+- The shell can render backend-owned `operator_readback`, `living_loop_realism`, `embodied_interaction`, `runtime_productization`, and `operator_console_rc` payloads as read-only records.
 - Any future transport adapter should remain thin and delegate semantics to `amadeus_thread0/runtime/backend_api.py` and `backend_session.py`.
 - It is now unlocked as a runtime shell lane, but only as a consumer of the existing backend contract; it must not own memory, body, autonomy, persona, graph, browser, sandbox, skill-registry, or external-mutation semantics.
 

@@ -43,6 +43,7 @@ def test_readback_reports_ready_lanes_without_widening_authority():
     assert readback["evidence_summary"]["ready_inputs"] == 3
     assert readback["safe_routes"]["read_only_routes"] == [
         "/api/runtime-productization",
+        "/api/operator-console-rc",
         "/api/environment-summary",
         "/api/runtime-layout",
     ]

@@ -97,6 +97,7 @@ _ROUTES: dict[str, tuple[str, Callable[[Any, dict[str, Any], dict[str, Any]], An
     "/api/runtime-layout": ("GET", _read_route("runtime_layout")),
     "/api/environment-summary": ("GET", _read_route("environment_summary")),
     "/api/runtime-productization": ("GET", _read_route("runtime_productization")),
+    "/api/operator-console-rc": ("GET", _read_route("operator_console_rc")),
     "/api/persona-view": ("GET", _read_route("persona")),
     "/api/worldline-view": ("GET", _read_route("worldline")),
     "/api/bond-view": ("GET", _read_route("bond")),

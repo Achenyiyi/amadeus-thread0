@@ -22,6 +22,13 @@ class _FakeBackendApi:
             payload={"readiness_status": "runtime_productization_phase3_ready"},
         )
 
+    def operator_console_rc(self):
+        return BackendApiEnvelope(
+            kind="operator_console_rc",
+            thread_id="thread-http",
+            payload={"readiness_status": "operator_console_rc_phase1_ready"},
+        )
+
     def checkpoint_history(self, *, limit=10, config=None):
         self.history_calls.append({"limit": limit, "config": config})
         return BackendApiEnvelope(
@@ -49,6 +56,17 @@ def test_wsgi_get_route_returns_backend_v1_envelope():
     assert response["body"]["schema_version"] == "backend.v1"
     assert response["body"]["kind"] == "runtime_productization"
     assert response["body"]["payload"]["readiness_status"] == "runtime_productization_phase3_ready"
+
+
+def test_wsgi_operator_console_rc_route_returns_backend_v1_envelope():
+    app = create_http_transport_app(_FakeBackendApi())
+
+    response = call_wsgi_app(app, "GET", "/api/operator-console-rc")
+
+    assert response["status"] == 200
+    assert response["body"]["schema_version"] == "backend.v1"
+    assert response["body"]["kind"] == "operator_console_rc"
+    assert response["body"]["payload"]["readiness_status"] == "operator_console_rc_phase1_ready"
 
 
 def test_wsgi_post_route_forwards_json_body_without_rebuilding_schema():

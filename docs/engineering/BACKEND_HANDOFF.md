@@ -47,6 +47,7 @@ For handoff purposes, the current backend should already be treated as:
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
 - technical preview RC gate: `amadeus_thread0.runtime.technical_preview_rc`
+- operator console RC gate: `amadeus_thread0.runtime.operator_console_rc`
 - dynamic skill candidate runtime readback: `amadeus_thread0.runtime.dynamic_skill_candidate_runtime`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 - Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
@@ -75,6 +76,20 @@ Use it as evidence/readback only:
 - `evals/run_technical_preview_rc_phase1_audit.py` emits JSON/Markdown reports under `technical-preview-rc-phase1-audit-*`
 
 It does not add runtime authority, live capture, model calls, skill registry writes, memory writes, persona-core mutation, frontend-owned semantics, external harness execution, or HTTP server ownership.
+
+## Operator Console RC Status
+
+Operator Console RC Phase 1 adds `operator_console_rc.v1` as the current read-only release-candidate console over Technical Preview RC evidence.
+
+Use it as operator/readback only:
+
+- it composes `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2`
+- it exposes `BackendAPI.operator_console_rc()` and `GET /api/operator-console-rc`
+- it gives operator panels for RC evidence, runtime status, operator readback, route inventory, and authority boundary
+- it fails closed when RC evidence regresses, `NEXT_SPECS` is non-empty, mutation routes appear, or blocked authority widens
+- `evals/run_operator_console_rc_phase1_audit.py` emits JSON/Markdown reports under `operator-console-rc-phase1-audit-*`
+
+It does not add runtime authority, live capture, model calls, skill registry writes, memory writes, persona-core mutation, frontend-owned semantics, external harness execution, HTTP server ownership, SSE/WebSocket streaming, or external mutation.
 
 ## Dynamic Skill Candidate Runtime Status
 

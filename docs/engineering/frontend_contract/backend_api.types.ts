@@ -19,6 +19,7 @@ export type BackendKind =
   | "runtime_layout"
   | "environment_summary"
   | "runtime_productization"
+  | "operator_console_rc"
   | "event_round"
   | "assistant_turn";
 
@@ -1145,6 +1146,21 @@ export interface RuntimeProductizationPayload extends JsonRecord {
   lanes?: JsonRecord;
 }
 
+export interface OperatorConsoleRcPayload extends JsonRecord {
+  schema?: string;
+  overall_status?: string;
+  readiness_status?: string;
+  console_mode?: string;
+  release_posture?: string;
+  summary?: JsonRecord;
+  readback_refs?: JsonRecord;
+  operator_panels?: JsonRecord;
+  route_inventory?: JsonRecord;
+  authority_boundary?: JsonRecord;
+  next_actions?: JsonValue[];
+  failure_reasons?: JsonValue[];
+}
+
 export type MemorySnapshotPayload = JsonRecord;
 
 export interface BackendEnvelopeMap {
@@ -1161,6 +1177,7 @@ export interface BackendEnvelopeMap {
   runtime_layout: RuntimeLayoutPayload;
   environment_summary: EnvironmentSummaryPayload;
   runtime_productization: RuntimeProductizationPayload;
+  operator_console_rc: OperatorConsoleRcPayload;
   event_round: EventRoundPayload;
   assistant_turn: AssistantTurnPayload;
 }
