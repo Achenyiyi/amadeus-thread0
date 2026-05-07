@@ -261,7 +261,7 @@ python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-t
 python -m py_compile amadeus_thread0/runtime/http_transport.py evals/run_http_transport_smokes.py evals/run_http_transport_audit.py evals/run_preserved_baselines_audit.py
 ```
 
-- [ ] **Step 4: Commit, merge, and push**
+- [x] **Step 4: Commit, merge, and push**
 
 ```powershell
 git add AGENTS.md program.md docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md docs/engineering/PROJECT_STRUCTURE.md docs/engineering/BACKEND_HANDOFF.md docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md docs/superpowers/plans/2026-05-07-runtime-productization-phase3.md docs/superpowers/plans/2026-05-07-http-transport-thin-wrapper-phase1.md amadeus_thread0/runtime/http_transport.py amadeus_thread0/runtime/runtime_status_dashboard.py evals/run_http_transport_smokes.py evals/run_http_transport_audit.py evals/run_preserved_baselines_audit.py tests/test_http_transport.py tests/test_http_transport_smokes.py tests/test_http_transport_audit.py tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py

@@ -12622,5 +12622,16 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=http_transport_thin_wrapper_phase1_ready`
     - `python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
       - passed with `readiness=preserved_baselines_ready`
+  - post-merge verification on `main`:
+    - `python -m pytest tests/test_http_transport.py tests/test_http_transport_smokes.py tests/test_http_transport_audit.py tests/test_transport_adapter.py tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `25 passed`
+    - `python -m py_compile amadeus_thread0/runtime/http_transport.py evals/run_http_transport_smokes.py evals/run_http_transport_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `git diff --check`
+      - passed
+    - `python evals/run_http_transport_audit.py --reports-dir evals/reports`
+      - passed with `readiness=http_transport_thin_wrapper_phase1_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir evals/reports`
+      - passed with `readiness=preserved_baselines_ready`
 - Next:
-  - run final verification, commit on `codex/http-transport-thin-wrapper`, fast-forward merge to `main`, push `main`, then select the next bounded lane from the dashboard next specs
+  - select the next bounded lane from the dashboard next specs
