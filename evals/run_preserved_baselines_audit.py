@@ -119,6 +119,12 @@ BASELINE_SPECS = [
         "category": "chinese_semantic",
     },
     {
+        "id": "chinese_semantic_naturalness_phase1",
+        "prefix": "chinese-semantic-naturalness-phase1-audit-",
+        "expected_readiness": "chinese_semantic_naturalness_phase1_ready",
+        "category": "chinese_semantic",
+    },
+    {
         "id": "multimodal_perception_phase2",
         "prefix": "multimodal-perception-phase2-audit-",
         "expected_readiness": "multimodal_perception_phase2_ready",

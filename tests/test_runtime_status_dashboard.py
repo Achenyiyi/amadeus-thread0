@@ -39,9 +39,11 @@ def test_dashboard_distinguishes_ready_runtime_enabled_and_blocked_lanes():
     assert dashboard["lanes"]["http_transport"]["runtime_authority"] == "thin_wrapper"
     assert dashboard["lanes"]["multimodal_artifact_inspection"]["status"] == "phase1_ready"
     assert dashboard["lanes"]["multimodal_artifact_inspection"]["runtime_authority"] == "approved_result_ingestion_only"
+    assert dashboard["lanes"]["chinese_semantic_naturalness"]["status"] == "phase1_ready"
+    assert dashboard["lanes"]["chinese_semantic_naturalness"]["runtime_authority"] == "deterministic_readback_only"
     assert dashboard["lanes"]["live_capture"]["runtime_authority"] == "blocked_by_contract"
     assert dashboard["lanes"]["dynamic_skill_generation"]["runtime_authority"] == "next_spec_required"
-    assert dashboard["next_specs"][0]["id"] == "chinese_semantic_naturalness"
+    assert dashboard["next_specs"][0]["id"] == "dynamic_skill_candidate_runtime"
     assert dashboard["stale_plan_hygiene"]["status"] == "attention_recommended"
 
 
@@ -90,5 +92,5 @@ def test_compact_runtime_status_line_is_short_and_explicit():
 
     assert "runtime_status=runtime_status_dashboard_ready" in line
     assert "gates=3/3" in line
-    assert "next_specs=2" in line
+    assert "next_specs=1" in line
     assert "blocked=2" in line

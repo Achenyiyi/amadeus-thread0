@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Approved Artifact Multimodal Runtime Phase 1`; old rolling closure remains complete through HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Chinese Semantic Naturalness Phase 1`; old rolling closure remains complete through Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -31,6 +31,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `procedural_growth_phase4_ready`
   - preserve `post_unlock_roadmap_ready`
   - preserve `chinese_semantic_descaffolding_phase2_ready`
+  - preserve `chinese_semantic_naturalness_phase1_ready`
   - preserve `multimodal_perception_phase2_ready`
   - preserve `approved_artifact_multimodal_runtime_phase1_ready`
   - preserve `dynamic_skills_phase2_ready`
@@ -88,6 +89,11 @@ This file is the live development ledger for `amadeus-thread0`.
   - deterministic safe floors apply only for known semantic scaffold families and keep `final_text`, `reconsolidation_snapshot.final_text`, and `tts_text` aligned
   - Phase 2 audit covers everyday, repair, self-rhythm, and technical-task scaffold cases for duplicate output, scaffold residue leaks, and text/TTS drift
   - Phase 2 does not change generation prompts, persona core, memory-write authority, behavior motives, browser/tool/sandbox execution, frontend-owned semantics, live capture, multimodal model API use, skill registry state, or external mutation authority
+- Current Chinese semantic naturalness focus:
+  - `chinese_semantic_naturalness_phase1_ready` means deterministic naturalness diagnostics now sit beside the Phase 2 runtime policy as `chinese_semantic_surface.naturalness`
+  - the gate checks known scaffold-family floors and already-natural no-op text for duplicate output, service framing, scaffold residue, text/TTS drift, and authority widening
+  - it remains readback/audit-only, not ad hoc tone polishing or prompt rewriting
+  - it does not call models, mutate persona core, write memory, mutate behavior motives, create frontend-owned semantics, open live capture, write the skill registry, or allow external mutation
 - Current multimodal perception focus:
   - `multimodal_perception_phase2_ready` means consent-bound source artifacts can produce approval-gated `artifact:inspect_multimodal` action packets
   - packet fields now include `multimodal_inspection_spec`, `multimodal_inspection_preview`, and optional `multimodal_inspection_result`
@@ -111,6 +117,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - `embodied_interaction_runtime_phase5_ready` means approved artifact motive hints can be compared against actual behavior action / behavior plan motives as read-only alignment evidence without mutating behavior or writing memory facts
   - approved artifact behavior alignment surfaces through `embodied_interaction.artifact_behavior_alignment.alignment_items`, `current_event.perception.behavior_alignment`, `turn_appraisal.behavior_alignment_evidence`, `turn_appraisal.perception_semantics.behavior_alignment`, `interaction_carryover.embodied_context.artifact_behavior_alignment`, and advisory `behavior_plan.artifact_behavior_alignment`
   - deterministic Chinese semantic floors may update `final_text` and `reconsolidation_snapshot.final_text` together for known scaffold residue families, with `tts_text` parity exposed by the Phase 2 policy envelope
+  - deterministic Chinese semantic naturalness diagnostics surface through `chinese_semantic_surface.naturalness` without changing prompt generation, persona core, memory, behavior motives, frontend semantics, or authority boundaries
   - the phase does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, mutate behavior motives, widen memory/browser/tool/sandbox authority, write the skill registry, create frontend-owned semantics, or allow unapproved external mutation
 - Current phase-2 status:
   - `Sandbox Embodied Execution Phase 2` is closed and preserved as the current Docker-isolated execution baseline
@@ -12708,5 +12715,60 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed with `readiness=approved_artifact_multimodal_runtime_phase1_ready`
     - `python -m pytest tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
       - passed: `10 passed`
+- Next:
+  - run final focused verification, merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 276
+
+- Focus:
+  - implement `Chinese Semantic Naturalness Phase 1` after Approved Artifact Multimodal Runtime Phase 1
+  - close the deterministic naturalness gate over existing Chinese Semantic De-Scaffolding Phase 2
+  - keep the lane readback/audit-only rather than broad prompt rewriting or ad hoc tone polishing
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/chinese_semantic_naturalness.py`
+  - `amadeus_thread0/runtime/embodied_interaction_runtime.py`
+  - `amadeus_thread0/runtime/runtime_status_dashboard.py`
+  - `evals/run_chinese_semantic_naturalness_phase1_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_chinese_semantic_naturalness.py`
+  - `tests/test_chinese_semantic_naturalness_phase1_audit.py`
+  - `tests/test_runtime_status_dashboard.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/superpowers/plans/2026-05-07-chinese-semantic-naturalness-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.chinese_semantic_naturalness` with readiness `chinese_semantic_naturalness_phase1_ready`
+  - the readback consumes the existing Phase 2 runtime policy and emits `chinese_semantic_naturalness.v1`
+  - diagnostics cover duplicate output, service framing, scaffold residue, text/TTS drift, and authority widening
+  - `embodied_interaction_runtime` now mirrors the readback under `chinese_semantic_surface.naturalness` while preserving existing `runtime_policy`, final text, reconsolidation snapshot text, and TTS parity behavior
+  - added deterministic Phase 1 audit scenarios for service-frame, repair, self-rhythm, no-agenda taskization, stage residue, and already-natural no-op text
+  - folded the new gate into preserved baselines under `chinese_semantic`
+  - updated the runtime status dashboard so Chinese semantic naturalness is `phase1_ready` / `deterministic_readback_only`; next specs now only list `dynamic_skill_candidate_runtime`
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_chinese_semantic_naturalness.py -q`
+      - failed because `amadeus_thread0.runtime.chinese_semantic_naturalness` did not exist
+    - `python -m pytest tests/test_chinese_semantic_naturalness_phase1_audit.py -q`
+      - failed because `evals.run_chinese_semantic_naturalness_phase1_audit` did not exist
+    - `python -m pytest tests/test_preserved_baselines_audit.py tests/test_runtime_status_dashboard.py -q`
+      - failed because preserved-baseline and dashboard wiring did not yet include the new gate
+  - GREEN:
+    - `python -m pytest tests/test_chinese_semantic_naturalness.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_chinese_semantic_naturalness_phase1_audit.py -q`
+      - passed: `2 passed`
+    - `python -m pytest tests/test_preserved_baselines_audit.py tests/test_runtime_status_dashboard.py -q`
+      - passed: `10 passed`
+    - `python -m pytest tests/test_chinese_semantic_naturalness.py tests/test_chinese_semantic_surface_phase2.py tests/test_embodied_interaction_runtime.py -q`
+      - passed: `22 passed`
+    - `python -m pytest tests/test_chinese_semantic_naturalness_phase1_audit.py tests/test_chinese_semantic_descaffolding_phase2_audit.py tests/test_preserved_baselines_audit.py tests/test_runtime_status_dashboard.py -q`
+      - passed: `14 passed`
+    - `python evals/run_chinese_semantic_naturalness_phase1_audit.py --run-tag phase1-dev`
+      - passed with `readiness=chinese_semantic_naturalness_phase1_ready`
 - Next:
   - run final focused verification, merge to `main`, verify again, push, and clean up the worktree

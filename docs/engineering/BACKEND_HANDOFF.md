@@ -45,6 +45,7 @@ For handoff purposes, the current backend should already be treated as:
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
 - runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
+- Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
 
 ## Product Runtime Status
 
@@ -54,7 +55,7 @@ Frontend and operator-console consumers should treat it as readback only:
 - it clarifies whether preserved gate evidence, post-unlock roadmap evidence, and productization evidence are present and ready
 - it distinguishes missing gitignored report artifacts from real runtime authority changes
 - it lists blocked lanes such as live capture and external executor auto-enablement
-- it marks HTTP transport as a ready thin-wrapper lane, marks approved artifact multimodal ingestion as ready, and lists next-spec lanes such as Chinese semantic naturalness and dynamic skill candidate runtime
+- it marks HTTP transport, approved artifact multimodal ingestion, and Chinese semantic naturalness as ready readback lanes, and lists next-spec lanes such as dynamic skill candidate runtime
 
 It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
 
@@ -83,6 +84,19 @@ Use it as packet completion/readback glue only:
 - drifted approvals, source-mismatched results, model-called results, live-capture-derived results, pending results, rejected results, or blocked results fail closed
 
 It does not call multimodal model APIs, open live microphone/camera/background screen capture, create memory facts, mutate persona core, widen browser/tool/sandbox authority, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation.
+
+## Chinese Semantic Naturalness Status
+
+Chinese Semantic Naturalness Phase 1 adds `amadeus_thread0.runtime.chinese_semantic_naturalness` as a deterministic readback gate over the existing Phase 2 semantic replacement policy.
+
+Use it as naturalness diagnostics only:
+
+- `build_chinese_semantic_naturalness_readback(...)` consumes the Phase 2 runtime policy and reports `chinese_semantic_naturalness.v1`
+- `embodied_interaction.chinese_semantic_surface.naturalness` mirrors that readback next to `runtime_policy`
+- diagnostics cover duplicate output, service framing, scaffold residue, text/TTS drift, and authority widening
+- no-op already-natural text stays no-op and does not claim a rewrite
+
+It does not rewrite generation prompts, call models, mutate persona core, write memory, mutate behavior motives, create frontend-owned semantics, open live capture, write the skill registry, or allow external mutation.
 
 ## Autonomy Envelope
 
