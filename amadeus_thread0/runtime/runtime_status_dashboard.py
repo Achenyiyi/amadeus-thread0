@@ -13,11 +13,6 @@ EXPECTED_GATES = {
 
 NEXT_SPECS = [
     {
-        "id": "chinese_semantic_naturalness",
-        "status": "fresh_spec_required",
-        "boundary": "semantic policy and smoke banks, not ad hoc tone rewrites",
-    },
-    {
         "id": "dynamic_skill_candidate_runtime",
         "status": "fresh_spec_required",
         "boundary": "candidate generation stays frozen/hash/approval gated; no automatic registry writes",
@@ -44,6 +39,11 @@ LANES = {
         "status": "phase1_ready",
         "runtime_authority": "approved_result_ingestion_only",
         "summary": "Already-approved precomputed artifact inspection results can complete frozen packets without live capture or model calls.",
+    },
+    "chinese_semantic_naturalness": {
+        "status": "phase1_ready",
+        "runtime_authority": "deterministic_readback_only",
+        "summary": "Deterministic naturalness diagnostics sit on top of Phase 2 semantic floors without prompt rewrites or authority widening.",
     },
     "live_capture": {
         "status": "blocked",

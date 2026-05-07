@@ -151,6 +151,8 @@ Rule:
 - `executor_harness_registry.py`
 - `dynamic_skill_candidates.py`
 - `multimodal_sources.py`
+- `approved_artifact_multimodal_runtime.py`
+- `chinese_semantic_naturalness.py`
 - `artifact_perception_semantics.py`
 - `artifact_appraisal_bridge.py`
 - `artifact_motive_bridge.py`
@@ -266,6 +268,13 @@ Rule:
 - can attach backend-owned `approved_artifact_multimodal_runtime.v1` readback to a payload without mutating the original payload
 - remains an ingestion/readback gate; it does not call multimodal model APIs, open live capture, mutate memory, execute tools, install skills, change persona core, or own frontend semantics
 
+`chinese_semantic_naturalness.py` holds the Chinese Semantic Naturalness Phase 1 readback gate:
+
+- consumes the existing `chinese_semantic_surface.runtime_policy` rather than creating another rewrite policy
+- emits `chinese_semantic_naturalness.v1` with readiness, selected family, runtime final text, TTS text, diagnostics, authority boundary, and failure reasons
+- checks duplicate output, service framing, scaffold residue, text/TTS drift, and authority widening for known scaffold-family floors and already-natural no-op text
+- remains deterministic readback/audit only; it does not rewrite prompts, call models, mutate memory, change behavior motives, change persona core, write the skill registry, open live capture, or own frontend semantics
+
 `artifact_perception_semantics.py` holds approved artifact semantic observation normalization:
 
 - converts already-approved artifact metadata such as summaries, captions, transcripts, OCR text, observed text, and tags into bounded `semantic_observations`
@@ -308,6 +317,7 @@ Rule:
 - preserves existing `behavior_action.primary_motive` and `behavior_plan.primary_motive`; Phase 4 hints are readback/advisory only
 - applies deterministic Chinese semantic runtime floors to `final_text` and `reconsolidation_snapshot.final_text` together for known brittle scaffold families
 - exposes `chinese_semantic_surface.runtime_policy` with typed family / semantic intent / deterministic safe-floor strategy / authority-boundary readback, and keeps `tts_text` aligned with the final runtime text
+- exposes `chinese_semantic_surface.naturalness` with deterministic naturalness diagnostics over known scaffold-family floors and already-natural text
 - exposes `embodied_interaction_runtime_phase1_ready` through a deterministic audit/readback gate
 - exposes `embodied_interaction_runtime_phase2_ready` when approved artifact metadata reaches perception/appraisal/carryover semantic surfaces without widening authority
 - exposes `embodied_interaction_runtime_phase3_ready` when approved artifact semantic observations become read-only appraisal-facing evidence without becoming memory facts

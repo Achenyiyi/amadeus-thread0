@@ -11,6 +11,7 @@ from .artifact_appraisal_bridge import build_artifact_appraisal_readback
 from .artifact_behavior_alignment import build_artifact_behavior_alignment_readback
 from .artifact_motive_bridge import build_artifact_motive_readback
 from .artifact_perception_semantics import build_artifact_semantics_readback
+from .chinese_semantic_naturalness import build_chinese_semantic_naturalness_readback
 from .multimodal_sources import normalize_multimodal_inspection_result, normalize_multimodal_source
 
 
@@ -359,8 +360,14 @@ def _semantic_runtime_floor(turn: dict[str, Any]) -> dict[str, Any]:
     final_text = _clean(turn.get("final_text"))
     runtime_policy = build_runtime_replacement_policy(final_text)
     result = rewrite_semantic_surface_floor(final_text)
-    runtime_text = _clean(runtime_policy.get("runtime_final_text")) or _clean(result.get("safe_surface_floor")) or final_text
-    tts_text = runtime_text
+    naturalness = build_chinese_semantic_naturalness_readback(final_text)
+    runtime_text = (
+        _clean(naturalness.get("runtime_final_text"))
+        or _clean(runtime_policy.get("runtime_final_text"))
+        or _clean(result.get("safe_surface_floor"))
+        or final_text
+    )
+    tts_text = _clean(naturalness.get("tts_text")) or runtime_text
     return {
         "status": _clean(result.get("status")) or "no_semantic_residue",
         "families": list(result.get("families") or []),
@@ -368,6 +375,7 @@ def _semantic_runtime_floor(turn: dict[str, Any]) -> dict[str, Any]:
         "original_text": final_text,
         "runtime_final_text": runtime_text,
         "runtime_policy": runtime_policy,
+        "naturalness": naturalness,
         "tts_text": tts_text,
         "text_tts_drift": tts_text != runtime_text,
         "replacement_plan": _dict_or_empty(result.get("replacement_plan")),

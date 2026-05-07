@@ -7,7 +7,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 - It is based on the current Python runtime surface plus the Phase 1 WSGI thin wrapper over the existing route adapter.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
-- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, and Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, and Chinese Semantic Naturalness Phase 1 adds deterministic naturalness diagnostics, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
 
 ## Freeze Status
 
@@ -33,7 +33,7 @@ Finished `assistant_turn` and `event_round` payloads may also carry backend-owne
 
 The frontend may render those blocks, but it must not recompute them.
 
-Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, ready lanes such as approved artifact multimodal ingestion, and future next-spec lanes. It is not a frontend-owned store or reducer contract.
+Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, ready lanes such as approved artifact multimodal ingestion and Chinese semantic naturalness, and future next-spec lanes. It is not a frontend-owned store or reducer contract.
 
 ## Authoritative Python Entry Points
 
@@ -50,6 +50,7 @@ Transport-neutral API surface:
 - `amadeus_thread0.runtime.http_transport.create_http_transport_app(...)`
 - `amadeus_thread0.runtime.http_transport.build_wsgi_app(...)`
 - `amadeus_thread0.runtime.approved_artifact_multimodal_runtime.apply_approved_artifact_multimodal_runtime_to_payload(...)`
+- `amadeus_thread0.runtime.chinese_semantic_naturalness.build_chinese_semantic_naturalness_readback(...)`
 
 Turn / event execution surface:
 
@@ -212,6 +213,7 @@ Important provenance:
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
 - `operator_readback`, `living_loop_realism`, and `embodied_interaction` are backend-owned readbacks; frontend should render them as received and never derive memory, body, motive, autonomy, or causal-loop truth from them
 - `approved_artifact_multimodal_runtime` is a backend-owned approved-result ingestion readback; frontend may render its status but must not treat it as permission to call vision models, open live capture, write memory, or complete packets independently
+- `embodied_interaction.chinese_semantic_surface.naturalness` is a backend-owned deterministic naturalness readback; frontend may render diagnostics but must not rewrite copy, recompute language policy, own TTS parity, or infer permission to mutate memory/persona/behavior
 - when a turn is blocked on missing access or manual browser takeover, `final_text` may deliberately come from the derived persona-facing `assist_request.message` rather than a stale assistant draft; frontend should treat that as the authoritative user-visible reply for the pending turn
 
 ### `event_round.payload`
@@ -304,6 +306,29 @@ Interpretation rules:
 - failed readbacks mean the packet stayed pending/unchanged; frontend must not synthesize completion from approval text alone
 - drifted approvals, source-mismatched results, model-called results, live-capture-derived results, pending results, rejected results, or blocked results remain non-facts
 - this block does not authorize multimodal model calls, live microphone/camera/background screen capture, memory writes, skill registry writes, frontend-owned semantics, or external mutation
+
+### `embodied_interaction.chinese_semantic_surface.naturalness`
+
+This nested block is a backend-owned readback for Chinese Semantic Naturalness Phase 1.
+
+Key fields:
+
+- `schema`
+- `status`
+- `readiness_status`
+- `selected_family`
+- `runtime_final_text`
+- `tts_text`
+- `diagnostics`
+- `authority_boundary`
+- `failure_reasons`
+
+Interpretation rules:
+
+- frontend renders only `payload.final_text` for user-visible speech
+- diagnostics may be shown in operator/developer views, but frontend must not recompute naturalness, alter TTS text, or replace final text
+- `chinese_semantic_naturalness_phase1_ready` means deterministic diagnostics passed; it is not permission for frontend-owned language rewriting
+- this nested block does not authorize prompt rewrites, model calls, memory writes, persona mutation, behavior mutation, live capture, skill registry writes, or external mutation
 
 ### `persona_view.payload`
 
