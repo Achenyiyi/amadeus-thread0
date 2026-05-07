@@ -25,6 +25,7 @@ For handoff purposes, the current backend should already be treated as:
 - product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
 - technical-preview RC status is available through the Technical Preview RC Phase 1 evidence/audit layer
 - advisor/demo package readiness is available through the Advisor Demo Readiness Phase 1 audit layer
+- scripted advisor/demo dry-run readiness is available through the Advisor Demo Dry Run Phase 1 audit layer
 - dynamic skill candidate lifecycle readback is available on turn/event payloads without automatic registry writes
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
@@ -50,6 +51,7 @@ For handoff purposes, the current backend should already be treated as:
 - technical preview RC gate: `amadeus_thread0.runtime.technical_preview_rc`
 - operator console RC gate: `amadeus_thread0.runtime.operator_console_rc`
 - advisor demo readiness gate: `amadeus_thread0.runtime.advisor_demo_readiness`
+- advisor demo dry-run gate: `amadeus_thread0.runtime.advisor_demo_dry_run`
 - dynamic skill candidate runtime readback: `amadeus_thread0.runtime.dynamic_skill_candidate_runtime`
 - approved artifact multimodal runtime: `amadeus_thread0.runtime.approved_artifact_multimodal_runtime`
 - Chinese semantic naturalness: `amadeus_thread0.runtime.chinese_semantic_naturalness`
@@ -105,6 +107,21 @@ Use it as package/readback evidence only:
 - it checks the demo script still covers role consistency, worldline commitment, conflict repair, source traceability, interruption recovery, and memory guard interception
 - it preserves the Operator Console RC authority boundary and fails closed if blocked authority widens
 - `evals/run_advisor_demo_readiness_phase1_audit.py` emits JSON/Markdown reports under `advisor-demo-readiness-phase1-audit-*`
+
+It is not live demo certification. It does not run an advisor session, open live capture, call models, write skills, execute external harnesses, mutate memory, mutate persona core, create frontend-owned semantics, own an HTTP server, or perform external mutation.
+
+## Advisor Demo Dry Run Status
+
+Advisor Demo Dry Run Phase 1 adds `advisor_demo_dry_run.v1` as the scripted rehearsal and archive-readiness gate over Advisor Demo Readiness evidence and the demo/runbook/checklist/manifest package.
+
+Use it as dry-run/readback evidence only:
+
+- it consumes ready `advisor_demo_readiness.v1` evidence
+- it checks all six scripted demo scenarios still include stable headings, user input, expected signals, and representative text
+- it checks the runbook still covers CLI smoke, RC evidence, Advisor Demo Readiness, Advisor Demo Dry Run, baseline reproduction, probe variance, live demo path, artifact capture, failure handling, and exit condition
+- it checks the package requires archiving RC reports, dry-run reports, eval JSON/Markdown reports, demo script, technical-preview checklist, and user-study assets
+- it preserves the inherited Advisor Demo Readiness authority boundary and fails closed if blocked authority widens
+- `evals/run_advisor_demo_dry_run_phase1_audit.py` emits JSON/Markdown reports under `advisor-demo-dry-run-phase1-audit-*`
 
 It is not live demo certification. It does not run an advisor session, open live capture, call models, write skills, execute external harnesses, mutate memory, mutate persona core, create frontend-owned semantics, own an HTTP server, or perform external mutation.
 
