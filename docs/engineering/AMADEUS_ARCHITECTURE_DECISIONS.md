@@ -22,6 +22,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 - `Post-Unlock Roadmap` is now implemented as a bounded release gate: all seven lanes have phase specs, implementation slices, tests, smoke/audit runners, and ready reports, while each lane's blocked surfaces remain in force.
 - `Runtime Productization Phase 1` is now implemented as a readback/productization gate: backend API, backend session, transport adapter, CLI summary, and audit surfaces expose one operator readback without adding runtime authority.
 - `Runtime Productization Phase 2` is now implemented as an operator-console readback gate: `operator_readback.v2` adds console health, evidence summary, read-only route inventory, and next-action hints without adding runtime authority.
+- `Runtime Productization Phase 3` is now implemented as a product-runtime integration hardening gate: `runtime_status_dashboard.v1`, deterministic product smokes, and a Phase 3 audit make preserved gates, route-envelope consumption, blocked lanes, next-spec lanes, and gitignored source-report availability visible without adding HTTP server ownership or runtime authority.
 - `Residual Living Loop Closure Phase 1` is now implemented as a north-star residual closure gate: post-unlock residuals are evaluated against one traceable loop from perception through self-narrative update, without opening live capture, automatic skill registry writes, external harness execution, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation.
 - `Living Loop Runtime Realism Phase 1` is now implemented as a causal/north-star realism gate: visible loop stages must align across appraisal-to-motive, state-to-behavior, action/plan, consequence/reconsolidation, and final semantics, while Chinese semantic de-scaffolding gains deterministic replacement guidance and conservative safe-surface floors without broad prompt rewrites.
 - `Living Loop Runtime Realism Phase 2` is now implemented as a backend-payload realism gate: `assistant_turn` and `event_round` payloads carry `living_loop_realism`, proving the same causal readback consumes backend-style `turn_summary` / `writeback_trace` payloads without changing generation or authority boundaries.
@@ -37,7 +38,7 @@ It is the decision contract for what `Amadeus-K` should become and what it shoul
 
 ## Backend Status
 
-Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, chinese-semantic-descaffolding-phase2-ready, multimodal-perception-phase2-ready, dynamic-skills-phase2-ready, frontend-runtime-shell-phase2-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
+Status as of `2026-05-07`: `freeze-gate-ready, companion-autonomy-ready, digital-embodiment-phase1-ready, digital-embodiment-phase2-ready, sandbox-embodied-execution-phase1-ready, skills-ecosystem-ready, live-browser-runtime-phase1-ready, sandbox-embodied-execution-phase2-ready, post-baseline-closure-ready, procedural-growth-phase1-ready, procedural-growth-phase2-ready, procedural-growth-phase3-ready, procedural-growth-phase4-ready, post-unlock-roadmap-ready, chinese-semantic-descaffolding-phase2-ready, multimodal-perception-phase2-ready, dynamic-skills-phase2-ready, frontend-runtime-shell-phase2-ready, runtime-productization-phase1-ready, runtime-productization-phase2-ready, runtime-productization-phase3-ready, residual-living-loop-phase1-ready, living-loop-runtime-realism-phase1-ready, living-loop-runtime-realism-phase2-ready, living-loop-runtime-realism-phase3-ready, embodied-interaction-runtime-phase1-ready, embodied-interaction-runtime-phase2-ready, embodied-interaction-runtime-phase3-ready, embodied-interaction-runtime-phase4-ready, embodied-interaction-runtime-phase5-ready`
 
 For backend purposes, the structural decisions in this document are now split into:
 
@@ -58,6 +59,7 @@ For backend purposes, the structural decisions in this document are now split in
 - Chinese semantic de-scaffolding phase 2 gate: `python evals/run_chinese_semantic_descaffolding_phase2_audit.py`
 - multimodal perception phase 2 gate: `python evals/run_multimodal_perception_phase2_audit.py`
 - runtime productization gate: `python evals/run_runtime_productization_audit.py`
+- runtime productization phase 3 gate: `python evals/run_runtime_productization_phase3_audit.py`
 - residual living-loop gate: `python evals/run_residual_living_loop_audit.py`
 - living-loop runtime realism gate: `python evals/run_living_loop_realism_audit.py`
 - living-loop runtime realism phase 2 gate: `python evals/run_living_loop_realism_phase2_audit.py`
@@ -111,11 +113,12 @@ For backend purposes, the structural decisions in this document are now split in
   - current runtime productization posture is:
     - `runtime_productization_phase1_ready`: `amadeus_thread0.runtime.runtime_productization` composes existing post-baseline, post-unlock, preserved-baseline, and current-turn readbacks into one operator surface
     - `runtime_productization_phase2_ready`: the same module now emits `operator_readback.v2` with console health, evidence summary, read-only route inventory, and next-action hints
+    - `runtime_productization_phase3_ready`: `runtime_status_dashboard.v1`, product runtime smokes, and the Phase 3 audit make source-report gaps, blocked lanes, next-spec lanes, and route-envelope consumption visible without adding server or execution authority
     - `BackendAPI.runtime_productization()` and `BackendSession.operator_readback_view()` expose the same readback family to runtime consumers
     - `assistant_turn` and `event_round` payloads now include `operator_readback`
     - `BackendTransportAdapter` exposes `GET /api/runtime-productization`
     - CLI compact summaries may render `productization=runtime_productization_phase2_ready`, `console=ready`, and `next=monitor_runtime_readback`
-    - the productization phases are readback-only and do not enable live capture, automatic skill registry writes, external harness execution, frontend-owned backend semantics, persona-core mutation, memory writes, or unapproved external mutation
+    - the productization phases are readback/smoke/audit-only and do not enable HTTP server semantics, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, frontend-owned backend semantics, persona-core mutation, memory writes, or unapproved external mutation
   - current residual living-loop posture is:
     - `residual_living_loop_phase1_ready`: `amadeus_thread0.runtime.residual_living_loop` evaluates living-loop traceability and residual lane boundaries as one pure readback contract
     - `evals/run_residual_living_loop_audit.py` emits deterministic json/md reports under `residual-living-loop-audit-*`
