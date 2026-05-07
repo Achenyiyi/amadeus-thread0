@@ -163,6 +163,7 @@ Rule:
 - `runtime_productization.py`
 - `residual_living_loop.py`
 - `living_loop_realism.py`
+- `technical_preview_rc.py`
 - `sandbox_runner.py`
 - `browser_runner.py`
 - `access_negotiation.py`
@@ -387,6 +388,13 @@ Rule:
 - marks HTTP transport as `phase1_ready` / `thin_wrapper`, multimodal artifact inspection as `phase1_ready` / `approved_result_ingestion_only`, Chinese semantic naturalness as `phase1_ready` / `deterministic_readback_only`, and dynamic skill generation as `phase1_ready` / `readback_audit_only`
 - keeps `NEXT_SPECS` empty when all currently unlocked bounded readback specs have closed
 - remains pure readback logic with no HTTP server, execution, browser, sandbox, memory-write, skill-registry, frontend, model-call, or persona-core authority
+
+`technical_preview_rc.py` holds the Technical Preview RC Phase 1 evidence gate:
+
+- composes preserved-baseline, runtime-dashboard, runtime-productization phase 3, HTTP transport, approved artifact multimodal runtime, Chinese semantic naturalness, and dynamic skill candidate runtime evidence into `technical_preview_rc.v1`
+- requires `NEXT_SPECS` to stay empty for the current release-candidate posture
+- fails closed if blocked authority widens for live capture, external executor auto-enablement, automatic dynamic skill registry writes, or multimodal model auto-calls
+- remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
 

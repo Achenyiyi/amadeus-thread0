@@ -1,6 +1,6 @@
 # Advisor Repro Runbook
 
-Updated: 2026-03-07
+Updated: 2026-05-07
 
 This runbook is the shortest path for an advisor, reviewer, or demo operator to verify the current technical-preview backend.
 
@@ -9,9 +9,10 @@ This runbook is the shortest path for an advisor, reviewer, or demo operator to 
 Verify four things in order:
 
 1. the CLI starts cleanly
-2. the official baseline reports are reproducible
-3. the thesis probe variance report is reproducible
-4. the live demo script can be followed without improvisation
+2. the Technical Preview RC evidence gate is reproducible
+3. the official baseline reports are reproducible
+4. the thesis probe variance report is reproducible
+5. the live demo script can be followed without improvisation
 
 ## Environment
 
@@ -43,7 +44,26 @@ Check:
 
 Exit after one short exchange.
 
-## Step 2. Official Baseline Reproduction
+## Step 2. Technical Preview RC Evidence
+
+Run:
+
+```powershell
+python evals\run_runtime_productization_phase3_audit.py
+python evals\run_technical_preview_rc_phase1_audit.py --run-tag advisor-repro
+python evals\run_preserved_baselines_audit.py --reports-dir evals\reports
+```
+
+Check:
+
+- `technical-preview-rc-phase1-audit-*.json` reports `overall_status=passed`
+- readiness is `technical_preview_rc_phase1_ready`
+- the embedded runtime status line reports `next_specs=0`
+- blocked authority remains closed for live capture, external executor auto-enablement, automatic dynamic skill registry writes, and multimodal model auto-calls
+
+If this step fails because a source report is missing, stop and preserve the failing RC report. Do not treat a missing report as runtime readiness.
+
+## Step 3. Official Baseline Reproduction
 
 Run:
 
@@ -65,7 +85,7 @@ Check against [EVAL_BASELINE.md](/E:/桌面/amadeus-thread0/docs/EVAL_BASELINE.m
 
 If one suite fails, stop and record the failing report path before any retry.
 
-## Step 3. Probe Variance Reproduction
+## Step 4. Probe Variance Reproduction
 
 Run:
 
@@ -83,7 +103,7 @@ Canonical reference:
 
 - [probe-variance-thesis_probe-20260307-024213-ee70482d.md](/E:/桌面/amadeus-thread0/evals/reports/probe-variance-thesis_probe-20260307-024213-ee70482d.md)
 
-## Step 4. Live Demo Path
+## Step 5. Live Demo Path
 
 Follow [DEMO_SCRIPT.md](/E:/桌面/amadeus-thread0/docs/DEMO_SCRIPT.md) in this order:
 
@@ -98,11 +118,12 @@ Do not skip directly to the knowledge demo; the intended presentation logic is:
 
 `像人 -> 连续 -> 可信 -> 稳定 -> 可控`
 
-## Step 5. Artifact Capture
+## Step 6. Artifact Capture
 
 During an advisor/demo run, archive these paths:
 
 - latest eval markdown/json reports in `evals/reports/`
+- latest `technical-preview-rc-phase1-audit-*.json` and `.md`
 - current `.env.example`
 - [EVAL_BASELINE.md](/E:/桌面/amadeus-thread0/docs/EVAL_BASELINE.md)
 - [ABLATION_RESULTS.md](/E:/桌面/amadeus-thread0/docs/ABLATION_RESULTS.md)
@@ -125,6 +146,7 @@ Use [FAILURE_TAXONOMY.md](/E:/桌面/amadeus-thread0/docs/FAILURE_TAXONOMY.md) f
 The project is ready for an advisor or committee demo when:
 
 - all baseline suites are green
+- the Technical Preview RC audit reports `technical_preview_rc_phase1_ready`
 - the repeated probe report is reproducible
 - the demo script runs without ad-hoc prompt engineering
 - the user-study packet is ready for participant execution
