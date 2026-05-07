@@ -131,6 +131,12 @@ BASELINE_SPECS = [
         "category": "productization",
     },
     {
+        "id": "runtime_productization_phase3",
+        "prefix": "runtime-productization-phase3-audit-",
+        "expected_readiness": "runtime_productization_phase3_ready",
+        "category": "productization",
+    },
+    {
         "id": "residual_living_loop_phase1",
         "prefix": "residual-living-loop-audit-",
         "expected_readiness": "residual_living_loop_phase1_ready",

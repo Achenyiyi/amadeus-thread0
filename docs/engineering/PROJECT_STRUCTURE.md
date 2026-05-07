@@ -346,6 +346,13 @@ Rule:
 - may optionally include residual living-loop readback when supplied, but absence of that optional block must not change the runtime productization gate
 - must remain readback-only; it does not execute tools, mutate memory, change persona state, install skills, run browser actions, or enable external executor harnesses
 
+`runtime_status_dashboard.py` holds the Runtime Productization Phase 3 status dashboard:
+
+- composes preserved-baseline, post-unlock-roadmap, and runtime-productization report status into `runtime_status_dashboard.v1`
+- distinguishes ready gates, missing gitignored source reports, blocked-by-contract lanes, and fresh next-spec lanes
+- keeps HTTP transport, approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate generation visible as future bounded specs
+- remains pure readback logic with no HTTP server, execution, browser, sandbox, memory-write, skill-registry, frontend, model-call, or persona-core authority
+
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
 
 - evaluates whether one final-turn packet exposes the north-star stages from perception through self-narrative update
@@ -453,6 +460,7 @@ Rule:
   - `run_preserved_baselines_audit.py`
   - `run_post_unlock_roadmap_audit.py`
   - `run_runtime_productization_audit.py`
+  - `run_runtime_productization_phase3_audit.py`
   - `run_residual_living_loop_audit.py`
   - `run_living_loop_realism_audit.py`
   - `run_embodied_interaction_runtime_audit.py`
@@ -480,6 +488,7 @@ Rule:
   - `run_dynamic_skills_smokes.py`
   - `run_capability_growth_phase5_smokes.py`
   - `run_natural_long_horizon_calibration_smokes.py`
+  - `run_runtime_productization_phase3_smokes.py`
 - baseline helpers:
   - `print_latest_sandbox_baseline.py`
 - artifacts:

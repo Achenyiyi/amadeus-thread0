@@ -21,6 +21,7 @@ For handoff purposes, the current backend should already be treated as:
 - transport-neutral
 - callable through `BackendTransportAdapter` when a route-shaped Python adapter is useful
 - stable enough for a thin frontend adapter
+- product-runtime status is available through the Runtime Productization Phase 3 dashboard/audit layer
 - autonomy-contract-first
 - frontend-frozen while backend baselines are preserved after `Sandbox Embodied Execution Phase 2`
 - explicit about current execution scope being:
@@ -40,6 +41,19 @@ For handoff purposes, the current backend should already be treated as:
 - live browser runner: `amadeus_thread0.runtime.browser_runner`
 - access negotiation persona layer: `amadeus_thread0.runtime.access_negotiation`
 - managed skills registry: `amadeus_thread0.runtime.skill_registry`
+- runtime status dashboard: `amadeus_thread0.runtime.runtime_status_dashboard`
+
+## Product Runtime Status
+
+Runtime Productization Phase 3 adds `runtime_status_dashboard.v1` and deterministic product runtime smokes.
+Frontend and operator-console consumers should treat it as readback only:
+
+- it clarifies whether preserved gate evidence, post-unlock roadmap evidence, and productization evidence are present and ready
+- it distinguishes missing gitignored report artifacts from real runtime authority changes
+- it lists blocked lanes such as live capture and external executor auto-enablement
+- it lists next-spec lanes such as thin HTTP transport, approved artifact multimodal inspection, Chinese semantic naturalness, and dynamic skill candidate runtime
+
+It does not add HTTP server ownership, live capture, automatic skill registry writes, multimodal model auto-calls, external harness execution, persona-core mutation, memory writes, or frontend-owned backend semantics.
 
 ## Autonomy Envelope
 

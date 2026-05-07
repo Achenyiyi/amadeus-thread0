@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `rolling closure complete through Frontend Runtime Shell Phase 2`; next work should be a fresh bounded spec rather than reopening closed gates
+- Mainline phase: `Runtime Productization Phase 3` product-runtime integration hardening; old rolling closure remains complete through Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -36,6 +36,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `frontend_runtime_shell_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
+  - preserve `runtime_productization_phase3_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
   - preserve `living_loop_runtime_realism_phase2_ready`
@@ -58,6 +59,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - runtime surfaces should expose one operator-console readback over backend/post-unlock/preserved-baseline truth
   - `operator_readback.v2` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
+  - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, and next-spec lanes visible without treating gitignored report absence as hidden code regression
+  - Phase 3 product smokes should prove `BackendTransportAdapter` consumes backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries without introducing HTTP server ownership
 - Current residual closure focus:
   - the remaining post-unlock lanes are assessed as one traceable living-loop contract rather than as disconnected small cleanup items
   - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation

@@ -7,6 +7,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 - It is based on the current Python runtime surface, not on hypothetical HTTP handlers.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity; it does not turn the callable adapter into an HTTP server.
 
 ## Freeze Status
 
@@ -30,6 +31,8 @@ Finished `assistant_turn` and `event_round` payloads may also carry backend-owne
 - `embodied_interaction`
 
 The frontend may render those blocks, but it must not recompute them.
+
+Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, and future next-spec lanes. It is not a frontend-owned store or reducer contract.
 
 ## Authoritative Python Entry Points
 
@@ -555,6 +558,8 @@ Callable finalize routes:
 
 Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. A future HTTP adapter may add `POST /api/turns` as an execution route, but it must end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
 
+Phase 3 product runtime smokes validate these callable adapter routes as backend-owned envelope consumption. They do not introduce FastAPI, Flask, Uvicorn, SSE, WebSocket, or frontend-owned state semantics.
+
 Streaming recommendation:
 
 - use SSE or WebSocket for future `/api/turns/stream`
@@ -619,4 +624,5 @@ Minimum contract checks:
 ```powershell
 python -m pytest tests/test_backend_api.py tests/test_backend_session.py
 python -m pytest tests/test_final_state.py
+python -m pytest tests/test_runtime_productization_phase3_smokes.py tests/test_runtime_status_dashboard.py
 ```

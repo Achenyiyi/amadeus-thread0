@@ -37,6 +37,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "multimodal_perception_phase2",
             "runtime_productization_phase1",
             "runtime_productization_phase2",
+            "runtime_productization_phase3",
             "residual_living_loop_phase1",
             "living_loop_runtime_realism_phase1",
             "living_loop_runtime_realism_phase2",
@@ -164,7 +165,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["chinese_semantic"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["multimodal_perception"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["frontend"]["passed"], 1)
-        self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 2)
+        self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 3)
         self.assertEqual(summary["summary"]["categories"]["residual_closure"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 3)
         self.assertEqual(summary["summary"]["categories"]["embodied_interaction"]["passed"], 5)
