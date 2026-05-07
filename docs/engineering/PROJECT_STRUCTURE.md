@@ -162,6 +162,7 @@ Rule:
 - `post_baseline_closure.py`
 - `runtime_productization.py`
 - `operator_console_rc.py`
+- `advisor_demo_readiness.py`
 - `residual_living_loop.py`
 - `living_loop_realism.py`
 - `technical_preview_rc.py`
@@ -402,6 +403,13 @@ Rule:
 - composes `technical_preview_rc.v1`, `runtime_status_dashboard.v1`, and `operator_readback.v2` into one `operator_console_rc.v1` packet
 - exposes demo readiness, evidence counts, runtime gates, read-only route inventory, authority boundary, stable operator panels, and next-action hints
 - fails closed if Technical Preview RC evidence regresses, `NEXT_SPECS` is non-empty, mutation routes appear, or blocked authority widens
+- remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
+
+`advisor_demo_readiness.py` holds the Advisor Demo Readiness Phase 1 package gate:
+
+- composes `operator_console_rc.v1` evidence with required advisor/repro docs, reproduction-command coverage, and demo-script scenario coverage
+- exposes `advisor_demo_readiness.v1` with package readiness, asset inventory, command inventory, demo-signal inventory, and authority boundary
+- distinguishes package readiness from live demo certification with `readiness_scope=package_ready_not_live_demo_certification`, `live_demo_observed=false`, and `manual_demo_required=true`
 - remains pure readback/audit logic with no runtime authority, live capture, model calls, memory writes, skill registry writes, frontend-owned semantics, external harness execution, HTTP server ownership, or persona-core mutation
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:

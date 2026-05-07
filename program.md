@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Operator Console RC Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, Technical Preview RC Phase 1, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Advisor Demo Readiness Phase 1`; old rolling closure remains complete through Final Closeout Sweep Phase 1, Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, Technical Preview RC Phase 1, Operator Console RC Phase 1, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -42,6 +42,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase3_ready`
   - preserve `technical_preview_rc_phase1_ready`
   - preserve `operator_console_rc_phase1_ready`
+  - preserve `advisor_demo_readiness_phase1_ready`
   - preserve `http_transport_thin_wrapper_phase1_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
@@ -74,6 +75,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - `operator_console_rc_phase1_ready` means the backend can expose a release-candidate console packet through `BackendAPI.operator_console_rc()` and `GET /api/operator-console-rc`
   - the console is readback-only and fails closed if Technical Preview RC evidence regresses, `NEXT_SPECS` is non-empty, mutation routes appear, or blocked authority widens
   - frontend may render the packet as a backend-owned record; it must not treat it as authority to mutate memory, persona, skills, browser/sandbox execution, external harnesses, live capture, or backend semantics
+- Current advisor/demo readiness focus:
+  - `advisor_demo_readiness_phase1_ready` means the current advisor/demo package is reproducible from Operator Console RC evidence plus documented assets
+  - the gate checks required docs, reproduction commands, demo scenario coverage, and closed authority boundaries
+  - it is package readiness only, not live demo certification, and does not open live capture, model calls, registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, HTTP ownership, or external mutation
 - Current HTTP transport focus:
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
   - HTTP returns the same backend-owned `backend.v1` envelopes and structured adapter errors; it does not create a second truth model
@@ -12979,3 +12984,53 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `10 passed`
 - Next:
   - run focused verification, run operator console RC audit, run frontend build and py_compile, merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 281
+
+- Focus:
+  - implement `Advisor Demo Readiness Phase 1` on top of `operator_console_rc_phase1_ready`
+  - convert the current advisor/demo reproduction package into one deterministic package-readiness gate
+  - distinguish reviewer handoff readiness from live demo certification while preserving all blocked authority surfaces
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/advisor_demo_readiness.py`
+  - `evals/run_advisor_demo_readiness_phase1_audit.py`
+  - `tests/test_advisor_demo_readiness.py`
+  - `tests/test_advisor_demo_readiness_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/FINAL_DELIVERY_MANIFEST.md`
+  - `docs/TECHNICAL_PREVIEW_CHECKLIST.md`
+  - `docs/ADVISOR_REPRO_RUNBOOK.md`
+  - `docs/superpowers/specs/2026-05-07-advisor-demo-readiness-phase1-design.md`
+  - `docs/superpowers/plans/2026-05-07-advisor-demo-readiness-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `advisor_demo_readiness.v1` as a read-only package gate over ready Operator Console RC evidence plus required advisor/repro assets
+  - required reproduction-command coverage for Technical Preview RC, Operator Console RC, preserved baselines, local-only LangSmith evals, and probe variance
+  - required demo-script coverage for role consistency, worldline commitment, conflict repair, source traceability, interruption recovery, and memory guard interception
+  - preserved closed authority boundaries for live capture, model calls, registry writes, external harnesses, memory writes, persona mutation, frontend-owned semantics, HTTP ownership, and external mutation
+  - added `evals/run_advisor_demo_readiness_phase1_audit.py` to emit JSON/Markdown reports under `advisor-demo-readiness-phase1-audit-*`
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_advisor_demo_readiness.py -q`
+      - failed because `amadeus_thread0.runtime.advisor_demo_readiness` did not exist
+    - `python -m pytest tests/test_advisor_demo_readiness_audit.py -q`
+      - failed because `evals.run_advisor_demo_readiness_phase1_audit` did not exist
+  - GREEN:
+    - `python -m pytest tests/test_advisor_demo_readiness.py -q`
+      - passed: `4 passed`
+    - `python -m pytest tests/test_advisor_demo_readiness_audit.py tests/test_advisor_demo_readiness.py -q`
+      - passed: `7 passed`
+  - FINAL:
+    - `python evals/run_advisor_demo_readiness_phase1_audit.py --run-tag advisor-demo-readiness-phase1-dev`
+      - passed with `overall_status=passed` and `readiness=advisor_demo_readiness_phase1_ready`
+    - `python -m pytest tests/test_advisor_demo_readiness.py tests/test_advisor_demo_readiness_audit.py tests/test_operator_console_rc.py tests/test_technical_preview_rc.py -q`
+      - passed: `15 passed`
+    - `python -m py_compile amadeus_thread0/runtime/advisor_demo_readiness.py evals/run_advisor_demo_readiness_phase1_audit.py`
+      - passed
+    - `git diff --check`
+      - passed
+- Next:
+  - merge to `main`, verify again, push, and clean up the worktree

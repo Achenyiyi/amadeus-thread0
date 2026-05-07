@@ -6,14 +6,15 @@ This runbook is the shortest path for an advisor, reviewer, or demo operator to 
 
 ## Goal
 
-Verify six things in order:
+Verify seven things in order:
 
 1. the CLI starts cleanly
 2. the Technical Preview RC evidence gate is reproducible
 3. the Operator Console RC readback gate is reproducible
-4. the official baseline reports are reproducible
-5. the thesis probe variance report is reproducible
-6. the live demo script can be followed without improvisation
+4. the Advisor Demo Readiness package gate is reproducible
+5. the official baseline reports are reproducible
+6. the thesis probe variance report is reproducible
+7. the live demo script can be followed without improvisation
 
 ## Environment
 
@@ -53,6 +54,7 @@ Run:
 python evals\run_runtime_productization_phase3_audit.py
 python evals\run_technical_preview_rc_phase1_audit.py --run-tag advisor-repro
 python evals\run_operator_console_rc_phase1_audit.py --run-tag advisor-repro
+python evals\run_advisor_demo_readiness_phase1_audit.py --run-tag advisor-repro
 python evals\run_preserved_baselines_audit.py --reports-dir evals\reports
 ```
 
@@ -62,6 +64,8 @@ Check:
 - readiness is `technical_preview_rc_phase1_ready`
 - `operator-console-rc-phase1-audit-*.json` reports `operator_console_rc_phase1_ready`
 - operator console mode is `readback_only`
+- `advisor-demo-readiness-phase1-audit-*.json` reports `advisor_demo_readiness_phase1_ready`
+- advisor demo readiness scope is `package_ready_not_live_demo_certification`
 - the embedded runtime status line reports `next_specs=0`
 - blocked authority remains closed for live capture, external executor auto-enablement, automatic dynamic skill registry writes, and multimodal model auto-calls
 
@@ -151,6 +155,7 @@ The project is ready for an advisor or committee demo when:
 
 - all baseline suites are green
 - the Technical Preview RC audit reports `technical_preview_rc_phase1_ready`
+- the Advisor Demo Readiness audit reports `advisor_demo_readiness_phase1_ready`
 - the repeated probe report is reproducible
 - the demo script runs without ad-hoc prompt engineering
 - the user-study packet is ready for participant execution
