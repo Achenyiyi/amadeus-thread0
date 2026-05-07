@@ -7,7 +7,7 @@ This document is the frontend-facing backend contract for `amadeus-thread0`.
 - It is based on the current Python runtime surface plus the Phase 1 WSGI thin wrapper over the existing route adapter.
 - It is transport-neutral: the stable contract is the `BackendAPI` envelope plus the `BackendSession` turn/event execution surface.
 - Frontend implementation is active only as a backend-contract consumer. Phase 2 adds a thin route-client seam and read-only rendering for backend-owned readbacks without letting the frontend own runtime semantics.
-- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
+- Runtime Productization Phase 3 adds status-dashboard and smoke/audit readbacks for operator clarity. HTTP Transport Thin Wrapper Phase 1 adds WSGI request/response glue, and Approved Artifact Multimodal Runtime Phase 1 adds approved-result packet-completion readback, but backend semantics still live behind `BackendAPI` / `BackendTransportAdapter`.
 
 ## Freeze Status
 
@@ -29,10 +29,11 @@ Finished `assistant_turn` and `event_round` payloads may also carry backend-owne
 - `operator_readback`
 - `living_loop_realism`
 - `embodied_interaction`
+- `approved_artifact_multimodal_runtime`
 
 The frontend may render those blocks, but it must not recompute them.
 
-Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, and future next-spec lanes. It is not a frontend-owned store or reducer contract.
+Runtime Productization Phase 3 also exposes `runtime_status_dashboard.v1` as a backend-owned operator/status readback concept. It distinguishes ready gates, missing gitignored report evidence, blocked-by-contract lanes, ready lanes such as approved artifact multimodal ingestion, and future next-spec lanes. It is not a frontend-owned store or reducer contract.
 
 ## Authoritative Python Entry Points
 
@@ -48,6 +49,7 @@ Transport-neutral API surface:
 - `amadeus_thread0.runtime.transport_adapter.BackendTransportAdapter`
 - `amadeus_thread0.runtime.http_transport.create_http_transport_app(...)`
 - `amadeus_thread0.runtime.http_transport.build_wsgi_app(...)`
+- `amadeus_thread0.runtime.approved_artifact_multimodal_runtime.apply_approved_artifact_multimodal_runtime_to_payload(...)`
 
 Turn / event execution surface:
 
@@ -209,6 +211,7 @@ Important provenance:
 - `digital_body_consequence` is the resolved embodied consequence of this turn; it should be treated as frozen final semantics, not recomputed in the frontend
 - `writeback_trace` is the narrow finished-turn persistence preview for this exact turn: it exposes only the semantic narratives, revision traces, counterpart-assessment writes, and proactive-continuity writes produced during the current final writeback window, not full worldline history
 - `operator_readback`, `living_loop_realism`, and `embodied_interaction` are backend-owned readbacks; frontend should render them as received and never derive memory, body, motive, autonomy, or causal-loop truth from them
+- `approved_artifact_multimodal_runtime` is a backend-owned approved-result ingestion readback; frontend may render its status but must not treat it as permission to call vision models, open live capture, write memory, or complete packets independently
 - when a turn is blocked on missing access or manual browser takeover, `final_text` may deliberately come from the derived persona-facing `assist_request.message` rather than a stale assistant draft; frontend should treat that as the authoritative user-visible reply for the pending turn
 
 ### `event_round.payload`
@@ -280,6 +283,27 @@ Key fields:
 Boundary rule:
 
 - this payload is readback-only and does not authorize execution, memory writes, persona mutation, frontend-owned semantics, live capture, skill registry writes, browser/sandbox widening, or external mutation
+
+### `approved_artifact_multimodal_runtime`
+
+This optional block is a backend-owned readback for approved-result ingestion on `artifact:inspect_multimodal` packets.
+
+Key fields:
+
+- `schema`
+- `readiness_status`
+- `summary`
+- `completed_packets`
+- `scenario_readbacks`
+- `authority_boundary`
+- `failure_reasons`
+
+Interpretation rules:
+
+- completed packets may appear in `payload.action_packets` only after backend validation preserves the same frozen `proposal_id`, spec, preview, tool binding, and capability steps
+- failed readbacks mean the packet stayed pending/unchanged; frontend must not synthesize completion from approval text alone
+- drifted approvals, source-mismatched results, model-called results, live-capture-derived results, pending results, rejected results, or blocked results remain non-facts
+- this block does not authorize multimodal model calls, live microphone/camera/background screen capture, memory writes, skill registry writes, frontend-owned semantics, or external mutation
 
 ### `persona_view.payload`
 

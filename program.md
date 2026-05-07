@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `HTTP Transport Thin Wrapper Phase 1`; old rolling closure remains complete through Runtime Productization Phase 3 and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Approved Artifact Multimodal Runtime Phase 1`; old rolling closure remains complete through HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -32,6 +32,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `post_unlock_roadmap_ready`
   - preserve `chinese_semantic_descaffolding_phase2_ready`
   - preserve `multimodal_perception_phase2_ready`
+  - preserve `approved_artifact_multimodal_runtime_phase1_ready`
   - preserve `dynamic_skills_phase2_ready`
   - preserve `frontend_runtime_shell_phase2_ready`
   - preserve `runtime_productization_phase1_ready`
@@ -66,6 +67,11 @@ This file is the live development ledger for `amadeus-thread0`.
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
   - HTTP returns the same backend-owned `backend.v1` envelopes and structured adapter errors; it does not create a second truth model
   - blocked surfaces remain blocked: no HTTP-owned memory/body/autonomy/persona semantics, live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, SSE/WebSocket streaming, FastAPI/Flask/Uvicorn dependency, persona-core mutation, or memory writes
+- Current approved artifact multimodal runtime focus:
+  - `approved_artifact_multimodal_runtime_phase1_ready` means exact operator-approved, precomputed artifact inspection results can complete the same frozen `artifact:inspect_multimodal` packet after proposal/spec/source drift checks
+  - completed packets preserve the same `proposal_id`, spec, preview, tool binding, and capability steps while setting `status=completed`, `requires_approval=false`, and `writeback_ready=true`
+  - drifted approvals, source-mismatched results, model-called results, live-capture-derived results, pending results, rejected results, or blocked results fail closed and do not become semantic observations, memory facts, or completed capability facts
+  - this phase does not call multimodal model APIs, open live microphone/camera/background screen capture, mutate persona core, widen memory/browser/tool/sandbox authority, create frontend-owned semantics, write the skill registry, or allow unapproved external mutation
 - Current residual closure focus:
   - the remaining post-unlock lanes are assessed as one traceable living-loop contract rather than as disconnected small cleanup items
   - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
@@ -12651,4 +12657,56 @@ This file is the live development ledger for `amadeus-thread0`.
   - `git worktree prune`
     - passed
 - Next:
-  - select the next bounded lane from the dashboard next specs
+  - implement `Approved Artifact Multimodal Runtime Phase 1` from the dashboard next specs
+
+## 2026-05-07 Run 275
+
+- Focus:
+  - implement `Approved Artifact Multimodal Runtime Phase 1` after HTTP Transport Thin Wrapper Phase 1
+  - close the approved-result ingestion seam for already-approved, precomputed artifact inspection results
+  - keep multimodal runtime bounded to frozen packet completion and readback; no live capture or model API calls
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/approved_artifact_multimodal_runtime.py`
+  - `amadeus_thread0/runtime/runtime_status_dashboard.py`
+  - `evals/run_approved_artifact_multimodal_runtime_phase1_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_approved_artifact_multimodal_runtime.py`
+  - `tests/test_approved_artifact_multimodal_runtime_phase1_audit.py`
+  - `tests/test_runtime_status_dashboard.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/superpowers/plans/2026-05-07-approved-artifact-multimodal-runtime-phase1.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.approved_artifact_multimodal_runtime` with readiness `approved_artifact_multimodal_runtime_phase1_ready`
+  - validates exact `approval.proposal_id`, frozen packet status, spec/preview non-execution flags, source/spec/result drift, and unsafe model/live-capture result flags before completing a packet
+  - completed packets preserve the same `proposal_id`, multimodal inspection spec/preview, tool binding, and capability steps while setting `status=completed`, `requires_approval=false`, and `writeback_ready=true`
+  - added payload application helper that can complete matching `artifact:inspect_multimodal` packets and attach backend-owned `approved_artifact_multimodal_runtime` readback without mutating the input payload
+  - added Phase 1 audit scenarios for approved ingestion, proposal/source drift rejection, model/live-capture rejection, and backend payload completion
+  - folded the new gate into preserved baselines under `multimodal_runtime`
+  - updated the runtime status dashboard so multimodal artifact inspection is `phase1_ready` / `approved_result_ingestion_only`; next specs are now Chinese semantic naturalness and dynamic skill candidate runtime
+- Validation so far:
+  - RED:
+    - `python -m pytest tests/test_approved_artifact_multimodal_runtime.py -q`
+      - failed because `amadeus_thread0.runtime.approved_artifact_multimodal_runtime` did not exist
+    - `python -m pytest tests/test_approved_artifact_multimodal_runtime_phase1_audit.py tests/test_preserved_baselines_audit.py -q`
+      - failed because `evals.run_approved_artifact_multimodal_runtime_phase1_audit` did not exist
+    - `python -m pytest tests/test_runtime_status_dashboard.py -q`
+      - failed because dashboard still listed approved artifact multimodal runtime as a future next spec
+  - GREEN:
+    - `python -m pytest tests/test_approved_artifact_multimodal_runtime.py -q`
+      - passed: `5 passed`
+    - `python -m pytest tests/test_approved_artifact_multimodal_runtime.py tests/test_multimodal_perception_phase2.py tests/test_artifact_perception_semantics.py tests/test_embodied_interaction_runtime.py -q`
+      - passed: `28 passed`
+    - `python -m pytest tests/test_approved_artifact_multimodal_runtime_phase1_audit.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `9 passed`
+    - `python evals/run_approved_artifact_multimodal_runtime_phase1_audit.py --run-tag phase1-dev`
+      - passed with `readiness=approved_artifact_multimodal_runtime_phase1_ready`
+    - `python -m pytest tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `10 passed`
+- Next:
+  - run final focused verification, merge to `main`, verify again, push, and clean up the worktree
