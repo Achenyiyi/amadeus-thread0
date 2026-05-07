@@ -24,6 +24,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
             "skills_ecosystem",
             "dynamic_skills_phase2",
             "frontend_runtime_shell_phase2",
+            "http_transport_thin_wrapper_phase1",
             "live_browser_runtime",
             "sandbox_phase2",
             "post_baseline_closure",
@@ -165,6 +166,7 @@ class PreservedBaselinesAuditTests(unittest.TestCase):
         self.assertEqual(summary["summary"]["categories"]["chinese_semantic"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["multimodal_perception"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["frontend"]["passed"], 1)
+        self.assertEqual(summary["summary"]["categories"]["transport"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["productization"]["passed"], 3)
         self.assertEqual(summary["summary"]["categories"]["residual_closure"]["passed"], 1)
         self.assertEqual(summary["summary"]["categories"]["living_loop_realism"]["passed"], 3)

@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Runtime Productization Phase 3` product-runtime integration hardening; old rolling closure remains complete through Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `HTTP Transport Thin Wrapper Phase 1`; old rolling closure remains complete through Runtime Productization Phase 3 and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -37,6 +37,7 @@ This file is the live development ledger for `amadeus-thread0`.
   - preserve `runtime_productization_phase1_ready`
   - preserve `runtime_productization_phase2_ready`
   - preserve `runtime_productization_phase3_ready`
+  - preserve `http_transport_thin_wrapper_phase1_ready`
   - preserve `residual_living_loop_phase1_ready`
   - preserve `living_loop_runtime_realism_phase1_ready`
   - preserve `living_loop_runtime_realism_phase2_ready`
@@ -61,6 +62,10 @@ This file is the live development ledger for `amadeus-thread0`.
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
   - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, and next-spec lanes visible without treating gitignored report absence as hidden code regression
   - Phase 3 product smokes should prove `BackendTransportAdapter` consumes backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries without introducing HTTP server ownership
+- Current HTTP transport focus:
+  - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
+  - HTTP returns the same backend-owned `backend.v1` envelopes and structured adapter errors; it does not create a second truth model
+  - blocked surfaces remain blocked: no HTTP-owned memory/body/autonomy/persona semantics, live capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, SSE/WebSocket streaming, FastAPI/Flask/Uvicorn dependency, persona-core mutation, or memory writes
 - Current residual closure focus:
   - the remaining post-unlock lanes are assessed as one traceable living-loop contract rather than as disconnected small cleanup items
   - `residual_living_loop_phase1_ready` means the north-star loop and residual lane boundaries are auditable; it does not open live microphone/camera/background screen capture, automatic skill registry writes, external harness runtime enablement, frontend-owned semantics, persona-core mutation, memory writes, or unapproved external mutation
@@ -12568,3 +12573,54 @@ This file is the live development ledger for `amadeus-thread0`.
 - Next:
   - the rolling six-phase closeout roadmap is closed through `frontend_runtime_shell_phase2_ready`
   - only start a new lane from a fresh bounded spec, tests, approval semantics, and audit gate
+
+## 2026-05-07 Run 273
+
+- Focus:
+  - implement `HTTP Transport Thin Wrapper Phase 1` after Runtime Productization Phase 3
+  - add a standard-library WSGI wrapper over `BackendTransportAdapter`
+  - keep HTTP transport as request/response glue, not as an owner of backend semantics
+- Files changed:
+  - `AGENTS.md`
+  - `amadeus_thread0/runtime/http_transport.py`
+  - `amadeus_thread0/runtime/runtime_status_dashboard.py`
+  - `evals/run_http_transport_smokes.py`
+  - `evals/run_http_transport_audit.py`
+  - `evals/run_preserved_baselines_audit.py`
+  - `tests/test_http_transport.py`
+  - `tests/test_http_transport_smokes.py`
+  - `tests/test_http_transport_audit.py`
+  - `tests/test_runtime_status_dashboard.py`
+  - `tests/test_preserved_baselines_audit.py`
+  - `docs/engineering/AMADEUS_ARCHITECTURE_DECISIONS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `docs/engineering/BACKEND_HANDOFF.md`
+  - `docs/engineering/FRONTEND_INTERFACE_DELIVERABLE.md`
+  - `docs/superpowers/plans/2026-05-07-http-transport-thin-wrapper-phase1.md`
+  - `docs/superpowers/plans/2026-05-07-runtime-productization-phase3.md`
+  - `program.md`
+- Key changes:
+  - added `amadeus_thread0.runtime.http_transport` with `build_wsgi_app`, `create_http_transport_app`, and deterministic `call_wsgi_app`
+  - WSGI parsing handles JSON bodies, query strings, and structured invalid-JSON responses before delegating valid calls to `BackendTransportAdapter.handle(...)`
+  - added HTTP transport smoke and audit runners with readiness:
+    - `http_transport_thin_wrapper_phase1_smokes_ready`
+    - `http_transport_thin_wrapper_phase1_ready`
+  - folded HTTP Phase 1 into preserved baselines under the `transport` category
+  - updated the runtime status dashboard so HTTP is `phase1_ready` / `thin_wrapper`, leaving approved artifact multimodal runtime, Chinese semantic naturalness, and dynamic skill candidate runtime as next specs
+  - documented blocked surfaces: no HTTP-owned memory/body/autonomy/persona semantics, live capture, automatic skill registry writes, external harness enablement, frontend-owned semantics, SSE/WebSocket streaming, framework dependency, persona-core mutation, or memory writes
+- Validation:
+  - final worktree verification:
+    - `python -m pytest tests/test_http_transport.py tests/test_http_transport_smokes.py tests/test_http_transport_audit.py tests/test_transport_adapter.py tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py -q`
+      - passed: `25 passed`
+    - `python -m py_compile amadeus_thread0/runtime/http_transport.py evals/run_http_transport_smokes.py evals/run_http_transport_audit.py evals/run_preserved_baselines_audit.py`
+      - passed
+    - `git diff --check`
+      - passed with only Windows LF-to-CRLF warnings
+    - `python evals/run_http_transport_smokes.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=http_transport_thin_wrapper_phase1_smokes_ready`
+    - `python evals/run_http_transport_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=http_transport_thin_wrapper_phase1_ready`
+    - `python evals/run_preserved_baselines_audit.py --reports-dir "E:\桌面\amadeus-thread0\evals\reports"`
+      - passed with `readiness=preserved_baselines_ready`
+- Next:
+  - run final verification, commit on `codex/http-transport-thin-wrapper`, fast-forward merge to `main`, push `main`, then select the next bounded lane from the dashboard next specs

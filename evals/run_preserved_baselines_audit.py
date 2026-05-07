@@ -53,6 +53,12 @@ BASELINE_SPECS = [
         "category": "frontend",
     },
     {
+        "id": "http_transport_thin_wrapper_phase1",
+        "prefix": "http-transport-audit-",
+        "expected_readiness": "http_transport_thin_wrapper_phase1_ready",
+        "category": "transport",
+    },
+    {
         "id": "live_browser_runtime",
         "prefix": "live-browser-runtime-audit-",
         "expected_readiness": "live_browser_runtime_phase1_ready",
