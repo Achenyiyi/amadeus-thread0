@@ -13,7 +13,7 @@ This file is the live development ledger for `amadeus-thread0`.
 
 - Date: `2026-05-07`
 - Product boundary: `backend-first`, `CLI + TTS + evals`, with frontend runtime shell now unlocked only as a `backend.v1` contract consumer
-- Mainline phase: `Dynamic Skill Candidate Runtime Phase 1`; old rolling closure remains complete through Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
+- Mainline phase: `Final Closeout Sweep Phase 1`; old rolling closure remains complete through Dynamic Skill Candidate Runtime Phase 1, Chinese Semantic Naturalness Phase 1, Approved Artifact Multimodal Runtime Phase 1, HTTP Transport Thin Wrapper Phase 1, Runtime Productization Phase 3, and Frontend Runtime Shell Phase 2 and must not be reopened casually
 - Immediate research focus:
   - preserve `freeze_gate_ready`
   - preserve `companion_autonomy_ready`
@@ -63,7 +63,8 @@ This file is the live development ledger for `amadeus-thread0`.
   - runtime surfaces should expose one operator-console readback over backend/post-unlock/preserved-baseline truth
   - `operator_readback.v2` is readback-only and must not widen execution, memory, persona, browser, skill, frontend, or external harness authority
   - backend changes should keep the handoff envelope stable rather than reopening UI-driven architecture churn
-  - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, and next-spec lanes visible without treating gitignored report absence as hidden code regression
+  - `runtime_status_dashboard.v1` should make preserved gates, source-report availability, blocked lanes, ready readback lanes, and the current next-spec list visible without treating gitignored report absence as hidden code regression
+  - current dashboard `NEXT_SPECS` is empty after Dynamic Skill Candidate Runtime Phase 1
   - Phase 3 product smokes should prove `BackendTransportAdapter` consumes backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries without introducing HTTP server ownership
 - Current HTTP transport focus:
   - `http_transport_thin_wrapper_phase1_ready` means standard-library WSGI request/response glue now wraps `BackendTransportAdapter`
@@ -12833,3 +12834,31 @@ This file is the live development ledger for `amadeus-thread0`.
       - passed: `10 passed`
 - Next:
   - run final focused verification, merge to `main`, verify again, push, and clean up the worktree
+
+## 2026-05-07 Run 278
+
+- Focus:
+  - perform a final closeout sweep after Dynamic Skill Candidate Runtime Phase 1
+  - align current-state docs with the actual dashboard state where `NEXT_SPECS=[]`
+  - avoid rewriting historical plans/specs that accurately describe earlier implementation moments
+- Files changed:
+  - `AGENTS.md`
+  - `docs/engineering/PROJECT_STRUCTURE.md`
+  - `program.md`
+- Key changes:
+  - updated the current mainline phase to `Final Closeout Sweep Phase 1`
+  - aligned AGENTS runtime dashboard language with the current ready-lane / next-spec inventory model
+  - clarified that `runtime_status_dashboard.v1` now treats HTTP transport, approved artifact multimodal runtime, Chinese semantic naturalness, and dynamic skill candidate runtime as ready readback lanes
+  - clarified that `NEXT_SPECS` is empty when all currently unlocked bounded readback specs have closed
+- Validation so far:
+  - scanned docs/runtime/tests/evals for stale `fresh_spec_required`, `planned_next_spec`, and dynamic-candidate next-spec references outside historical plan/spec records
+  - `python -m pytest tests/test_runtime_status_dashboard.py tests/test_preserved_baselines_audit.py tests/test_runtime_productization_phase3_smokes.py tests/test_runtime_productization_audit.py tests/test_frontend_contract_sync.py -q`
+    - passed: `17 passed`
+  - `python evals/run_dynamic_skill_candidate_runtime_audit.py --run-tag final-closeout-sweep`
+    - passed with `readiness=dynamic_skill_candidate_runtime_phase1_ready`
+  - `python -m py_compile amadeus_thread0/runtime/runtime_status_dashboard.py evals/run_preserved_baselines_audit.py evals/run_dynamic_skill_candidate_runtime_audit.py`
+    - passed
+  - `git diff --check`
+    - passed
+- Next:
+  - merge to `main`, verify again, push, and clean up the worktree

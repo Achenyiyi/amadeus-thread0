@@ -81,7 +81,7 @@ Build and maintain `Amadeus-K`: a LangChain/LangGraph-based long-term virtual co
   - it remains readback-only and does not add execution authority, persona-core mutation, memory writes, auto skill registry writes, frontend-owned semantics, live capture, or external harness runtime enablement
 - `Runtime Productization Phase 3` is now closed as a product-runtime integration hardening gate:
   - `runtime_productization_phase3_ready`
-  - it adds a runtime status dashboard over preserved baselines, post-unlock roadmap truth, runtime productization, blocked lanes, and next-spec lanes
+  - it adds a runtime status dashboard over preserved baselines, post-unlock roadmap truth, runtime productization, blocked lanes, ready readback lanes, and the current next-spec inventory
   - it adds deterministic product runtime smokes proving the route adapter can consume backend-owned envelopes for operator readback, assistant turns, event rounds, and frontend-consumer boundaries
   - it makes missing gitignored source reports explicit as evidence-source gaps instead of silently treating a clean worktree as product runtime regression
   - it remains readback/smoke/audit-only and does not add HTTP server ownership, execution authority, persona-core mutation, memory writes, automatic skill registry writes, frontend-owned semantics, live capture, multimodal model auto-calls, or external harness runtime enablement

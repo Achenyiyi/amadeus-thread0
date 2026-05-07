@@ -383,8 +383,9 @@ Rule:
 `runtime_status_dashboard.py` holds the Runtime Productization Phase 3 status dashboard:
 
 - composes preserved-baseline, post-unlock-roadmap, and runtime-productization report status into `runtime_status_dashboard.v1`
-- distinguishes ready gates, missing gitignored source reports, blocked-by-contract lanes, and fresh next-spec lanes
-- marks HTTP transport as `phase1_ready` / `thin_wrapper` and multimodal artifact inspection as `phase1_ready` / `approved_result_ingestion_only` while keeping Chinese semantic naturalness and dynamic skill candidate generation visible as future bounded specs
+- distinguishes ready gates, missing gitignored source reports, blocked-by-contract lanes, ready readback lanes, and the current next-spec list
+- marks HTTP transport as `phase1_ready` / `thin_wrapper`, multimodal artifact inspection as `phase1_ready` / `approved_result_ingestion_only`, Chinese semantic naturalness as `phase1_ready` / `deterministic_readback_only`, and dynamic skill generation as `phase1_ready` / `readback_audit_only`
+- keeps `NEXT_SPECS` empty when all currently unlocked bounded readback specs have closed
 - remains pure readback logic with no HTTP server, execution, browser, sandbox, memory-write, skill-registry, frontend, model-call, or persona-core authority
 
 `residual_living_loop.py` holds the Residual Living Loop Closure readback contract:
