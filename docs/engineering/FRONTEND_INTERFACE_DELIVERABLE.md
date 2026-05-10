@@ -657,6 +657,54 @@ Callable read routes:
 - `GET /api/behavior-queue` -> `BackendAPI.behavior_queue(config=...)`
 - `GET /api/checkpoints/current` -> `BackendAPI.current_checkpoint(config=...)`
 - `GET /api/checkpoints/history?limit=...` -> `BackendAPI.checkpoint_history(limit=..., config=...)`
+- `GET /api/desktop/capabilities` -> `BackendAPI.desktop_capabilities()`
+- `GET /api/media/session/current` -> `BackendAPI.current_media_session()`
+
+Callable chat route:
+
+- `POST /api/chat/send`
+  - body: non-empty `message`, optional `config`, optional `meta`
+  - delegates to `BackendAPI.send_chat(...)`
+  - internally calls `BackendSession.invoke_stream(...)`
+  - returns one backend-owned `assistant_turn` envelope from `BackendAPI.build_turn_response(...)`
+
+Callable desktop media routes:
+
+- `POST /api/desktop/permissions/request`
+  - body: explicit user-requested permissions such as `microphone`, `camera`, or `artifact`
+  - records user intent only; system grant still belongs to the OS/browser permission prompt
+  - returns `desktop_permission_state`
+- `POST /api/media/session/start`
+  - body: `consent=true`, requested permissions, optional call mode and muted state
+  - opens `desktop_live_capture.v1` only inside a user-started desktop session
+  - returns `media_session`
+- `POST /api/media/session/stop`
+  - freezes the current session as stopped and returns `media_session`
+- `POST /api/media/audio/input`
+  - body: `consent=true`, audio metadata and either an explicit transcript or a bounded audio chunk
+  - DashScope ASR is attempted only when provider credentials and audio format are available
+  - successful transcript dispatches through the same canonical route semantics as `/api/chat/send`
+  - failed ASR returns `media_turn` with recoverable failure reasons and no memory/persona writes
+- `POST /api/media/video/frame`
+  - body: `consent=true`, low-frequency frame digest/size/caption metadata
+  - first release is readback-only and does not call an undefined vision model
+  - returns `media_turn`
+- `POST /api/media/tts/synthesize`
+  - body: final assistant text plus optional emotion label
+  - wraps the existing DashScope realtime TTS path when configured
+  - failure degrades to text-only and returns `media_tts`
+- `POST /api/artifacts/submit`
+  - body: consent flag, modality, content digest, capture method, metadata
+  - accepts user-selected/snapshot artifacts and rejects background or secret capture methods
+  - returns `artifact_submission`
+
+Desktop media authority:
+
+- `desktop_live_capture.v1` is `explicit_desktop_user_consent_only`
+- `live_capture_auto_enabled=false` remains required
+- background microphone/camera/screen capture remains blocked
+- frontend/Electron may capture, preview, play, and transport media, but must not create persona, memory, relationship, body, autonomy, skill, or perception facts
+- camera UI must keep a visible `Camera On` state while tracks are active, and stopping a call must stop local tracks before the backend session is considered closed
 
 Callable finalize routes:
 
@@ -667,7 +715,7 @@ Callable finalize routes:
   - body: `state_values`, `final_text`, optional `meta`
   - delegates to `BackendAPI.build_event_round_response(...)`
 
-Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. A future streaming or execution HTTP phase may add `POST /api/turns` as an execution route, but it must end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
+Full turn execution is still owned by `BackendSession.invoke_stream(...)` and approval resume flow. The current HTTP chat bridge is `POST /api/chat/send`; a future streaming phase may add `/api/turns/stream`, but it must still end on one `assistant_turn` final envelope from `BackendAPI.build_turn_response(...)`.
 
 Phase 3 product runtime smokes validate these callable adapter routes as backend-owned envelope consumption. They do not introduce FastAPI, Flask, Uvicorn, SSE, WebSocket, or frontend-owned state semantics.
 
@@ -691,6 +739,8 @@ On session startup:
    - `environment_summary`
    - `runtime_productization`
    - `operator_console_rc`
+   - `desktop_capabilities`
+   - `media_session`
 3. Fetch inspector defaults:
    - `persona_view`
    - `worldline_view`

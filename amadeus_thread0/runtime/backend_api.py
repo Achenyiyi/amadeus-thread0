@@ -24,6 +24,7 @@ from ..utils.turn_summary_export import (
 )
 from .access_negotiation import attach_assist_request_to_pending_approval, resolve_access_negotiation_context
 from .dynamic_skill_candidate_runtime import apply_dynamic_skill_candidate_runtime_to_payload
+from .desktop_media_runtime import DesktopMediaRuntime
 from .event_identity import resolve_readback_current_event, resolve_readback_session_context
 from .final_state import (
     resolve_agenda_lifecycle_residue,
@@ -498,6 +499,14 @@ class BackendAPI:
     def settings(self) -> Any:
         return getattr(self.runtime_bundle, "settings")
 
+    @property
+    def desktop_media_runtime(self) -> DesktopMediaRuntime:
+        runtime = getattr(self.runtime_bundle, "desktop_media_runtime", None)
+        if runtime is None:
+            runtime = DesktopMediaRuntime(thread_id=self.thread_id)
+            setattr(self.runtime_bundle, "desktop_media_runtime", runtime)
+        return runtime
+
     def _envelope(
         self,
         kind: str,
@@ -593,6 +602,45 @@ class BackendAPI:
     def current_checkpoint(self, *, config: dict[str, Any] | None = None) -> BackendApiEnvelope:
         return self._envelope("current_checkpoint", self.backend_session.current_checkpoint_view(config=config))
 
+    def current_turn(self, *, config: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        state_values = self.backend_session.get_state_values(config=config)
+        return self.build_turn_response(
+            state_values=state_values,
+            streamed_text="",
+            meta={
+                "source": "current_backend_state",
+                "route": "/api/turns/current",
+            },
+        )
+
+    def send_chat(
+        self,
+        *,
+        message: str,
+        config: dict[str, Any] | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> BackendApiEnvelope:
+        user_message = str(message or "").strip()
+        run_config = config if isinstance(config, dict) else self.runtime_bundle.config()
+        stream_result = self.backend_session.invoke_stream(
+            {"messages": [{"role": "user", "content": user_message}]},
+            config=run_config,
+            on_text=None,
+        )
+        response_meta = {
+            "source": "chat_send",
+            "route": "/api/chat/send",
+        }
+        if isinstance(meta, dict):
+            response_meta.update(meta)
+        if getattr(stream_result, "approval_request", None) is not None:
+            response_meta["approval_required"] = True
+        return self.build_turn_response(
+            state_values=getattr(stream_result, "values", {}),
+            streamed_text=str(getattr(stream_result, "streamed_text", "") or ""),
+            meta=response_meta,
+        )
+
     def thread_inventory(self) -> BackendApiEnvelope:
         inventory = list_threads(
             base_data_dir=self.base_data_dir,
@@ -648,6 +696,80 @@ class BackendAPI:
             "dashscope_api_key_set": bool(str(current_env.get("DASHSCOPE_API_KEY") or "").strip()),
         }
         return self._envelope("environment_summary", payload)
+
+    def desktop_capabilities(self) -> BackendApiEnvelope:
+        return self._envelope(
+            "desktop_capabilities",
+            self.desktop_media_runtime.capabilities(settings=self.settings),
+            meta={"route": "/api/desktop/capabilities"},
+        )
+
+    def request_desktop_permissions(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "desktop_permission_state",
+            self.desktop_media_runtime.request_permissions(body),
+            meta={"route": "/api/desktop/permissions/request"},
+        )
+
+    def current_media_session(self) -> BackendApiEnvelope:
+        return self._envelope(
+            "media_session",
+            self.desktop_media_runtime.session_snapshot(),
+            meta={"route": "/api/media/session/current"},
+        )
+
+    def start_media_session(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "media_session",
+            self.desktop_media_runtime.start_session(body),
+            meta={"route": "/api/media/session/start"},
+        )
+
+    def stop_media_session(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "media_session",
+            self.desktop_media_runtime.stop_session(body),
+            meta={"route": "/api/media/session/stop"},
+        )
+
+    def submit_media_audio(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        payload = self.desktop_media_runtime.submit_audio_input(body, settings=self.settings)
+        transcript = str(((payload.get("asr") or {}) if isinstance(payload.get("asr"), dict) else {}).get("transcript") or "").strip()
+        if transcript and isinstance(payload.get("chat_dispatch"), dict) and bool(payload["chat_dispatch"].get("allowed")):
+            payload["assistant_turn"] = self.send_chat(
+                message=transcript,
+                meta={
+                    "client": "desktop_media_runtime",
+                    "source": "media_audio_input",
+                    "media_session_id": str(payload.get("media_session_id") or ""),
+                },
+            ).to_dict()
+        return self._envelope(
+            "media_turn",
+            payload,
+            meta={"route": "/api/media/audio/input"},
+        )
+
+    def submit_media_video_frame(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "media_turn",
+            self.desktop_media_runtime.submit_video_frame(body),
+            meta={"route": "/api/media/video/frame"},
+        )
+
+    def synthesize_media_tts(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "media_tts",
+            self.desktop_media_runtime.synthesize_tts(body, settings=self.settings),
+            meta={"route": "/api/media/tts/synthesize"},
+        )
+
+    def submit_artifact(self, *, body: dict[str, Any] | None = None) -> BackendApiEnvelope:
+        return self._envelope(
+            "artifact_submission",
+            self.desktop_media_runtime.submit_artifact(body),
+            meta={"route": "/api/artifacts/submit"},
+        )
 
     def _runtime_productization_payload(self, *, current_turn: dict[str, Any] | None = None) -> dict[str, Any]:
         return build_runtime_productization_readback(

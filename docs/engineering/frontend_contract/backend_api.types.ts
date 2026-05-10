@@ -20,6 +20,12 @@ export type BackendKind =
   | "environment_summary"
   | "runtime_productization"
   | "operator_console_rc"
+  | "desktop_capabilities"
+  | "desktop_permission_state"
+  | "media_session"
+  | "media_turn"
+  | "media_tts"
+  | "artifact_submission"
   | "event_round"
   | "assistant_turn";
 
@@ -1161,6 +1167,107 @@ export interface OperatorConsoleRcPayload extends JsonRecord {
   failure_reasons?: JsonValue[];
 }
 
+export interface DesktopAuthorityBoundary extends JsonRecord {
+  schema?: string;
+  live_capture_policy?: string;
+  live_capture_enabled?: boolean;
+  live_capture_auto_enabled?: boolean;
+  background_capture_allowed?: boolean;
+  frontend_semantics_owner?: boolean;
+  model_api_auto_call_allowed?: boolean;
+  memory_write_allowed_from_frontend?: boolean;
+  persona_core_mutation_allowed?: boolean;
+}
+
+export interface DesktopPermissionRow extends JsonRecord {
+  status?: string;
+  system_grant?: string;
+  requested_at?: number;
+  source?: string;
+}
+
+export interface DesktopPermissionStatePayload extends JsonRecord {
+  schema?: string;
+  permissions?: Record<string, DesktopPermissionRow>;
+  requested?: string[];
+  rejected?: string[];
+  status?: string;
+  failure_reasons?: string[];
+  authority_boundary?: DesktopAuthorityBoundary;
+}
+
+export interface DesktopCapabilitiesPayload extends JsonRecord {
+  schema?: string;
+  thread_id?: string;
+  desktop_target?: string;
+  capture_policy?: JsonRecord;
+  providers?: JsonRecord;
+  device_enumeration?: JsonRecord;
+  permissions?: DesktopPermissionStatePayload;
+  media_session?: MediaSessionPayload;
+  authority_boundary?: DesktopAuthorityBoundary;
+  routes?: JsonRecord;
+}
+
+export interface MediaSessionPayload extends JsonRecord {
+  schema?: string;
+  status?: string;
+  active?: boolean;
+  session_id?: string;
+  mode?: string;
+  started_at?: number;
+  stopped_at?: number;
+  requested_permissions?: string[];
+  capture_policy?: string;
+  audio?: JsonRecord;
+  video?: JsonRecord;
+  permissions?: Record<string, DesktopPermissionRow>;
+  latest_media_turn?: JsonRecord;
+  latest_artifact?: JsonRecord;
+  authority_boundary?: DesktopAuthorityBoundary;
+  failure_reasons?: string[];
+}
+
+export interface MediaTurnPayload extends JsonRecord {
+  schema?: string;
+  status?: string;
+  modality?: string;
+  media_session_id?: string;
+  media_session?: MediaSessionPayload;
+  audio?: JsonRecord;
+  frame?: JsonRecord;
+  asr?: JsonRecord;
+  vision?: JsonRecord;
+  perception_readback?: JsonRecord;
+  chat_dispatch?: JsonRecord;
+  assistant_turn?: JsonRecord;
+  authority_boundary?: DesktopAuthorityBoundary;
+  failure_reasons?: string[];
+}
+
+export interface MediaTtsPayload extends JsonRecord {
+  schema?: string;
+  status?: string;
+  provider?: string;
+  emotion_label?: string;
+  text?: string;
+  render_plan?: JsonRecord;
+  audio?: JsonRecord;
+  latency_ms?: number;
+  authority_boundary?: DesktopAuthorityBoundary;
+  failure_reasons?: string[];
+}
+
+export interface ArtifactSubmissionPayload extends JsonRecord {
+  schema?: string;
+  status?: string;
+  artifact?: JsonRecord;
+  source_ref?: SourceRef | JsonRecord;
+  inspection?: JsonRecord;
+  authority_boundary?: DesktopAuthorityBoundary;
+  failure_reasons?: string[];
+}
+
 export type MemorySnapshotPayload = JsonRecord;
 
 export interface BackendEnvelopeMap {
@@ -1178,6 +1285,12 @@ export interface BackendEnvelopeMap {
   environment_summary: EnvironmentSummaryPayload;
   runtime_productization: RuntimeProductizationPayload;
   operator_console_rc: OperatorConsoleRcPayload;
+  desktop_capabilities: DesktopCapabilitiesPayload;
+  desktop_permission_state: DesktopPermissionStatePayload;
+  media_session: MediaSessionPayload;
+  media_turn: MediaTurnPayload;
+  media_tts: MediaTtsPayload;
+  artifact_submission: ArtifactSubmissionPayload;
   event_round: EventRoundPayload;
   assistant_turn: AssistantTurnPayload;
 }

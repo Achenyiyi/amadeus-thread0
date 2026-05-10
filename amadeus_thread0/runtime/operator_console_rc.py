@@ -42,9 +42,17 @@ def _route_inventory(operator_readback: dict[str, Any]) -> dict[str, Any]:
     safe_routes = _dict_or_empty(operator_readback.get("safe_routes"))
     read_only_routes = [str(route) for route in _list_or_empty(safe_routes.get("read_only_routes")) if str(route)]
     mutation_routes = [str(route) for route in _list_or_empty(safe_routes.get("mutation_routes")) if str(route)]
+    user_control_routes = [
+        str(route) for route in _list_or_empty(safe_routes.get("user_control_routes")) if str(route)
+    ]
+    external_mutation_routes = [
+        str(route) for route in _list_or_empty(safe_routes.get("external_mutation_routes")) if str(route)
+    ]
     return {
         "read_only_routes": read_only_routes,
         "mutation_routes": mutation_routes,
+        "user_control_routes": user_control_routes,
+        "external_mutation_routes": external_mutation_routes,
         "route_count": len(read_only_routes),
         "approval_required_for_external_mutation": bool(
             safe_routes.get("approval_required_for_external_mutation", True)
@@ -138,7 +146,7 @@ def build_operator_console_rc_readback(
     dashboard_ready = _ready(dashboard, "runtime_status_dashboard_ready")
     operator_ready = _ready(operator, "runtime_productization_phase2_ready")
     no_next_specs = next_spec_count == 0
-    routes_closed = not route_inventory["mutation_routes"] and not route_inventory["frontend_semantics_owner"]
+    routes_closed = not route_inventory["external_mutation_routes"] and not route_inventory["frontend_semantics_owner"]
     authority_closed = not _closed_authority_failures(authority_boundary)
 
     failures: list[str] = []
@@ -179,6 +187,8 @@ def build_operator_console_rc_readback(
             routes_closed,
             read_only_route_count=route_inventory["route_count"],
             mutation_route_count=len(route_inventory["mutation_routes"]),
+            external_mutation_route_count=len(route_inventory["external_mutation_routes"]),
+            user_control_route_count=len(route_inventory["user_control_routes"]),
         ),
         "authority_boundary": _panel(
             authority_closed,

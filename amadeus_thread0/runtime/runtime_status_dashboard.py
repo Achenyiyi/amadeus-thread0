@@ -45,6 +45,11 @@ LANES = {
         "runtime_authority": "blocked_by_contract",
         "summary": "Live microphone, camera, and background screen capture remain blocked.",
     },
+    "desktop_live_capture": {
+        "status": "phase1_ready",
+        "runtime_authority": "explicit_desktop_user_consent_only",
+        "summary": "Desktop microphone/camera capture is available only inside a user-started local media session, with no background capture, no auto model calls, and no frontend-owned semantics.",
+    },
     "dynamic_skill_generation": {
         "status": "phase1_ready",
         "runtime_authority": "readback_audit_only",

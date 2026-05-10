@@ -20,15 +20,61 @@ AUTHORITY_BOUNDARY = {
     "frontend_semantics_owner": False,
     "dynamic_registry_write_auto_allowed": False,
     "external_harness_runtime_auto_enabled": False,
+    "desktop_live_capture_policy": "explicit_desktop_user_consent_only",
+    "desktop_live_capture_enabled": True,
+    "desktop_live_capture_background_allowed": False,
     "live_capture_auto_enabled": False,
 }
 
 READ_ONLY_ROUTES = [
+    "/api/turns/current",
     "/api/runtime-productization",
     "/api/operator-console-rc",
+    "/api/persona-view",
+    "/api/worldline-view",
+    "/api/bond-view",
+    "/api/sources-view",
+    "/api/appraisal-view",
+    "/api/behavior-queue",
+    "/api/checkpoints/current",
+    "/api/checkpoints/history",
     "/api/environment-summary",
     "/api/runtime-layout",
+    "/api/thread-inventory",
+    "/api/desktop/capabilities",
+    "/api/media/session/current",
 ]
+
+MUTATION_ROUTES = [
+    "/api/chat/send",
+    "/api/desktop/permissions/request",
+    "/api/media/session/start",
+    "/api/media/session/stop",
+    "/api/media/audio/input",
+    "/api/media/video/frame",
+    "/api/media/tts/synthesize",
+    "/api/artifacts/submit",
+    "/api/turns/finalize",
+    "/api/event-rounds/finalize",
+]
+
+USER_CONTROL_ROUTES = [
+    "/api/chat/send",
+    "/api/desktop/permissions/request",
+    "/api/media/session/start",
+    "/api/media/session/stop",
+    "/api/media/audio/input",
+    "/api/media/video/frame",
+    "/api/media/tts/synthesize",
+    "/api/artifacts/submit",
+]
+
+DEBUG_ONLY_MUTATION_ROUTES = [
+    "/api/turns/finalize",
+    "/api/event-rounds/finalize",
+]
+
+EXTERNAL_MUTATION_ROUTES: list[str] = []
 
 
 def _dict_or_empty(value: Any) -> dict[str, Any]:
@@ -113,9 +159,14 @@ def _evidence_summary(inputs: dict[str, dict[str, str]]) -> dict[str, Any]:
 def _safe_routes() -> dict[str, Any]:
     return {
         "read_only_routes": list(READ_ONLY_ROUTES),
-        "mutation_routes": [],
+        "mutation_routes": list(MUTATION_ROUTES),
+        "user_control_routes": list(USER_CONTROL_ROUTES),
+        "debug_only_mutation_routes": list(DEBUG_ONLY_MUTATION_ROUTES),
+        "external_mutation_routes": list(EXTERNAL_MUTATION_ROUTES),
         "approval_required_for_external_mutation": True,
         "frontend_semantics_owner": False,
+        "desktop_live_capture_policy": "explicit_desktop_user_consent_only",
+        "desktop_live_capture_auto_enabled": False,
     }
 
 
@@ -245,6 +296,7 @@ __all__ = [
     "AUTHORITY_BOUNDARY",
     "EXPECTED_INPUT_READINESS",
     "READ_ONLY_ROUTES",
+    "USER_CONTROL_ROUTES",
     "RUNTIME_PRODUCTIZATION_PHASE1_READINESS",
     "RUNTIME_PRODUCTIZATION_PHASE2_READINESS",
     "RUNTIME_PRODUCTIZATION_READINESS",

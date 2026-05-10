@@ -10,6 +10,8 @@ class _FakeBackendApi:
     def __init__(self) -> None:
         self.turn_calls = []
         self.event_calls = []
+        self.current_turn_calls = []
+        self.chat_calls = []
 
     def thread_inventory(self):
         return BackendApiEnvelope(kind="thread_inventory", thread_id="thread-a", payload={"current_thread_id": "thread-a"})
@@ -34,6 +36,41 @@ class _FakeBackendApi:
             payload={"readiness_status": "operator_console_rc_phase1_ready"},
         )
 
+    def desktop_capabilities(self):
+        return BackendApiEnvelope(
+            kind="desktop_capabilities",
+            thread_id="thread-a",
+            payload={"schema": "desktop_live_capture.v1"},
+        )
+
+    def request_desktop_permissions(self, *, body=None):
+        return BackendApiEnvelope(
+            kind="desktop_permission_state",
+            thread_id="thread-a",
+            payload={"requested": body.get("permissions", []) if isinstance(body, dict) else []},
+        )
+
+    def current_media_session(self):
+        return BackendApiEnvelope(kind="media_session", thread_id="thread-a", payload={"status": "stopped"})
+
+    def start_media_session(self, *, body=None):
+        return BackendApiEnvelope(kind="media_session", thread_id="thread-a", payload={"status": "active", "body": body or {}})
+
+    def stop_media_session(self, *, body=None):
+        return BackendApiEnvelope(kind="media_session", thread_id="thread-a", payload={"status": "stopped", "body": body or {}})
+
+    def submit_media_audio(self, *, body=None):
+        return BackendApiEnvelope(kind="media_turn", thread_id="thread-a", payload={"modality": "audio", "body": body or {}})
+
+    def submit_media_video_frame(self, *, body=None):
+        return BackendApiEnvelope(kind="media_turn", thread_id="thread-a", payload={"modality": "video", "body": body or {}})
+
+    def synthesize_media_tts(self, *, body=None):
+        return BackendApiEnvelope(kind="media_tts", thread_id="thread-a", payload={"text": (body or {}).get("text", "")})
+
+    def submit_artifact(self, *, body=None):
+        return BackendApiEnvelope(kind="artifact_submission", thread_id="thread-a", payload={"body": body or {}})
+
     def persona(self):
         return BackendApiEnvelope(kind="persona_view", thread_id="thread-a", payload={"persona_state": {"mood": "focused"}})
 
@@ -57,6 +94,18 @@ class _FakeBackendApi:
 
     def checkpoint_history(self, *, limit=10, config=None):
         return BackendApiEnvelope(kind="checkpoint_history", thread_id="thread-a", payload={"limit": limit, "config": config or {}})
+
+    def current_turn(self, *, config=None):
+        self.current_turn_calls.append({"config": config})
+        return BackendApiEnvelope(kind="assistant_turn", thread_id="thread-a", payload={"final_text": "真实当前回合"})
+
+    def send_chat(self, *, message, config=None, meta=None):
+        self.chat_calls.append({"message": message, "config": config, "meta": meta})
+        return BackendApiEnvelope(
+            kind="assistant_turn",
+            thread_id="thread-a",
+            payload={"final_text": f"reply:{message}"},
+        )
 
     def build_turn_response(self, *, state_values, streamed_text="", meta=None):
         self.turn_calls.append({"state_values": state_values, "streamed_text": streamed_text, "meta": meta})
@@ -93,6 +142,58 @@ def test_transport_adapter_turn_route_delegates_to_backend_api_without_schema_re
     assert api.turn_calls == [{"state_values": {"x": 1}, "streamed_text": "stream", "meta": {"transport": "test"}}]
 
 
+def test_transport_adapter_current_turn_route_delegates_to_backend_api():
+    api = _FakeBackendApi()
+    adapter = BackendTransportAdapter(backend_api=api)
+
+    response = adapter.handle("GET", "/api/turns/current")
+
+    assert response["status"] == 200
+    assert response["body"]["schema_version"] == "backend.v1"
+    assert response["body"]["kind"] == "assistant_turn"
+    assert response["body"]["payload"]["final_text"] == "真实当前回合"
+    assert api.current_turn_calls == [{"config": None}]
+
+
+def test_transport_adapter_chat_send_route_delegates_to_backend_api():
+    api = _FakeBackendApi()
+    adapter = BackendTransportAdapter(backend_api=api)
+
+    response = adapter.handle(
+        "POST",
+        "/api/chat/send",
+        body={
+            "message": "  你好  ",
+            "config": {"configurable": {"thread_id": "thread-a"}},
+            "meta": {"client": "frontend"},
+        },
+    )
+
+    assert response["status"] == 200
+    assert response["body"]["schema_version"] == "backend.v1"
+    assert response["body"]["kind"] == "assistant_turn"
+    assert response["body"]["payload"]["final_text"] == "reply:你好"
+    assert api.chat_calls == [
+        {
+            "message": "你好",
+            "config": {"configurable": {"thread_id": "thread-a"}},
+            "meta": {"client": "frontend"},
+        }
+    ]
+
+
+def test_transport_adapter_chat_send_rejects_empty_message():
+    api = _FakeBackendApi()
+    adapter = BackendTransportAdapter(backend_api=api)
+
+    response = adapter.handle("POST", "/api/chat/send", body={"message": "  "})
+
+    assert response["status"] == 400
+    assert response["body"]["error"]["code"] == "INVALID_CHAT_MESSAGE"
+    assert response["body"]["error"]["path"] == "/api/chat/send"
+    assert api.chat_calls == []
+
+
 def test_transport_adapter_runtime_productization_route_delegates_to_backend_api():
     adapter = BackendTransportAdapter(backend_api=_FakeBackendApi())
 
@@ -124,6 +225,20 @@ def test_transport_adapter_event_route_delegates_to_backend_api():
     assert response["body"]["kind"] == "event_round"
     assert response["body"]["payload"]["final_text"] == "我在。"
     assert api.event_calls[0]["final_text"] == "我在。"
+
+
+def test_transport_adapter_desktop_media_routes_delegate_to_backend_api():
+    adapter = BackendTransportAdapter(backend_api=_FakeBackendApi())
+
+    assert adapter.handle("GET", "/api/desktop/capabilities")["body"]["kind"] == "desktop_capabilities"
+    assert adapter.handle("GET", "/api/media/session/current")["body"]["kind"] == "media_session"
+    assert adapter.handle("POST", "/api/desktop/permissions/request", body={"permissions": ["microphone"]})["body"]["kind"] == "desktop_permission_state"
+    assert adapter.handle("POST", "/api/media/session/start", body={"consent": True})["body"]["payload"]["status"] == "active"
+    assert adapter.handle("POST", "/api/media/session/stop", body={"reason": "test"})["body"]["payload"]["status"] == "stopped"
+    assert adapter.handle("POST", "/api/media/audio/input", body={"transcript": "hello"})["body"]["payload"]["modality"] == "audio"
+    assert adapter.handle("POST", "/api/media/video/frame", body={"frame_digest": "x"})["body"]["payload"]["modality"] == "video"
+    assert adapter.handle("POST", "/api/media/tts/synthesize", body={"text": "hello"})["body"]["kind"] == "media_tts"
+    assert adapter.handle("POST", "/api/artifacts/submit", body={"content_digest": "x"})["body"]["kind"] == "artifact_submission"
 
 
 def test_transport_adapter_unknown_route_is_structured_404():
