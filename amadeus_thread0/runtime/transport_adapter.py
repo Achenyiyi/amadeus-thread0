@@ -46,8 +46,10 @@ class BackendTransportAdapter:
                 expected_method=expected_method,
             )
 
-        envelope = handler(self.backend_api, request_body, request_query)
-        return {"status": 200, "body": _envelope_to_body(envelope)}
+        response = handler(self.backend_api, request_body, request_query)
+        if _is_transport_response(response):
+            return response
+        return {"status": 200, "body": _envelope_to_body(response)}
 
 
 def _error_response(status: int, code: str, **details: Any) -> dict[str, Any]:
@@ -56,10 +58,18 @@ def _error_response(status: int, code: str, **details: Any) -> dict[str, Any]:
     return {"status": int(status), "body": {"error": error}}
 
 
+def _is_transport_response(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("body"), dict)
+        and str(value.get("status") or "").strip().isdigit()
+    )
+
+
 def _read_route(method_name: str) -> Callable[[Any, dict[str, Any], dict[str, Any]], Any]:
     def handler(backend_api: Any, body: dict[str, Any], query: dict[str, Any]) -> Any:
         target = getattr(backend_api, method_name)
-        if method_name in {"behavior_queue", "current_checkpoint"}:
+        if method_name in {"behavior_queue", "current_checkpoint", "current_turn"}:
             return target(config=query.get("config") if isinstance(query.get("config"), dict) else None)
         if method_name == "checkpoint_history":
             limit = query.get("limit", 10)
@@ -92,6 +102,30 @@ def _event_round_finalize(backend_api: Any, body: dict[str, Any], query: dict[st
     )
 
 
+def _chat_send(backend_api: Any, body: dict[str, Any], query: dict[str, Any]) -> Any:
+    message = str(body.get("message") or "").strip()
+    if not message:
+        return _error_response(
+            400,
+            "INVALID_CHAT_MESSAGE",
+            path="/api/chat/send",
+            message="Chat message must be a non-empty string.",
+        )
+    return backend_api.send_chat(
+        message=message,
+        config=body.get("config") if isinstance(body.get("config"), dict) else None,
+        meta=body.get("meta") if isinstance(body.get("meta"), dict) else None,
+    )
+
+
+def _body_route(method_name: str) -> Callable[[Any, dict[str, Any], dict[str, Any]], Any]:
+    def handler(backend_api: Any, body: dict[str, Any], query: dict[str, Any]) -> Any:
+        target = getattr(backend_api, method_name)
+        return target(body=body)
+
+    return handler
+
+
 _ROUTES: dict[str, tuple[str, Callable[[Any, dict[str, Any], dict[str, Any]], Any]]] = {
     "/api/thread-inventory": ("GET", _read_route("thread_inventory")),
     "/api/runtime-layout": ("GET", _read_route("runtime_layout")),
@@ -106,8 +140,19 @@ _ROUTES: dict[str, tuple[str, Callable[[Any, dict[str, Any], dict[str, Any]], An
     "/api/behavior-queue": ("GET", _read_route("behavior_queue")),
     "/api/checkpoints/current": ("GET", _read_route("current_checkpoint")),
     "/api/checkpoints/history": ("GET", _read_route("checkpoint_history")),
+    "/api/turns/current": ("GET", _read_route("current_turn")),
+    "/api/chat/send": ("POST", _chat_send),
     "/api/turns/finalize": ("POST", _turn_finalize),
     "/api/event-rounds/finalize": ("POST", _event_round_finalize),
+    "/api/desktop/capabilities": ("GET", _read_route("desktop_capabilities")),
+    "/api/desktop/permissions/request": ("POST", _body_route("request_desktop_permissions")),
+    "/api/media/session/current": ("GET", _read_route("current_media_session")),
+    "/api/media/session/start": ("POST", _body_route("start_media_session")),
+    "/api/media/session/stop": ("POST", _body_route("stop_media_session")),
+    "/api/media/audio/input": ("POST", _body_route("submit_media_audio")),
+    "/api/media/video/frame": ("POST", _body_route("submit_media_video_frame")),
+    "/api/media/tts/synthesize": ("POST", _body_route("synthesize_media_tts")),
+    "/api/artifacts/submit": ("POST", _body_route("submit_artifact")),
 }
 
 

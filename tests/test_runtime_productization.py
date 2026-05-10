@@ -42,13 +42,41 @@ def test_readback_reports_ready_lanes_without_widening_authority():
     assert readback["console_summary"]["next_action"] == "monitor_runtime_readback"
     assert readback["evidence_summary"]["ready_inputs"] == 3
     assert readback["safe_routes"]["read_only_routes"] == [
+        "/api/turns/current",
         "/api/runtime-productization",
         "/api/operator-console-rc",
+        "/api/persona-view",
+        "/api/worldline-view",
+        "/api/bond-view",
+        "/api/sources-view",
+        "/api/appraisal-view",
+        "/api/behavior-queue",
+        "/api/checkpoints/current",
+        "/api/checkpoints/history",
         "/api/environment-summary",
         "/api/runtime-layout",
+        "/api/thread-inventory",
+        "/api/desktop/capabilities",
+        "/api/media/session/current",
     ]
+    assert readback["safe_routes"]["mutation_routes"] == [
+        "/api/chat/send",
+        "/api/desktop/permissions/request",
+        "/api/media/session/start",
+        "/api/media/session/stop",
+        "/api/media/audio/input",
+        "/api/media/video/frame",
+        "/api/media/tts/synthesize",
+        "/api/artifacts/submit",
+        "/api/turns/finalize",
+        "/api/event-rounds/finalize",
+    ]
+    assert readback["safe_routes"]["external_mutation_routes"] == []
+    assert readback["safe_routes"]["desktop_live_capture_policy"] == "explicit_desktop_user_consent_only"
     assert readback["authority_boundary"]["external_mutation_requires_approval"] is True
     assert readback["authority_boundary"]["persona_core_mutation_allowed"] is False
+    assert readback["authority_boundary"]["desktop_live_capture_enabled"] is True
+    assert readback["authority_boundary"]["desktop_live_capture_background_allowed"] is False
     assert readback["lanes"]["dynamic_skill_generation"]["runtime_available"] is False
     assert readback["operator_snapshot"]["action_packet_count"] == 2
     assert readback["operator_snapshot"]["procedural_recovery_kind"] == "adjust_bounded_command"

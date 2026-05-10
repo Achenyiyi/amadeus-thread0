@@ -21,6 +21,8 @@ class FakeBackendSession:
         self.behavior_queue_config = None
         self.checkpoint_history_args = None
         self.current_checkpoint_config = None
+        self.invoke_stream_calls = []
+        self.last_get_state_config = None
         self.last_summary_state = None
         self.last_extract_args = None
         self.memory_store = None
@@ -60,6 +62,44 @@ class FakeBackendSession:
     def current_checkpoint_view(self, *, config=None):
         self.current_checkpoint_config = config
         return {"thread_id": "thread-a", "checkpoint_id": "cp-9"}
+
+    def get_state_values(self, *, config=None):
+        self.last_get_state_config = config
+        return {
+            "final_text": "真实状态文本",
+            "current_event": {"kind": "user_utterance", "text": "当前状态"},
+            "session_context": {"thread_id": "thread-a"},
+            "behavior_action": {"primary_motive": "preserve_selfhood_continuity"},
+            "behavior_plan": {
+                "primary_motive": "preserve_selfhood_continuity",
+                "goal_frame": "current state readback",
+            },
+            "reconsolidation_snapshot": {"final_text": "真实状态文本"},
+        }
+
+    def invoke_stream(self, payload, *, config=None, on_text=None):
+        self.invoke_stream_calls.append(
+            {
+                "payload": payload,
+                "config": config,
+                "on_text": on_text,
+            }
+        )
+        return SimpleNamespace(
+            values={
+                "final_text": "真实回复文本",
+                "current_event": {"kind": "user_utterance", "text": "你好"},
+                "session_context": {"thread_id": "thread-a"},
+                "behavior_action": {"primary_motive": "respond_to_counterpart"},
+                "behavior_plan": {
+                    "primary_motive": "respond_to_counterpart",
+                    "goal_frame": "reply",
+                },
+                "reconsolidation_snapshot": {"final_text": "真实回复文本"},
+            },
+            streamed_text="真实回复文本",
+            approval_request=None,
+        )
 
     def build_evolution_summary(self, *, state_values=None):
         self.last_summary_state = state_values
@@ -242,6 +282,48 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(session.behavior_queue_config, config)
             self.assertEqual(session.checkpoint_history_args, (5, config))
             self.assertEqual(session.current_checkpoint_config, config)
+
+    def test_current_turn_builds_assistant_turn_from_live_state_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, session = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            config = {"configurable": {"thread_id": "thread-a"}}
+
+            response = api.current_turn(config=config)
+
+            self.assertEqual(response.kind, "assistant_turn")
+            self.assertEqual(response.payload["final_text"], "真实状态文本")
+            self.assertEqual(response.meta["source"], "current_backend_state")
+            self.assertEqual(response.meta["route"], "/api/turns/current")
+            self.assertEqual(session.last_get_state_config, config)
+
+    def test_send_chat_invokes_backend_session_stream_and_returns_assistant_turn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint_db = root / "checkpoints.sqlite"
+            checkpoint_db.write_bytes(b"x")
+            api, session = self._build_api(base_data_dir=root, checkpoint_db_path=checkpoint_db)
+            config = {"configurable": {"thread_id": "thread-a"}}
+
+            response = api.send_chat(message="  你好  ", config=config, meta={"client": "frontend"})
+
+            self.assertEqual(response.kind, "assistant_turn")
+            self.assertEqual(response.payload["final_text"], "真实回复文本")
+            self.assertEqual(response.meta["source"], "chat_send")
+            self.assertEqual(response.meta["route"], "/api/chat/send")
+            self.assertEqual(response.meta["client"], "frontend")
+            self.assertEqual(
+                session.invoke_stream_calls,
+                [
+                    {
+                        "payload": {"messages": [{"role": "user", "content": "你好"}]},
+                        "config": config,
+                        "on_text": None,
+                    }
+                ],
+            )
 
     def test_runtime_productization_envelope_reports_operator_readback(self):
         with tempfile.TemporaryDirectory() as tmp:

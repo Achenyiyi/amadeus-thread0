@@ -84,12 +84,24 @@ def build_wsgi_app(transport_adapter: BackendTransportAdapter) -> WsgiApp:
         if body_error is not None:
             response = _json_response(400, body_error)
         else:
-            response = transport_adapter.handle(
-                str(environ.get("REQUEST_METHOD") or "GET"),
-                str(environ.get("PATH_INFO") or "/"),
-                body=body,
-                query=_parse_query(environ),
-            )
+            try:
+                response = transport_adapter.handle(
+                    str(environ.get("REQUEST_METHOD") or "GET"),
+                    str(environ.get("PATH_INFO") or "/"),
+                    body=body,
+                    query=_parse_query(environ),
+                )
+            except Exception as exc:
+                response = _json_response(
+                    500,
+                    {
+                        "error": {
+                            "code": "BACKEND_RUNTIME_ERROR",
+                            "message": str(exc),
+                            "path": str(environ.get("PATH_INFO") or "/"),
+                        }
+                    },
+                )
         status = int(response.get("status") or 500)
         response_body = response.get("body") if isinstance(response.get("body"), dict) else {}
         payload = json.dumps(response_body, ensure_ascii=False).encode("utf-8")
