@@ -38,3 +38,4 @@ frontend/release/
 .playwright-cli/
 output/
 .scratch/
+third_party/benchmarks/
