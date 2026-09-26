@@ -37,3 +37,4 @@ frontend/release/
 .codex-run/
 .playwright-cli/
 output/
+.scratch/
