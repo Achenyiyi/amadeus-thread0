@@ -2,21 +2,7 @@
 __pycache__/
 *.py[cod]
 
-data/*.sqlite
-data/*audit.jsonl
-data/**/checkpoints.sqlite
-data/**/memories.sqlite
-data/**/decision_audit.jsonl
-data/**/mcp_audit.jsonl
-data/**/memory_store_audit.jsonl
-data/**/tool_audit.jsonl
-data/**/diary.txt
-data/tmp_*.json
-data/worldlines/
-data/tts_out/
-data/tts_voice_cache.json
-data/diary.txt
-data/copy_wav/
+/data/
 tmp_*_report.txt
 archive_runtime/
 tmp_smoke_runtime/
@@ -39,3 +25,7 @@ frontend/release/
 output/
 .scratch/
 third_party/benchmarks/
+tests/_tmp/
+.amadeus/
+*.log
+.vscode/
