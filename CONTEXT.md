@@ -30,8 +30,41 @@ _Avoid_: 情绪、emotion、affect
 _Avoid_: bond、counterpart assessment、world model
 
 **记忆（memory）**:
-Kurisu 记得的事：关于你的事，以及你们之间发生过的事。
+Kurisu 记得的事：关于你的事，以及发生过的事。
 _Avoid_: 世界线
+
+### 记忆里有什么
+
+**历史（history）**:
+你和 Kurisu 说过的每一句话，按先后顺序存下，每句都带时间。
+_Avoid_: thread、checkpoint、对话记录
+
+**关于你的事（facts about you）**:
+Kurisu 知道的、在你改口之前一直成立的事，比如怎么称呼你、你喜欢什么、你在做什么。
+_Avoid_: profile、user model、画像
+
+**发生过的事（events）**:
+在某个时间发生、Kurisu 记得的事，可以是你们之间的，也可以是你告诉她的你自己的事。每件都有日期。
+_Avoid_: timeline、worldline event、moment、episode
+
+**悬着的事（open threads）**:
+还没结束的发生过的事，分为约定、没说开的事、等下文的事三种。
+_Avoid_: pending、agenda
+
+**约定（promise）**:
+你和 Kurisu 说好要做的事，不管是谁答应的。
+_Avoid_: commitment
+
+**没说开的事（unresolved conflict）**:
+你们之间还没和好的吵架或别扭。
+_Avoid_: tension、张力
+
+**等下文的事（awaiting outcome）**:
+你自己的事，结果还没告诉 Kurisu，比如一场面试。
+
+**想起（recall）**:
+Kurisu 因为你刚说的话，想到的与之相关的记忆。
+_Avoid_: 检索、召回、retrieval
 
 ### 三块能力
 
